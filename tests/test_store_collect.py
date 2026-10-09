@@ -193,7 +193,8 @@ async def test_a_steam_game_is_collected_once_until_it_is_due(
     await repo.upsert_title("292030", "The Witcher 3", "steam")
 
     report = await StoreCollector(repo).collect("steam", "292030")
-    assert report.asked == ["steam_store"]
+    # Its own store, then the other stores' versions (none here: no PSN client).
+    assert report.asked == ["steam_store", "siblings"]
     assert report.dlcs == 2
     versions = await repo.versions_of_title("steam", "292030")
     assert [v["name"] for v in versions] == ["The Witcher 3: Wild Hunt"]
@@ -202,7 +203,7 @@ async def test_a_steam_game_is_collected_once_until_it_is_due(
 
     asked.clear()
     again = await StoreCollector(repo).collect("steam", "292030")
-    assert asked == [] and again.skipped == ["steam_store"]
+    assert asked == [] and again.skipped == ["steam_store", "siblings"]
 
 
 async def test_dlc_past_a_pass_are_named_in_the_next(

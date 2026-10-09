@@ -17,7 +17,7 @@ class _GamesRepo:
         cursor = await self._conn.execute(
             "SELECT v.version_id, v.store, v.product_id, v.console, v.platform, v.title_id,"
             "  v.name, v.name_ru, v.kind, v.developer, v.publisher, v.release_date,"
-            "  v.store_group, t.name AS list_name, t.name_en AS list_name_en,"
+            "  v.store_group, v.stand_in, t.name AS list_name, t.name_en AS list_name_en,"
             "  (SELECT GROUP_CONCAT(vh.hltb_id) FROM version_hltb vh"
             "   WHERE vh.version_id = v.version_id) AS hltb_ids"
             " FROM versions v LEFT JOIN titles t ON t.platform = v.platform"
@@ -156,3 +156,18 @@ class _GamesRepo:
         )
         row = await cursor.fetchone()
         return int(row["game_id"]) if row else None
+
+    async def set_version_link(
+        self, version_id: int, of_version_id: int, kind: str, source: str
+    ) -> None:
+        """Which version this one is of (`demo_of`). An `auto` write never
+        replaces a `manual` one."""
+        await self._conn.execute(
+            "INSERT INTO version_links (version_id, of_version_id, kind, source, decided_at)"
+            " VALUES (?, ?, ?, ?, ?) ON CONFLICT(version_id, kind) DO UPDATE SET"
+            "  of_version_id = excluded.of_version_id, source = excluded.source,"
+            "  decided_at = excluded.decided_at"
+            " WHERE version_links.source = 'auto' OR excluded.source = 'manual'",
+            (version_id, of_version_id, kind, source, utcnow_iso()),
+        )
+        await self._conn.commit()

@@ -21,15 +21,21 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from bot.services.game_link import GameLinker
+from bot.services.hltb_match import core, normalize, similarity
+from bot.services.steam.client import get_schema
+from bot.services.steam_news import find_appid
 from bot.services.stores import StoreVersion, hltb_page, psn_store, steam_store, xbox_catalog
 from bot.util import utcnow
 
 if TYPE_CHECKING:
     from bot.db.repo import Repo
     from bot.services.psn.auth import PsnAuth
+    from bot.services.steam.auth import SteamAuth
 
 log = logging.getLogger(__name__)
 
+# PSN concepts looked at for one game's name: the closest few.
+SIBLING_CONCEPTS = 2
 # Steam DLC named in one pass; a game with more is finished in the passes after.
 DLC_NAMES_PER_PASS = 50
 RECENT_PATCH_DAYS = 30
@@ -52,9 +58,12 @@ class CollectReport:
 
 
 class StoreCollector:
-    def __init__(self, repo: Repo, psn_auth: PsnAuth | None = None) -> None:
+    def __init__(
+        self, repo: Repo, psn_auth: PsnAuth | None = None, steam_auth: SteamAuth | None = None
+    ) -> None:
         self._repo = repo
         self._psn_auth = psn_auth
+        self._steam_auth = steam_auth
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._running: dict[tuple[str, str], asyncio.Task[CollectReport]] = {}
 
@@ -87,6 +96,7 @@ class StoreCollector:
                 await self._psn(title_id, report, force)
             await self._list_version(platform, title_id, report)
             await self._hltb(platform, title_id, report, force)
+            await self._siblings(platform, title_id, report, force)
             if report.asked or report.versions:
                 # What it is now known to be, put into games (stage 3).
                 linked = await GameLinker(self._repo).link_title(platform, title_id)
@@ -107,7 +117,11 @@ class StoreCollector:
 
     # ------------------------------------------------------------ Steam
 
-    async def _steam(self, appid: str, report: CollectReport, force: bool) -> None:
+    async def _steam(
+        self, appid: str, report: CollectReport, force: bool, *, ours: bool = True
+    ) -> None:
+        """A Steam app: ours (a list somebody here has) or found for another
+        platform's game (`ours=False`: stored with no list, as `store`)."""
         subject, source = f"steam:{appid}", "steam_store"
         if not force and not await self._repo.fetch_due(subject, source):
             report.skipped.append(source)
@@ -125,7 +139,12 @@ class StoreCollector:
             return
         changed = await self._repo.save_payload(subject, source, data)
         version = steam_store.parse_app(data, data_ru)
-        version_id = await self._repo.save_version(version, platform="steam", title_id=appid)
+        version_id = await self._repo.save_version(
+            version,
+            platform="steam" if ours else None,
+            title_id=appid if ours else None,
+            origin="played" if ours else "store",
+        )
         report.versions.append(version_id)
         more = await self._steam_dlcs(version_id, version, report)
         patched = await self._recently_patched(int(appid))
@@ -221,15 +240,115 @@ class StoreCollector:
             report.dlcs += 1
         return changed
 
+    # ------------------------------------------------------------ other stores (stage 4)
+
+    async def _siblings(
+        self, platform: str, title_id: str, report: CollectReport, force: bool
+    ) -> None:
+        """The game's versions on the stores nobody here has it on (#147,
+        stage 4): Steam's app (the one its HLTB page names, else a careful
+        name search — `steam_news.find_appid`), PSN's concepts by name. Only
+        found and stored here; whether they are this game is the matcher's."""
+        subject, source = f"siblings:{platform}:{title_id}", "siblings"
+        if not force and not await self._repo.fetch_due(subject, source):
+            report.skipped.append(source)
+            return
+        record = await self._repo.title_record(platform, title_id)
+        if not record:
+            return
+        names = [str(n) for n in (record.get("name_en"), record.get("name")) if n]
+        report.asked.append(source)
+        try:
+            if platform != "steam":
+                await self._steam_sibling(platform, title_id, names, report, force)
+            if platform != "psn":
+                await self._psn_siblings(names, report)
+        except Exception as exc:
+            report.errors.append(f"{source}: {exc!r}")
+            await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
+            return
+        await self._repo.record_fetch(subject, source, status="ok")
+
+    async def _steam_sibling(
+        self, platform: str, title_id: str, names: list[str], report: CollectReport, force: bool
+    ) -> None:
+        steam = await self._repo.title_steam(platform, title_id)
+        appid = steam.steam_appid if steam else None
+        if appid is None:
+            hltb_id = await self._repo.title_hltb_id(platform, title_id)
+            appid = await find_appid(names, hltb_id)
+        if appid is None:
+            return
+        ours = await self._repo.title_record("steam", str(appid)) is not None
+        await self._steam(str(appid), report, force, ours=ours)
+        await self._steam_schema(str(appid))
+
+    async def _steam_schema(self, appid: str) -> None:
+        """The app's achievement names (English), kept for the matcher: one
+        list's names are the same on every platform."""
+        subject, source = f"steam_schema:{appid}", "steam_schema"
+        if self._steam_auth is None or not await self._repo.fetch_due(subject, source):
+            return
+        api_key = await self._steam_auth.get_key()
+        if not api_key:
+            return
+        try:
+            schema = await get_schema(api_key, appid, language="english")
+        except Exception as exc:
+            await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
+            return
+        names = [item.display_name for item in schema if item.display_name]
+        changed = await self._repo.save_payload(subject, source, names)
+        await self._repo.record_fetch(subject, source, status="ok", changed=changed)
+
+    async def _psn_siblings(self, names: list[str], report: CollectReport) -> None:
+        """PSN's concepts for the name, the closest few, stored as `store`
+        versions with no list (none of ours was proved for them)."""
+        from bot.services.psn import client as psn
+
+        if self._psn_auth is None or not names:
+            return
+        client = await self._psn_auth.get_client()
+        results = await psn.store_search(client, core(names[0]))
+        ours = normalize(core(names[0]))
+        seen: set[str] = set()
+        for item in results:
+            result = item.get("result") or {}
+            concept_id = str(item.get("id") or result.get("id") or "")
+            name = str((result.get("defaultProduct") or {}).get("invariantName") or "")
+            if (
+                not concept_id
+                or concept_id in seen
+                or similarity(ours, normalize(core(name))) < 0.8
+            ):
+                continue
+            seen.add(concept_id)
+            title_ids = psn_store.title_ids_in_search([item])
+            if not title_ids:
+                continue
+            concept = await psn.store_concept(client, title_ids[0])
+            if concept is None:
+                continue
+            await self._repo.save_payload(f"psn:{concept.get('id')}", "psn_store", concept)
+            for version in psn_store.parse_concept(concept):
+                report.versions.append(
+                    await self._repo.save_version(
+                        version, platform=None, title_id=None, origin="store"
+                    )
+                )
+            if len(seen) >= SIBLING_CONCEPTS:
+                break
+
     async def _list_version(self, platform: str, title_id: str, report: CollectReport) -> None:
         """Every achievement list is at least one version, so it can be put
         into a game: a store product when a store found one, otherwise the
-        list itself as `titles` describes it (`store` = `list`) — a 360 game,
-        an Xbox card the catalog no longer carries, a PSN list not proved.
+        list itself as `titles` describes it — a stand-in (`stand_in`, under
+        the platform's store): a 360 game, an Xbox card the catalog no longer
+        carries, a PSN list not proved.
         Once a store product is found, the stand-in goes."""
         versions = await self._repo.versions_of_title(platform, title_id)
-        real = [v for v in versions if v["store"] != "list"]
-        stand_ins = [v for v in versions if v["store"] == "list"]
+        real = [v for v in versions if not v["stand_in"]]
+        stand_ins = [v for v in versions if v["stand_in"]]
         if real:
             for version in stand_ins:
                 await self._repo.delete_version(int(version["version_id"]))
@@ -238,12 +357,13 @@ class StoreCollector:
         if not record:
             return
         version = StoreVersion(
-            store="list",
-            product_id=f"{platform}:{title_id}",
+            store=_store_of(platform),
+            product_id=title_id,
             console=_console_of(platform, str(record.get("platforms") or "")),
             name=str(record.get("name") or "") or None,
             name_ru=record.get("name_ru"),  # type: ignore[arg-type]
             kind="game",
+            stand_in=True,
         )
         report.versions.append(
             await self._repo.save_version(version, platform=platform, title_id=title_id)
@@ -347,6 +467,10 @@ class StoreCollector:
     async def _title_steam_appid(self, platform: str, title_id: str) -> int | None:
         steam = await self._repo.title_steam(platform, title_id)
         return steam.steam_appid if steam else None
+
+
+def _store_of(platform: str) -> str:
+    return "xbox" if platform in ("xbox_modern", "xbox_360") else platform
 
 
 def _console_of(platform: str, platforms: str) -> str:

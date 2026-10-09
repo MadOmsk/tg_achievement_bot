@@ -149,8 +149,8 @@ class _StoresRepo:
         await self._conn.execute(
             "INSERT INTO versions (store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, developer, publisher, release_date, genres, also_on, store_group,"
-            "  description_en, description_ru, media, live_service, origin, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "  description_en, description_ru, media, live_service, origin, updated_at, stand_in)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(store, product_id, console) DO UPDATE SET"
             "  platform = COALESCE(excluded.platform, versions.platform),"
             "  title_id = COALESCE(excluded.title_id, versions.title_id),"
@@ -190,6 +190,7 @@ class _StoresRepo:
                 1 if version.live_service else 0,
                 origin,
                 now,
+                1 if version.stand_in else 0,
             ),
         )
         cursor = await self._conn.execute(

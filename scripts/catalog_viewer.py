@@ -132,6 +132,27 @@ def _record(row: sqlite3.Row | None, links: dict[str, object] | None = None) -> 
     return f"<table border=1 cellpadding=3>{''.join(lines)}</table>"
 
 
+def _store_href(row: sqlite3.Row) -> str:
+    """The version on its store: a product page, or a search for a stand-in."""
+    store, product, name = row["store"], str(row["product_id"]), quote(str(row["name"] or ""))
+    stand_in = "stand_in" in row.keys() and row["stand_in"]
+    if store == "xbox":
+        if stand_in:
+            return f"https://www.xbox.com/en-US/search?q={name}"
+        return f"https://www.xbox.com/en-US/games/store/x/{product}"
+    if store == "steam":
+        return f"https://store.steampowered.com/app/{product}"
+    if store == "psn":
+        if stand_in:
+            return f"https://store.playstation.com/en-us/search/{name}"
+        return f"https://store.playstation.com/en-us/concept/{product}"
+    return "#"
+
+
+def _list_href(row: sqlite3.Row) -> str:
+    return f"/list/{quote(str(row['platform']))}/{quote(str(row['title_id']))}"
+
+
 def _title_href(row: sqlite3.Row) -> str:
     return f"/title/{quote(str(row['platform']))}/{quote(str(row['title_id']))}"
 
@@ -278,18 +299,15 @@ async def versions(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT version_id, store, product_id, console, name, platform, title_id, kind,"
-            " release_date, origin FROM versions"
+            "SELECT version_id, store, product_id, stand_in, console, name, platform, title_id,"
+            " kind, release_date, origin FROM versions"
             " WHERE ? = '' OR name LIKE ? OR product_id = ? OR store_group = ?"
             " ORDER BY updated_at DESC LIMIT ?",
             (q, f"%{q}%", q, q, PAGE_SIZE),
         ).fetchall()
     return _page(
         "Versions",
-        _search_form("/versions", q)
-        + _table(
-            rows, {"version_id": _version_href, "name": _version_href, "title_id": _title_href}
-        ),
+        _search_form("/versions", q) + _table(rows, _VERSION_LINKS),
     )
 
 
@@ -320,6 +338,10 @@ async def version(request: web.Request) -> web.Response:
             if row is not None and row["store_group"]
             else []
         )
+        demo_of = conn.execute(
+            "SELECT of_version_id FROM version_links WHERE version_id = ? AND kind = 'demo_of'",
+            (version_id,),
+        ).fetchone()
         games = conn.execute(
             "SELECT vg.game_id, g.name, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN games g ON g.game_id = vg.game_id"
@@ -364,6 +386,23 @@ async def version(request: web.Request) -> web.Response:
     body = (
         _flash(request)
         + controls
+        + (
+            f'<p><a href="{escape(_store_href(row))}">on the store</a>'
+            + (
+                f' · <a href="{escape(_list_href(row))}">its achievements</a>'
+                if row["title_id"]
+                else ""
+            )
+            + (
+                f' · demo of <a href="/version/{demo_of["of_version_id"]}">version'
+                f" {demo_of['of_version_id']}</a>"
+                if demo_of
+                else ""
+            )
+            + "</p>"
+            if row is not None
+            else ""
+        )
         + _record(row, {"title_id": _title_href})
         + "<h2>Games</h2>"
         + _table(games, {"game_id": _game_href, "name": _game_href})
@@ -552,6 +591,17 @@ def _game_href(row: sqlite3.Row) -> str:
     return f"/game/{row['game_id']}"
 
 
+_VERSION_LINKS = {
+    "version_id": _version_href,
+    "name": _version_href,
+    "store": _store_href,
+    "product_id": _store_href,
+    "title_id": _title_href,
+    "achievements": _list_href,
+    "demo_of": lambda r: f"/version/{r['demo_of']}",
+}
+
+
 _DECISIONS = (
     ("version", "same game: a version"),
     ("remaster", "remaster"),
@@ -637,6 +687,29 @@ async def rules(request: web.Request) -> web.Response:
     return _page("How versions are matched", body)
 
 
+async def achievement_list(request: web.Request) -> web.Response:
+    """Every achievement of one list, as the catalog keeps them."""
+    platform, title_id = request.match_info["platform"], request.match_info["title_id"]
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT achievement_id, name_en, name_ru, description_en, rarity_percent, listed"
+            " FROM title_achievements WHERE platform = ? AND title_id = ?"
+            " ORDER BY listed DESC, name_en",
+            (platform, title_id),
+        ).fetchall()
+        title = conn.execute(
+            "SELECT name FROM titles WHERE platform = ? AND title_id = ?", (platform, title_id)
+        ).fetchone()
+    listed = sum(1 for r in rows if r["listed"])
+    name = title["name"] if title else title_id
+    body = (
+        f'<p><a href="/title/{quote(platform)}/{quote(title_id)}">{escape(platform)} '
+        f"{escape(title_id)}</a> · {len(rows)} known, {listed} from the full list"
+        " (listed = 1)</p>" + _table(rows)
+    )
+    return _page(f"Achievements: {name}", body)
+
+
 async def games(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
@@ -666,9 +739,12 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
-            "SELECT vg.version_id, v.store, v.console, v.name, v.release_date, v.developer,"
-            " v.platform, v.title_id, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
+            "SELECT vg.version_id, v.store, v.product_id, v.stand_in, v.console, v.name,"
+            " v.release_date, v.developer, v.platform, v.title_id,"
+            " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
+            " vl.of_version_id AS demo_of, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+            " LEFT JOIN version_links vl ON vl.version_id = v.version_id AND vl.kind = 'demo_of'"
             " WHERE vg.game_id = ? ORDER BY vg.state, v.release_date, v.console",
             (game_id,),
         ).fetchall()
@@ -725,10 +801,20 @@ async def game(request: web.Request) -> web.Response:
         + controls
         + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
         + "<h2>Versions</h2>"
-        + _table(
-            members, {"version_id": _version_href, "name": _version_href, "title_id": _title_href}
+        + _table([m for m in members if m["state"] == "linked"], _VERSION_LINKS)
+        + (
+            "<h2>To review: may be this game</h2>"
+            + _table([m for m in members if m["state"] == "review"], _VERSION_LINKS)
+            + reviews
+            if reviews
+            else ""
         )
-        + ("<h2>To review</h2>" + reviews if reviews else "")
+        + (
+            "<h2>Decided: not this game</h2>"
+            + _table([m for m in members if m["state"] == "rejected"], _VERSION_LINKS)
+            if any(m["state"] == "rejected" for m in members)
+            else ""
+        )
         + "<h2>Related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})
         + "<h2>DLC (of its versions)</h2>"
@@ -857,13 +943,22 @@ async def _open(app: web.Application) -> None:
     from bot.config import get_settings
     from bot.services.crypto import TokenCipher
     from bot.services.psn.auth import PsnAuth
+    from bot.services.steam.auth import SteamAuth
     from bot.services.store_collect import StoreCollector
 
     database = await Database(Path(app["db_path"])).connect()
     repo = Repo(database)
     app["database"], app["repo"] = database, repo
-    cipher = TokenCipher(get_settings().fernet_key.get_secret_value())
-    app["collector"] = StoreCollector(repo, PsnAuth(repo, cipher))
+    settings = get_settings()
+    cipher = TokenCipher(settings.fernet_key.get_secret_value())
+    steam = SteamAuth(repo, cipher, env_key=_secret(settings.steam_api_key))
+    app["collector"] = StoreCollector(repo, PsnAuth(repo, cipher), steam)
+
+
+def _secret(value: object) -> str | None:
+    """A pydantic secret's text, or None."""
+    getter = getattr(value, "get_secret_value", None)
+    return getter() if getter else (str(value) if value else None)
 
 
 async def _close(app: web.Application) -> None:
@@ -879,6 +974,7 @@ def build(db_path: Path) -> web.Application:
     app.router.add_post("/fetch/due", fetch_due)
     app.router.add_get("/games", games)
     app.router.add_get("/rules", rules)
+    app.router.add_get("/list/{platform}/{title_id}", achievement_list)
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
     app.router.add_post("/decide", decide)

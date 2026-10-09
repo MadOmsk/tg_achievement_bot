@@ -1045,6 +1045,9 @@ CREATE TABLE IF NOT EXISTS versions (
     live_service INTEGER NOT NULL DEFAULT 0,
     origin       TEXT NOT NULL DEFAULT 'played',  -- played / store (found, nobody here owns it)
     updated_at   TEXT NOT NULL,
+    -- Made from our own list when no store described it (093): the store is
+    -- the platform's, the product id the list's own id.
+    stand_in     INTEGER NOT NULL DEFAULT 0,
     UNIQUE (store, product_id, console)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);
@@ -1180,4 +1183,15 @@ CREATE TABLE IF NOT EXISTS game_relations (
     created_at TEXT NOT NULL,
     PRIMARY KEY (game_id, related_id, kind),
     CHECK (game_id <> related_id)
+);
+
+-- Which version a demo is of (093): the RE2 demo on One → RE2 on One.
+CREATE TABLE IF NOT EXISTS version_links (
+    version_id    INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    of_version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    kind          TEXT NOT NULL,   -- demo_of
+    source        TEXT NOT NULL,   -- auto / manual
+    decided_at    TEXT NOT NULL,
+    PRIMARY KEY (version_id, kind),
+    CHECK (version_id <> of_version_id)
 );

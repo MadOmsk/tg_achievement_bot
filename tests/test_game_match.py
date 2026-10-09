@@ -135,3 +135,45 @@ def test_a_demo_is_its_own_games_not_a_namesakes() -> None:
     assert (
         compare(gears, _c(6, "Gears of War: E-Day Multiplayer Beta", year=2026)).state != "linked"
     )
+
+
+def test_one_achievement_list_is_one_game() -> None:
+    """Smart Delivery and Play Anywhere share one list (owner, 2026-10-09)."""
+    one = _c(1, "Forza Horizon 4", console="one", list_key=("xbox_modern", "1"))
+    pc = _c(2, "Forza Horizon 4 for Windows 10", console="pc", list_key=("xbox_modern", "1"))
+    assert compare(one, pc).state == "linked"
+
+
+def test_a_subtitle_after_the_name_is_another_game() -> None:
+    gears = _c(1, "Gears of War", console="360")
+    assert compare(gears, _c(2, "Gears of War: Judgment", console="360")).state == "apart"
+    # A franchise said before the name is the same game.
+    mw2 = _c(3, "Modern Warfare 2", console="360", year=2009)
+    full = _c(4, "Call of Duty: Modern Warfare 2", store="steam", console="steam", year=2009)
+    assert compare(mw2, full).state != "apart"
+
+
+def test_an_edition_with_a_list_of_its_own_is_a_remaster() -> None:
+    from bot.services.game_link import _kinds
+
+    shared = frozenset(f"a{i}" for i in range(20))
+    base = _c(1, "Gears of War", year=2006, achievements=shared, list_key=("xbox_360", "1"))
+    ue = _c(
+        2,
+        "Gears of War: Ultimate Edition",
+        year=2015,
+        achievements=frozenset(list(shared)[:8]) | frozenset(f"b{i}" for i in range(12)),
+        list_key=("xbox_modern", "2"),
+    )
+    assert _kinds([base, ue])[2] == "remaster"
+
+
+async def test_a_demo_is_linked_to_the_version_on_its_console(repo: Repo) -> None:
+    game_one = await _version(repo, "RE2", "RESIDENT EVIL 2", "2019", console="one")
+    game_series = await _version(repo, "RE2", "RESIDENT EVIL 2", "2019", console="series")
+    demo = await _version(repo, "DEMO", "RESIDENT EVIL 2 1-Shot Demo", "2019", console="series")
+    await GameLinker(repo).link_versions([game_one, game_series, demo])
+    cursor = await repo._conn.execute(
+        "SELECT of_version_id FROM version_links WHERE version_id = ? AND kind = 'demo_of'", (demo,)
+    )
+    assert (await cursor.fetchone())["of_version_id"] == game_series

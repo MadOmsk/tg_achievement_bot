@@ -15,7 +15,15 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from bot.services.game_match import Candidate, block_key, compare, game_name, kind_of
+from bot.services.game_match import (
+    ACHIEVEMENTS_MIN,
+    ACHIEVEMENTS_SAME,
+    Candidate,
+    block_key,
+    compare,
+    game_name,
+    kind_of,
+)
 from bot.services.hltb_match import normalize
 
 if TYPE_CHECKING:
@@ -54,7 +62,15 @@ class GameLinker:
             row = next(r for r in rows if r["version_id"] == candidate.version_id)
             if row["platform"] and row["title_id"]:
                 names = await self._repo.achievement_names(row["platform"], row["title_id"])
-                candidate.achievements = frozenset(normalize(n) for n in names if n)
+            elif row["store"] == "steam":
+                # A Steam app nobody here has: its schema's names (stage 4).
+                names = (
+                    await self._repo.payload(f"steam_schema:{row['product_id']}", "steam_schema")
+                    or []
+                )
+            else:
+                names = []
+            candidate.achievements = frozenset(normalize(n) for n in names if n)
 
         links = await self._repo.links_of([c.version_id for c in around])
         manual = {
@@ -97,6 +113,7 @@ class GameLinker:
             if target is None:
                 year = min((m.year for m in members if m.year), default=None)
                 target = await self._repo.create_game(game_name(members), year)
+            kinds = _kinds(members)
             for member in members:
                 vid = member.version_id
                 if vid in pinned:
@@ -112,11 +129,12 @@ class GameLinker:
                     game_of[vid] = own
                     continue
                 await self._repo.set_link(
-                    vid, target, kind=kind_of(member), state="linked", source="auto", score=1.0
+                    vid, target, kind=kinds[vid], state="linked", source="auto", score=1.0
                 )
                 await self._repo.drop_auto_links(vid, target, "linked")
                 game_of[vid] = target
                 report.games.setdefault(target, []).append(vid)
+            await self._link_demos(members, pinned)
 
         # The review list: a doubtful pair across two games, filed on the later
         # version. The matcher's earlier review rows around here are redrawn.
@@ -125,7 +143,7 @@ class GameLinker:
                 await self._repo.drop_auto_links(c.version_id, None, "review")
         # One review row per version: against the game it is most like. It is
         # filed on the side less is known about (no year, a stand-in, the later).
-        best: dict[int, tuple[float, int, list[str]]] = {}
+        best: dict[int, tuple[float, int, list[str], str | None]] = {}
         for (x, y), verdict in verdicts.items():
             if verdict.state != "review" or game_of.get(x) == game_of.get(y):
                 continue
@@ -137,13 +155,13 @@ class GameLinker:
                 or (subject.version_id, game) in rejected
             ):
                 continue
-            if verdict.score > best.get(subject.version_id, (-1.0, 0, []))[0]:
-                best[subject.version_id] = (verdict.score, game, verdict.reasons)
-        for version_id, (score, game, reasons) in best.items():
+            if verdict.score > best.get(subject.version_id, (-1.0, 0, [], None))[0]:
+                best[subject.version_id] = (verdict.score, game, verdict.reasons, verdict.kind)
+        for version_id, (score, game, reasons, hint) in best.items():
             await self._repo.set_link(
                 version_id,
                 game,
-                kind=kind_of(candidates[version_id]),
+                kind=hint or kind_of(candidates[version_id]),
                 state="review",
                 source="auto",
                 score=score,
@@ -152,6 +170,26 @@ class GameLinker:
             report.review.append((version_id, game, reasons))
         await self._repo.drop_empty_games()
         return report
+
+    async def _link_demos(self, members: list[Candidate], pinned: set[int]) -> None:
+        """A demo belongs to one version (owner, 2026-10-09): the one of its
+        game on the same console, else on the same store, else any — the
+        version whose name opens the demo's first."""
+        games = [m for m in members if kind_of(m) != "demo"]
+        for demo in (m for m in members if kind_of(m) == "demo"):
+            if not games or demo.version_id in pinned:
+                continue
+
+            def fit(v: Candidate, demo: Candidate = demo) -> tuple[int, int, int, int]:
+                return (
+                    1 if v.console == demo.console else 0,
+                    1 if v.store == demo.store else 0,
+                    1 if _opens(v, demo) else 0,
+                    -(v.year or 9999),
+                )
+
+            parent = max(games, key=fit)
+            await self._repo.set_version_link(demo.version_id, parent.version_id, "demo_of", "auto")
 
     @staticmethod
     def _around(seeds: list[Candidate], candidates: dict[int, Candidate]) -> list[Candidate]:
@@ -183,9 +221,40 @@ def _weaker(a: Candidate, b: Candidate) -> tuple[Candidate, Candidate]:
     else a stand-in for a list no store described, else the later one."""
 
     def known(c: Candidate) -> tuple[int, int, int]:
-        return (1 if c.year else 0, 0 if c.store == "list" else 1, -(c.year or 0))
+        return (1 if c.year else 0, 0 if c.stand_in else 1, -(c.year or 0))
 
     return (a, b) if known(a) <= known(b) else (b, a)
+
+
+def _kinds(members: list[Candidate]) -> dict[int, str]:
+    """How each version belongs to its game. The name says it first; but an
+    'edition' with an achievement list of its own, later than the game's
+    first list, is a remaster (Gears of War → Ultimate Edition)."""
+    kinds = {m.version_id: kind_of(m) for m in members}
+    listed = [m for m in members if len(m.achievements) >= ACHIEVEMENTS_MIN and m.year]
+    base = min(
+        (m for m in listed if kinds[m.version_id] != "demo"),
+        key=lambda m: m.year or 9999,
+        default=None,
+    )
+    if base is None:
+        return kinds
+    for m in listed:
+        if m is base or kinds[m.version_id] not in ("version", "edition"):
+            continue
+        if m.list_key == base.list_key or (m.year or 0) <= (base.year or 0):
+            continue
+        shared = len(m.achievements & base.achievements) / min(
+            len(m.achievements), len(base.achievements)
+        )
+        if shared < ACHIEVEMENTS_SAME:
+            kinds[m.version_id] = "remaster"
+    return kinds
+
+
+def _opens(game: Candidate, demo: Candidate) -> bool:
+    words = [normalize(n).split() for n in demo.names]
+    return any(c and any(w[: len(c.split())] == c.split() for w in words) for c in game.cores)
 
 
 def _candidate(row: dict) -> Candidate:
@@ -211,4 +280,8 @@ def _candidate(row: dict) -> Candidate:
         hltb_ids=frozenset(
             int(h) for h in str(row["hltb_ids"] or "").split(",") if h.strip().isdigit()
         ),
+        list_key=(row["platform"], row["title_id"])
+        if row["platform"] and row["title_id"]
+        else None,
+        stand_in=bool(row["stand_in"]),
     )

@@ -57,6 +57,10 @@ class Candidate:
     store_group: str | None = None
     hltb_ids: frozenset[int] = frozenset()
     achievements: frozenset[str] = frozenset()
+    # Its achievement list (`titles`): Smart Delivery's One and Series, and a
+    # Play Anywhere PC, are one list — and so one game.
+    list_key: tuple[str, str] | None = None
+    stand_in: bool = False
 
     @property
     def cores(self) -> tuple[str, ...]:
@@ -72,6 +76,9 @@ class Verdict:
     state: str  # linked / review / apart
     score: float
     reasons: list[str] = field(default_factory=list)
+    # A review's guess at how the later version belongs, when its own list says
+    # more than its name: a list of its own is a remaster, not an edition.
+    kind: str | None = None
 
 
 def kind_of(candidate: Candidate) -> str:
@@ -88,6 +95,9 @@ def kind_of(candidate: Candidate) -> str:
 
 def compare(a: Candidate, b: Candidate) -> Verdict:
     reasons: list[str] = []
+    if a.list_key and a.list_key == b.list_key:
+        # One achievement list is one game, whatever the stores call them.
+        return Verdict("linked", 1.0, ["one achievement list"])
     name = max((similarity(x, y) for x in a.cores for y in b.cores), default=0.0)
     if any(x == y for x in a.fulls for y in b.fulls):
         name = 1.0
@@ -141,7 +151,9 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
             proof = True
         elif overlap <= ACHIEVEMENTS_OTHER:
             # Two lists of their own: a remaster, a remake or another game.
-            return Verdict("review", min(score, 1.0), [*reasons, "different achievements"])
+            return Verdict(
+                "review", min(score, 1.0), [*reasons, "different achievements"], kind="remaster"
+            )
 
     if _same(a.developer, b.developer):
         reasons.append("same developer")
@@ -154,8 +166,15 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
         gap = abs(a.year - b.year)
         reasons.append(f"years {a.year}/{b.year}")
         if gap >= FAR_YEARS and not proof:
-            # A port, a remaster or a remake: a person tells them apart.
-            return Verdict("review", min(score, 1.0), [*reasons, "years far apart"])
+            # A port, a remaster or a remake: a person tells them apart. A list
+            # of its own says remaster rather than a port.
+            own_list = overlap is not None and overlap < ACHIEVEMENTS_SAME
+            return Verdict(
+                "review",
+                min(score, 1.0),
+                [*reasons, "years far apart"],
+                kind="remaster" if own_list else None,
+            )
         if gap > NEAR_YEARS:
             score -= 0.05 * (gap - NEAR_YEARS)
         else:
@@ -167,7 +186,8 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
     if score >= LINK_SCORE and proof:
         return Verdict("linked", score, reasons)
     if score >= REVIEW_SCORE:
-        return Verdict("review", score, reasons)
+        own_list = overlap is not None and overlap < ACHIEVEMENTS_SAME
+        return Verdict("review", score, reasons, kind="remaster" if own_list else None)
     return Verdict("apart", score, reasons)
 
 
@@ -185,15 +205,13 @@ def _words(name: str) -> list[str]:
 
 
 def _contained(a: Candidate, b: Candidate) -> bool:
-    """One cut name is the other's, whole, at its end or start, two words at least."""
+    """One cut name ends the other, whole, two words at least: a franchise
+    said before it ("Call of Duty: Modern Warfare 2"). Not one that starts the
+    other — a subtitle after it is another game ("Gears of War: Judgment")."""
     for x in a.cores:
         for y in b.cores:
             short, long_ = sorted((_words(x), _words(y)), key=len)
-            if (
-                len(short) >= 2
-                and len(short) < len(long_)
-                and (long_[-len(short) :] == short or long_[: len(short)] == short)
-            ):
+            if 2 <= len(short) < len(long_) and long_[-len(short) :] == short:
                 return True
     return False
 

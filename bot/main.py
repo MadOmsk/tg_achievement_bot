@@ -209,7 +209,7 @@ async def run(settings: Settings) -> None:
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
     steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
-    store_collector = StoreCollector(repo, psn_auth)
+    store_collector = StoreCollector(repo, psn_auth, steam_auth)
     fetcher = Fetcher(
         repo,
         client,

@@ -26,6 +26,7 @@ from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
+from bot.services.steam.auth import SteamAuth
 from bot.services.store_collect import StoreCollector
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)s")
@@ -41,8 +42,12 @@ async def main() -> int:
     settings = get_settings()
     database = await Database(Path(settings.db_path)).connect()
     repo = Repo(database)
-    psn = PsnAuth(repo, TokenCipher(settings.fernet_key.get_secret_value()))
-    report = await StoreCollector(repo, psn).collect(args.platform, args.title_id, force=args.force)
+    cipher = TokenCipher(settings.fernet_key.get_secret_value())
+    psn = PsnAuth(repo, cipher)
+    key = settings.steam_api_key
+    steam = SteamAuth(repo, cipher, env_key=key.get_secret_value() if key else None)
+    collector = StoreCollector(repo, psn, steam)
+    report = await collector.collect(args.platform, args.title_id, force=args.force)
 
     print(f"asked:   {', '.join(report.asked) or '—'}")
     print(f"skipped: {', '.join(report.skipped) or '—'} (not due; --force asks anyway)")
