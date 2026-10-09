@@ -202,7 +202,7 @@ def earned_since(prefix: str = "s.") -> str:
 def titles_on(rows: str = "s", titles: str = "t") -> str:
     """The join from rows carrying `platform` and `title_id` (a
     `seen_achievements`, by default) to their game's `titles` row. A game is
-    its platform and its id (migration 089): the id spaces of Steam and Xbox
+    its platform and its id (migration 090): the id spaces of Steam and Xbox
     overlap, so the id alone can name two games."""
     return f"{titles}.platform = {rows}.platform AND {titles}.title_id = {rows}.title_id"
 

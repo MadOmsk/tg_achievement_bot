@@ -1,4 +1,4 @@
-"""Games over versions (#147, stage 3; migration 091): which game each version
+"""Games over versions (#147, stage 3; migration 092): which game each version
 is, how, and who decided it. The matcher writes only `auto` rows; a `manual`
 row — a rejection included — is the operator's and stays."""
 

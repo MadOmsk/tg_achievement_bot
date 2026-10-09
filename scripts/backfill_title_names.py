@@ -11,7 +11,7 @@ were never going to fill in by themselves. Steam's own version of this was
 request per game, through an owner's own token.
 
 (A second gap, 125 rows with a NULL `platform`, was closed for good by
-migration 089: the platform is now part of a game's key.)
+migration 090: the platform is now part of a game's key.)
 
 **The bot must be stopped**, for the reason every Xbox script here says:
 Microsoft invalidates the previous refresh token when a new one is issued,

@@ -1,5 +1,5 @@
 -- Games over versions (#147, stage 3): a game is the work (The Witcher 3);
--- its versions are store products on one console (090). A version belongs to
+-- its versions are store products on one console (091). A version belongs to
 -- a game as a `version` (a port is just that, however late), an `edition`
 -- (GOTY, Complete), a `remaster` (Gears of War → Ultimate → Reloaded), a part
 -- of a `compilation` (one version, several games) or a `demo`. A remake is

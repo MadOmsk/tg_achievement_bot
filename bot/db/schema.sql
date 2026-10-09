@@ -401,7 +401,7 @@ CREATE TABLE IF NOT EXISTS titles (
     -- title_achievements are — the id spaces overlap (Steam appids run to
     -- ~3.5M, Xbox title ids start below 1M). An Xbox game found to be the
     -- other generation moves, row and achievements together
-    -- (`update_title_platform`; migration 089).
+    -- (`update_title_platform`; migration 090).
     platform   TEXT NOT NULL,     -- xbox_modern / xbox_360 / steam / psn
     title_id   TEXT NOT NULL,
     name       TEXT NOT NULL,     -- whatever the platform called it first
@@ -733,7 +733,7 @@ CREATE TABLE IF NOT EXISTS steam_apps (
 -- fingerprint of what it was asked and the answer, each achievement's line ranges
 -- as JSON. The model is asked again only when the fingerprint changes.
 CREATE TABLE IF NOT EXISTS title_guide_reads (
-    platform    TEXT    NOT NULL,   -- the game's, as `titles` (089)
+    platform    TEXT    NOT NULL,   -- the game's, as `titles` (090)
     title_id    TEXT    NOT NULL,
     guide_id    TEXT    NOT NULL,
     fingerprint TEXT    NOT NULL,
@@ -906,6 +906,20 @@ CREATE TABLE IF NOT EXISTS web_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_web_sessions_person ON web_sessions (person_id);
 
+-- Passkeys (migration 089): a key kept on a phone or a computer that signs its
+-- person in, in place of an email's code. Only the public half is kept.
+CREATE TABLE IF NOT EXISTS passkeys (
+    id            TEXT PRIMARY KEY,
+    person_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    public_key    BLOB NOT NULL,
+    sign_count    INTEGER NOT NULL DEFAULT 0,
+    transports    TEXT,
+    name          TEXT,
+    created_at    TEXT NOT NULL,
+    last_used_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_passkeys_person ON passkeys (person_id);
+
 
 -- One-time sign-in codes sent by email (#162, migration 079). Only an HMAC of
 -- the code is kept; `person_id` is set when a signed-in person adds the address
@@ -1006,7 +1020,7 @@ CREATE INDEX IF NOT EXISTS idx_guide_marks_label ON guide_marks (label);
 -- ------------------------------------------------------------------ the store side (#147)
 -- What each store says about a game: versions (a store product on one
 -- console), DLC, HLTB entries, the raw answers and when to ask again
--- (migration 090). No foreign key points at `titles`.
+-- (migration 091). No foreign key points at `titles`.
 
 CREATE TABLE IF NOT EXISTS versions (
     version_id   INTEGER PRIMARY KEY,
@@ -1131,7 +1145,7 @@ CREATE INDEX IF NOT EXISTS idx_fetch_state_due ON fetch_state(next_check_at);
 -- ------------------------------------------------------------------ games (#147, stage 3)
 -- A game over its versions; the link's kind, its state (linked / review /
 -- rejected) and who decided it — the matcher rewrites only its own rows
--- (migration 091). A remake is another game, linked game -> game.
+-- (migration 092). A remake is another game, linked game -> game.
 
 CREATE TABLE IF NOT EXISTS games (
     game_id     INTEGER PRIMARY KEY,

@@ -104,6 +104,10 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                     "name": row.data.get("name"),
                     # The game a tap opens, on that person's progress.
                     "game": game,
+                    # A game's post a tap opens over its game (owner, 2026-10-08).
+                    "news": {"appid": row.data["appid"], "gid": row.data["gid"]}
+                    if row.kind == "game_news" and row.data.get("appid") and row.data.get("gid")
+                    else None,
                     # The game's picture, for a notice about a game (its news).
                     "cover": await _cover(row.data.get("platform"), row.data.get("title_id"))
                     if row.kind == "game_news"

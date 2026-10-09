@@ -175,7 +175,7 @@ class _MergeRepo:
                     f" WHERE {column} = :absorb AND {other} != :keep",
                     a,
                 )
-            for table in ("web_sessions", "notifications", "push_subscriptions"):
+            for table in ("web_sessions", "notifications", "push_subscriptions", "passkeys"):
                 await conn.execute(
                     f"UPDATE {table} SET person_id = :keep WHERE person_id = :absorb", a
                 )

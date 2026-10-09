@@ -28,6 +28,7 @@ export const USER_ROUTES = {
 export const CLUB_ROUTES = {
   FEED: "/feed",
   NEWS: "/news",
+  NEWS_POST: "/news/post",
   ONLINE: "/online",
   SUMMARY: "/summary",
   PEOPLE: "/people",

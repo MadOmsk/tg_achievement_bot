@@ -362,6 +362,27 @@ class _SteamRepo:
             for row in await cursor.fetchall()
         ]
 
+    async def game_patch(self, appid: int, gid: str) -> StoredPatch | None:
+        """One post of a game's developer, as a notice about it opens it."""
+        cursor = await self._conn.execute(
+            "SELECT gid, title, published_at, text_en, title_ru, text_ru, image_url, kind"
+            " FROM game_patches WHERE steam_appid = ? AND gid = ?",
+            (appid, gid),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return StoredPatch(
+            gid=row["gid"],
+            title=row["title"],
+            published_at=row["published_at"],
+            text_en=row["text_en"],
+            title_ru=row["title_ru"],
+            text_ru=row["text_ru"],
+            image_url=row["image_url"],
+            kind=row["kind"],
+        )
+
     async def game_patches(self, appid: int, limit: int) -> list[StoredPatch]:
         """The developer's latest posts, patches and news both — the game page's
         «Обновления» tab, filtered there by `kind`."""

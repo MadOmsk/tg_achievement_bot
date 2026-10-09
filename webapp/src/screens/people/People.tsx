@@ -4,7 +4,6 @@ import { t, type Locale } from "../../i18n";
 import { Avatar, EmptyState, SearchBar } from "../../components/shared/lib";
 import { PersonSheet } from "../../components/people/person-sheet/PersonSheet";
 import { FollowButton } from "../../components/people/follow-button/FollowButton";
-import { FriendMark } from "../../components/people/friend-mark/FriendMark";
 import { GameHits, GameSheet, useHltbSearch } from "../../components/hltb";
 import type { HltbHit } from "../../api";
 import "./People.css";
@@ -136,9 +135,7 @@ export function People({
   const line = (row: PersonRow & { mutual?: number }) => (
     <div key={row.id} className={leaving.has(row.id) ? "people-line is-leaving" : "people-line"}>
       <button type="button" className="picker-row is-person" onClick={() => setOpen(row)}>
-        <FriendMark friend={row.relation.friends} label={t(locale, "friends")}>
           <Avatar name={row.handle} personId={row.id} size={40} />
-        </FriendMark>
         <span className="picker-row-copy">
           <strong>
             <HandleName text={row.handle} />

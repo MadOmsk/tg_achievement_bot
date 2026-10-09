@@ -342,7 +342,7 @@ class _CatalogRepo:
         """A game, its earned rows and its catalog move to another Xbox
         platform together (#167): moving only `seen_achievements` left the
         names, descriptions, rarity and listed size behind. The `titles` row
-        is keyed by its platform (089): it moves too, and onto a row the other
+        is keyed by its platform (090): it moves too, and onto a row the other
         generation already has, it fills what that one lacks and goes. No
         commit — the caller's."""
         merged = ", ".join(

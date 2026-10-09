@@ -1,3 +1,4 @@
+import type { NewsPost } from "../../components/game/news-page/NewsPage";
 import { BaseApi } from "../base/baseApi";
 import { API_BASE_ROUTES, CLUB_ROUTES } from "../../components/shared/constants/routes";
 import type { FeedResponse, NewsResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
@@ -25,6 +26,21 @@ export class ClubApi extends BaseApi {
   }
 
   /** Game news: what the developers of the games one's circle plays posted. */
+  /** One developer's post, as a notice about it opens it. */
+  fetchNewsPost(
+    initData: string,
+    appid: number,
+    gid: string,
+    game?: { platform: string; title_id: string },
+  ): Promise<NewsPost & { game: { name: string; icon_url: string | null } | null }> {
+    return this.get(initData, CLUB_ROUTES.NEWS_POST, {
+      appid,
+      gid,
+      platform: game?.platform,
+      title_id: game?.title_id,
+    });
+  }
+
   fetchNews(initData: string, opts?: { month?: string }): Promise<NewsResponse> {
     return this.get<NewsResponse>(initData, CLUB_ROUTES.NEWS, { scope: "following", month: opts?.month });
   }

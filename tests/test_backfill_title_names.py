@@ -3,7 +3,7 @@
 A query rather than logic, and the kind that looks obvious and is easy to get
 subtly wrong — the owner pairing especially, which must never hand back
 somebody whose Xbox login is dead. (The other gap, rows with no platform,
-closed for good with migration 089.)
+closed for good with migration 090.)
 """
 
 from __future__ import annotations

@@ -250,7 +250,15 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         except EmailInvalid:
             address = None
         mail_ready = request.app.get("mini_email_login") is not None
-        if mail_ready and address is not None and await repo.person_by_email(address) is None:
+        person = await repo.person_by_email(address) if address is not None else None
+        passkeys = request.app.get("mini_passkeys")
+        if person is not None and passkeys is not None and body.get("passkey") is True:
+            # An address with a key signs in with the key (owner, 2026-10-08):
+            # no mail; the app asks for a code only if the key is not at hand.
+            keys = await repo.passkeys_of(person)
+            if keys:
+                return web.json_response({"passkey": True, **passkeys.sign_in_options(keys)})
+        if mail_ready and address is not None and person is None:
             # An address nobody has is a sign-up: its invite is checked before
             # any mail goes out (owner, 2026-10-07), so a stranger costs the
             # mail service nothing. This tells a known address from an unknown

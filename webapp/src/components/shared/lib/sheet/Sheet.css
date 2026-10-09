@@ -364,7 +364,9 @@ button.picker-row.is-game {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* Clipped, yet a face's ring at the edge stays whole. */
+  overflow: clip;
+  overflow-clip-margin: 4px;
 }
 
 @keyframes veil-in {

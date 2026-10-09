@@ -119,3 +119,44 @@ async def test_an_excluded_person_hears_no_game_news(repo: Repo) -> None:
     ]
     await repo.set_excluded(person, True, None)
     assert await repo.game_news_readers(620, played_since="2000-01-01") == []
+
+
+async def test_a_notice_opens_its_own_post(repo: Repo, settings) -> None:
+    """A game's news notice names its post (owner, 2026-10-08): the list hands
+    the app the post to open, a push's link carries it, and the route gives
+    the post itself."""
+    from bot.services.crypto import TokenCipher
+    from bot.services.notifier import Notifier
+
+    person = await _player(repo)
+    today = datetime.now(UTC).isoformat(timespec="seconds")
+    post = _post("p9", today, kind="patch", title="Update 1.2")
+    await repo.save_game_patches(620, [post])
+    notifier = Notifier(repo, TokenCipher(settings.fernet_key.get_secret_value()))
+    await notifier.tell_about_game_news(620, [post])
+    [stored] = await repo.notifications_of(person)
+    assert (stored.data["appid"], stored.data["gid"]) == (620, "p9")
+    notifier._app_url = "https://app.example/app/"
+    assert "n=620%3Ap9" in notifier._url_for("game_news", stored.data)
+
+    app = web.Application(middlewares=[cors_middleware()])
+    setup_mini_api(app, settings, repo)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        assert (await client.get("/api/mini/club/news/post?appid=620&gid=p9")).status == 401
+        client.session.cookie_jar.update_cookies(
+            {"ab_session": await repo.create_session(person, "t")}
+        )
+        listed = await (await client.get("/api/mini/notifications")).json()
+        assert listed["items"][0]["news"] == {"appid": 620, "gid": "p9"}
+        body = await (await client.get("/api/mini/club/news/post?appid=620&gid=p9")).json()
+        assert (body["title"], body["kind"]) == ("Update 1.2", "patch")
+        assert body["url"].endswith("/news/app/620/view/p9")
+        assert body["game"] is None
+        named = await client.get("/api/mini/club/news/post?appid=620&gid=p9&title_id=620")
+        assert (await named.json())["game"]["name"] == "Portal 2"
+        missing = await client.get("/api/mini/club/news/post?appid=620&gid=nope")
+        assert missing.status == 404
+    finally:
+        await client.close()

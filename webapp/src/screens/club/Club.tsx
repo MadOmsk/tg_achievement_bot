@@ -13,7 +13,7 @@ import {
 } from "../../api";
 import { t, type Locale } from "../../i18n";
 import { FeedPosts, HiddenProfile, PersonProfile, PlayedGames, RecentPosts } from "../person";
-import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, PlayedGamesSkel, preloadImages, ScoreCup, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, meScoreLines, telegramPhoto } from "../../components/shared/lib";
+import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, HomeBodySkel, HomeSkel, PersonSkel, PlayedGamesSkel, preloadImages, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
   FriendsStrip,
@@ -116,8 +116,6 @@ export function Club({
   const [theirSheet, setTheirSheet] = useState<number | null>(null);
   // Who among the people followed follows back: the friend mark on Home's strip.
   const [myFriends, setMyFriends] = useState<Set<number>>(new Set());
-  // Whether the profile open is the viewer's friend, for the mark in its bar.
-  const [openFriend, setOpenFriend] = useState(false);
   const feedRef = useRef(feed);
   const onlineRef = useRef(online);
   feedRef.current = feed;
@@ -281,12 +279,10 @@ export function Club({
     let cancelled = false;
     if (refreshKey === 0) {
       setTheirFollows(undefined);
-      setOpenFriend(false);
     }
     peopleApi
       .profile(data, openPersonId)
       .then(async (card) => {
-        if (!cancelled) setOpenFriend(card.relation.friends);
         if (!card.can_view) return null;
         if (openPersonId === me.person_id) {
           const res = await peopleApi.following(data);
@@ -478,7 +474,6 @@ export function Club({
         <PersonProfile
           person={openProfile}
           onOpenCard={() => setAuthor({ id: openProfile.person_id, handle: openProfile.name })}
-          friend={openFriend && openProfile.person_id !== me.person_id}
           people={
             theirFollows === undefined ? (
               <FriendsSkel />
@@ -587,13 +582,6 @@ export function Club({
                     status={
                       statusOf(online.find((m) => m.person_id === me.person_id)) ??
                       t(locale, "notOnline")
-                    }
-                    plats={
-                      <ScoreCup
-                        locale={locale}
-                        lines={meScoreLines(me, locale)}
-                        markSize={12}
-                      />
                     }
                   />
                 </div>

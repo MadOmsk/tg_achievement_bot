@@ -1,4 +1,4 @@
-"""A game is its platform and its id (#147, migration 089): the id spaces of
+"""A game is its platform and its id (#147, migration 090): the id spaces of
 Steam and Xbox overlap, and an Xbox game found to be the other generation
 moves with its achievements instead of splitting."""
 
@@ -60,8 +60,8 @@ async def test_a_360_game_named_through_the_modern_contract_stays_360(repo: Repo
     assert [tuple(row) for row in await cursor.fetchall()] == [("xbox_360", 50)]
 
 
-async def test_migration_089_keys_titles_by_platform(tmp_path) -> None:
-    sql = (MIGRATIONS_DIR / "089_titles_platform_key.sql").read_text(encoding="utf-8")
+async def test_migration_090_keys_titles_by_platform(tmp_path) -> None:
+    sql = (MIGRATIONS_DIR / "090_titles_platform_key.sql").read_text(encoding="utf-8")
     async with aiosqlite.connect(tmp_path / "m089.db") as conn:
         await conn.executescript(
             """

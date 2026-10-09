@@ -16,7 +16,11 @@ progress arc, on the app's own dark ground with a cool glow above and a lilac on
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
-badge) are what the Mini App,
+badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
+`any` icon that Android draws on its launch splash. The sign-in screens write
+the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
+letters kept in `public/fonts` — `shared/lib/wordmark/Wordmark`; its U alone,
+`UMark`, is the install banner's mark) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
@@ -163,6 +167,7 @@ name, or when the tree goes stale.
 │   │   ├── email.py              sending mail: one `EmailSender`, SMTP or (dev) the log (#162)
 │   │   ├── email_login.py        sign-in codes by email: rules, rationing, checking (#162)
 │   │   ├── invites.py            invite codes: their form, and sign-ups waiting for one
+│   │   ├── passkeys.py           passkeys: options, challenges, checking (py_webauthn)
 │   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
 │   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
@@ -214,7 +219,8 @@ name, or when the tree goes stale.
 │   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
 │   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
 │   │                            mini_notifications.py (the list, push subscriptions),
-│                            mini_invites.py (signing up with an invite, a member's codes)
+│                            mini_invites.py (signing up with an invite, a member's codes),
+│                            mini_passkeys.py (adding, listing, signing in with passkeys)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -484,7 +490,7 @@ every column. History: #106.
   `game_patches`, `title_guide_reads` (see Steam guides and patches).
 - **`titles`** — one row per version (one achievement list on one platform),
   **keyed by `(platform, title_id)`** like `seen_achievements` and
-  `title_achievements` (#147, migration 089): Steam appids and Xbox title ids
+  `title_achievements` (#147, migration 090): Steam appids and Xbox title ids
   overlap. Join on both (`_sql.titles_on`). An Xbox id is one game, so a
   lookup by any Xbox value matches either generation (`_sql.platform_is`,
   which also takes `xbox` for a caller that only knows the family, as
@@ -560,7 +566,7 @@ every column. History: #106.
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
 
-### The store side of a game (#147, stage 2; migration 090)
+### The store side of a game (#147, stage 2; migration 091)
 
 What the stores and HLTB say about a game, collected but not shown yet
 (games and their links come in stage 3, the page in stage 5).
@@ -603,7 +609,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
   stand-in (`store = 'list'`) is made from `titles`, and goes once a store
   product is found.
-- **Games** (stage 3, migration 091): `games`, `version_games (version, game,
+- **Games** (stage 3, migration 092): `games`, `version_games (version, game,
   kind, state, source)`, `game_relations` (`remake_of`). After every collection
   `services/game_link.py` re-links the versions around that list
   (`services/game_match.py` decides, no DB access): hard facts first (a store's
@@ -950,7 +956,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block links there with the field focused. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block is a dashed circle with a plus, the size of a face, that opens it with the field focused (owner, 2026-10-08); no platform marks beside a nickname in Home's head or a profile's — the accounts are a tap away on the card. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
@@ -1017,6 +1023,24 @@ elsewhere in this file still describe the bot.
     unused code is deleted by its trash icon.
     `invite_invalid`, `signup_expired`. The dev server's no-code email mode still
     asks for an invite.
+  - **Passkeys** (owner, 2026-10-08; migration 089, `services/passkeys.py`,
+    `web/mini_passkeys.py`, `db/repo/_passkeys.py`): a key on a phone or a
+    computer signs its person in in place of the email's code. Settings →
+    «Вход» → «Ключи доступа» adds one (named by the device, «iPhone · Safari»),
+    lists them and removes one; only in a browser — inside Telegram the app
+    signs in with Telegram. **There is no separate «sign in with a key»**: the
+    sign-in screen sends `/auth/email/start` with `passkey: true` when the
+    browser can use keys, an address with keys is answered with their options
+    instead of a mail, and the phone asks for the key; refused or not at hand,
+    the screen asks again with `passkey: false` and the code goes out.
+    `POST /api/mini/auth/passkey/verify` checks the answer and opens a session.
+    The checking is py_webauthn's (the one dependency added for it: CBOR, COSE
+    and a signature over the browser's data are no place for code of our own):
+    the challenge given out (in memory, five minutes, spent by any answer), the
+    origin and RP id from `MINI_APP_URL` (no https address, no passkeys —
+    `/auth/config` says `passkey`), the stored public half and its count. A key
+    belongs to its domain: one made on a dev tunnel dies with the tunnel. A
+    merge moves the keys with the person.
   - **Asked once for an email** (owner, 2026-10-05; migration 083): somebody
     with no address meets «Добавь почту» on opening the app, after the nickname,
     wherever they opened it — until they add one or say «Позже»
@@ -1096,7 +1120,14 @@ elsewhere in this file still describe the bot.
     `Notifier.tell_about_game_news`) is told to everybody who earned something in
     that game in the last 60 days (`repo.game_news_readers`): in the list always,
     on a channel by its choice (all, patches, news). Only posts of the last two days, two at most a
-    read, and none from an app's first read (its history). A tap opens the game.
+    read, and none from an app's first read (its history). **A tap opens the
+    post itself** (owner, 2026-10-08): the notice keeps its `appid` and `gid`,
+    the list hands them on as `news`, a push's link carries `n=appid:gid`, and
+    `GET /api/mini/club/news/post?appid=&gid=[&title_id=]` gives the post (and
+    the game's name and picture for its head); the post's page opens on its own
+    (`NewsPostLoader`), its game a tap on its head — never the game page under
+    it, which a phone's back would close first. A notice from before keeps
+    opening the game.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
     (RFC 8291, `aes128gcm`) and signs it (VAPID, ES256) with `cryptography`, posts it
     with `httpx`; `tests/test_webpush.py` checks it against the RFC's own example.
@@ -1121,8 +1152,9 @@ elsewhere in this file still describe the bot.
     what it is about (cup, people, a handshake for a friend, news); one line, «**Anastasiafil** получает
     «…» и ещё 2» or «**Gears of War: E-Day** — новый патч»; under it the game or the post; how long ago at the right. Unread rows are in full light with a small
     accent dot left of the face; read ones step back. The list scrolls inside the
-    sheet. A friend's face everywhere carries the same handshake mark
-    (`people/friend-mark`).
+    sheet. A friend's face carries no mark of its own (owner, 2026-10-08:
+    marks on every face cluttered the lists); friends only come first in the
+    strips and lists, and the handshake marks a «new friend» notice.
     Settings → «Уведомления» (owner, 2026-10-06): two blocks with the same rows,
     «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
     the block is there only with Telegram linked); under a switch that is on —

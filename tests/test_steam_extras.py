@@ -209,7 +209,7 @@ async def test_patches_of_played_games_are_refreshed_a_few_at_a_time(
     now = utcnow().isoformat(timespec="seconds")
     for appid in (1, 2, 3, 4):
         # Xbox games whose Steam app is known: a game is its platform and
-        # its id (089), so the rows and the game are both Xbox ones.
+        # its id (090), so the rows and the game are both Xbox ones.
         await repo.upsert_title(str(appid), f"Game {appid}", "xbox_modern")
         await repo.record_steam_appid("xbox_modern", str(appid), appid)
         await repo.insert_new_achievements(

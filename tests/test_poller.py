@@ -305,7 +305,7 @@ async def test_a_modern_title_needs_no_separate_name_lookup(repo: Repo, cipher) 
     )
 
     # Titlehub is asked once — for the game's platforms (#114), which a row
-    # that now always knows it is a modern Xbox game is due (089) — never for
+    # that now always knows it is a modern Xbox game is due (090) — never for
     # its name: the name is what the response said, not titlehub's.
     assert client.resolved == ["85494077"]
     assert await repo.title_name("xbox", "85494077") == "Gears of War"

@@ -1,4 +1,4 @@
-"""The store side of a game (#147, migration 090): versions, their store ids
+"""The store side of a game (#147, migration 091): versions, their store ids
 and DLC, the new HLTB entries, each source's last answer and when to ask it
 again."""
 
