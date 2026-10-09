@@ -67,7 +67,8 @@ def _button(
 
 def _page(title: str, body: str) -> web.Response:
     nav = (
-        '<a href="/">home</a> · <a href="/titles">titles</a> · <a href="/versions">versions</a>'
+        '<a href="/">home</a> · <a href="/games">games</a> · <a href="/review">review</a>'
+        ' · <a href="/titles">titles</a> · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
         ' · <a href="/payloads">payloads</a>'
     )
@@ -154,6 +155,8 @@ def _search_form(action: str, q: str) -> str:
 
 
 _HOME_LINKS = {
+    "games": "/games",
+    "version_games": "/review",
     "titles": "/titles",
     "versions": "/versions",
     "version_store_ids": "/versions",
@@ -170,6 +173,8 @@ async def home(request: web.Request) -> web.Response:
         counts = [
             (table, conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             for table in (
+                "games",
+                "version_games",
                 "titles",
                 "versions",
                 "version_store_ids",
@@ -240,6 +245,7 @@ async def title(request: web.Request) -> web.Response:
         "<p>"
         + _button(f"{here}/collect", "collect (only what is due)")
         + _button(f"{here}/collect", "collect now (force)", {"force": 1})
+        + _button(f"{here}/relink", "re-link into games")
         + "</p>"
     )
     resets = "".join(
@@ -313,6 +319,12 @@ async def version(request: web.Request) -> web.Response:
             if row is not None and row["store_group"]
             else []
         )
+        games = conn.execute(
+            "SELECT vg.game_id, g.name, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
+            " FROM version_games vg JOIN games g ON g.game_id = vg.game_id"
+            " WHERE vg.version_id = ? ORDER BY vg.state, vg.game_id",
+            (version_id,),
+        ).fetchall()
         payloads = (
             conn.execute(
                 "SELECT subject, source, fetched_at, length(payload) AS bytes FROM source_payloads"
@@ -352,6 +364,11 @@ async def version(request: web.Request) -> web.Response:
         _flash(request)
         + controls
         + _record(row, {"title_id": _title_href})
+        + "<h2>Games</h2>"
+        + _table(games, {"game_id": _game_href, "name": _game_href})
+        + "".join(
+            _decisions(version_id, g["game_id"], here) for g in games if g["state"] == "review"
+        )
         + "<h2>Store ids</h2>"
         + _table(ids)
         + "<h2>Same store group (the store's own grouping)</h2>"
@@ -530,6 +547,253 @@ async def version_delete(request: web.Request) -> web.Response:
     raise _back("/versions", f"version {version_id} deleted")
 
 
+def _game_href(row: sqlite3.Row) -> str:
+    return f"/game/{row['game_id']}"
+
+
+_DECISIONS = (
+    ("version", "same game: a version"),
+    ("remaster", "remaster"),
+    ("edition", "edition"),
+    ("demo", "demo"),
+    ("compilation", "part of a compilation"),
+    ("remake", "remake: another game"),
+    ("different", "a different game"),
+)
+
+
+def _decisions(version_id: int, game_id: int, back: str) -> str:
+    """The operator's answers to one review row."""
+    return (
+        f"<p>version {version_id} → game {game_id}: "
+        + "".join(
+            _button(
+                "/decide",
+                label,
+                {"version_id": version_id, "game_id": game_id, "decision": key, "back": back},
+            )
+            for key, label in _DECISIONS
+        )
+        + "</p>"
+    )
+
+
+async def games(request: web.Request) -> web.Response:
+    q = request.query.get("q", "")
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT g.game_id, g.name, g.year, g.name_source,"
+            "  (SELECT COUNT(*) FROM version_games vg WHERE vg.game_id = g.game_id"
+            "   AND vg.state = 'linked') AS versions,"
+            "  (SELECT COUNT(*) FROM version_games vg WHERE vg.game_id = g.game_id"
+            "   AND vg.state = 'review') AS review,"
+            "  (SELECT GROUP_CONCAT(DISTINCT v.console) FROM version_games vg"
+            "   JOIN versions v ON v.version_id = vg.version_id"
+            "   WHERE vg.game_id = g.game_id AND vg.state = 'linked') AS consoles"
+            " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name LIKE ?)"
+            " ORDER BY versions DESC, g.game_id DESC LIMIT ?",
+            (q, f"%{q}%", PAGE_SIZE * 3),
+        ).fetchall()
+    return _page(
+        "Games",
+        _flash(request)
+        + _search_form("/games", q)
+        + _table(rows, {"game_id": _game_href, "name": _game_href}),
+    )
+
+
+async def game(request: web.Request) -> web.Response:
+    game_id = int(request.match_info["game_id"])
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
+        members = conn.execute(
+            "SELECT vg.version_id, v.store, v.console, v.name, v.release_date, v.developer,"
+            " v.platform, v.title_id, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
+            " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+            " WHERE vg.game_id = ? ORDER BY vg.state, v.release_date, v.console",
+            (game_id,),
+        ).fetchall()
+        relations = conn.execute(
+            "SELECT r.kind, r.related_id AS game_id, g.name, r.source FROM game_relations r"
+            " JOIN games g ON g.game_id = r.related_id WHERE r.game_id = ?"
+            " UNION ALL SELECT r.kind || ' (of this)', r.game_id, g.name, r.source"
+            " FROM game_relations r JOIN games g ON g.game_id = r.game_id WHERE r.related_id = ?",
+            (game_id, game_id),
+        ).fetchall()
+        dlcs = conn.execute(
+            "SELECT v.console, d.name, d.kind, d.release_date FROM dlcs d"
+            " JOIN version_games vg ON vg.version_id = d.version_id AND vg.state = 'linked'"
+            " JOIN versions v ON v.version_id = d.version_id WHERE vg.game_id = ?"
+            " ORDER BY d.name, v.console",
+            (game_id,),
+        ).fetchall()
+        hltb = conn.execute(
+            "SELECT DISTINCT h.hltb_id, h.name, h.game_type FROM version_hltb vh"
+            " JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
+            " JOIN version_games vg ON vg.version_id = vh.version_id AND vg.state = 'linked'"
+            " WHERE vg.game_id = ?",
+            (game_id,),
+        ).fetchall()
+    here = f"/game/{game_id}"
+    controls = ""
+    if row is not None:
+        controls = (
+            f'<form method=post action="{here}/rename">name: '
+            f'<input name=name value="{escape(row["name"])}" size=40> '
+            f'ru: <input name=name_ru value="{escape(row["name_ru"] or "")}" size=30> '
+            "<button>rename</button></form>"
+            f'<form method=post action="{here}/merge">merge this game into game id: '
+            "<input name=into size=8> <button>merge</button></form>"
+            f'<form method=post action="{here}/relate">this game is a remake of game id: '
+            "<input name=related size=8> <button>link</button></form>"
+        )
+    detach = "".join(
+        "<p>"
+        + _button(
+            f"{here}/detach",
+            f"detach version {m['version_id']} ({m['console']})",
+            {"version_id": m["version_id"]},
+        )
+        + "</p>"
+        for m in members
+        if m["state"] == "linked"
+    )
+    reviews = "".join(
+        _decisions(m["version_id"], game_id, here) for m in members if m["state"] == "review"
+    )
+    body = (
+        _flash(request)
+        + controls
+        + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
+        + "<h2>Versions</h2>"
+        + _table(
+            members, {"version_id": _version_href, "name": _version_href, "title_id": _title_href}
+        )
+        + ("<h2>To review</h2>" + reviews if reviews else "")
+        + "<h2>Related games</h2>"
+        + _table(relations, {"game_id": _game_href, "name": _game_href})
+        + "<h2>DLC (of its versions)</h2>"
+        + _table(dlcs)
+        + "<h2>HLTB</h2>"
+        + _table(hltb, {"hltb_id": _hltb_href, "name": _hltb_href})
+        + "<h2>Detach</h2>"
+        + detach
+    )
+    return _page(row["name"] if row else f"Game {game_id}", body)
+
+
+async def review(request: web.Request) -> web.Response:
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT vg.version_id, v.name AS version, v.console, v.release_date,"
+            " vg.game_id, g.name AS game, vg.kind, vg.score, vg.reasons"
+            " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+            " JOIN games g ON g.game_id = vg.game_id WHERE vg.state = 'review'"
+            " ORDER BY vg.decided_at DESC LIMIT ?",
+            (PAGE_SIZE,),
+        ).fetchall()
+    parts = []
+    for r in rows:
+        parts.append(
+            f'<hr><p><a href="/version/{r["version_id"]}">{escape(r["version"] or "")}</a>'
+            f" [{escape(r['console'])}, {escape(r['release_date'] or '?')}] →"
+            f' <a href="/game/{r["game_id"]}">{escape(r["game"])}</a>'
+            f" · {escape(r['reasons'] or '')}</p>"
+            + _decisions(r["version_id"], r["game_id"], "/review")
+        )
+    return _page("To review", _flash(request) + ("".join(parts) or "<p>(nothing to review)</p>"))
+
+
+async def decide(request: web.Request) -> web.Response:
+    form = await request.post()
+    version_id, game_id = int(str(form["version_id"])), int(str(form["game_id"]))
+    decision, back = str(form["decision"]), str(form.get("back") or "/review")
+    repo = _repo(request)
+    if decision in ("version", "remaster", "edition", "demo", "compilation"):
+        await repo.set_link(
+            version_id, game_id, kind=decision, state="linked", source="manual", decided_by="viewer"
+        )
+        if decision != "compilation":
+            # It is this game now: out of the one the matcher had put it in.
+            await repo.drop_auto_links(version_id, game_id, "linked")
+    else:
+        await repo.set_link(
+            version_id,
+            game_id,
+            kind="version",
+            state="rejected",
+            source="manual",
+            decided_by="viewer",
+        )
+        if decision == "remake":
+            own = await repo.linked_game_of(version_id)
+            if own is None or own == game_id:
+                own = await repo.create_game(f"version {version_id}", None)
+                await repo.set_link(
+                    version_id, own, kind="version", state="linked", source="manual"
+                )
+            await repo.relate_games(own, game_id, "remake_of", "manual")
+    await repo.drop_empty_games()
+    raise _back(back, f"version {version_id}: {decision}")
+
+
+async def game_rename(request: web.Request) -> web.Response:
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    name = str(form.get("name") or "").strip()
+    if name:
+        await _repo(request).rename_game(
+            game_id, name, str(form.get("name_ru") or "").strip() or None, "manual"
+        )
+    raise _back(f"/game/{game_id}", "renamed")
+
+
+async def game_merge(request: web.Request) -> web.Response:
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    into = str(form.get("into") or "").strip()
+    if not into.isdigit() or int(into) == game_id:
+        raise _back(f"/game/{game_id}", "a game id to merge into, please")
+    await _repo(request).merge_games(game_id, int(into))
+    raise _back(f"/game/{into}", f"game {game_id} merged here")
+
+
+async def game_relate(request: web.Request) -> web.Response:
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    related = str(form.get("related") or "").strip()
+    if not related.isdigit() or int(related) == game_id:
+        raise _back(f"/game/{game_id}", "a game id, please")
+    await _repo(request).relate_games(game_id, int(related), "remake_of", "manual")
+    raise _back(f"/game/{game_id}", f"a remake of game {related}")
+
+
+async def game_detach(request: web.Request) -> web.Response:
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    version_id = int(str(form["version_id"]))
+    repo = _repo(request)
+    await repo.set_link(
+        version_id, game_id, kind="version", state="rejected", source="manual", decided_by="viewer"
+    )
+    own = await repo.create_game(f"version {version_id}", None)
+    await repo.set_link(
+        version_id, own, kind="version", state="linked", source="manual", decided_by="viewer"
+    )
+    raise _back(f"/game/{own}", f"version {version_id} detached into its own game: rename it")
+
+
+async def relink(request: web.Request) -> web.Response:
+    from bot.services.game_link import GameLinker
+
+    platform, title_id = request.match_info["platform"], request.match_info["title_id"]
+    report = await GameLinker(_repo(request)).link_title(platform, title_id)
+    raise _back(
+        f"/title/{quote(platform)}/{quote(title_id)}",
+        f"games {sorted(report.games)}; to review {len(report.review)}",
+    )
+
+
 async def _open(app: web.Application) -> None:
     from bot.config import get_settings
     from bot.services.crypto import TokenCipher
@@ -554,6 +818,15 @@ def build(db_path: Path) -> web.Application:
     app.on_cleanup.append(_close)
     app.router.add_post("/title/{platform}/{title_id}/collect", collect)
     app.router.add_post("/fetch/due", fetch_due)
+    app.router.add_get("/games", games)
+    app.router.add_get("/game/{game_id:\\d+}", game)
+    app.router.add_get("/review", review)
+    app.router.add_post("/decide", decide)
+    app.router.add_post("/game/{game_id:\\d+}/rename", game_rename)
+    app.router.add_post("/game/{game_id:\\d+}/merge", game_merge)
+    app.router.add_post("/game/{game_id:\\d+}/relate", game_relate)
+    app.router.add_post("/game/{game_id:\\d+}/detach", game_detach)
+    app.router.add_post("/title/{platform}/{title_id}/relink", relink)
     app.router.add_post("/version/{version_id:\\d+}/title", version_title)
     app.router.add_post("/version/{version_id:\\d+}/hltb", version_hltb_link)
     app.router.add_post(

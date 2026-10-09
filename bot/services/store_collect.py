@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from bot.services.game_link import GameLinker
 from bot.services.stores import StoreVersion, hltb_page, psn_store, steam_store, xbox_catalog
 from bot.util import utcnow
 
@@ -45,6 +46,8 @@ class CollectReport:
     versions: list[int] = field(default_factory=list)
     dlcs: int = 0
     hltb_id: int | None = None
+    games: list[int] = field(default_factory=list)
+    review: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -80,11 +83,15 @@ class StoreCollector:
                 await self._steam(title_id, report, force)
             elif platform == "xbox_modern":
                 await self._xbox(title_id, report, force)
-            elif platform == "xbox_360":
-                await self._x360(title_id, report)
             elif platform == "psn":
                 await self._psn(title_id, report, force)
+            await self._list_version(platform, title_id, report)
             await self._hltb(platform, title_id, report, force)
+            if report.asked or report.versions:
+                # What it is now known to be, put into games (stage 3).
+                linked = await GameLinker(self._repo).link_title(platform, title_id)
+                report.games = sorted(linked.games)
+                report.review = len(linked.review)
         if report.asked:
             log.info(
                 "store collection %s %s: asked %s, versions %s, dlc %s, hltb %s%s",
@@ -214,23 +221,32 @@ class StoreCollector:
             report.dlcs += 1
         return changed
 
-    async def _x360(self, title_id: str, report: CollectReport) -> None:
-        """A 360 game has no store answer to read: its version is the list
-        itself, named as `titles` names it."""
-        record = await self._repo.title_record("xbox_360", title_id)
+    async def _list_version(self, platform: str, title_id: str, report: CollectReport) -> None:
+        """Every achievement list is at least one version, so it can be put
+        into a game: a store product when a store found one, otherwise the
+        list itself as `titles` describes it (`store` = `list`) — a 360 game,
+        an Xbox card the catalog no longer carries, a PSN list not proved.
+        Once a store product is found, the stand-in goes."""
+        versions = await self._repo.versions_of_title(platform, title_id)
+        real = [v for v in versions if v["store"] != "list"]
+        stand_ins = [v for v in versions if v["store"] == "list"]
+        if real:
+            for version in stand_ins:
+                await self._repo.delete_version(int(version["version_id"]))
+            return
+        record = await self._repo.title_record(platform, title_id)
         if not record:
             return
         version = StoreVersion(
-            store="x360",
-            product_id=title_id,
-            console="360",
+            store="list",
+            product_id=f"{platform}:{title_id}",
+            console=_console_of(platform, str(record.get("platforms") or "")),
             name=str(record.get("name") or "") or None,
             name_ru=record.get("name_ru"),  # type: ignore[arg-type]
             kind="game",
-            store_ids=[("xbox_title", title_id)],
         )
         report.versions.append(
-            await self._repo.save_version(version, platform="xbox_360", title_id=title_id)
+            await self._repo.save_version(version, platform=platform, title_id=title_id)
         )
 
     # ------------------------------------------------------------ PSN
@@ -331,3 +347,22 @@ class StoreCollector:
     async def _title_steam_appid(self, platform: str, title_id: str) -> int | None:
         steam = await self._repo.title_steam(platform, title_id)
         return steam.steam_appid if steam else None
+
+
+def _console_of(platform: str, platforms: str) -> str:
+    """The console a list stands for, from the platforms `titles` keeps:
+    the newest one it names, as a version is one console."""
+    from bot.services.platform_format import ONE, PS4, PS5, SERIES, X360, parse_platforms
+
+    found = parse_platforms(platforms)
+    if platform == "xbox_360":
+        return X360
+    if platform == "steam":
+        return "steam"
+    if platform == "psn":
+        return PS5 if PS5 in found and PS4 not in found else PS4
+    if SERIES in found and ONE not in found:
+        return SERIES
+    if found == {"pc"}:
+        return "pc"
+    return ONE

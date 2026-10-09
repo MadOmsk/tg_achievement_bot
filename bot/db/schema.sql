@@ -1127,3 +1127,43 @@ CREATE TABLE IF NOT EXISTS fetch_state (
     PRIMARY KEY (subject, source)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_fetch_state_due ON fetch_state(next_check_at);
+
+-- ------------------------------------------------------------------ games (#147, stage 3)
+-- A game over its versions; the link's kind, its state (linked / review /
+-- rejected) and who decided it — the matcher rewrites only its own rows
+-- (migration 091). A remake is another game, linked game -> game.
+
+CREATE TABLE IF NOT EXISTS games (
+    game_id     INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    name_ru     TEXT,
+    year        INTEGER,
+    name_source TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
+    merged_into INTEGER REFERENCES games(game_id),  -- an old id keeps resolving
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS version_games (
+    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,   -- version / edition / remaster / compilation / demo
+    state      TEXT NOT NULL,   -- linked / review / rejected
+    source     TEXT NOT NULL,   -- auto / manual
+    score      REAL,
+    reasons    TEXT,            -- JSON list: the signals that decided it
+    decided_by TEXT,
+    decided_at TEXT NOT NULL,
+    PRIMARY KEY (version_id, game_id)
+);
+CREATE INDEX IF NOT EXISTS idx_version_games_game ON version_games(game_id, state);
+
+CREATE TABLE IF NOT EXISTS game_relations (
+    game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    related_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,   -- remake_of
+    source     TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (game_id, related_id, kind),
+    CHECK (game_id <> related_id)
+);

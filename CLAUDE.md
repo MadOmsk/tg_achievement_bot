@@ -599,8 +599,26 @@ What the stores and HLTB say about a game, collected but not shown yet
   up on for 30 days after three. **No whole-library walk** (owner, 2026-10-09).
 - **Raw answers** are kept in `source_payloads`, zlib JSON, the latest only, not
   rewritten when the hash is the same — never as columns on `titles`.
-- By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look:
-  `scripts/catalog_viewer.py` (local, bare HTML, read-only).
+- **Every achievement list is at least one version**: when no store describes it
+  (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
+  stand-in (`store = 'list'`) is made from `titles`, and goes once a store
+  product is found.
+- **Games** (stage 3, migration 091): `games`, `version_games (version, game,
+  kind, state, source)`, `game_relations` (`remake_of`). After every collection
+  `services/game_link.py` re-links the versions around that list
+  (`services/game_match.py` decides, no DB access): hard facts first (a store's
+  own group, an HLTB entry, a demo's game), then the cut name (a differing number
+  is never the same game), **and a proof** — the achievements' names agreeing
+  (≥ 60%) or the release years close. A name alone, years far apart, a year
+  unknown or two different achievement lists go to the **review list** (one row
+  per version, on the side less is known about). The matcher rewrites only its
+  own (`auto`) rows: a `manual` link stays and a `manual` rejection keeps a
+  version out of that game. **Disputed pairs are the operator's** (owner,
+  2026-10-09; Haiku may advise one day, not decide).
+- By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
+  decide: `scripts/catalog_viewer.py` (bare HTML; games, the review list with
+  its answers, merge / detach / rename, collect, re-link). **No authentication
+  yet** (#186).
 
 ### Secrets
 

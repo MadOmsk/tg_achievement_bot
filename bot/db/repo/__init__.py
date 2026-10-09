@@ -51,6 +51,8 @@ Layout:
                     moments their descriptions mark (086).
     _stores.py      the store side of a game: versions, DLC, the new HLTB
                     entries, each source's last answer and when to ask again (090).
+    _games.py       games over versions: which game each version is, how, and
+                    who decided it (091).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -78,6 +80,7 @@ from bot.db.repo._database import (
 from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._follows import FollowTooSoon, PersonRow, _FollowsRepo
+from bot.db.repo._games import _GamesRepo
 from bot.db.repo._guides import GuideChannel, GuideMoment, GuideVideoRow, _GuidesRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
 from bot.db.repo._invites import InviteRow, _InvitesRepo
@@ -218,6 +221,7 @@ class Repo(
     _InvitesRepo,
     _GuidesRepo,
     _StoresRepo,
+    _GamesRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 
