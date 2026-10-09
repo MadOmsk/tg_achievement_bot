@@ -1176,6 +1176,16 @@ elsewhere in this file still describe the bot.
   «Охотятся вместе» lists each achievement once, with the faces of everybody
   who earned it (as the game page's compare), the most shared first; its page is
   titled «Охотятся вместе», the game under the head.
+- **No global month** (owner, 2026-10-09): no month chip in a page's head.
+  Home and a profile open on the month now, their gallery stays on it, and
+  the «Игры» block picks its own month at its right
+  (`person/games-section/GamesSection`, a past month read with
+  `/club/people?month=`; the sort toggle left of it). The Feed
+  changes month in its day calendar — its arrows walk every month with posts
+  and load the one stepped to, the calendar staying open as its days fill in.
+  News is the month now; only the Ranking keeps a month in its head. Somebody
+  else's profile has the follow control (`FollowButton`: follow, or «Подписан
+  ⌄» with unfollow and block) at its head's right.
 - **No drawers: pages** (owner, 2026-10-07; `shared/lib/sheet/Sheet`): what rose
   from the bottom as a drawer — notifications, a person's card, follows, the
   month's games, a ranking's lists, an achievement, an HLTB game, the merge — is
@@ -1186,7 +1196,7 @@ elsewhere in this file still describe the bot.
   game account is open, several start closed. The follows page names its list in the head and picks it at the
   right (following / friends / followers / blocked, each with its count), and
   searches the list shown by nickname under the head. A pick from a short list is the `Dropdown`, never a page: the
-  month, the ranking's day / month. The day to jump to in a feed is the month's
+  games block's month, the ranking's month and day / month. The day to jump to in a feed is the month's
   calendar unfolding under the day's label, the screen's width
   (`person/day-jump/DayCalendar`: days with posts enabled, with their counts).
   The feed's posts are built as the reader nears the end (`FeedPosts`, eight
@@ -1739,7 +1749,11 @@ sent to a chat.
 - **An achievement has a page of its own** (owner, 2026-10-05;
   `components/game/achievement-page/AchievementPage`, on the same layout as a
   post's page, `components/game/post-page/PostPage.css`): a row on the game page
-  opens it (a secret one is revealed first). The game in the head, its rarity and
+  opens it (a secret one is revealed first), and so does a tap on a post in
+  the Feed, a card in Home's gallery or a row of the Ranking's lists («Охотятся
+  вместе», rare finds) (owner, 2026-10-09;
+  `AchievementLoader`, opened through `useOpenAchievement` like a game) — over
+  everything, on its own; the post's or card's game line is what opens the game. The game in the head, its rarity and
   points (or trophy) at the head's right, as the game page shows its score; the
   picture whole; when it was earned; its name and description; then «Как
   получить», the Steam guides' tip whole, when there is one — a row with a tip
@@ -1752,7 +1766,7 @@ sent to a chat.
   of a post's or an achievement's page, and a face that zooms. Never on Steam. As
   large as the screen allows, all of it; two fingers zoom and move it, a double
   tap zooms in or back; a tap at its own size or the phone's back closes it —
-  nothing is drawn over the picture. The feeds keep their taps (a post opens its game or its page).
+  nothing is drawn over the picture. The feeds keep their taps (an achievement's post opens the achievement, a news post its page).
 - **A post's frame is its picture's shape** (owner, 2026-10-05; both feeds,
   `shared/lib/img-ratio`): proportions read when the picture loads and
   remembered (`localStorage`), kept between 4:5 and 1.91:1; beyond that the

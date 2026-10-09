@@ -245,3 +245,10 @@ button.person-back:focus-visible {
 .dock button {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Somebody else's head: the follow control at its right, as on their card. */
+.person-bar .person-bar-aside {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 10px;
+}
