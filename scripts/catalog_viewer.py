@@ -68,7 +68,8 @@ def _button(
 def _page(title: str, body: str) -> web.Response:
     nav = (
         '<a href="/">home</a> · <a href="/games">games</a> · <a href="/review">review</a>'
-        ' · <a href="/titles">titles</a> · <a href="/versions">versions</a>'
+        ' · <a href="/rules">rules</a> · <a href="/titles">titles</a>'
+        ' · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
         ' · <a href="/payloads">payloads</a>'
     )
@@ -578,6 +579,64 @@ def _decisions(version_id: int, game_id: int, back: str) -> str:
     )
 
 
+async def rules(request: web.Request) -> web.Response:
+    """How the matcher decides, with the numbers it decides by now."""
+    from bot.services import game_match as m
+
+    rows = [
+        (
+            "1",
+            "A demo whose name the game's opens, nothing numbered after it, released within",
+            f"{m.NEAR_YEARS} year → linked (demo)",
+        ),
+        (
+            "2",
+            "Same store group (Xbox ProductGroup / PSN concept), same HLTB entry,"
+            " Steam's parent app",
+            "linked — unless the numbers in the names differ",
+        ),
+        ("3", "Cut names alike below", f"{m.NAME_FLOOR} → apart"),
+        (
+            "3",
+            'One cut name inside the other ("Modern Warfare 2" ⊂ "Call of Duty: …")',
+            f"name = {m.CONTAINED_NAME}",
+        ),
+        ("3", "Different numbers (Halo / Halo 2, Battlefront / Battlefront II)", "apart"),
+        (
+            "4",
+            f"Achievements' names agree ≥ {m.ACHIEVEMENTS_SAME:.0%}"
+            f" (both lists ≥ {m.ACHIEVEMENTS_MIN})",
+            "score ≥ 0.95, and that is proof",
+        ),
+        (
+            "4",
+            f"Achievements' names agree ≤ {m.ACHIEVEMENTS_OTHER:.0%}",
+            "review (two lists of their own)",
+        ),
+        ("5", "Same developer / same publisher", "+0.05 / +0.02"),
+        ("6", f"Years {m.FAR_YEARS}+ apart, no achievements proof", "review"),
+        ("6", f"Years more than {m.NEAR_YEARS} apart", "−0.05 a year past the first"),
+        ("6", f"Years within {m.NEAR_YEARS}", "proof"),
+        ("6", "A year unknown", "no proof from years"),
+        ("7", f"Score ≥ {m.LINK_SCORE} with a proof (achievements or close years)", "linked"),
+        ("7", f"Score ≥ {m.REVIEW_SCORE}", "review"),
+        ("7", "Otherwise", "apart"),
+    ]
+    body = (
+        "<p>Each pair of versions sharing a telling word is compared; linked pairs make one game, "
+        "a review pair is filed once per version, on the side less is known about. "
+        "Manual decisions are never rewritten.</p><table border=1 cellpadding=3>"
+        "<tr><th>step</th><th>when</th><th>then</th></tr>"
+        + "".join(
+            f"<tr><td>{a}</td><td>{escape(b)}</td><td>{escape(c)}</td></tr>" for a, b, c in rows
+        )
+        + "</table><p>Kinds from the name: demo / trial / beta / prologue → demo; remaster(ed) /"
+        " definitive / reloaded / anniversary / redux / HD / enhanced / director's cut → remaster;"
+        " GOTY / complete / deluxe / ultimate / gold / premium / legendary → edition.</p>"
+    )
+    return _page("How versions are matched", body)
+
+
 async def games(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
@@ -819,6 +878,7 @@ def build(db_path: Path) -> web.Application:
     app.router.add_post("/title/{platform}/{title_id}/collect", collect)
     app.router.add_post("/fetch/due", fetch_due)
     app.router.add_get("/games", games)
+    app.router.add_get("/rules", rules)
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
     app.router.add_post("/decide", decide)
