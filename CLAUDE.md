@@ -159,7 +159,7 @@ name, or when the tree goes stale.
 │   │   ├── achievement_icons.py  achievement icons on disk under data/achievements/ (#99)
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
-│   │   ├── post_picture.py       a post's picture laid out on a square, at send time
+│   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -784,19 +784,21 @@ isn't muted there; it wasn't already published there.
   fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
-- **A post's picture is a square of one size** (owner, 2026-10-10;
-  `services/post_picture.py`), so every post is one width and a 64 px icon
-  is not a thumbnail: a small icon at about half the square, rounded, in the
-  middle; large square art fills it; large art of another shape is whole, on
-  its own blurred copy. Round a small icon is the admin's style
-  (`app_settings['post_picture_style']`, /admin → Правила): `off` (as before,
-  the default), `color` (the icon's average colour) or `cover` (the game's
-  cover, blurred and darkened; the colour without one). **The original is
-  stored, the square is drawn when sent** (gallery included; anything that
-  cannot be drawn goes as before), so a style is changed, not migrated. The
-  user card's «🖼 Тест картинок постов» sends the person's latest achievement on
-  each platform in every style to the super-admin's own DM. The Mini App is
-  to draw the same layout from the same originals.
+- **A low-resolution post picture is enlarged on a square** (owner,
+  2026-10-10; `services/post_picture.py`). **The original is what is
+  stored** (icon cache, cover, URLs); the square is drawn when a post is
+  sent, single or album, and kept nowhere. **A high-resolution picture goes
+  as it is.** A low-resolution one (under 200 px on its longer side —
+  Steam's and Xbox 360's 64 px icons) is enlarged by a cheap filter
+  (bicubic), ×2 or ×3 (`app_settings['post_picture_scale']`), and set in
+  the middle of a square ground (the icon 60% of it), rounded, with a
+  shadow. The ground is the admin's style (`post_picture_style`, /admin →
+  Правила): `off` (as before, the default), `color` (the icon's average
+  colour) or `cover` (the game's cover, blurred and darkened; the colour
+  without one). Anything that cannot be drawn goes as before. The user
+  card's «🖼 Тест картинок постов» sends the person's latest achievement on
+  each platform as today, ×2 and ×3 on each ground, to the super-admin's
+  own DM. The Mini App is not touched by this.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1390,7 +1392,7 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, the digest size, profile links, the post picture · Новые пользователи: the
+  rarity threshold, the digest size, profile links, the post picture and its scale · Новые пользователи: the
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.

@@ -86,9 +86,10 @@ async def send_promo(bot: Bot, chat_id: int, locale: str, mini_app_url: str | No
 async def send_picture_samples(
     bot: Bot, repo: Repo, person_id: int, chat_id: int, *, locale: str
 ) -> int:
-    """The person's latest achievement on each platform, as a post in every
-    picture style — as sent today, then each square style — to `chat_id`, the
-    super-admin's DM (owner, 2026-10-10). Answers how many pictures went."""
+    """The person's latest achievement on each platform, as a post as sent
+    today, then — for a low-resolution icon — enlarged ×2 and ×3 on each
+    ground, to `chat_id`, the super-admin's DM (owner, 2026-10-10). Answers
+    how many pictures went."""
     user = await repo.get_user(person_id)
     if user is None:
         return 0
@@ -121,11 +122,18 @@ async def send_picture_samples(
     for item in picked.values():
         text = format_single(name, item, item.title_name, locale=locale)
         icon, cover = await post_picture.sources(repo, item)
-        for style in post_picture.STYLES:
-            data = await post_picture.build(icon, cover, style)
-            if style != post_picture.STYLE_OFF and data is None:
-                continue
-            note = gettext("admin", f"admin-post-picture-{style}", locale=locale)
+        variants: list[tuple[str, bytes | None]] = []
+        for scale in post_picture.SCALES:
+            for style in (post_picture.STYLE_COLOR, post_picture.STYLE_COVER):
+                data = await post_picture.build(icon, cover, style, scale)
+                if data is not None:
+                    note = gettext("admin", f"admin-post-picture-{style}", locale=locale)
+                    variants.append((f"×{scale} · {note}", data))
+        # As today first; alone, and said so, when the icon is of high
+        # resolution and goes as it is.
+        first = "admin-post-picture-off" if variants else "admin-picture-test-high-res"
+        variants.insert(0, (gettext("admin", first, locale=locale), None))
+        for note, data in variants:
             try:
                 await bot.send_photo(
                     chat_id,
@@ -136,6 +144,6 @@ async def send_picture_samples(
                 )
                 sent += 1
             except Exception as exc:
-                log.info("a picture sample (%s) did not go through: %r", style, exc)
+                log.info("a picture sample (%s) did not go through: %r", note, exc)
             await asyncio.sleep(0.3)
     return sent

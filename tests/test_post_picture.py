@@ -1,5 +1,5 @@
-"""services/post_picture.py: a post's picture laid out on a square (owner,
-2026-10-10), and the publisher sending it."""
+"""services/post_picture.py: a low-resolution post picture enlarged on a
+square, a high-resolution one left as it is (owner, 2026-10-10)."""
 
 from __future__ import annotations
 
@@ -16,75 +16,77 @@ def _png(size: tuple[int, int], color=(200, 30, 30, 255)) -> bytes:
     return out.getvalue()
 
 
-def _size(data: bytes) -> tuple[int, int]:
-    return Image.open(io.BytesIO(data)).size
+def _picture(data: bytes) -> Image.Image:
+    return Image.open(io.BytesIO(data)).convert("RGB")
 
 
-def test_a_small_icon_lands_in_the_middle_of_a_square() -> None:
-    data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COLOR)
-    assert data is not None and _size(data) == (post_picture.SIDE, post_picture.SIDE)
-    picture = Image.open(io.BytesIO(data)).convert("RGB")
-    middle = picture.getpixel((post_picture.SIDE // 2, post_picture.SIDE // 2))
-    corner = picture.getpixel((2, 2))
-    # The icon's own red in the middle, a darker ground of its colour round it.
-    assert middle[0] > 150 and middle[1] < 80
-    assert sum(corner) < sum(middle)
+def test_a_low_res_icon_is_enlarged_two_or_three_times_on_a_square() -> None:
+    for scale in (2, 3):
+        data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COLOR, scale=scale)
+        assert data is not None
+        picture = _picture(data)
+        side = round(64 * scale / post_picture.ICON_SHARE)
+        assert picture.size == (side, side)
+        middle = picture.getpixel((side // 2, side // 2))
+        corner = picture.getpixel((1, 1))
+        # The icon's own red in the middle, a darker ground of its colour round it.
+        assert middle[0] > 150 and middle[1] < 80
+        assert sum(corner) < sum(middle)
+
+
+def test_a_high_res_picture_is_left_as_it_is() -> None:
+    for size in ((256, 256), (1920, 1080), (240, 240)):
+        assert post_picture.compose(_png(size), post_picture.STYLE_COVER, _png((300, 400))) is None
 
 
 def test_the_cover_style_puts_the_cover_round_the_icon() -> None:
     cover = _png((300, 400), (20, 200, 20, 255))
     data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COVER, cover)
     assert data is not None
-    corner = Image.open(io.BytesIO(data)).convert("RGB").getpixel((5, 5))
+    corner = _picture(data).getpixel((3, 3))
     assert corner[1] > corner[0]  # green, from the cover — not the icon's red
 
 
 def test_without_a_cover_the_cover_style_falls_back_to_the_colour() -> None:
     data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COVER, None)
     assert data is not None
-    corner = Image.open(io.BytesIO(data)).convert("RGB").getpixel((5, 5))
+    corner = _picture(data).getpixel((3, 3))
     assert corner[0] > corner[1]
 
 
-def test_large_artwork_keeps_its_whole_picture_on_a_square() -> None:
-    assert _size(post_picture.compose(_png((1920, 1080)), post_picture.STYLE_COLOR)) == (
-        post_picture.SIDE,
-        post_picture.SIDE,
-    )
-    assert _size(post_picture.compose(_png((800, 800)), post_picture.STYLE_COVER)) == (
-        post_picture.SIDE,
-        post_picture.SIDE,
-    )
-
-
-def test_something_that_is_not_a_picture_is_refused() -> None:
+def test_off_or_not_a_picture_draws_nothing() -> None:
+    assert post_picture.compose(_png((64, 64)), post_picture.STYLE_OFF) is None
     assert post_picture.compose(b"not a picture", post_picture.STYLE_COLOR) is None
 
 
 async def test_build_reads_the_first_source_that_loads(tmp_path, monkeypatch) -> None:
-    icon = tmp_path / "icon.png"
-    icon.write_bytes(_png((64, 64), (10, 20, 230, 255)))
+    small = tmp_path / "icon.png"
+    small.write_bytes(_png((64, 64), (10, 20, 230, 255)))
+    large = tmp_path / "art.png"
+    large.write_bytes(_png((1024, 1024)))
 
     async def nothing(url: str) -> None:
         return None
 
     monkeypatch.setattr(post_picture.images, "fetch", nothing)
     missing = str(tmp_path / "gone.png")
-    data = await post_picture.build((missing, str(icon)), (), post_picture.STYLE_COLOR)
-    assert data is not None
-    assert await post_picture.build((str(icon),), (), post_picture.STYLE_OFF) is None
-    assert await post_picture.build(("https://cdn/x.png",), (), post_picture.STYLE_COVER) is None
+    color = post_picture.STYLE_COLOR
+    assert await post_picture.build((missing, str(small)), (), color, 3) is not None
+    assert await post_picture.build((str(large),), (), color, 2) is None
+    assert await post_picture.build((str(small),), (), post_picture.STYLE_OFF, 2) is None
+    assert await post_picture.build(("https://cdn/x.png",), (), post_picture.STYLE_COVER, 2) is None
 
 
-async def test_the_style_is_off_until_the_admin_picks_one(repo) -> None:
+async def test_the_style_is_off_and_the_scale_two_until_the_admin_picks(repo) -> None:
     from bot.services import admin_registry
 
-    assert await post_picture.style_of(repo) == post_picture.STYLE_OFF
+    assert await post_picture.style_of(repo) == (post_picture.STYLE_OFF, 2)
     await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "cover", None)
-    assert await post_picture.style_of(repo) == post_picture.STYLE_COVER
+    await admin_registry.set_value(repo, "global", post_picture.SCALE_KEY, "3", None)
+    assert await post_picture.style_of(repo) == (post_picture.STYLE_COVER, 3)
 
 
-async def test_the_publisher_sends_the_square_and_only_while_a_style_is_on(
+async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(
     repo, monkeypatch, tmp_path
 ) -> None:
     from types import SimpleNamespace
@@ -94,8 +96,10 @@ async def test_the_publisher_sends_the_square_and_only_while_a_style_is_on(
     from bot.poller.publisher import Art, Publisher, PublishJob
     from bot.services import admin_registry
 
-    icon = tmp_path / "icon.png"
-    icon.write_bytes(_png((64, 64)))
+    small = tmp_path / "icon.png"
+    small.write_bytes(_png((64, 64)))
+    large = tmp_path / "art.png"
+    large.write_bytes(_png((1280, 720)))
     sent: list[object] = []
 
     class _Bot:
@@ -103,20 +107,22 @@ async def test_the_publisher_sends_the_square_and_only_while_a_style_is_on(
             sent.append(photo)
             return SimpleNamespace(message_id=5)
 
-    job = PublishJob(
-        chat_id=-1,
-        text="card",
-        gallery=[("https://cdn/icon.png", False)],
-        art=[Art((str(icon), "https://cdn/icon.png"))],
-    )
+    def job(path, url):
+        return PublishJob(
+            chat_id=-1, text="card", gallery=[(url, False)], art=[Art((str(path), url))]
+        )
+
     pub = Publisher(bot=_Bot(), repo=repo)
-    assert await pub._deliver(job) == 5
+    assert await pub._deliver(job(small, "https://cdn/icon.png")) == 5
     assert sent == ["https://cdn/icon.png"]
 
     await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "color", None)
-    assert await pub._deliver(job) == 5
+    await pub._deliver(job(small, "https://cdn/icon.png"))
     assert isinstance(sent[-1], BufferedInputFile)
-    assert _size(sent[-1].data) == (post_picture.SIDE, post_picture.SIDE)
+    assert _picture(sent[-1].data).size[0] == round(128 / post_picture.ICON_SHARE)
+
+    await pub._deliver(job(large, "https://cdn/art.png"))
+    assert sent[-1] == "https://cdn/art.png"
 
 
 async def test_the_test_action_hands_the_person_to_the_panels_sender(repo, settings) -> None:

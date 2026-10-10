@@ -76,8 +76,9 @@ class PublishJob:
     # there is none: the achievement's icon cached on disk, then the game's
     # cover (its file, its URL) — `Picture`s.
     backups: list[Picture] = field(default_factory=list)
-    # Where each gallery picture can be read from, to lay it out on a square
-    # (`services/post_picture.py`): one `Art` per gallery entry, same order.
+    # Where each gallery picture can be read from, to enlarge a low-resolution
+    # one on a square (`services/post_picture.py`): one `Art` per gallery
+    # entry, same order.
     art: list[Art] = field(default_factory=list)
 
 
@@ -417,13 +418,16 @@ class Publisher:
         return art
 
     async def _framed(self, job: PublishJob, count: int) -> list[bytes | None]:
-        """The gallery's first `count` pictures on squares, per the admin's
-        style — None for one that could not be drawn (it goes as before), and
-        nothing at all while the style is off."""
-        style = await post_picture.style_of(self._repo)
+        """The gallery's first `count` pictures, a low-resolution one enlarged
+        on a square per the admin's style — None for one that goes as it is
+        (high resolution, or nothing could be drawn), and nothing at all while
+        the style is off."""
+        style, scale = await post_picture.style_of(self._repo)
         if style == post_picture.STYLE_OFF or not job.art:
             return []
-        return [await post_picture.build(art.icon, art.cover, style) for art in job.art[:count]]
+        return [
+            await post_picture.build(art.icon, art.cover, style, scale) for art in job.art[:count]
+        ]
 
     async def _apply_flood_filter(
         self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]

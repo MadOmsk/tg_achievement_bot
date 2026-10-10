@@ -1,25 +1,23 @@
-"""A post's picture as a square of one size (owner, 2026-10-10).
+"""A low-resolution post picture, enlarged and set on a square (owner,
+2026-10-10).
 
-Telegram sizes a photo message by its picture: a 64 px Steam or Xbox 360
-icon came out as a narrow, blurry card, a wide Xbox artwork as a wide one, and
-on the desktop no two posts were the same width. Here the picture the bot
-already has — the icon as the platform gave it, cached untouched under
-`data/achievements/` — is laid out on a square at the moment it is sent:
+Steam and Xbox 360 hand out 64 px achievement icons; Telegram showed them
+as a tiny, blurry card, every post a different width. Here, at the moment a
+post is sent:
 
-- a small icon is scaled up to about half the square, with rounded corners
-  and a soft shadow, in the middle;
-- a large square picture fills the square;
-- a large picture of another shape is shown whole, as wide as the square,
-  on its own blurred copy.
+- a picture of high resolution goes **as it is**, untouched;
+- a low-resolution one (under `LOW_RES` on its longer side) is enlarged by
+  a cheap filter, ×2 or ×3 (`post_picture_scale`), and set in the middle of a
+  square ground, with rounded corners and a soft shadow.
 
-What is around a small icon is the style, an admin setting (`post_picture_style`):
-`color` — the icon's own average colour, darkened at the edges; `cover` — the
-game's cover, blurred, darkened and paled (the colour when there is no
-cover); `off` — the picture as it is, as before.
+The ground is the style, an admin setting (`post_picture_style`): `color` —
+the icon's own average colour, darker at the edges; `cover` — the game's
+cover, blurred, darkened and paled (the colour when there is no cover);
+`off` — nothing is drawn, as before.
 
-Nothing composed is stored: the originals stay what they were, so a new style
-or a new size is one change here. The Mini App will draw the same layout
-from the same originals.
+**The original is what is stored** (the icon cache, the cover, the URLs in
+the database); nothing composed is kept, so the style and the scale can
+change at any time. The Mini App is not touched by this.
 """
 
 from __future__ import annotations
@@ -46,19 +44,19 @@ STYLE_OFF, STYLE_COLOR, STYLE_COVER = "off", "color", "cover"
 STYLES = (STYLE_OFF, STYLE_COLOR, STYLE_COVER)
 STYLE_DEFAULT = STYLE_OFF
 
-# The square's side: under Telegram's 1280 px, so it is sent as drawn.
-SIDE = 1024
-# Smaller than this on its longer side, a picture is an icon to frame; at
-# least this, it is artwork to show at the square's full width.
-LARGE = 400
-# How much of the square a framed icon takes, on its longer side.
-ICON_SHARE = 0.56
-# Within this of 1:1, a large picture counts as square and fills it.
-SQUARE_TOLERANCE = 0.06
+SCALE_KEY = "post_picture_scale"
+SCALES = (2, 3)
+SCALE_DEFAULT = 2
+
+# Under this on its longer side, a picture is low-resolution (Steam's and
+# Xbox 360's 64 px icons); at least this, it goes as it is.
+LOW_RES = 200
+# How much of the square the enlarged icon takes, on its longer side.
+ICON_SHARE = 0.6
 
 # Composed pictures kept for a while: one achievement goes to several chats.
 _MEMO_SIZE = 32
-_memo: OrderedDict[tuple[str, str, str], bytes] = OrderedDict()
+_memo: OrderedDict[tuple[str, int, str, str], bytes] = OrderedDict()
 
 
 # ------------------------------------------------------------------ drawing
@@ -74,12 +72,15 @@ def _open(data: bytes) -> Image.Image | None:
     return picture.convert("RGBA")
 
 
+def is_low_res(picture: Image.Image) -> bool:
+    return max(picture.size) < LOW_RES
+
+
 def _average(picture: Image.Image) -> tuple[int, int, int]:
     """The picture's mean colour, its transparent parts left out."""
     rgb = Image.new("RGB", picture.size, (0, 0, 0))
     rgb.paste(picture, mask=picture.getchannel("A"))
-    alpha = picture.getchannel("A")
-    seen = alpha.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)) or 0
+    seen = picture.getchannel("A").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)) or 0
     r, g, b = rgb.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))[:3]
     if seen <= 0:
         return (40, 44, 52)
@@ -87,7 +88,7 @@ def _average(picture: Image.Image) -> tuple[int, int, int]:
     return tuple(min(255, round(c * scale)) for c in (r, g, b))  # type: ignore[return-value]
 
 
-def _color_ground(picture: Image.Image) -> Image.Image:
+def _color_ground(picture: Image.Image, side: int) -> Image.Image:
     """The icon's average colour, toned down so the icon stands out on it,
     lighter in the middle and darker at the edges."""
     r, g, b = _average(picture)
@@ -97,90 +98,54 @@ def _color_ground(picture: Image.Image) -> Image.Image:
     r, g, b = (round(c * target / peak) for c in (r, g, b))
     centre = tuple(min(255, round(c * 1.1 + 12)) for c in (r, g, b))
     edge = tuple(round(c * 0.45) for c in (r, g, b))
-    mask = Image.radial_gradient("L").resize((SIDE, SIDE), Image.Resampling.BICUBIC)
+    mask = Image.radial_gradient("L").resize((side, side), Image.Resampling.BICUBIC)
     return Image.composite(
-        Image.new("RGB", (SIDE, SIDE), edge), Image.new("RGB", (SIDE, SIDE), centre), mask
+        Image.new("RGB", (side, side), edge), Image.new("RGB", (side, side), centre), mask
     )
 
 
-def _blurred_ground(cover: Image.Image) -> Image.Image:
-    """A picture (the game's cover, or artwork itself) across the whole
-    square, blurred, darkened and paled."""
-    ground = ImageOps.fit(cover.convert("RGB"), (SIDE, SIDE), Image.Resampling.LANCZOS)
-    ground = ground.filter(ImageFilter.GaussianBlur(SIDE // 36))
+def _cover_ground(cover: Image.Image, side: int) -> Image.Image:
+    """The game's cover across the whole square, blurred, darkened and paled."""
+    ground = ImageOps.fit(cover.convert("RGB"), (side, side), Image.Resampling.LANCZOS)
+    ground = ground.filter(ImageFilter.GaussianBlur(max(2, side // 36)))
     ground = ImageEnhance.Color(ground).enhance(0.55)
     return ImageEnhance.Brightness(ground).enhance(0.5)
 
 
-def _scaled(picture: Image.Image, longest: int) -> Image.Image:
-    w, h = picture.size
-    factor = longest / max(w, h)
-    size = (max(1, round(w * factor)), max(1, round(h * factor)))
-    out = picture.resize(size, Image.Resampling.LANCZOS)
-    if factor > 3:
-        # A 64 px icon blown up eight times is soft; a light sharpening
-        # brings its edges back without the ringing of a strong one.
-        out = out.filter(ImageFilter.UnsharpMask(radius=2, percent=70, threshold=2))
-    return out
-
-
-def _framed_icon(icon: Image.Image) -> tuple[Image.Image, Image.Image]:
-    """The icon with rounded corners, and its shadow, both the square's size."""
-    side = round(SIDE * ICON_SHARE)
-    icon = _scaled(icon, side)
-    radius = round(min(icon.size) * 0.08)
-    rounded = Image.new("L", icon.size, 0)
-    ImageDraw.Draw(rounded).rounded_rectangle((0, 0, *icon.size), radius=radius, fill=255)
-    alpha = Image.composite(icon.getchannel("A"), rounded, rounded)
-    icon.putalpha(alpha)
-
-    layer = Image.new("RGBA", (SIDE, SIDE), (0, 0, 0, 0))
-    at = ((SIDE - icon.width) // 2, (SIDE - icon.height) // 2)
-    layer.paste(icon, at, icon)
-
-    shadow = Image.new("RGBA", (SIDE, SIDE), (0, 0, 0, 0))
-    drop = Image.new("RGBA", icon.size, (0, 0, 0, 150))
-    drop.putalpha(Image.eval(alpha, lambda a: a * 150 // 255))
-    shadow.paste(drop, (at[0], at[1] + SIDE // 64), drop)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(SIDE // 40))
-    return layer, shadow
-
-
-def compose(icon: bytes, style: str, cover: bytes | None = None) -> bytes | None:
-    """`icon` on a square in `style`, as a JPEG; None when `icon` is not a
-    picture. CPU work — run it in a thread."""
-    picture = _open(icon)
-    if picture is None:
+def compose(icon: bytes, style: str, cover: bytes | None = None, scale: int = 2) -> bytes | None:
+    """A low-resolution `icon` enlarged `scale` times on a square in `style`,
+    as a JPEG; None when it is of high resolution (it goes as it is), when
+    the style is off, or when `icon` is not a picture. CPU work — run it in a
+    thread."""
+    if style not in (STYLE_COLOR, STYLE_COVER) or scale not in SCALES:
         return None
-    w, h = picture.size
-    large = max(w, h) >= LARGE
-    if large and abs(w / h - 1) <= SQUARE_TOLERANCE:
-        canvas = ImageOps.fit(picture.convert("RGB"), (SIDE, SIDE), Image.Resampling.LANCZOS)
-        return _jpeg(canvas)
+    picture = _open(icon)
+    if picture is None or not is_low_res(picture):
+        return None
+    # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
+    big = picture.resize((picture.width * scale, picture.height * scale), Image.Resampling.BICUBIC)
+    side = round(max(big.size) / ICON_SHARE)
 
-    if large:
-        # Artwork of its own shape: its own blurred copy around it, as the
-        # Mini App's feed shows a picture whole.
-        canvas = _blurred_ground(picture)
-    else:
-        cover_picture = _open(cover) if cover and style == STYLE_COVER else None
-        canvas = _blurred_ground(cover_picture) if cover_picture else _color_ground(picture)
+    cover_picture = _open(cover) if cover and style == STYLE_COVER else None
+    ground = _cover_ground(cover_picture, side) if cover_picture else _color_ground(picture, side)
 
-    if large:
-        whole = _scaled(picture, SIDE)
-        layer = Image.new("RGBA", (SIDE, SIDE), (0, 0, 0, 0))
-        layer.paste(whole, ((SIDE - whole.width) // 2, (SIDE - whole.height) // 2), whole)
-        canvas = Image.alpha_composite(canvas.convert("RGBA"), layer)
-    else:
-        layer, shadow = _framed_icon(picture)
-        canvas = Image.alpha_composite(canvas.convert("RGBA"), shadow)
-        canvas = Image.alpha_composite(canvas, layer)
-    return _jpeg(canvas.convert("RGB"))
+    radius = max(2, round(min(big.size) * 0.08))
+    rounded = Image.new("L", big.size, 0)
+    ImageDraw.Draw(rounded).rounded_rectangle((0, 0, *big.size), radius=radius, fill=255)
+    alpha = Image.composite(big.getchannel("A"), rounded, rounded)
+    big.putalpha(alpha)
+    at = ((side - big.width) // 2, (side - big.height) // 2)
 
+    shadow = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    drop = Image.new("RGBA", big.size, (0, 0, 0, 0))
+    drop.putalpha(Image.eval(alpha, lambda a: a * 150 // 255))
+    shadow.paste(drop, (at[0], at[1] + max(1, side // 64)), drop)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(max(1, side // 40)))
 
-def _jpeg(canvas: Image.Image) -> bytes:
+    canvas = Image.alpha_composite(ground.convert("RGBA"), shadow)
+    canvas.paste(big, at, big)
     out = io.BytesIO()
-    canvas.save(out, "JPEG", quality=90, optimize=True)
+    canvas.convert("RGB").save(out, "JPEG", quality=92, optimize=True)
     return out.getvalue()
 
 
@@ -199,10 +164,15 @@ async def sources(repo: Repo, item: AchievementRow) -> tuple[tuple[str, ...], tu
     return icon, cover
 
 
-async def style_of(repo: Repo) -> str:
-    """The admin's style, read on every post so a change applies at once."""
-    stored = await repo.get_app_setting(STYLE_KEY)
-    return stored if stored in STYLES else STYLE_DEFAULT
+async def style_of(repo: Repo) -> tuple[str, int]:
+    """The admin's style and scale, read on every post so a change applies at
+    once."""
+    style = await repo.get_app_setting(STYLE_KEY)
+    scale = await repo.get_app_setting(SCALE_KEY)
+    return (
+        style if style in STYLES else STYLE_DEFAULT,
+        int(scale) if scale in {str(n) for n in SCALES} else SCALE_DEFAULT,
+    )
 
 
 async def _load(source: str) -> bytes | None:
@@ -223,29 +193,44 @@ async def _first(sources: Sequence[str]) -> tuple[str, bytes] | None:
     return None
 
 
+def _low_res_bytes(data: bytes) -> bool:
+    """Whether a picture is low-resolution, from its header alone."""
+    try:
+        with Image.open(io.BytesIO(data)) as picture:
+            return max(picture.size) < LOW_RES
+    except (UnidentifiedImageError, OSError, ValueError):
+        return False
+
+
 async def build(
-    icon_sources: Sequence[str], cover_sources: Sequence[str], style: str
+    icon_sources: Sequence[str], cover_sources: Sequence[str], style: str, scale: int
 ) -> bytes | None:
-    """A post's square picture from the first icon source that loads (a file
-    or a URL), on the first cover that loads; None when the style is `off`,
-    no icon loads, or what loaded is not a picture."""
-    if style not in (STYLE_COLOR, STYLE_COVER) or not icon_sources:
+    """A post's enlarged, squared picture from the first icon source that
+    loads (a file or a URL), on the first cover that loads; None — send the
+    original as it is — when the style is off, the icon is of high
+    resolution, nothing loads, or what loaded is not a picture."""
+    if style not in (STYLE_COLOR, STYLE_COVER) or scale not in SCALES or not icon_sources:
         return None
-    key = (style, icon_sources[0], cover_sources[0] if cover_sources else "")
+    key = (style, scale, icon_sources[0], cover_sources[0] if cover_sources else "")
     if key in _memo:
         _memo.move_to_end(key)
-        return _memo[key]
+        return _memo[key] or None
     icon = await _first(icon_sources)
     if icon is None:
         return None
-    cover = await _first(cover_sources) if style == STYLE_COVER else None
-    try:
-        composed = await asyncio.to_thread(compose, icon[1], style, cover[1] if cover else None)
-    except Exception:
-        log.exception("could not compose a post picture from %s", icon[0])
-        return None
-    if composed is not None:
-        _memo[key] = composed
-        if len(_memo) > _MEMO_SIZE:
-            _memo.popitem(last=False)
+    composed: bytes | None = None
+    if _low_res_bytes(icon[1]):
+        cover = await _first(cover_sources) if style == STYLE_COVER else None
+        try:
+            composed = await asyncio.to_thread(
+                compose, icon[1], style, cover[1] if cover else None, scale
+            )
+        except Exception:
+            log.exception("could not compose a post picture from %s", icon[0])
+            return None
+    # A high-resolution icon is remembered too, as nothing to draw: the next
+    # chat's copy of the post does not fetch it again.
+    _memo[key] = composed or b""
+    if len(_memo) > _MEMO_SIZE:
+        _memo.popitem(last=False)
     return composed
