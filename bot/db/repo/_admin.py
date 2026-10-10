@@ -65,10 +65,9 @@ class _AdminRepo:
     # ----------------------------------------------------------------- admin
 
     async def admin_users(self) -> list[AdminUserRow]:
-        """Every connected person, Xbox or Steam or PSN or any mix
-        (2026-09-05 follow-up, extended for M-PSN-1) — used to be
-        `WHERE u.xuid IS NOT NULL`, which hid every Steam-only person from
-        the admin panel entirely."""
+        """Every person, with whatever game accounts they hold — none at all
+        included (owner, 2026-10-10: a new person whose Steam would not link
+        was nowhere in the panel)."""
         cursor = await self._conn.execute(
             "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
             "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
@@ -82,9 +81,10 @@ class _AdminRepo:
             + "LEFT JOIN tokens t ON t.person_id = u.id "
             + active_account("ps", "steam")
             + active_account("pp", "psn")
-            + "WHERE xb.external_id IS NOT NULL OR ps.external_id IS NOT NULL"
-            "   OR pp.external_id IS NOT NULL "
-            "ORDER BY u.is_excluded, u.last_online_at DESC"
+            # Everybody, a game account or not (owner, 2026-10-10): somebody
+            # who signed in and could not link one yet is a person to find.
+            + "ORDER BY u.is_excluded, u.last_online_at IS NULL, u.last_online_at DESC,"
+            " u.created_at DESC"
         )
         return [
             AdminUserRow(

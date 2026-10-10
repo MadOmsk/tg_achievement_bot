@@ -1589,7 +1589,7 @@ History: #111.
 | `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | `recent_limit`, or the command's `N` (≤ `RECENT_MAX`) |
 | summary leaderboards | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, then `updated_at` ↓ | — |
-| the admin's user list | listing (plain) **and** inline | `repo.admin_users()` | anyone with a platform linked | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE`, `◀️ N/M ▶️` |
+| the admin's user list | listing (plain) **and** inline | `repo.admin_users()` | everybody, 🔘 with no game account (owner, 2026-10-10) | `is_excluded` ↑, `last_online_at` ↓, newest first | `PAGE_SIZE`, `◀️ N/M ▶️` |
 | the admin's chat list | inline | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
 | `/who`'s picker | inline | `repo.chat_member_presence()` | as `/online` | as `/online` | — (three per row) |
 | `/panel`'s "Мои чаты" | inline | `repo.user_chats()` | active chats this person subscribed to or wrote in | title ↑ | — |
