@@ -89,13 +89,14 @@ async def test_build_reads_the_first_source_that_loads(tmp_path, monkeypatch) ->
 async def test_the_admin_picks_the_style_the_card_and_the_scale(repo) -> None:
     from bot.services import admin_registry
 
-    assert await post_picture.look_of(repo) == post_picture.Look("off", "1024x1024", 3)
+    # On by default (owner, 2026-10-10): the icon's colour, 1024, x4.
+    assert await post_picture.look_of(repo) == post_picture.Look("color", "1024x1024", 4)
     await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "cover", None)
     await admin_registry.set_value(repo, "global", post_picture.SIZE_KEY, "720x1280", None)
-    await admin_registry.set_value(repo, "global", post_picture.SCALE_KEY, "5", None)
-    assert await post_picture.look_of(repo) == post_picture.Look("cover", "720x1280", 5)
+    await admin_registry.set_value(repo, "global", post_picture.SCALE_KEY, "8", None)
+    assert await post_picture.look_of(repo) == post_picture.Look("cover", "720x1280", 8)
     # The DM test's own style wins over the admin's; the card and scale stay.
-    assert await post_picture.look_of(repo, "color") == post_picture.Look("color", "720x1280", 5)
+    assert await post_picture.look_of(repo, "color") == post_picture.Look("color", "720x1280", 8)
 
 
 def test_the_card_size_and_scale_are_the_admins() -> None:
@@ -113,12 +114,17 @@ def test_the_card_size_and_scale_are_the_admins() -> None:
     assert once.size == (64, 64)
 
 
-def test_an_icon_never_spills_past_its_card() -> None:
-    big = _picture(post_picture.compose(_png((190, 190)), _look("color", "720x1280", 5)))
-    assert big.size == (720, 1280)
-    # 190 x 5 would be 950 px: capped at 90% of the card's 720 px width.
-    assert big.getpixel((360 - 300, 640))[0] > 190
-    assert big.getpixel((10, 640))[0] < 190
+def test_an_icon_never_takes_more_than_90_percent_of_its_card() -> None:
+    """Owner, 2026-10-10: a zoom past the card is held at 90% of it."""
+    card = _picture(post_picture.compose(_png((190, 190)), _look("color", "720x1280", 4)))
+    assert card.size == (720, 1280)
+    # 190 x 4 = 760 > 720: held at 90% of 720, 648 px.
+    assert card.getpixel((360 + 318, 640))[0] > 190
+    assert card.getpixel((360 + 330, 640))[0] < 190
+    # 64 x 8 = 512 fits: enlarged as asked.
+    fits = _picture(post_picture.compose(_png((64, 64)), _look("color", "720x1280", 8)))
+    assert fits.getpixel((360 + 250, 640))[0] > 190
+    assert fits.getpixel((360 + 270, 640))[0] < 190
 
 
 async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(
@@ -148,6 +154,7 @@ async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(
         )
 
     pub = Publisher(bot=_Bot(), repo=repo)
+    await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "off", None)
     assert await pub._deliver(job(small, "https://cdn/icon.png")) == 5
     assert sent == ["https://cdn/icon.png"]
 
@@ -284,3 +291,19 @@ async def test_the_bots_rules_screen_carries_the_test_button(repo) -> None:
     assert "a:x:g:all:notification_test:0" not in [
         b.callback_data for row in markup.inline_keyboard for b in row
     ]
+
+
+async def test_the_admin_picks_what_counts_as_a_small_icon(repo) -> None:
+    """Owner, 2026-10-10: the low-resolution limit is the admin's, four steps."""
+    from bot.services import admin_registry
+
+    trophy = _png((240, 240))  # a PS4 trophy's size
+    assert post_picture.compose(trophy, post_picture.Look("color", low_res=200)) is None
+    assert post_picture.compose(trophy, post_picture.Look("color", low_res=256)) is not None
+
+    assert (await post_picture.look_of(repo)).low_res == 200
+    await admin_registry.set_value(repo, "global", post_picture.LOW_RES_KEY, "512", None)
+    assert (await post_picture.look_of(repo)).low_res == 512
+    setting = admin_registry.find("global", post_picture.LOW_RES_KEY)
+    assert setting.options() == (128, 200, 256, 512)
+    assert admin_registry.value_label(setting, 256, locale="ru") == "меньше 256 px"

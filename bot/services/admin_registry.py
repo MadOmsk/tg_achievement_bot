@@ -199,6 +199,16 @@ SETTINGS: tuple[Setting, ...] = (
         default=post_picture.SCALE_DEFAULT,
         choices=post_picture.SCALES,
     ),
+    Setting(
+        post_picture.LOW_RES_KEY,
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-post-picture-low-res",
+        hint="admin-setting-post-picture-low-res-hint",
+        default=post_picture.LOW_RES_DEFAULT,
+        choices=post_picture.LOW_RES_CHOICES,
+    ),
     # ---- global: the numbers
     *(
         Setting(
@@ -431,6 +441,8 @@ def value_label(setting: Setting, value: Any, *, locale: str, place: bool = Fals
         return str(value).replace("x", "×")
     if setting.key == post_picture.SCALE_KEY:
         return f"×{value}"
+    if setting.key == post_picture.LOW_RES_KEY:
+        return _("admin-post-picture-low-res-value", px=str(value))
     return str(value)
 
 

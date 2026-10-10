@@ -6,13 +6,15 @@ as a tiny, blurry card, every post a different width. Here, at the moment a
 post is sent:
 
 - a picture of high resolution goes **as it is**, untouched;
-- a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×1–×5
-  by a cheap filter (`post_picture_scale`) and set in the middle of a card —
-  1024 × 1024, 720 × 1280, or none at all, the icon alone
+- a low-resolution one (under `post_picture_low_res` on its longer side,
+  200 px by default) is enlarged ×1–×8
+  by a cheap filter (`post_picture_scale`, ×4 by default; never past 90% of
+  the card) and set in the middle of a card —
+  1024 × 1024 (default), 720 × 1280, or none at all, the icon alone
   (`post_picture_size`) — with rounded corners and a soft shadow.
 
-The ground is the style, an admin setting (`post_picture_style`): `color` —
-the icon's own average colour, darker at the edges; `cover` — the game's
+The ground is the style, an admin setting (`post_picture_style`): `color`
+(the default) — the icon's own average colour, darker at the edges; `cover` — the game's
 cover, blurred, darkened and paled (the colour when there is no cover);
 `off` — nothing is drawn, as before.
 
@@ -44,7 +46,7 @@ log = logging.getLogger(__name__)
 STYLE_KEY = "post_picture_style"
 STYLE_OFF, STYLE_COLOR, STYLE_COVER = "off", "color", "cover"
 STYLES = (STYLE_OFF, STYLE_COLOR, STYLE_COVER)
-STYLE_DEFAULT = STYLE_OFF
+STYLE_DEFAULT = STYLE_COLOR
 
 # The card a low-resolution icon is set on, and how many times it is
 # enlarged — the admin's, global (owner, 2026-10-10). `original` is no card:
@@ -54,26 +56,32 @@ SIZE_ORIGINAL = "original"
 SIZES = ("1024x1024", "720x1280", SIZE_ORIGINAL)
 SIZE_DEFAULT = "1024x1024"
 SCALE_KEY = "post_picture_scale"
-SCALES = (1, 2, 3, 4, 5)
-SCALE_DEFAULT = 3
+SCALES = (1, 2, 3, 4, 5, 6, 7, 8)
+SCALE_DEFAULT = 4
 # An enlarged icon never takes more of the card than this, whatever the scale.
 MAX_SHARE = 0.9
 
-# Under this on its longer side, a picture is low-resolution (Steam's and
-# Xbox 360's 64 px icons); at least this, it goes as it is.
-LOW_RES = 200
+# Under this on its longer side, a picture is low-resolution and is drawn
+# on a card; at least this, it goes as it is — the admin's (owner,
+# 2026-10-10). 128 takes only Steam's and Xbox 360's 64 px icons; 256 also
+# PS4's 240 px trophies; 512 everything but large artwork.
+LOW_RES_KEY = "post_picture_low_res"
+LOW_RES_CHOICES = (128, 200, 256, 512)
+LOW_RES_DEFAULT = 200
 # Composed pictures kept for a while: one achievement goes to several chats.
 _MEMO_SIZE = 32
-_memo: OrderedDict[tuple[str, str, int, str, str], bytes] = OrderedDict()
+_memo: OrderedDict[tuple[str, str, int, int, str, str], bytes] = OrderedDict()
 
 
 @dataclass(frozen=True, slots=True)
 class Look:
-    """How a low-resolution picture is drawn: the ground, the card, the scale."""
+    """How a low-resolution picture is drawn: the ground, the card, the
+    scale — and below which size a picture counts as low-resolution."""
 
     style: str = STYLE_DEFAULT
     size: str = SIZE_DEFAULT
     scale: int = SCALE_DEFAULT
+    low_res: int = LOW_RES_DEFAULT
 
     @property
     def on(self) -> bool:
@@ -100,8 +108,8 @@ def _open(data: bytes) -> Image.Image | None:
     return picture.convert("RGBA")
 
 
-def is_low_res(picture: Image.Image) -> bool:
-    return max(picture.size) < LOW_RES
+def is_low_res(picture: Image.Image, limit: int = LOW_RES_DEFAULT) -> bool:
+    return max(picture.size) < limit
 
 
 def _average(picture: Image.Image) -> tuple[int, int, int]:
@@ -146,14 +154,14 @@ def compose(icon: bytes, look: Look, cover: bytes | None = None) -> bytes | None
     if not look.on:
         return None
     picture = _open(icon)
-    if picture is None or not is_low_res(picture):
+    if picture is None or not is_low_res(picture, look.low_res):
         return None
     card = look.card()
     scale = look.scale
     if card is not None:
-        # Never past the card's edges, whatever scale was picked.
-        fits = min(card) * MAX_SHARE / max(picture.size)
-        scale = min(scale, fits)
+        # Never past 90% of the card, whatever scale was picked (owner,
+        # 2026-10-10).
+        scale = min(scale, min(card) * MAX_SHARE / max(picture.size))
     size = (max(1, round(picture.width * scale)), max(1, round(picture.height * scale)))
     # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
     big = picture.resize(size, Image.Resampling.BICUBIC)
@@ -204,15 +212,17 @@ async def sources(repo: Repo, item: AchievementRow) -> tuple[tuple[str, ...], tu
 
 
 async def look_of(repo: Repo, style: str | None = None) -> Look:
-    """The admin's style, card and scale, read on every post so a change
+    """The admin's style, card, scale and low-resolution limit, read on every post so a change
     applies at once; `style` overrides the admin's (the DM test)."""
     stored_style = await repo.get_app_setting(STYLE_KEY)
     size = await repo.get_app_setting(SIZE_KEY)
     scale = await repo.get_app_setting(SCALE_KEY)
+    low_res = await repo.get_app_setting(LOW_RES_KEY)
     return Look(
         style=style or (stored_style if stored_style in STYLES else STYLE_DEFAULT),
         size=size if size in SIZES else SIZE_DEFAULT,
         scale=int(scale) if scale in {str(n) for n in SCALES} else SCALE_DEFAULT,
+        low_res=(int(low_res) if low_res in {str(n) for n in LOW_RES_CHOICES} else LOW_RES_DEFAULT),
     )
 
 
@@ -234,11 +244,11 @@ async def _first(sources: Sequence[str]) -> tuple[str, bytes] | None:
     return None
 
 
-def _low_res_bytes(data: bytes) -> bool:
+def _low_res_bytes(data: bytes, limit: int) -> bool:
     """Whether a picture is low-resolution, from its header alone."""
     try:
         with Image.open(io.BytesIO(data)) as picture:
-            return max(picture.size) < LOW_RES
+            return max(picture.size) < limit
     except (UnidentifiedImageError, OSError, ValueError):
         return False
 
@@ -256,6 +266,7 @@ async def build(
         look.style,
         look.size,
         look.scale,
+        look.low_res,
         icon_sources[0],
         cover_sources[0] if cover_sources else "",
     )
@@ -266,7 +277,7 @@ async def build(
     if icon is None:
         return None
     composed: bytes | None = None
-    if _low_res_bytes(icon[1]):
+    if _low_res_bytes(icon[1], look.low_res):
         cover = await _first(cover_sources) if look.style == STYLE_COVER else None
         try:
             composed = await asyncio.to_thread(compose, icon[1], look, cover[1] if cover else None)

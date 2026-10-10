@@ -788,15 +788,16 @@ isn't muted there; it wasn't already published there.
   2026-10-10; `services/post_picture.py`). **The original is what is
   stored** (icon cache, cover, URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
-  as it is.** A low-resolution one (under 200 px on its longer side —
-  Steam's and Xbox 360's 64 px icons) is enlarged by a cheap filter
-  (bicubic) and set in the middle of a card, rounded, with a shadow. Three
-  global admin settings (/admin → Правила): the ground, `post_picture_style`
-  — `off` (as before, the default), `color` (the icon's average colour) or
-  `cover` (the game's cover, blurred and darkened; the colour without one);
-  the card, `post_picture_size` — `1024x1024` (default), `720x1280`, or
-  `original` (no card: the enlarged icon alone); the scale,
-  `post_picture_scale` — ×1 to ×5 (×3 default), never past 90% of the
+  as it is.** A low-resolution one (smaller on its longer side than
+  `post_picture_low_res`: 128, 200 — the default —, 256 or 512 px; Steam's
+  and Xbox 360's icons are 64 px, PS4's trophies 240) is enlarged by a cheap
+  filter (bicubic) and set in the middle of a card, rounded, with a shadow.
+  Four global admin settings (/admin → Правила): that limit; the ground, `post_picture_style`
+  — `color` (the icon's average colour; the default), `cover` (the game's
+  cover, blurred and darkened; the colour without one) or `off` (as
+  before); the card, `post_picture_size` — `1024x1024` (default),
+  `720x1280`, or `original` (no card: the enlarged icon alone); the scale,
+  `post_picture_scale` — ×1 to ×8 (×4 default), never past 90% of the
   card. Anything that cannot be drawn goes as before. «🖼 Тест
   уведомлений», one global action beside these settings (/admin → ⚙️
   Настройки → Правила; the Mini App's admin settings), sends the newest
@@ -1400,7 +1401,7 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, the digest size, profile links, the post picture, its card and scale · Новые пользователи: the
+  rarity threshold, the digest size, profile links, the post picture, its card, scale and small-icon limit · Новые пользователи: the
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.
