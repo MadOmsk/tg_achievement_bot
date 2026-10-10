@@ -114,13 +114,13 @@ def test_the_card_size_and_scale_are_the_admins() -> None:
     assert once.size == (64, 64)
 
 
-def test_an_icon_enlarged_past_its_card_is_not_enlarged() -> None:
-    """Owner, 2026-10-10: a zoom that would pass the card's edges is no zoom."""
+def test_an_icon_never_takes_more_than_90_percent_of_its_card() -> None:
+    """Owner, 2026-10-10: a zoom past the card is held at 90% of it."""
     card = _picture(post_picture.compose(_png((190, 190)), _look("color", "720x1280", 4)))
     assert card.size == (720, 1280)
-    # 190 x 4 = 760 > 720: the icon stays 190 px, in the middle.
-    assert card.getpixel((360 + 90, 640))[0] > 190
-    assert card.getpixel((360 + 110, 640))[0] < 190
+    # 190 x 4 = 760 > 720: held at 90% of 720, 648 px.
+    assert card.getpixel((360 + 318, 640))[0] > 190
+    assert card.getpixel((360 + 330, 640))[0] < 190
     # 64 x 8 = 512 fits: enlarged as asked.
     fits = _picture(post_picture.compose(_png((64, 64)), _look("color", "720x1280", 8)))
     assert fits.getpixel((360 + 250, 640))[0] > 190

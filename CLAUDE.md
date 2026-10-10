@@ -796,9 +796,8 @@ isn't muted there; it wasn't already published there.
   cover, blurred and darkened; the colour without one) or `off` (as
   before); the card, `post_picture_size` — `1024x1024` (default),
   `720x1280`, or `original` (no card: the enlarged icon alone); the scale,
-  `post_picture_scale` — ×1 to ×8 (×4 default). **A zoom that would pass
-  the card's edges is no zoom** (owner, 2026-10-10): the icon goes on the
-  card at its own size. Anything that cannot be drawn goes as before. «🖼 Тест
+  `post_picture_scale` — ×1 to ×8 (×4 default), never past 90% of the
+  card. Anything that cannot be drawn goes as before. «🖼 Тест
   уведомлений», one global action beside these settings (/admin → ⚙️
   Настройки → Правила; the Mini App's admin settings), sends the newest
   achievement earned on each platform, whoever earned it

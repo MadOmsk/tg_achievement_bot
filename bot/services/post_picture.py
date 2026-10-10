@@ -7,8 +7,8 @@ post is sent:
 
 - a picture of high resolution goes **as it is**, untouched;
 - a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×1–×8
-  by a cheap filter (`post_picture_scale`, ×4 by default; not at all when
-  that would pass the card's edges) and set in the middle of a card —
+  by a cheap filter (`post_picture_scale`, ×4 by default; never past 90% of
+  the card) and set in the middle of a card —
   1024 × 1024 (default), 720 × 1280, or none at all, the icon alone
   (`post_picture_size`) — with rounded corners and a soft shadow.
 
@@ -57,6 +57,8 @@ SIZE_DEFAULT = "1024x1024"
 SCALE_KEY = "post_picture_scale"
 SCALES = (1, 2, 3, 4, 5, 6, 7, 8)
 SCALE_DEFAULT = 4
+# An enlarged icon never takes more of the card than this, whatever the scale.
+MAX_SHARE = 0.9
 
 # Under this on its longer side, a picture is low-resolution (Steam's and
 # Xbox 360's 64 px icons); at least this, it goes as it is.
@@ -149,10 +151,10 @@ def compose(icon: bytes, look: Look, cover: bytes | None = None) -> bytes | None
         return None
     card = look.card()
     scale = look.scale
-    if card is not None and (picture.width * scale > card[0] or picture.height * scale > card[1]):
-        # Enlarged past the card, it is not enlarged at all (owner,
-        # 2026-10-10): the icon goes on the card at its own size.
-        scale = 1
+    if card is not None:
+        # Never past 90% of the card, whatever scale was picked (owner,
+        # 2026-10-10).
+        scale = min(scale, min(card) * MAX_SHARE / max(picture.size))
     size = (max(1, round(picture.width * scale)), max(1, round(picture.height * scale)))
     # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
     big = picture.resize(size, Image.Resampling.BICUBIC)
