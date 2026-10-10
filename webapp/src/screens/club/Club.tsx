@@ -80,6 +80,8 @@ export function Club({
   // the Feed in its day calendar (owner, 2026-10-09): none is global.
   const [selectedMonth, setSelectedMonth] = useState(cache?.feed?.month ?? "");
   const [feedMonth, setFeedMonth] = useState(cache?.feed?.month ?? "");
+  // Which of the Feed's month loads is the latest; a reload counts as one too.
+  const feedAsk = useRef(0);
   const [months, setMonths] = useState<string[]>(cache?.feed?.months ?? []);
   const [liveMonth, setLiveMonth] = useState(cache?.feed?.month ?? "");
   const [monthBusy, setMonthBusy] = useState(false);
@@ -157,6 +159,7 @@ export function Club({
       ]);
       if (cancelled) return;
       if (f.status === "fulfilled") {
+        feedAsk.current += 1;
         setFeed(f.value.items);
         setHomeFeed(f.value.items);
         setStatsFeed(f.value.items);
@@ -376,12 +379,22 @@ export function Club({
 
   // The Feed's month, from its day calendar: the posts on screen stay until
   // the month asked for lands, so the calendar left open fills in place.
+  // Only the latest ask lands: arrows tapped quickly would otherwise let a
+  // slower, older month overwrite the one on screen.
   const pickFeedMonth = (ym: string) => {
     if (!data || ym === feedMonth) return;
+    const was = feedMonth;
+    const ask = ++feedAsk.current;
     setFeedMonth(ym);
     void fetchFeed(data, scopeRef ?? activeId, { month: ym })
-      .then((f) => setFeed(f.items))
-      .catch((err: unknown) => onFlash(`${t(locale, "error")}: ${String(err)}`));
+      .then((f) => {
+        if (ask === feedAsk.current) setFeed(f.items);
+      })
+      .catch((err: unknown) => {
+        if (ask !== feedAsk.current) return;
+        setFeedMonth(was);
+        onFlash(`${t(locale, "error")}: ${String(err)}`);
+      });
   };
 
   // A past month's achievements of one person, for a games block.
@@ -655,7 +668,8 @@ export function Club({
                 {hasAccounts && (
                   <GamesSection
                     items={mine}
-                    months={months}
+                    // My own months, not those of everybody I follow.
+                    months={myPerson?.months ?? months}
                     liveMonth={liveMonth}
                     locale={locale}
                     load={personMonth(me.person_id)}
