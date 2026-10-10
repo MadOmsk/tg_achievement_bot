@@ -159,6 +159,7 @@ name, or when the tree goes stale.
 │   │   ├── achievement_icons.py  achievement icons on disk under data/achievements/ (#99)
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
+│   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -783,6 +784,24 @@ isn't muted there; it wasn't already published there.
   fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
+- **A low-resolution post picture is enlarged on a square** (owner,
+  2026-10-10; `services/post_picture.py`). **The original is what is
+  stored** (icon cache, cover, URLs); the square is drawn when a post is
+  sent, single or album, and kept nowhere. **A high-resolution picture goes
+  as it is.** A low-resolution one (under 200 px on its longer side —
+  Steam's and Xbox 360's 64 px icons) is enlarged by a cheap filter
+  (bicubic) and set in the middle of a card, rounded, with a shadow. Three
+  global admin settings (/admin → Правила): the ground, `post_picture_style`
+  — `off` (as before, the default), `color` (the icon's average colour) or
+  `cover` (the game's cover, blurred and darkened; the colour without one);
+  the card, `post_picture_size` — `1024x1024` (default), `720x1280`, or
+  `original` (no card: the enlarged icon alone); the scale,
+  `post_picture_scale` — ×1 to ×5 (×3 default), never past 90% of the
+  card. Anything that cannot be drawn goes as before. The user
+  card's «🖼 Тест уведомлений» sends the person's latest achievement on each
+  platform as the whole post a chat gets (`Publisher.sample`: text,
+  progress, Mini App button) — as today, then on each ground — to the
+  super-admin's own DM, recording nothing. The Mini App is not touched.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1347,7 +1366,8 @@ keyboard.
     (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
     steps and the words are the server's. Today: exclude / restore, refresh and
     reset an account (reset asks once, naming it), take a chosen picture down,
-    delete a person (asks twice); on a chat, the promo (asks once), delete the
+    delete a person (asks twice), send their latest posts in every picture
+    style to one's own DM; on a chat, the promo (asks once), delete the
     last message, the three wipes (each asks once with the count). Under them,
     `services/admin_accounts.py` (refresh: presence, then the delta since the
     newest unlock; reset) and `services/admin_cleanup.py` (which messages a wipe
@@ -1375,7 +1395,7 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, the digest size, profile links · Новые пользователи: the
+  rarity threshold, the digest size, profile links, the post picture, its card and scale · Новые пользователи: the
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.

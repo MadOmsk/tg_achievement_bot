@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from bot.constants import DIGEST_CHOICES, DIGEST_NEVER, RarityMode
 from bot.i18n import AVAILABLE_LOCALES, LOCALE_NAMES, gettext
+from bot.services import post_picture
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
@@ -167,6 +168,36 @@ SETTINGS: tuple[Setting, ...] = (
         Kind.BOOL,
         "admin-setting-show-links",
         default=SHOW_LINKS_DEFAULT == "1",
+    ),
+    # A low-resolution post picture enlarged on a square (owner, 2026-10-10;
+    # services/post_picture.py): off, on the icon's colour, on the cover.
+    Setting(
+        post_picture.STYLE_KEY,
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-post-picture",
+        hint="admin-setting-post-picture-hint",
+        default=post_picture.STYLE_DEFAULT,
+        choices=post_picture.STYLES,
+    ),
+    Setting(
+        post_picture.SIZE_KEY,
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-post-picture-size",
+        default=post_picture.SIZE_DEFAULT,
+        choices=post_picture.SIZES,
+    ),
+    Setting(
+        post_picture.SCALE_KEY,
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-post-picture-scale",
+        default=post_picture.SCALE_DEFAULT,
+        choices=post_picture.SCALES,
     ),
     # ---- global: the numbers
     *(
@@ -392,6 +423,14 @@ def value_label(setting: Setting, value: Any, *, locale: str, place: bool = Fals
         return LOCALE_NAMES.get(str(value), str(value))
     if setting.key == "digest_threshold":
         return _("admin-digest-never") if value >= DIGEST_NEVER else str(value)
+    if setting.key == post_picture.STYLE_KEY:
+        return _(f"admin-post-picture-{value}")
+    if setting.key == post_picture.SIZE_KEY:
+        if value == post_picture.SIZE_ORIGINAL:
+            return _("admin-post-picture-size-original")
+        return str(value).replace("x", "×")
+    if setting.key == post_picture.SCALE_KEY:
+        return f"×{value}"
     return str(value)
 
 

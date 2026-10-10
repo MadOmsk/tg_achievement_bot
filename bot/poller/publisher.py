@@ -12,6 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from html import escape as html_escape
 from pathlib import Path
 
 from aiogram import Bot
@@ -23,7 +24,7 @@ from bot.config import Settings
 from bot.constants import account_platform_of
 from bot.db.repo import AchievementRow, ChatTarget, Repo, TitleProgress
 from bot.i18n import gettext
-from bot.services import achievement_icons, covers, images
+from bot.services import achievement_icons, covers, images, post_picture
 from bot.services.achievements import passes_filters
 from bot.services.chat_gone import chat_is_gone
 from bot.services.descriptions_view import localize_descriptions
@@ -76,6 +77,13 @@ class PublishJob:
     # there is none: the achievement's icon cached on disk, then the game's
     # cover (its file, its URL) — `Picture`s.
     backups: list[Picture] = field(default_factory=list)
+    # Where each gallery picture can be read from, to enlarge a low-resolution
+    # one on a square (`services/post_picture.py`): one `Art` per gallery
+    # entry, same order.
+    art: list[Art] = field(default_factory=list)
+    # A picture style that overrides the admin's — only the super-admin's
+    # test of the styles (`Publisher.sample`) sets it.
+    style: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +94,17 @@ class Picture:
     how: str
     where: str
     spoiler: bool = False
+    # `bytes`: a picture drawn here, sent as it is.
+    data: bytes | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Art:
+    """One post picture's originals: the icon (its cached file, its URL) and
+    the game's cover (its file, its URL), first that loads wins."""
+
+    icon: tuple[str, ...]
+    cover: tuple[str, ...] = ()
 
 
 async def _photo_input(picture: Picture) -> str | BufferedInputFile | None:
@@ -93,6 +112,8 @@ async def _photo_input(picture: Picture) -> str | BufferedInputFile | None:
     to send (a fetch that failed, a file gone)."""
     if picture.how == "url":
         return picture.where
+    if picture.how == "bytes":
+        return BufferedInputFile(picture.data, filename="post.jpg") if picture.data else None
     if picture.how == "fetch":
         payload = await images.fetch(picture.where)
     else:
@@ -304,6 +325,7 @@ class Publisher:
                         items=[(xuid, a.title_id, a.achievement_id) for a in allowed],
                         reply_markup=markup,
                         backups=await self._backups(allowed[0]),
+                        art=await self._art(allowed),
                     )
                 )
                 continue
@@ -334,8 +356,44 @@ class Publisher:
                         items=[(xuid, item.title_id, item.achievement_id)],
                         reply_markup=markup,
                         backups=await self._backups(item),
+                        art=await self._art([item]),
                     )
                 )
+
+    async def sample(
+        self,
+        item: AchievementRow,
+        person_id: int,
+        chat_id: int,
+        *,
+        locale: str,
+        style: str,
+        note: str,
+    ) -> int | None:
+        """One achievement as the whole post a chat would get — its text, the
+        progress, the Mini App button, the picture in `style` — sent to
+        `chat_id` with `note` under it: the super-admin's test of the post
+        picture, in their own DM (owner, 2026-10-10). Nothing is recorded as
+        published."""
+        game = (item.platform, item.title_id)
+        progress = await self._progress_for([item], item.xuid)
+        text = format_single(
+            await self._person_label(person_id),
+            item,
+            item.title_name,
+            locale=locale,
+            progress=progress.get((item.platform, item.title_id, item.trophy_group_id)),
+        )
+        job = PublishJob(
+            chat_id=chat_id,
+            text=f"{text}\n\n<i>{html_escape(note)}</i>",
+            gallery=_gallery([item]),
+            reply_markup=await self._markup_for(chat_id, locale, person_id=person_id, game=game),
+            backups=await self._backups(item),
+            art=await self._art([item]),
+            style=style,
+        )
+        return await self._deliver(job)
 
     def _tell_followers(
         self, person_id: int, achievements: list[AchievementRow], title_name: str | None
@@ -385,6 +443,28 @@ class Publisher:
         if cover_url:
             backups += [Picture("url", cover_url), Picture("fetch", cover_url)]
         return backups
+
+    async def _art(self, achievements: list[AchievementRow]) -> list[Art]:
+        """Each gallery picture's originals, in `_gallery`'s order."""
+        art: list[Art] = []
+        seen: set[str] = set()
+        for item in achievements:
+            if not item.icon_url or item.icon_url in seen:
+                continue
+            seen.add(item.icon_url)
+            icon, cover = await post_picture.sources(self._repo, item)
+            art.append(Art(icon, cover))
+        return art
+
+    async def _framed(self, job: PublishJob, count: int) -> list[bytes | None]:
+        """The gallery's first `count` pictures, a low-resolution one enlarged
+        on a square per the admin's style — None for one that goes as it is
+        (high resolution, or nothing could be drawn), and nothing at all while
+        the style is off."""
+        look = await post_picture.look_of(self._repo, job.style)
+        if not look.on or not job.art:
+            return []
+        return [await post_picture.build(art.icon, art.cover, look) for art in job.art[:count]]
 
     async def _apply_flood_filter(
         self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]
@@ -577,6 +657,9 @@ class Publisher:
                 ],
                 reply_markup=markup,
                 backups=await self._backups(achievements[0]),
+                # One achievement is the whole gallery, else the gallery is
+                # every achievement's: the same list either way.
+                art=await self._art(achievements),
             )
         )
 
@@ -634,11 +717,17 @@ class Publisher:
             # Telegram media groups (albums) do not support inline keyboards.
             # When reply_markup is attached (e.g. Mini App button), send as a single
             # photo card with the full digest text so the button is preserved.
-            if len(job.gallery) >= 2 and not job.reply_markup:
+            as_album = len(job.gallery) >= 2 and not job.reply_markup
+            framed = await self._framed(job, MEDIA_GROUP_MAX if as_album else 1)
+            if as_album:
                 try:
                     media = [
                         InputMediaPhoto(
-                            media=url,
+                            media=(
+                                BufferedInputFile(framed[index], filename=f"post{index}.jpg")
+                                if index < len(framed) and framed[index]
+                                else url
+                            ),
                             has_spoiler=secret,
                             caption=job.text if index == 0 else None,
                             parse_mode=ParseMode.HTML if index == 0 else None,
@@ -665,6 +754,8 @@ class Publisher:
             candidates: list[Picture] = []
             if job.gallery:
                 url, secret = job.gallery[0]
+                if framed and framed[0]:
+                    candidates.append(Picture("bytes", url, secret, framed[0]))
                 candidates += [Picture("url", url, secret), Picture("fetch", url, secret)]
             candidates += job.backups
             for picture in candidates:

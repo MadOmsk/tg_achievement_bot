@@ -25,7 +25,7 @@ from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.db.repo import Repo
-from bot.handlers.delivery import send_promo
+from bot.handlers.delivery import send_picture_samples, send_promo
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -552,6 +552,11 @@ async def admin_action(
     async def promo(chat: Any) -> None:
         await send_promo(bot, chat.chat_id, chat.locale, settings.mini_app_url)
 
+    async def samples(person_id: int) -> int:
+        return await send_picture_samples(
+            bot, repo, settings, person_id, callback.from_user.id, locale=i18n.locale
+        )
+
     ctx = AdminContext(
         repo,
         settings,
@@ -561,6 +566,7 @@ async def admin_action(
         psn=psn_fetcher,
         admin_id=callback.from_user.id,
         send_promo=promo,
+        send_picture_samples=samples,
     )
     section = "messages" if action_id != "promo" and scope == "chat" else None
     back = (
