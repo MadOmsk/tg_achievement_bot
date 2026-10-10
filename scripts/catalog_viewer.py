@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import zlib
 from html import escape
@@ -786,7 +787,7 @@ async def game(request: web.Request) -> web.Response:
         members = conn.execute(
             "SELECT vg.version_id, v.store, v.product_id, v.stand_in, " + STORE_PAGE + ","
             " v.console, v.name, v.release_date, v.on_sale, v.origin, v.developer, v.platform,"
-            " v.title_id,"
+            " v.title_id, " + COVER + ","
             " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
             " vl.of_version_id AS demo_of, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
@@ -854,22 +855,28 @@ async def game(request: web.Request) -> web.Response:
     reviews = "".join(
         _decisions(m["version_id"], game_id, here) for m in members if m["state"] == "review"
     )
+    linked = [m for m in members if m["state"] == "linked"]
+    with _db(request) as conn:
+        identity = _identity(conn, game_id)
     body = (
         _flash(request)
+        + f"<p><b>{escape(identity)}</b></p>"
+        + "<p>"
+        + "".join(_img(m["cover"], 120, m["console"]) for m in linked if m["cover"])
+        + "</p>"
         + controls
         + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
         + "<h2>Versions</h2>"
-        + _table([m for m in members if m["state"] == "linked"], _VERSION_LINKS)
+        + _version_cards(linked)
         + (
             "<h2>To review: may be this game</h2>"
-            + _table([m for m in members if m["state"] == "review"], _VERSION_LINKS)
-            + reviews
+            + _version_cards([m for m in members if m["state"] == "review"], decide=game_id)
             if reviews
             else ""
         )
         + (
             "<h2>Decided: not this game</h2>"
-            + _table([m for m in members if m["state"] == "rejected"], _VERSION_LINKS)
+            + _version_cards([m for m in members if m["state"] == "rejected"])
             if any(m["state"] == "rejected" for m in members)
             else ""
         )
@@ -885,6 +892,66 @@ async def game(request: web.Request) -> web.Response:
         + detach
     )
     return _page(row["name"] if row else f"Game {game_id}", body)
+
+
+_YEAR_IN_NAME = re.compile(r"\((?:[^()]*\D)?((?:19|20)\d\d)\)")
+
+
+def _identity(conn: sqlite3.Connection, game_id: int) -> str:
+    """Which game this is, in one line: its name, the year it first came out
+    (the earliest of its HLTB entries' years, a year a store's name gives —
+    "(Classic, 2005)" — and the stores' dates) and who made it."""
+    row = conn.execute("SELECT name FROM games WHERE game_id = ?", (game_id,)).fetchone()
+    if row is None:
+        return f"game {game_id}"
+    years: list[int] = []
+    developers: dict[str, None] = {}
+    for v in conn.execute(
+        "SELECT v.name, v.release_date, v.developer,"
+        " (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_games h"
+        "  ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_year"
+        " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+        " WHERE vg.game_id = ? AND vg.state = 'linked'",
+        (game_id,),
+    ):
+        if v["hltb_year"]:
+            years.append(int(v["hltb_year"]))
+        if (m := _YEAR_IN_NAME.search(v["name"] or "")) is not None:
+            years.append(int(m.group(1)))
+        if (v["release_date"] or "")[:4].isdigit():
+            years.append(int(v["release_date"][:4]))
+        if v["developer"]:
+            developers[str(v["developer"])] = None
+    parts = [str(row["name"]), str(min(years)) if years else "year ?"]
+    if developers:
+        parts.append(", ".join(list(developers)[:2]))
+    return f"{' · '.join(parts)} (game {game_id})"
+
+
+def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
+    """Versions as lines a phone can read: the picture, what it is and where it
+    is sold, how it belongs; a review's answers under it."""
+    if not rows:
+        return "<p>(none)</p>"
+    parts = []
+    for v in rows:
+        extra = [escape(v["kind"])]
+        if v["developer"]:
+            extra.append(escape(v["developer"]))
+        if v["title_id"]:
+            extra.append(f'<a href="{escape(_list_href(v))}">achievements</a>')
+        if v["demo_of"]:
+            extra.append(f'demo of <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a>')
+        if v["state"] != "linked" or v["source"] == "manual":
+            extra.append(escape(f"{v['state']}, {v['source']}"))
+        line = f"<p>{_img(v['cover'], 60)} {_version_line(v)}<br><small>{' · '.join(extra)}"
+        if v["reasons"] and v["state"] == "review":
+            line += f"<br>{escape(v['reasons'])}"
+        line += "</small></p>"
+        if decide is not None:
+            line += _decisions(v["version_id"], decide, f"/game/{decide}")
+        parts.append(line)
+    return "".join(parts)
 
 
 def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
@@ -944,6 +1011,7 @@ async def review(request: web.Request) -> web.Response:
                 " ORDER BY v.release_date, v.console",
                 (game_id,),
             ).fetchall()
+        identities = {game_id: _identity(conn, game_id) for game_id in game_versions}
     parts = []
     for r in rows:
         theirs = "".join(
@@ -952,7 +1020,7 @@ async def review(request: web.Request) -> web.Response:
         )
         parts.append(
             f"<hr><p>{_img(r['cover'], 90)} {_version_line(r)}"
-            f' → <a href="/game/{r["game_id"]}">{escape(r["game"])}</a></p>'
+            f' → <a href="/game/{r["game_id"]}">{escape(identities[r["game_id"]])}</a></p>'
             f"<p><small>{escape(r['reasons'] or '')}</small></p>"
             f"<details><summary>the game's versions</summary><ul>{theirs}</ul></details>"
             + _decisions(r["version_id"], r["game_id"], "/review")
