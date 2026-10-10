@@ -149,8 +149,9 @@ class _StoresRepo:
         await self._conn.execute(
             "INSERT INTO versions (store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, developer, publisher, release_date, genres, also_on, store_group,"
-            "  description_en, description_ru, media, live_service, origin, updated_at, stand_in)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "  description_en, description_ru, media, live_service, origin, updated_at, stand_in,"
+            "  on_sale)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(store, product_id, console) DO UPDATE SET"
             "  platform = COALESCE(excluded.platform, versions.platform),"
             "  title_id = COALESCE(excluded.title_id, versions.title_id),"
@@ -168,7 +169,8 @@ class _StoresRepo:
             # A version somebody here plays stays `played` once it is.
             "  origin = CASE WHEN versions.origin = 'played' THEN 'played'"
             "   ELSE excluded.origin END,"
-            "  updated_at = excluded.updated_at",
+            "  updated_at = excluded.updated_at,"
+            "  on_sale = COALESCE(excluded.on_sale, versions.on_sale)",
             (
                 version.store,
                 version.product_id,
@@ -191,6 +193,7 @@ class _StoresRepo:
                 origin,
                 now,
                 1 if version.stand_in else 0,
+                None if version.on_sale is None else int(version.on_sale),
             ),
         )
         cursor = await self._conn.execute(
@@ -419,16 +422,22 @@ class _StoresRepo:
     # ------------------------------------------------------------ editions (094)
 
     async def save_edition(
-        self, store: str, store_id: str, name: str | None, kind: str | None
+        self,
+        store: str,
+        store_id: str,
+        name: str | None,
+        kind: str | None,
+        on_sale: bool | None = None,
     ) -> int:
         """An edition seen on its store now: kept, its last sighting stamped."""
         now = utcnow_iso()
         await self._conn.execute(
-            "INSERT INTO editions (store, store_id, name, kind, first_seen_at, last_seen_at)"
-            " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(store, store_id) DO UPDATE SET"
+            "INSERT INTO editions (store, store_id, name, kind, first_seen_at, last_seen_at,"
+            " on_sale) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(store, store_id) DO UPDATE SET"
             "  name = COALESCE(excluded.name, editions.name),"
-            "  kind = COALESCE(excluded.kind, editions.kind), last_seen_at = excluded.last_seen_at",
-            (store, store_id, name, kind, now, now),
+            "  kind = COALESCE(excluded.kind, editions.kind), last_seen_at = excluded.last_seen_at,"
+            "  on_sale = COALESCE(excluded.on_sale, editions.on_sale)",
+            (store, store_id, name, kind, now, now, None if on_sale is None else int(on_sale)),
         )
         cursor = await self._conn.execute(
             "SELECT edition_id FROM editions WHERE store = ? AND store_id = ?", (store, store_id)
@@ -484,3 +493,12 @@ class _StoresRepo:
         )
         for row in await cursor.fetchall():
             await self.delete_version(int(row["version_id"]))
+
+    async def consoles_of_hltb(self, hltb_id: int) -> set[str]:
+        """The consoles of the versions an HLTB entry is linked to."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT v.console FROM version_hltb vh"
+            " JOIN versions v ON v.version_id = vh.version_id WHERE vh.hltb_id = ?",
+            (hltb_id,),
+        )
+        return {str(row[0]) for row in await cursor.fetchall()}

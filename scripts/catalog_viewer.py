@@ -150,6 +150,9 @@ def _store_href(row: sqlite3.Row) -> str:
         if stand_in:
             return f"https://store.playstation.com/en-us/search/{name}"
         return f"https://store.playstation.com/en-us/concept/{product}"
+    if store == "hltb":
+        # A version HLTB says exists, with nothing a store says of it.
+        return f"https://howlongtobeat.com/game/{product}"
     return "#"
 
 
@@ -746,7 +749,8 @@ async def game(request: web.Request) -> web.Response:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
             "SELECT vg.version_id, v.store, v.product_id, v.stand_in, " + STORE_PAGE + ","
-            " v.console, v.name, v.release_date, v.developer, v.platform, v.title_id,"
+            " v.console, v.name, v.release_date, v.on_sale, v.origin, v.developer, v.platform,"
+            " v.title_id,"
             " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
             " vl.of_version_id AS demo_of, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
@@ -771,7 +775,7 @@ async def game(request: web.Request) -> web.Response:
             (game_id,),
         ).fetchall()
         editions = conn.execute(
-            "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.kind,"
+            "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.kind, e.on_sale,"
             " e.first_seen_at, e.last_seen_at,"
             " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
             "  '; ') FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"

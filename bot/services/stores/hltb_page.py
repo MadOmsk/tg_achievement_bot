@@ -27,6 +27,8 @@ class HltbEntry:
     game_type: str | None = None
     parent_hltb_id: int | None = None
     steam_appid: int | None = None
+    # Its other Steam app (a game's re-release under another id).
+    steam_alt: int | None = None
     developer: str | None = None
     publisher: str | None = None
     release_year: int | None = None
@@ -68,6 +70,7 @@ def parse_page(data: dict) -> HltbEntry | None:
         game_type=_text(game.get("game_type")),
         parent_hltb_id=_int(game.get("game_parent")),
         steam_appid=_int(game.get("profile_steam")),
+        steam_alt=_int(game.get("profile_steam_alt")),
         developer=extras.pop("developer", None),
         publisher=extras.pop("publisher", None),
         release_year=_year(game.get("release_world")) or _int(game.get("game_name_date")),

@@ -1048,6 +1048,8 @@ CREATE TABLE IF NOT EXISTS versions (
     -- Made from our own list when no store described it (093): the store is
     -- the platform's, the product id the list's own id.
     stand_in     INTEGER NOT NULL DEFAULT 0,
+    -- Whether the store still sells it (095): 1 / 0, NULL when not known.
+    on_sale      INTEGER,
     UNIQUE (store, product_id, console)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);
@@ -1207,6 +1209,7 @@ CREATE TABLE IF NOT EXISTS editions (
                                     -- complete / anniversary / preorder / bundle
     first_seen_at TEXT NOT NULL,
     last_seen_at  TEXT NOT NULL,
+    on_sale       INTEGER,          -- 095: 1 / 0, NULL when not known
     UNIQUE (store, store_id)
 );
 

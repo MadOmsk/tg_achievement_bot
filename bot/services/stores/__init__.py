@@ -44,6 +44,8 @@ class StoreVersion:
     live_service: bool = False
     # Made from our own list when no store described it (the store is the platform's).
     stand_in: bool = False
+    # Whether its store still sells it; None when not known.
+    on_sale: bool | None = None
     # Every id that names this version: (kind, id), e.g. ("psn_title", "CUSA00527_00").
     store_ids: list[tuple[str, str]] = field(default_factory=list)
     # The ids of its add-ons, as the store lists them; named separately.

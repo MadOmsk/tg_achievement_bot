@@ -112,17 +112,29 @@ def parse_product(product: dict) -> list[StoreVersion]:
             if r.get("RelatedProductId") and r.get("RelationshipType") in ("Bundle", "AddOn")
         ],
     }
+    on_sale = sold(product)
     return [
         StoreVersion(
             store="xbox",
             product_id=big_id,
             console=console,
             also_on=list(also_on),
+            on_sale=on_sale,
             store_ids=[("xbox_product", big_id)] + [("xbox_title", t) for t in title_ids],
             **common,  # type: ignore[arg-type]
         )
         for console in consoles
     ]
+
+
+def sold(product: dict) -> bool:
+    """Whether the store still sells the product: some availability offers to
+    buy it (a product off sale keeps only Browse, License, Redeem…)."""
+    return any(
+        "Purchase" in (availability.get("Actions") or [])
+        for sku in product.get("DisplaySkuAvailabilities") or []
+        for availability in sku.get("Availabilities") or []
+    )
 
 
 def bundle_items(product: dict) -> list[tuple[str, bool]]:

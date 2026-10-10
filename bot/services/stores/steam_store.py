@@ -60,14 +60,21 @@ async def package(package_id: str) -> dict | None:
     return entry.get("data") if entry.get("success") else None
 
 
-def package_ids(data: dict) -> list[str]:
-    """The packages an app's page sells it as: its editions."""
+def sold_package_ids(data: dict) -> list[str]:
+    """The packages an app's page sells it as now: its editions on sale."""
     return [
         str(sub["packageid"])
         for group in data.get("package_groups") or []
         for sub in group.get("subs") or []
         if sub.get("packageid")
     ]
+
+
+def package_ids(data: dict) -> list[str]:
+    """Every package the app is in, sold now or no longer (`packages` keeps
+    the ones a store page stopped offering): its editions."""
+    sold = sold_package_ids(data)
+    return sold + [str(p) for p in data.get("packages") or [] if str(p) not in sold]
 
 
 def parse_app(data: dict, data_ru: dict | None = None) -> StoreVersion:
@@ -98,6 +105,7 @@ def parse_app(data: dict, data_ru: dict | None = None) -> StoreVersion:
         live_service=live,
         store_ids=[("steam_app", appid)],
         dlc_ids=[str(d) for d in data.get("dlc") or []],
+        on_sale=bool(data.get("is_free")) or bool(sold_package_ids(data)),
     )
     return version
 

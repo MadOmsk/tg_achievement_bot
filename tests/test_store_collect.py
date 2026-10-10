@@ -266,3 +266,17 @@ def test_a_steam_apps_packages_are_its_editions() -> None:
         ]
     }
     assert steam_store.package_ids(data) == ["110687", "626153"]
+
+
+def test_a_product_off_sale_offers_no_purchase() -> None:
+    on = {"DisplaySkuAvailabilities": [{"Availabilities": [{"Actions": ["Browse", "Purchase"]}]}]}
+    off = {"DisplaySkuAvailabilities": [{"Availabilities": [{"Actions": ["Browse", "License"]}]}]}
+    assert xbox_catalog.sold(on) and not xbox_catalog.sold(off)
+
+
+def test_a_steam_apps_packages_off_sale_are_its_editions_too() -> None:
+    data = {"package_groups": [{"subs": [{"packageid": 110687}]}], "packages": [110687, 12248]}
+    assert steam_store.sold_package_ids(data) == ["110687"]
+    assert steam_store.package_ids(data) == ["110687", "12248"]
+    version = steam_store.parse_app({**STEAM_APP, "package_groups": [], "is_free": False})
+    assert version.on_sale is False
