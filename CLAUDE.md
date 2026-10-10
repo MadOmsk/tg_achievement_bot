@@ -1993,7 +1993,9 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `prerelease`: `changelog/<v>.ru.md`, `.en.md`, `.contributors.md`, and
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
-  links never 404.
+  links never 404. Under each note's title, a line links its other language
+  (owner, 2026-10-10): `**Русский** · [English](<v>.en.md)` in the Russian one,
+  `[Русский](<v>.ru.md) · **English**` in the English one.
 - **A release is: notes, a short review, then `prerelease` → `main`** (owner,
   2026-09-25). A contributor's pull request targets `prerelease`, never `main`: #129
   merged into `main` deployed at once, and production announced a version with no
