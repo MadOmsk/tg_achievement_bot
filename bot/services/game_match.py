@@ -100,7 +100,10 @@ def kind_of(candidate: Candidate) -> str:
 WEIGHTS: dict[str, float] = {
     "bias": -3.0,
     "one_list": 12.0,  # the same achievement list (Smart Delivery, Play Anywhere)
-    "same_group": 5.0,  # one store filed them under one game of its own
+    "same_group": 5.0,  # one store filed them under one game of its own, names alike
+    # …under one group, names not alike: a store's group can hold a series
+    # (Microsoft files FF7 Remake Intergrade and Rebirth together).
+    "same_group_other_name": 0.5,
     "groups_differ": -2.0,  # one store filed them under two
     "same_hltb": 5.0,  # one HLTB entry
     "steam_parent": 5.0,  # Steam names one the other's game
@@ -129,7 +132,8 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
     f: dict[str, float] = {"bias": 1.0}
     if a.list_key and a.list_key == b.list_key:
         f["one_list"] = 1.0
-    if a.store_group and a.store == b.store and a.store_group == b.store_group:
+    same_group = bool(a.store_group and a.store == b.store and a.store_group == b.store_group)
+    if same_group:
         f["same_group"] = 1.0
     elif _groups_differ(a, b):
         f["groups_differ"] = 1.0
@@ -147,6 +151,9 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
         name = CONTAINED_NAME
         f["franchise"] = 1.0
     f["name"] = name - NAME_FLOOR
+    if same_group and name < NAME_FLOOR:
+        del f["same_group"]
+        f["same_group_other_name"] = 1.0
 
     if "franchise" not in f and name < 1.0 and _subtitled(a, b):
         # "Mass Effect" → "Mass Effect: Andromeda": unless the achievements

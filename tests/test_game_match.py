@@ -210,3 +210,11 @@ def test_an_edition_tail_never_takes_the_games_own_subtitle() -> None:
     legendary = _c(1, "Mass Effect Legendary Edition", year=2021)
     andromeda = _c(2, "Mass Effect: Andromeda Deluxe Edition", store="steam", year=2020)
     assert compare(legendary, andromeda).state == "apart"
+
+
+def test_a_stores_group_holding_a_series_does_not_make_one_game() -> None:
+    remake = _c(
+        1, "FINAL FANTASY VII REMAKE INTERGRADE", console="series", year=2026, store_group="ff7"
+    )
+    rebirth = _c(2, "FINAL FANTASY VII REBIRTH", console="series", year=2026, store_group="ff7")
+    assert compare(remake, rebirth).state != "linked"
