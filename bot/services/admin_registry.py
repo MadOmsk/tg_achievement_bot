@@ -181,6 +181,24 @@ SETTINGS: tuple[Setting, ...] = (
         default=post_picture.STYLE_DEFAULT,
         choices=post_picture.STYLES,
     ),
+    Setting(
+        post_picture.SIZE_KEY,
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-post-picture-size",
+        default=post_picture.SIZE_DEFAULT,
+        choices=post_picture.SIZES,
+    ),
+    Setting(
+        post_picture.SCALE_KEY,
+        "global",
+        "rules",
+        Kind.CHOICE,
+        "admin-setting-post-picture-scale",
+        default=post_picture.SCALE_DEFAULT,
+        choices=post_picture.SCALES,
+    ),
     # ---- global: the numbers
     *(
         Setting(
@@ -407,6 +425,12 @@ def value_label(setting: Setting, value: Any, *, locale: str, place: bool = Fals
         return _("admin-digest-never") if value >= DIGEST_NEVER else str(value)
     if setting.key == post_picture.STYLE_KEY:
         return _(f"admin-post-picture-{value}")
+    if setting.key == post_picture.SIZE_KEY:
+        if value == post_picture.SIZE_ORIGINAL:
+            return _("admin-post-picture-size-original")
+        return str(value).replace("x", "×")
+    if setting.key == post_picture.SCALE_KEY:
+        return f"×{value}"
     return str(value)
 
 

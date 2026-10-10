@@ -132,11 +132,14 @@ async def send_picture_samples(
     sent = 0
     for item in picked.values():
         icon, cover = await post_picture.sources(repo, item)
-        styles = [
-            style
-            for style in (post_picture.STYLE_COLOR, post_picture.STYLE_COVER)
-            if await post_picture.build(icon, cover, style) is not None
-        ]
+        # One per distinct picture: with no card the two grounds draw the same.
+        styles: list[str] = []
+        drawn: set[bytes] = set()
+        for style in (post_picture.STYLE_COLOR, post_picture.STYLE_COVER):
+            data = await post_picture.build(icon, cover, await post_picture.look_of(repo, style))
+            if data is not None and data not in drawn:
+                drawn.add(data)
+                styles.append(style)
         first = "admin-post-picture-off" if styles else "admin-picture-test-high-res"
         for style, key in [(post_picture.STYLE_OFF, first)] + [
             (style, f"admin-post-picture-{style}") for style in styles

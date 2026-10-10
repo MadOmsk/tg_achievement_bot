@@ -789,12 +789,15 @@ isn't muted there; it wasn't already published there.
   stored** (icon cache, cover, URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
   as it is.** A low-resolution one (under 200 px on its longer side —
-  Steam's and Xbox 360's 64 px icons) is enlarged ×3 by a cheap filter
-  (bicubic) and set in the middle of a 1024 × 1024 ground, rounded, with a
-  shadow. The ground is the admin's style (`post_picture_style`, /admin →
-  Правила): `off` (as before, the default), `color` (the icon's average
-  colour) or `cover` (the game's cover, blurred and darkened; the colour
-  without one). Anything that cannot be drawn goes as before. The user
+  Steam's and Xbox 360's 64 px icons) is enlarged by a cheap filter
+  (bicubic) and set in the middle of a card, rounded, with a shadow. Three
+  global admin settings (/admin → Правила): the ground, `post_picture_style`
+  — `off` (as before, the default), `color` (the icon's average colour) or
+  `cover` (the game's cover, blurred and darkened; the colour without one);
+  the card, `post_picture_size` — `1024x1024` (default), `720x1280`, or
+  `original` (no card: the enlarged icon alone); the scale,
+  `post_picture_scale` — ×1 to ×5 (×3 default), never past 90% of the
+  card. Anything that cannot be drawn goes as before. The user
   card's «🖼 Тест уведомлений» sends the person's latest achievement on each
   platform as the whole post a chat gets (`Publisher.sample`: text,
   progress, Mini App button) — as today, then on each ground — to the
@@ -1392,7 +1395,7 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, the digest size, profile links, the post picture · Новые пользователи: the
+  rarity threshold, the digest size, profile links, the post picture, its card and scale · Новые пользователи: the
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.

@@ -16,12 +16,16 @@ def _png(size: tuple[int, int], color=(200, 30, 30, 255)) -> bytes:
     return out.getvalue()
 
 
+def _look(style: str, size: str = "1024x1024", scale: int = 3) -> post_picture.Look:
+    return post_picture.Look(style, size, scale)
+
+
 def _picture(data: bytes) -> Image.Image:
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
 def test_a_low_res_icon_is_enlarged_three_times_on_a_1024_square() -> None:
-    data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COLOR)
+    data = post_picture.compose(_png((64, 64)), _look(post_picture.STYLE_COLOR))
     assert data is not None
     picture = _picture(data)
     assert picture.size == (1024, 1024)
@@ -37,27 +41,30 @@ def test_a_low_res_icon_is_enlarged_three_times_on_a_1024_square() -> None:
 
 def test_a_high_res_picture_is_left_as_it_is() -> None:
     for size in ((256, 256), (1920, 1080), (240, 240)):
-        assert post_picture.compose(_png(size), post_picture.STYLE_COVER, _png((300, 400))) is None
+        assert (
+            post_picture.compose(_png(size), _look(post_picture.STYLE_COVER), _png((300, 400)))
+            is None
+        )
 
 
 def test_the_cover_style_puts_the_cover_round_the_icon() -> None:
     cover = _png((300, 400), (20, 200, 20, 255))
-    data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COVER, cover)
+    data = post_picture.compose(_png((64, 64)), _look(post_picture.STYLE_COVER), cover)
     assert data is not None
     corner = _picture(data).getpixel((3, 3))
     assert corner[1] > corner[0]  # green, from the cover — not the icon's red
 
 
 def test_without_a_cover_the_cover_style_falls_back_to_the_colour() -> None:
-    data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COVER, None)
+    data = post_picture.compose(_png((64, 64)), _look(post_picture.STYLE_COVER), None)
     assert data is not None
     corner = _picture(data).getpixel((3, 3))
     assert corner[0] > corner[1]
 
 
 def test_off_or_not_a_picture_draws_nothing() -> None:
-    assert post_picture.compose(_png((64, 64)), post_picture.STYLE_OFF) is None
-    assert post_picture.compose(b"not a picture", post_picture.STYLE_COLOR) is None
+    assert post_picture.compose(_png((64, 64)), _look(post_picture.STYLE_OFF)) is None
+    assert post_picture.compose(b"not a picture", _look(post_picture.STYLE_COLOR)) is None
 
 
 async def test_build_reads_the_first_source_that_loads(tmp_path, monkeypatch) -> None:
@@ -71,19 +78,47 @@ async def test_build_reads_the_first_source_that_loads(tmp_path, monkeypatch) ->
 
     monkeypatch.setattr(post_picture.images, "fetch", nothing)
     missing = str(tmp_path / "gone.png")
-    color = post_picture.STYLE_COLOR
+    color = _look(post_picture.STYLE_COLOR)
     assert await post_picture.build((missing, str(small)), (), color) is not None
     assert await post_picture.build((str(large),), (), color) is None
-    assert await post_picture.build((str(small),), (), post_picture.STYLE_OFF) is None
-    assert await post_picture.build(("https://cdn/x.png",), (), post_picture.STYLE_COVER) is None
+    assert await post_picture.build((str(small),), (), _look(post_picture.STYLE_OFF)) is None
+    cover = _look(post_picture.STYLE_COVER)
+    assert await post_picture.build(("https://cdn/x.png",), (), cover) is None
 
 
-async def test_the_style_is_off_until_the_admin_picks_one(repo) -> None:
+async def test_the_admin_picks_the_style_the_card_and_the_scale(repo) -> None:
     from bot.services import admin_registry
 
-    assert await post_picture.style_of(repo) == post_picture.STYLE_OFF
+    assert await post_picture.look_of(repo) == post_picture.Look("off", "1024x1024", 3)
     await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "cover", None)
-    assert await post_picture.style_of(repo) == post_picture.STYLE_COVER
+    await admin_registry.set_value(repo, "global", post_picture.SIZE_KEY, "720x1280", None)
+    await admin_registry.set_value(repo, "global", post_picture.SCALE_KEY, "5", None)
+    assert await post_picture.look_of(repo) == post_picture.Look("cover", "720x1280", 5)
+    # The DM test's own style wins over the admin's; the card and scale stay.
+    assert await post_picture.look_of(repo, "color") == post_picture.Look("color", "720x1280", 5)
+
+
+def test_the_card_size_and_scale_are_the_admins() -> None:
+    icon = _png((64, 64))
+    tall = _picture(post_picture.compose(icon, _look("color", "720x1280", 2)))
+    assert tall.size == (720, 1280)
+    # x2 of 64 px in the middle of the card; outside it, the ground.
+    # (The icon is red 200; the ground, its colour toned down, stays below.)
+    assert tall.getpixel((360, 640))[0] > 190
+    assert tall.getpixel((360 + 60, 640))[0] > 190
+    assert tall.getpixel((360 + 80, 640 - 80))[0] < 190
+    alone = _picture(post_picture.compose(icon, _look("color", "original", 5)))
+    assert alone.size == (320, 320)
+    once = _picture(post_picture.compose(icon, _look("cover", "original", 1)))
+    assert once.size == (64, 64)
+
+
+def test_an_icon_never_spills_past_its_card() -> None:
+    big = _picture(post_picture.compose(_png((190, 190)), _look("color", "720x1280", 5)))
+    assert big.size == (720, 1280)
+    # 190 x 5 would be 950 px: capped at 90% of the card's 720 px width.
+    assert big.getpixel((360 - 300, 640))[0] > 190
+    assert big.getpixel((10, 640))[0] < 190
 
 
 async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(

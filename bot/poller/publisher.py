@@ -461,10 +461,10 @@ class Publisher:
         on a square per the admin's style — None for one that goes as it is
         (high resolution, or nothing could be drawn), and nothing at all while
         the style is off."""
-        style = job.style or await post_picture.style_of(self._repo)
-        if style == post_picture.STYLE_OFF or not job.art:
+        look = await post_picture.look_of(self._repo, job.style)
+        if not look.on or not job.art:
             return []
-        return [await post_picture.build(art.icon, art.cover, style) for art in job.art[:count]]
+        return [await post_picture.build(art.icon, art.cover, look) for art in job.art[:count]]
 
     async def _apply_flood_filter(
         self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]

@@ -6,9 +6,10 @@ as a tiny, blurry card, every post a different width. Here, at the moment a
 post is sent:
 
 - a picture of high resolution goes **as it is**, untouched;
-- a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×3
-  by a cheap filter and set in the middle of a 1024 × 1024 ground, with
-  rounded corners and a soft shadow.
+- a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×1–×5
+  by a cheap filter (`post_picture_scale`) and set in the middle of a card —
+  1024 × 1024, 720 × 1280, or none at all, the icon alone
+  (`post_picture_size`) — with rounded corners and a soft shadow.
 
 The ground is the style, an admin setting (`post_picture_style`): `color` —
 the icon's own average colour, darker at the edges; `cover` — the game's
@@ -27,6 +28,7 @@ import io
 import logging
 from collections import OrderedDict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,17 +46,45 @@ STYLE_OFF, STYLE_COLOR, STYLE_COVER = "off", "color", "cover"
 STYLES = (STYLE_OFF, STYLE_COLOR, STYLE_COVER)
 STYLE_DEFAULT = STYLE_OFF
 
-# The square's side, and how many times a low-resolution icon is enlarged
-# on it (owner, 2026-10-10).
-SIDE = 1024
-SCALE = 3
+# The card a low-resolution icon is set on, and how many times it is
+# enlarged — the admin's, global (owner, 2026-10-10). `original` is no card:
+# the enlarged icon alone.
+SIZE_KEY = "post_picture_size"
+SIZE_ORIGINAL = "original"
+SIZES = ("1024x1024", "720x1280", SIZE_ORIGINAL)
+SIZE_DEFAULT = "1024x1024"
+SCALE_KEY = "post_picture_scale"
+SCALES = (1, 2, 3, 4, 5)
+SCALE_DEFAULT = 3
+# An enlarged icon never takes more of the card than this, whatever the scale.
+MAX_SHARE = 0.9
 
 # Under this on its longer side, a picture is low-resolution (Steam's and
 # Xbox 360's 64 px icons); at least this, it goes as it is.
 LOW_RES = 200
 # Composed pictures kept for a while: one achievement goes to several chats.
 _MEMO_SIZE = 32
-_memo: OrderedDict[tuple[str, str, str], bytes] = OrderedDict()
+_memo: OrderedDict[tuple[str, str, int, str, str], bytes] = OrderedDict()
+
+
+@dataclass(frozen=True, slots=True)
+class Look:
+    """How a low-resolution picture is drawn: the ground, the card, the scale."""
+
+    style: str = STYLE_DEFAULT
+    size: str = SIZE_DEFAULT
+    scale: int = SCALE_DEFAULT
+
+    @property
+    def on(self) -> bool:
+        return self.style in (STYLE_COLOR, STYLE_COVER)
+
+    def card(self) -> tuple[int, int] | None:
+        """The card's width and height; None for no card."""
+        if self.size == SIZE_ORIGINAL:
+            return None
+        width, _, height = self.size.partition("x")
+        return int(width), int(height)
 
 
 # ------------------------------------------------------------------ drawing
@@ -86,7 +116,7 @@ def _average(picture: Image.Image) -> tuple[int, int, int]:
     return tuple(min(255, round(c * scale)) for c in (r, g, b))  # type: ignore[return-value]
 
 
-def _color_ground(picture: Image.Image, side: int) -> Image.Image:
+def _color_ground(picture: Image.Image, size: tuple[int, int]) -> Image.Image:
     """The icon's average colour, toned down so the icon stands out on it,
     lighter in the middle and darker at the edges."""
     r, g, b = _average(picture)
@@ -96,53 +126,63 @@ def _color_ground(picture: Image.Image, side: int) -> Image.Image:
     r, g, b = (round(c * target / peak) for c in (r, g, b))
     centre = tuple(min(255, round(c * 1.1 + 12)) for c in (r, g, b))
     edge = tuple(round(c * 0.45) for c in (r, g, b))
-    mask = Image.radial_gradient("L").resize((side, side), Image.Resampling.BICUBIC)
-    return Image.composite(
-        Image.new("RGB", (side, side), edge), Image.new("RGB", (side, side), centre), mask
-    )
+    mask = Image.radial_gradient("L").resize(size, Image.Resampling.BICUBIC)
+    return Image.composite(Image.new("RGB", size, edge), Image.new("RGB", size, centre), mask)
 
 
-def _cover_ground(cover: Image.Image, side: int) -> Image.Image:
-    """The game's cover across the whole square, blurred, darkened and paled."""
-    ground = ImageOps.fit(cover.convert("RGB"), (side, side), Image.Resampling.LANCZOS)
-    ground = ground.filter(ImageFilter.GaussianBlur(max(2, side // 36)))
+def _cover_ground(cover: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """The game's cover across the whole card, blurred, darkened and paled."""
+    ground = ImageOps.fit(cover.convert("RGB"), size, Image.Resampling.LANCZOS)
+    ground = ground.filter(ImageFilter.GaussianBlur(max(2, min(size) // 36)))
     ground = ImageEnhance.Color(ground).enhance(0.55)
     return ImageEnhance.Brightness(ground).enhance(0.5)
 
 
-def compose(icon: bytes, style: str, cover: bytes | None = None) -> bytes | None:
-    """A low-resolution `icon` enlarged `SCALE` times on a `SIDE` square in
-    `style`, as a JPEG; None when it is of high resolution (it goes as it
-    is), when the style is off, or when `icon` is not a picture. CPU work —
-    run it in a thread."""
-    if style not in (STYLE_COLOR, STYLE_COVER):
+def compose(icon: bytes, look: Look, cover: bytes | None = None) -> bytes | None:
+    """A low-resolution `icon` enlarged `look.scale` times — on its card in
+    `look.style`, or alone for the `original` size — as a JPEG; None when it
+    is of high resolution (it goes as it is), when the style is off, or when
+    `icon` is not a picture. CPU work — run it in a thread."""
+    if not look.on:
         return None
     picture = _open(icon)
     if picture is None or not is_low_res(picture):
         return None
+    card = look.card()
+    scale = look.scale
+    if card is not None:
+        # Never past the card's edges, whatever scale was picked.
+        fits = min(card) * MAX_SHARE / max(picture.size)
+        scale = min(scale, fits)
+    size = (max(1, round(picture.width * scale)), max(1, round(picture.height * scale)))
     # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
-    big = picture.resize((picture.width * SCALE, picture.height * SCALE), Image.Resampling.BICUBIC)
-    side = SIDE
+    big = picture.resize(size, Image.Resampling.BICUBIC)
+    if card is None:
+        return _jpeg(Image.alpha_composite(Image.new("RGBA", big.size, (0, 0, 0, 255)), big))
 
-    cover_picture = _open(cover) if cover and style == STYLE_COVER else None
-    ground = _cover_ground(cover_picture, side) if cover_picture else _color_ground(picture, side)
+    cover_picture = _open(cover) if cover and look.style == STYLE_COVER else None
+    ground = _cover_ground(cover_picture, card) if cover_picture else _color_ground(picture, card)
 
     radius = max(2, round(min(big.size) * 0.08))
     rounded = Image.new("L", big.size, 0)
     ImageDraw.Draw(rounded).rounded_rectangle((0, 0, *big.size), radius=radius, fill=255)
     alpha = Image.composite(big.getchannel("A"), rounded, rounded)
     big.putalpha(alpha)
-    at = ((side - big.width) // 2, (side - big.height) // 2)
+    at = ((card[0] - big.width) // 2, (card[1] - big.height) // 2)
 
-    shadow = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    shadow = Image.new("RGBA", card, (0, 0, 0, 0))
     drop = Image.new("RGBA", big.size, (0, 0, 0, 0))
     drop.putalpha(Image.eval(alpha, lambda a: a * 150 // 255))
-    # The shadow belongs to the icon, so it is sized by the icon, not the square.
+    # The shadow belongs to the icon, so it is sized by the icon, not the card.
     shadow.paste(drop, (at[0], at[1] + max(2, big.height // 24)), drop)
     shadow = shadow.filter(ImageFilter.GaussianBlur(max(2, big.height // 14)))
 
     canvas = Image.alpha_composite(ground.convert("RGBA"), shadow)
     canvas.paste(big, at, big)
+    return _jpeg(canvas)
+
+
+def _jpeg(canvas: Image.Image) -> bytes:
     out = io.BytesIO()
     canvas.convert("RGB").save(out, "JPEG", quality=92, optimize=True)
     return out.getvalue()
@@ -163,10 +203,17 @@ async def sources(repo: Repo, item: AchievementRow) -> tuple[tuple[str, ...], tu
     return icon, cover
 
 
-async def style_of(repo: Repo) -> str:
-    """The admin's style, read on every post so a change applies at once."""
-    style = await repo.get_app_setting(STYLE_KEY)
-    return style if style in STYLES else STYLE_DEFAULT
+async def look_of(repo: Repo, style: str | None = None) -> Look:
+    """The admin's style, card and scale, read on every post so a change
+    applies at once; `style` overrides the admin's (the DM test)."""
+    stored_style = await repo.get_app_setting(STYLE_KEY)
+    size = await repo.get_app_setting(SIZE_KEY)
+    scale = await repo.get_app_setting(SCALE_KEY)
+    return Look(
+        style=style or (stored_style if stored_style in STYLES else STYLE_DEFAULT),
+        size=size if size in SIZES else SIZE_DEFAULT,
+        scale=int(scale) if scale in {str(n) for n in SCALES} else SCALE_DEFAULT,
+    )
 
 
 async def _load(source: str) -> bytes | None:
@@ -197,15 +244,21 @@ def _low_res_bytes(data: bytes) -> bool:
 
 
 async def build(
-    icon_sources: Sequence[str], cover_sources: Sequence[str], style: str
+    icon_sources: Sequence[str], cover_sources: Sequence[str], look: Look
 ) -> bytes | None:
-    """A post's enlarged, squared picture from the first icon source that
+    """A post's enlarged picture on its card, from the first icon source that
     loads (a file or a URL), on the first cover that loads; None — send the
     original as it is — when the style is off, the icon is of high
     resolution, nothing loads, or what loaded is not a picture."""
-    if style not in (STYLE_COLOR, STYLE_COVER) or not icon_sources:
+    if not look.on or not icon_sources:
         return None
-    key = (style, icon_sources[0], cover_sources[0] if cover_sources else "")
+    key = (
+        look.style,
+        look.size,
+        look.scale,
+        icon_sources[0],
+        cover_sources[0] if cover_sources else "",
+    )
     if key in _memo:
         _memo.move_to_end(key)
         return _memo[key] or None
@@ -214,9 +267,9 @@ async def build(
         return None
     composed: bytes | None = None
     if _low_res_bytes(icon[1]):
-        cover = await _first(cover_sources) if style == STYLE_COVER else None
+        cover = await _first(cover_sources) if look.style == STYLE_COVER else None
         try:
-            composed = await asyncio.to_thread(compose, icon[1], style, cover[1] if cover else None)
+            composed = await asyncio.to_thread(compose, icon[1], look, cover[1] if cover else None)
         except Exception:
             log.exception("could not compose a post picture from %s", icon[0])
             return None
