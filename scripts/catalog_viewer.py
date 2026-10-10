@@ -78,10 +78,10 @@ def _page(title: str, body: str) -> web.Response:
         '<meta name=viewport content="width=device-width,initial-scale=1">'
         "<style>body{font:14px system-ui,sans-serif;margin:8px}"
         ".scroll{overflow-x:auto}"
-        "table.versions{border-collapse:collapse;font-size:13px}"
-        "table.versions td,table.versions th{border:1px solid #ccc;padding:3px 5px;"
-        "vertical-align:middle;text-align:left}"
-        "table.versions td:nth-child(2){min-width:140px}</style>"
+        "table{border-collapse:collapse;font-size:13px}"
+        "td,th{border:1px solid #ccc;padding:3px 5px;vertical-align:middle;text-align:left}"
+        "table.versions td:nth-child(2){min-width:140px}"
+        "table.versions img{max-width:64px;height:auto;max-height:40px}</style>"
         f"<title>{escape(title)}</title>"
         f"<p>{nav}</p><h1>{escape(title)}</h1>{body}"
     )
@@ -113,7 +113,7 @@ def _table(rows: list[sqlite3.Row], links: dict[str, object] | None = None) -> s
                 text = f'<a href="{escape(href(row))}">{text}</a>'  # type: ignore[operator]
             cells.append(f"<td>{text}</td>")
         body.append("<tr>" + "".join(cells) + "</tr>")
-    return f"<table border=1 cellpadding=3><tr>{head}</tr>{''.join(body)}</table>"
+    return f"<div class=scroll><table><tr>{head}</tr>{''.join(body)}</table></div>"
 
 
 def _record(row: sqlite3.Row | None, links: dict[str, object] | None = None) -> str:
@@ -137,7 +137,7 @@ def _record(row: sqlite3.Row | None, links: dict[str, object] | None = None) -> 
         if href is not None and value is not None:
             text = f'<a href="{escape(href(row))}">{text}</a>'  # type: ignore[operator]
         lines.append(f"<tr><th align=left valign=top>{escape(column)}</th><td>{text}</td></tr>")
-    return f"<table border=1 cellpadding=3>{''.join(lines)}</table>"
+    return f"<table>{''.join(lines)}</table>"
 
 
 def _store_href(row: sqlite3.Row) -> str:
@@ -282,7 +282,7 @@ async def home(request: web.Request) -> web.Response:
     )
     return _page(
         "Games: the store side",
-        _search_form("/titles", "") + f"<table border=1 cellpadding=3>{rows}</table>",
+        _search_form("/titles", "") + f"<table>{rows}</table>",
     )
 
 
@@ -732,7 +732,7 @@ async def rules(request: web.Request) -> web.Response:
         "<p>name = name similarity − 0.8 (so 1.0 adds +2.0, 0.7 adds −1.0); years_between"
         " counts the years past the first, under five; achievements are compared when both"
         f" lists have {m.ACHIEVEMENTS_MIN}+ names.</p>"
-        f"<table border=1 cellpadding=3><tr><th>sign</th><th>weight</th></tr>{rows}</table>"
+        f"<table><tr><th>sign</th><th>weight</th></tr>{rows}</table>"
         "<p>How a version belongs to its game: a demo by the store's kind or demo / trial /"
         " beta / prologue in its name; a remaster by remaster(ed) / definitive / anniversary /"
         " redux / HD / enhanced / director's cut, or by an achievement list partly its game's,"
@@ -931,8 +931,8 @@ def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
     review row carries its probability and one picker for the answer."""
     if not rows:
         return "<p>(none)</p>"
-    head = ["", "name", "console", "date", "store", "kind", "studio", "list"]
-    head += ["p", "answer"] if decide is not None else ["state"]
+    head = ["", "name", "link", "console", "date", "store", "studio", "decided", "list"]
+    head += ["p", "answer"] if decide is not None else []
     lines = []
     for v in rows:
         kind = escape(v["kind"])
@@ -943,20 +943,20 @@ def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
         cells = [
             _img(v["cover"], 36),
             f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>',
+            kind,
             escape(v["console"]),
             escape(v["release_date"] or "?"),
             f'<a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
             f"{stand_in} ↗</a>",
-            kind,
             escape(v["developer"] or ""),
+            # Who put it here: the matcher (auto) or the operator (manual).
+            escape(v["source"]),
             f'<a href="{escape(_list_href(v))}">list</a>' if v["title_id"] else "",
         ]
         if decide is not None:
             score = f"{v['score']:.2f}" if v["score"] is not None else ""
             cells.append(f'<span title="{escape(v["reasons"] or "")}">{score}</span>')
             cells.append(_decision_picker(v["version_id"], decide, f"/game/{decide}"))
-        else:
-            cells.append(escape(f"{v['state']}, {v['source']}"))
         lines.append("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
     return (
         "<div class=scroll><table class=versions><tr>"
