@@ -249,7 +249,7 @@ def _low_res_bytes(data: bytes, limit: int) -> bool:
     try:
         with Image.open(io.BytesIO(data)) as picture:
             return max(picture.size) < limit
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         return False
 
 

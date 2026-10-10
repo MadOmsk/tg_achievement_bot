@@ -718,7 +718,13 @@ class Publisher:
             # When reply_markup is attached (e.g. Mini App button), send as a single
             # photo card with the full digest text so the button is preserved.
             as_album = len(job.gallery) >= 2 and not job.reply_markup
-            framed = await self._framed(job, MEDIA_GROUP_MAX if as_album else 1)
+            # Drawing the pictures must never cost the post (owner, 2026-10-07:
+            # a post always goes out): anything it raises sends the originals.
+            try:
+                framed = await self._framed(job, MEDIA_GROUP_MAX if as_album else 1)
+            except Exception:
+                log.exception("could not draw the pictures for chat %s", job.chat_id)
+                framed = []
             if as_album:
                 try:
                     media = [
