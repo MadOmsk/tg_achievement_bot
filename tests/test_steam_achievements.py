@@ -532,3 +532,20 @@ async def test_a_secret_achievement_gets_its_description_from_the_community_page
     # Stored now: the next poll asks the page nothing.
     await fetch_unlocked(repo, auth, "key", STEAM_ID, APPID)
     assert len(pages) == 2
+
+
+async def test_cached_names_and_descriptions_for_a_game_with_thousands_of_achievements(
+    repo: Repo,
+) -> None:
+    """2026-10-10: one OR per achievement made SQLite refuse the query
+    ("Expression tree is too large") on a big game, and a Steam backfill
+    died of it."""
+    names = {f"A{i}": (None, f"Achievement {i}") for i in range(2500)}
+    await repo.cache_names("steam", APPID, names)
+    keys = [("steam", APPID, f"A{i}") for i in range(2500)] + [("steam", "1", "X")]
+
+    found = await repo.cached_names(keys)
+
+    assert len(found) == 2500
+    assert found[("steam", APPID, "A2499")] == (None, "Achievement 2499")
+    assert await repo.cached_descriptions(keys) == {}
