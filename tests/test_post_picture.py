@@ -160,27 +160,71 @@ async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(
     assert sent[-1] == "https://cdn/art.png"
 
 
-async def test_the_test_action_hands_the_person_to_the_panels_sender(repo, settings) -> None:
-    from bot.services.admin_actions import AdminContext, Done, Target, perform
+async def test_the_notification_test_is_one_global_action(repo, settings) -> None:
+    """One test for the whole app, beside the picture settings — not one per
+    person's card (owner, 2026-10-10)."""
+    from bot.services.admin_actions import AdminContext, Done, Target, available, perform
 
+    views = await available(AdminContext(repo, settings), "global", Target(), locale="ru")
+    assert [(v.id, v.target, v.section) for v in views] == [("notification_test", "all", "rules")]
     person = await repo.ensure_user(1, "someone")
-    asked: list[int] = []
+    card = await available(AdminContext(repo, settings), "user", Target(person=person), locale="ru")
+    assert "notification_test" not in [v.id for v in card]
 
-    async def samples(person_id: int) -> int:
-        asked.append(person_id)
+    calls: list[None] = []
+
+    async def samples() -> int:
+        calls.append(None)
         return 6
 
     ctx = AdminContext(repo, settings, send_picture_samples=samples)
-    done = await perform(ctx, "user", Target(person=person), "picture_test", 0, locale="ru")
-    assert isinstance(done, Done) and done.ok and "6" in (done.text or "")
-    assert asked == [person]
+    done = await perform(
+        ctx, "global", Target.decode("global", "all"), "notification_test", 0, locale="ru"
+    )
+    assert isinstance(done, Done) and done.ok and "6" in (done.text or "") and len(calls) == 1
 
-    async def none(person_id: int) -> int:
+    async def none() -> int:
         return 0
 
     ctx = AdminContext(repo, settings, send_picture_samples=none)
-    done = await perform(ctx, "user", Target(person=person), "picture_test", 0, locale="ru")
+    done = await perform(ctx, "global", Target(), "notification_test", 0, locale="ru")
     assert isinstance(done, Done) and not done.ok
+
+
+async def test_the_test_takes_each_platforms_newest_achievement_whoever_earned_it(repo) -> None:
+    from datetime import timedelta
+
+    from bot.db.repo import AchievementRow
+    from bot.util import utcnow
+
+    now = utcnow()
+
+    def row(achievement_id: str, days: int, icon: str | None) -> AchievementRow:
+        return AchievementRow(
+            title_id="10",
+            achievement_id=achievement_id,
+            name=achievement_id,
+            description=None,
+            icon_url=icon,
+            unlocked_at=(now - timedelta(days=days)).isoformat(timespec="seconds"),
+            gamerscore=0,
+            rarity_percent=None,
+            platform="steam",
+        )
+
+    for tg_id, steam_id, rows in (
+        (10, "76561190000000010", [row("old", 5, "https://e/old.png")]),
+        (11, "76561190000000011", [row("new", 1, "https://e/new.png"), row("bare", 0, None)]),
+    ):
+        await repo.ensure_user(tg_id, f"p{tg_id}")
+        person = await repo.person_id(tg_id)
+        await repo.link_platform_account(person, "steam", steam_id, f"P{tg_id}")
+        await repo.insert_new_achievements_steam(person, steam_id, rows, is_backfill=False)
+
+    latest = await repo.latest_per_platform()
+    # The newest one with a picture — the one with none is passed over.
+    assert [(r.platform, r.achievement_id) for r in latest] == [("steam", "new")]
+    assert latest[0].person_id == await repo.person_id(11)
 
 
 async def test_the_sample_is_the_whole_post_in_the_style_asked(repo, tmp_path, monkeypatch) -> None:
@@ -224,3 +268,19 @@ async def test_the_sample_is_the_whole_post_in_the_style_asked(repo, tmp_path, m
     assert "Оружейный мастер" in kwargs["caption"] and "<i>обложка</i>" in kwargs["caption"]
     assert await pub.sample(item, person, 42, locale="ru", style="off", note="как есть") == 11
     assert sent[-1][0] == "https://cdn/icon.png"
+
+
+async def test_the_bots_rules_screen_carries_the_test_button(repo) -> None:
+    from bot.services.admin_registry import values
+    from bot.views.admin import global_actions
+    from bot.views.admin_settings import render_settings_group
+
+    actions = await global_actions(repo, locale="ru")
+    current = await values(repo, "global")
+    _text, markup = render_settings_group("rules", current, locale="ru", actions=actions).as_pair()
+    data = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert "a:x:g:all:notification_test:0" in data
+    _text, markup = render_settings_group("lists", current, locale="ru", actions=actions).as_pair()
+    assert "a:x:g:all:notification_test:0" not in [
+        b.callback_data for row in markup.inline_keyboard for b in row
+    ]

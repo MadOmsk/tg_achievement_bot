@@ -34,7 +34,10 @@ from bot.services.naming import link_nickname, person_name_of
 
 log = logging.getLogger(__name__)
 
-Scope = Literal["user", "account", "chat"]
+Scope = Literal["user", "account", "chat", "global"]
+
+# A global action's one target: the whole app.
+GLOBAL_TARGET = "all"
 
 # Plain platform names for a sentence ("Стереть базу PSN: nick …").
 _PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
@@ -44,7 +47,7 @@ _PLATFORM_NAMES = {"xbox": "XBOX", "steam": "Steam", "psn": "PSN"}
 class Target:
     """What an action is about, and how both panels name it in a button or a
     request: `p12` a person, `p12.psn.<account id>` one of their accounts,
-    `-100…` a chat."""
+    `-100…` a chat, `all` the whole app (a global action)."""
 
     person: int | None = None
     platform: str | None = None
@@ -52,6 +55,8 @@ class Target:
     chat_id: int | None = None
 
     def encode(self) -> str:
+        if self.person is None and self.chat_id is None:
+            return GLOBAL_TARGET
         if self.chat_id is not None:
             return str(self.chat_id)
         base = f"p{self.person}"
@@ -62,6 +67,10 @@ class Target:
     @classmethod
     def decode(cls, scope: Scope, raw: str) -> Target:
         """Raises ValueError for anything that is not a target of `scope`."""
+        if scope == "global":
+            if raw != GLOBAL_TARGET:
+                raise ValueError(raw)
+            return cls()
         if scope == "chat":
             return cls(chat_id=int(raw))
         if not raw.startswith("p"):
@@ -90,9 +99,10 @@ class AdminContext:
     admin_id: int | None = None
     # Posting the app's promo to a chat — the caller's (it is Telegram's).
     send_promo: Callable[[ChatTarget], Awaitable[None]] | None = None
-    # A person's latest posts in every picture style, to the super-admin's
-    # own DM — the caller's too; answers how many pictures went.
-    send_picture_samples: Callable[[int], Awaitable[int]] | None = None
+    # The newest achievement on each platform as a post in every picture
+    # style, to the super-admin's own DM — the caller's too (it is
+    # Telegram's); answers how many posts went.
+    send_picture_samples: Callable[[], Awaitable[int]] | None = None
 
     def accounts(self) -> AdminAccounts:
         return AdminAccounts(
@@ -252,12 +262,14 @@ class _AvatarReset(_Action):
         return Done(True, _translator(locale)("admin-avatar-reset"))
 
 
-class _PictureTest(_Action):
-    """The person's latest achievement on each platform, as a post in every
-    picture style, sent to the super-admin's DM (owner, 2026-10-10): the
-    styles are compared on real posts before one is switched on."""
+class _NotificationTest(_Action):
+    """The newest achievement on each platform, whoever earned it, as the
+    whole post a chat would get — as today and on each picture ground —
+    sent to the super-admin's own DM (owner, 2026-10-10): the post picture
+    settings are judged on real posts before one is switched on. Sits beside
+    them, in the settings' «Правила»."""
 
-    id, scope, order = "picture_test", "user", 35
+    id, scope, section, order = "notification_test", "global", "rules", 10
 
     def label(self, subject, target, _):
         return _("admin-picture-test")
@@ -267,9 +279,9 @@ class _PictureTest(_Action):
         if ctx.send_picture_samples is None:
             return Done(False, _("admin-picture-test-failed"))
         try:
-            sent = await ctx.send_picture_samples(target.person)  # type: ignore[arg-type]
+            sent = await ctx.send_picture_samples()
         except Exception:
-            log.exception("picture samples for %s failed", target.encode())
+            log.exception("the notification test failed")
             return Done(False, _("admin-picture-test-failed"))
         if not sent:
             return Done(False, _("admin-picture-test-empty"))
@@ -413,13 +425,13 @@ ACTIONS: tuple[_Action, ...] = (
     _Sync(),
     _Reset(),
     _AvatarReset(),
-    _PictureTest(),
     _Delete(),
     _Promo(),
     _DeleteLast(),
     _Wipe24h(),
     _WipeSystem24h(),
     _WipeSystemAll(),
+    _NotificationTest(),
 )
 _BY_ID: dict[tuple[str, str], _Action] = {(a.scope, a.id): a for a in ACTIONS}
 
@@ -428,9 +440,10 @@ _BY_ID: dict[tuple[str, str], _Action] = {(a.scope, a.id): a for a in ACTIONS}
 
 
 async def available(
-    ctx: AdminContext, scope: Literal["user", "chat"], target: Target, *, locale: str
+    ctx: AdminContext, scope: Literal["user", "chat", "global"], target: Target, *, locale: str
 ) -> list[ActionView]:
-    """A card's actions: a person's own and their accounts', or a chat's."""
+    """A card's actions: a person's own and their accounts', a chat's, or the
+    app's own (global: the settings screens show them, by `section`)."""
     _ = _translator(locale)
     targets: list[tuple[Scope, Target]] = [(scope, target)]
     if scope == "user":
@@ -531,6 +544,8 @@ async def _accounts_of(repo: Repo, person: int) -> list[Target]:
 
 async def _subject(ctx: AdminContext, scope: Scope, target: Target) -> _Subject | None:
     repo = ctx.repo
+    if scope == "global":
+        return _Subject()
     if scope == "chat":
         chat = next((c for c in await repo.admin_chats() if c.chat_id == target.chat_id), None)
         return None if chat is None else _Subject(chat=chat)

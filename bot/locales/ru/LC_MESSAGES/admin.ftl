@@ -236,6 +236,7 @@ admin-promo-confirm-yes = 📢 Да, отправить
 admin-promo-failed = Не получилось отправить промо — бот, возможно, не в чате.
 admin-action-unknown = Это действие сейчас недоступно.
 admin-action-section-messages = Сообщения бота
+admin-action-section-rules = Проверка уведомлений
 
 # New users and user cards
 admin-users-empty = 👥 Пока никто не подключился.
@@ -301,10 +302,10 @@ admin-reset-confirm-yes = Да, стереть и пересинхронизир
 admin-reset-avatar = 🖼 Сбросить аватар
 admin-avatar-reset = Аватар сброшен на фото из Telegram
 admin-picture-test = 🖼 Тест уведомлений
-admin-picture-test-intro = 🖼 Тест уведомлений: { $name }. Последняя ачивка с каждой платформы ({ $count }) — полным постом, как в чате: как сейчас, затем мелкая иконка с текущими размером карточки и увеличением — на фоне цвета иконки и на фоне обложки игры. Большие картинки остаются как есть.
+admin-picture-test-intro = 🖼 Тест уведомлений. Последняя выбитая ачивка каждой платформы ({ $count }) — полным постом, как в чате: как сейчас, затем мелкая иконка с текущими размером карточки и увеличением — на фоне цвета иконки и на фоне обложки игры. Большие картинки остаются как есть.
 admin-picture-test-high-res = Высокое разрешение — уходит как есть
 admin-picture-test-sent = Постов отправлено в личку: { $count }
-admin-picture-test-empty = Нет ачивок с картинками
+admin-picture-test-empty = Ещё ни одной ачивки с картинкой
 admin-picture-test-failed = Не удалось отправить тест в личку
 admin-delete-user = 🗑 Удалить пользователя
 admin-delete-confirm-1 =

@@ -797,11 +797,14 @@ isn't muted there; it wasn't already published there.
   the card, `post_picture_size` — `1024x1024` (default), `720x1280`, or
   `original` (no card: the enlarged icon alone); the scale,
   `post_picture_scale` — ×1 to ×5 (×3 default), never past 90% of the
-  card. Anything that cannot be drawn goes as before. The user
-  card's «🖼 Тест уведомлений» sends the person's latest achievement on each
-  platform as the whole post a chat gets (`Publisher.sample`: text,
-  progress, Mini App button) — as today, then on each ground — to the
-  super-admin's own DM, recording nothing. The Mini App is not touched.
+  card. Anything that cannot be drawn goes as before. «🖼 Тест
+  уведомлений», one global action beside these settings (/admin → ⚙️
+  Настройки → Правила; the Mini App's admin settings), sends the newest
+  achievement earned on each platform, whoever earned it
+  (`repo.latest_per_platform`), as the whole post a chat gets
+  (`Publisher.sample`: text, progress, Mini App button) — as today, then
+  on each ground — to the super-admin's own DM, recording nothing. The
+  Mini App's own pictures are not touched.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1357,7 +1360,9 @@ keyboard.
   - `services/admin_credentials.py` — the shared credentials (`set` raising
     `CredentialInvalid` / `CredentialSetupError`, `clear`).
   - `services/admin_actions.py` — **every action**, one class each: what it
-    is about (a person, one game account, a chat), its label, whether it is
+    is about (a person, one game account, a chat, or the app as a whole —
+    `global`, target `all`, drawn in the settings group its `section`
+    names), its label, whether it is
     dangerous, how many confirmations it takes and their words, what it does.
     `available` lists a card's actions; `perform` takes one a step at a time —
     `Confirm` (the words, the "yes", the next step) until the last step, then
@@ -1366,8 +1371,8 @@ keyboard.
     (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
     steps and the words are the server's. Today: exclude / restore, refresh and
     reset an account (reset asks once, naming it), take a chosen picture down,
-    delete a person (asks twice), send their latest posts in every picture
-    style to one's own DM; on a chat, the promo (asks once), delete the
+    delete a person (asks twice); globally, the notification test (in
+    Правила); on a chat, the promo (asks once), delete the
     last message, the three wipes (each asks once with the count). Under them,
     `services/admin_accounts.py` (refresh: presence, then the delta since the
     newest unlock; reset) and `services/admin_cleanup.py` (which messages a wipe

@@ -93,7 +93,7 @@ export type AdminSettings = { groups: AdminSettingsGroup[] };
 /** One super-admin action of a card, from the server's registry (#176). */
 export type AdminAction = {
   id: string;
-  scope: "user" | "account" | "chat";
+  scope: "user" | "account" | "chat" | "global";
   target: string;
   label: string;
   danger: boolean;

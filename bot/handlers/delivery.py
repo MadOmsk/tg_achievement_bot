@@ -19,14 +19,10 @@ from bot.db.repo import AchievementRow, Repo
 from bot.i18n import gettext
 from bot.services import post_picture
 from bot.services.message_log import stats_category
-from bot.services.naming import person_name_of
 from bot.views.parts import platform_label
 from bot.views.promo import promo_keyboard, promo_text
 
 log = logging.getLogger(__name__)
-
-# How far back a person's achievements are looked through for one per platform.
-_SAMPLE_LOOKBACK = 300
 
 
 async def safe_edit(
@@ -83,22 +79,27 @@ async def send_promo(bot: Bot, chat_id: int, locale: str, mini_app_url: str | No
 
 
 async def send_picture_samples(
-    bot: Bot, repo: Repo, settings: Settings, person_id: int, chat_id: int, *, locale: str
+    bot: Bot, repo: Repo, settings: Settings, chat_id: int, *, locale: str
 ) -> int:
-    """The person's latest achievement on each platform as the whole post a
-    chat would get — as today, then on each ground — to `chat_id`, the
-    super-admin's DM (owner, 2026-10-10). A high-resolution picture goes as
-    it is, so it is sent once, said so. Answers how many posts went."""
+    """The newest achievement on each platform, whoever earned it, as the
+    whole post a chat would get — as today, then on each ground with the
+    admin's card and scale — to `chat_id`, the super-admin's DM (owner,
+    2026-10-10). A high-resolution picture goes as it is, so it is sent
+    once, said so. Answers how many posts went."""
     from bot.poller.publisher import Publisher
 
-    user = await repo.get_user(person_id)
-    if user is None:
+    latest = await repo.latest_per_platform(locale=locale)
+    if not latest:
         return 0
-    picked: dict[str, AchievementRow] = {}
-    for row in await repo.person_recent(person_id, _SAMPLE_LOOKBACK, locale=locale):
-        if not row.icon_url or row.platform in picked:
+    await bot.send_message(
+        chat_id, gettext("admin", "admin-picture-test-intro", locale=locale, count=len(latest))
+    )
+    publisher = Publisher(bot, repo, settings)
+    sent = 0
+    for row in latest:
+        if row.person_id is None:
             continue
-        picked[row.platform] = AchievementRow(
+        item = AchievementRow(
             title_id=row.title_id,
             achievement_id=row.achievement_id,
             name=row.name,
@@ -116,21 +117,6 @@ async def send_picture_samples(
             device=row.device,
             game_platforms=row.game_platforms,
         )
-    if not picked:
-        return 0
-    await bot.send_message(
-        chat_id,
-        gettext(
-            "admin",
-            "admin-picture-test-intro",
-            locale=locale,
-            name=person_name_of(user),
-            count=len(picked),
-        ),
-    )
-    publisher = Publisher(bot, repo, settings)
-    sent = 0
-    for item in picked.values():
         icon, cover = await post_picture.sources(repo, item)
         # One per distinct picture: with no card the two grounds draw the same.
         styles: list[str] = []
@@ -147,7 +133,7 @@ async def send_picture_samples(
             try:
                 if await publisher.sample(
                     item,
-                    person_id,
+                    row.person_id,
                     chat_id,
                     locale=locale,
                     style=style,

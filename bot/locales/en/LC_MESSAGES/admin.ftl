@@ -236,6 +236,7 @@ admin-promo-confirm-yes = 📢 Yes, send it
 admin-promo-failed = Couldn't send the promo — the bot may not be in the chat.
 admin-action-unknown = That action isn't available now.
 admin-action-section-messages = Bot messages
+admin-action-section-rules = Notification check
 
 # New users and user cards
 admin-users-empty = 👥 Nobody has connected yet.
@@ -301,10 +302,10 @@ admin-reset-confirm-yes = Yes, wipe and resync
 admin-reset-avatar = 🖼 Reset avatar
 admin-avatar-reset = Avatar reset to the Telegram photo
 admin-picture-test = 🖼 Notification test
-admin-picture-test-intro = 🖼 Notification test: { $name }. The latest achievement on each platform ({ $count }) as the whole post a chat gets: as today, then a small icon with the current card size and scale — on the icon's colour and on the game's cover. Large pictures stay as they are.
+admin-picture-test-intro = 🖼 Notification test. The newest achievement earned on each platform ({ $count }) as the whole post a chat gets: as today, then a small icon with the current card size and scale — on the icon's colour and on the game's cover. Large pictures stay as they are.
 admin-picture-test-high-res = High resolution — goes as it is
 admin-picture-test-sent = Posts sent to your DM: { $count }
-admin-picture-test-empty = No achievements with pictures
+admin-picture-test-empty = No achievement with a picture yet
 admin-picture-test-failed = Could not send the test to your DM
 admin-delete-user = 🗑 Delete user
 admin-delete-confirm-1 =

@@ -121,7 +121,7 @@ async def test_both_panels_list_the_same_actions(repo: Repo, settings) -> None:
     bot_buttons = [b.text for row in markup.inline_keyboard for b in row][:-1]  # minus «back»
 
     assert [v.label for v in views] == bot_buttons
-    assert [v.id for v in views] == ["exclude", "sync", "reset", "picture_test", "delete"]
+    assert [v.id for v in views] == ["exclude", "sync", "reset", "delete"]
 
 
 async def test_a_wipe_counts_what_it_would_take_and_refuses_an_empty_one(

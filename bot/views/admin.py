@@ -47,7 +47,7 @@ from bot.services.naming import (
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.util import humanize_ago
 from bot.views import Screen
-from bot.views.admin_settings import setting_rows
+from bot.views.admin_settings import action_rows, setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
     format_offset,
@@ -454,30 +454,11 @@ async def render_user_card(
     return text, builder.as_markup()
 
 
-async def _actions(repo: Repo, scope: Literal["user", "chat"], target: Target, locale: str):
+async def _actions(
+    repo: Repo, scope: Literal["user", "chat", "global"], target: Target, locale: str
+):
     # Listing needs only the database; running one is the handler's.
     return await available_actions(AdminContext(repo, None), scope, target, locale=locale)  # type: ignore[arg-type]
-
-
-def action_rows(
-    views: list[ActionView], section: str | None = None
-) -> list[list[InlineKeyboardButton]]:
-    """An action registry's buttons: one row each, an account's side by side."""
-    rows: list[list[InlineKeyboardButton]] = []
-    last_row: str | None = None
-    for view in views:
-        if view.section != section:
-            continue
-        short = {"user": "u", "account": "a", "chat": "c"}[view.scope]
-        button = InlineKeyboardButton(
-            text=view.label, callback_data=f"a:x:{short}:{view.target}:{view.id}:0"
-        )
-        if rows and view.row == last_row:
-            rows[-1].append(button)
-        else:
-            rows.append([button])
-        last_row = view.row
-    return rows
 
 
 # Plain platform names for the confirm prompt's own sentence — distinct
@@ -640,3 +621,8 @@ def render_action_confirm(confirm: Confirm, *, yes: str, back: str, locale: str)
         InlineKeyboardButton(text=_("admin-cancel"), callback_data=back),
     )
     return Screen(confirm.text, builder.as_markup())
+
+
+async def global_actions(repo: Repo, *, locale: str) -> list[ActionView]:
+    """The app's own actions; a settings group shows those of its section."""
+    return await _actions(repo, "global", Target(), locale)
