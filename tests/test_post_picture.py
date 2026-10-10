@@ -307,3 +307,42 @@ async def test_the_admin_picks_what_counts_as_a_small_icon(repo) -> None:
     setting = admin_registry.find("global", post_picture.LOW_RES_KEY)
     assert setting.options() == (128, 200, 256, 512)
     assert admin_registry.value_label(setting, 256, locale="ru") == "меньше 256 px"
+
+
+async def test_a_picture_that_cannot_be_drawn_never_costs_the_post(repo, tmp_path) -> None:
+    """A header claiming a huge picture (Pillow's decompression-bomb guard)
+    is not drawn, and the post goes with the original."""
+    import struct
+    import zlib
+    from types import SimpleNamespace
+
+    from bot.poller.publisher import Art, Publisher, PublishJob
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    header = struct.pack(">IIBBBBB", 40000, 40000, 8, 2, 0, 0, 0)
+    bomb = tmp_path / "bomb.png"
+    bomb.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(b""))
+        + chunk(b"IEND", b"")
+    )
+    sent: list[object] = []
+
+    class _Bot:
+        async def send_photo(self, chat_id, photo, **kwargs):
+            sent.append(photo)
+            return SimpleNamespace(message_id=3)
+
+    job = PublishJob(
+        chat_id=-1,
+        text="card",
+        gallery=[("https://cdn/bomb.png", False)],
+        art=[Art((str(bomb), "https://cdn/bomb.png"))],
+    )
+    assert await Publisher(bot=_Bot(), repo=repo)._deliver(job) == 3
+    assert sent == ["https://cdn/bomb.png"]
