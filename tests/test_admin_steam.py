@@ -243,3 +243,14 @@ async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
 
     assert "XBOX:  0" in text
     assert "Steam: 1" in text
+
+
+async def test_admin_users_includes_a_person_with_no_game_account(repo: Repo) -> None:
+    """Owner, 2026-10-10: somebody who signed in and could not link Steam
+    was nowhere in the panel."""
+    await repo.ensure_user(1, "newcomer")
+
+    users = await repo.admin_users()
+
+    assert [u.person_id for u in users] == [await repo.person_id(1)]
+    assert _icon(users[0]) == "🔘"
