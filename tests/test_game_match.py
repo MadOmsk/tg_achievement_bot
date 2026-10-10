@@ -277,3 +277,24 @@ def test_game_facts_spread_over_versions():
     )
     assert (facts.year, facts.last_year) == (2006, 2025)
     assert facts.more_developers and facts.more_publishers
+
+
+def test_a_creation_kit_is_its_games_tool():
+    from bot.services.game_match import Candidate, compare, kind_of
+
+    game = Candidate(
+        1, "steam", "377160", "steam", ("Fallout 4",), year=2015, developer="Bethesda Game Studios"
+    )
+    kit = Candidate(
+        2,
+        "steam",
+        "1946160",
+        "steam",
+        ("Fallout 4: Creation Kit",),
+        year=2022,
+        developer="Bethesda Game Studios",
+    )
+    assert kind_of(kit) == "tool"
+    verdict = compare(game, kit)
+    assert verdict.state == "linked"
+    assert any(r.startswith("tool_of") for r in verdict.reasons)

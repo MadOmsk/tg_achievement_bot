@@ -580,7 +580,9 @@ What the stores and HLTB say about a game, collected but not shown yet
   title id). `origin` is `played` or `store` (found, nobody here owns it).
 - **Kinds of link** (owner, 2026-10-09, for stage 3): a port is just a version
   of another platform, however late; a remaster is a version with kind
-  `remaster`; a remake is another game linked `remake_of`.
+  `remaster`; a remake is another game linked `remake_of`. A demo and a tool
+  (a Creation Kit, an editor — owner, 2026-10-10) belong to one version of
+  their game: `version_links` `demo_of` / `tool_of`.
 - **Sources**, one module each in `services/stores/`, network only:
   - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
     `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour);
@@ -591,7 +593,9 @@ What the stores and HLTB say about a game, collected but not shown yet
   - PSN: the store is searched by name and a concept is accepted **only when
     Sony's trophy API says one of its title ids has our `NPWR…` list**, asked as
     an account that played it (`psn/client.trophy_lists_of`); never by name
-    alone. PSN add-ons have no names without the store's GraphQL, so a PSN
+    alone. Beside the search, the ids the game's own page on playstation.com
+    names (`psn_store.game_page_title_ids`; the search misses GTA V). PSN
+    add-ons have no names without the store's GraphQL, so a PSN
     version's DLC are its trophy groups for now;
   - the HLTB page (`hltb_games`, with DLC entries and per-platform times),
     linked to every version of a matched list (`version_hltb`). `hltb_cache`

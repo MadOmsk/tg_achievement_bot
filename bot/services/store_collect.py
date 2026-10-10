@@ -598,19 +598,28 @@ class StoreCollector:
         results = await psn.store_search(client, core(names[0]))
         ours = name_key(names[0])
         seen: set[str] = set()
+        # The search's close hits first, then the ids the game's own page on
+        # playstation.com names (the search misses GTA V and Fallout 4).
+        title_ids: list[str] = []
         for item in results:
             result = item.get("result") or {}
             concept_id = str(item.get("id") or result.get("id") or "")
             name = str((result.get("defaultProduct") or {}).get("invariantName") or "")
-            if not concept_id or concept_id in seen or similarity(ours, name_key(name)) < 0.8:
+            if not concept_id or similarity(ours, name_key(name)) < 0.8:
                 continue
-            seen.add(concept_id)
-            title_ids = psn_store.title_ids_in_search([item])
-            if not title_ids:
+            title_ids += psn_store.title_ids_in_search([item])[:1]
+        try:
+            title_ids += await psn_store.game_page_title_ids(core(names[0]))
+        except Exception as exc:
+            log.info("playstation.com page for %r: %r", names[0], exc)
+        for title_id in dict.fromkeys(title_ids):
+            concept = await psn.store_concept(client, title_id)
+            if concept is None or str(concept.get("id")) in seen:
                 continue
-            concept = await psn.store_concept(client, title_ids[0])
-            if concept is None:
+            if not _close(ours, name_key(str(concept.get("nameEn") or concept.get("name") or ""))):
+                # A page names its game's other games too (a bundle, a sequel).
                 continue
+            seen.add(str(concept.get("id")))
             await self._repo.save_payload(f"psn:{concept.get('id')}", "psn_store", concept)
             for version in psn_store.parse_concept(concept):
                 report.versions.append(
@@ -730,6 +739,14 @@ class StoreCollector:
                 return None
             results = await psn.store_search(client, name)  # type: ignore[arg-type]
             candidates = psn_store.title_ids_in_search(results)
+            try:
+                candidates += [
+                    t
+                    for t in await psn_store.game_page_title_ids(core(name))
+                    if t not in candidates
+                ]
+            except Exception as exc:
+                log.info("playstation.com page for %r: %r", name, exc)
         lists = await psn.trophy_lists_of(client, account, candidates)  # type: ignore[arg-type]
         proved = [title_id for title_id, found in lists.items() if npwr in found]
         if not proved:

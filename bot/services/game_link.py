@@ -182,11 +182,12 @@ class GameLinker:
         return report
 
     async def _link_demos(self, members: list[Candidate], pinned: set[int]) -> None:
-        """A demo belongs to one version (owner, 2026-10-09): the one of its
-        game on the same console, else on the same store, else any — the
-        version whose name opens the demo's first."""
-        games = [m for m in members if kind_of(m) != "demo"]
-        for demo in (m for m in members if kind_of(m) == "demo"):
+        """A demo, and a tool (a Creation Kit), belongs to one version (owner,
+        2026-10-09, 2026-10-10): the one of its game on the same console,
+        else on the same store, else any — the version whose name opens its
+        name first."""
+        games = [m for m in members if kind_of(m) not in ("demo", "tool")]
+        for demo in (m for m in members if kind_of(m) in ("demo", "tool")):
             if not games or demo.version_id in pinned:
                 continue
 
@@ -199,7 +200,8 @@ class GameLinker:
                 )
 
             parent = max(games, key=fit)
-            await self._repo.set_version_link(demo.version_id, parent.version_id, "demo_of", "auto")
+            link = "tool_of" if kind_of(demo) == "tool" else "demo_of"
+            await self._repo.set_version_link(demo.version_id, parent.version_id, link, "auto")
 
     @staticmethod
     def _around(seeds: list[Candidate], candidates: dict[int, Candidate]) -> list[Candidate]:
@@ -243,7 +245,7 @@ def _kinds(members: list[Candidate]) -> dict[int, str]:
     kinds = {m.version_id: kind_of(m) for m in members}
     listed = [m for m in members if len(m.achievements) >= ACHIEVEMENTS_MIN and _era(m)]
     base = min(
-        (m for m in listed if kinds[m.version_id] != "demo"),
+        (m for m in listed if kinds[m.version_id] not in ("demo", "tool")),
         key=_era,
         default=None,
     )

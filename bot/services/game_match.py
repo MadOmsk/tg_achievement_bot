@@ -28,6 +28,13 @@ _EDITION = re.compile(
     re.IGNORECASE,
 )
 _DEMO = re.compile(r"\b(demo|trial|prologue|beta)\b", re.IGNORECASE)
+# A tool made for a game, not a game (owner, 2026-10-10: "Fallout 4: Creation
+# Kit" belongs to Fallout 4). Steam files it as a game.
+_TOOL = re.compile(
+    r"\b(creation kit|construction set|mod(?:ding)? tools?|(?:level|map) editor|editor"
+    r"|sdk|dedicated server|toolkit|tool ?set)\b",
+    re.IGNORECASE,
+)
 
 NAME_FLOOR = 0.8  # below this, two versions are not compared further
 CONTAINED_NAME = 0.85
@@ -84,6 +91,8 @@ class Verdict:
 def kind_of(candidate: Candidate) -> str:
     """How a version belongs to its game, from the store's own kind first and
     the name second."""
+    if any(_TOOL.search(n) for n in candidate.names):
+        return "tool"
     if (candidate.kind or "") == "demo" or any(_DEMO.search(n) for n in candidate.names):
         return "demo"
     if any(_REMASTER.search(n) for n in candidate.names):
@@ -122,6 +131,7 @@ WEIGHTS: dict[str, float] = {
     "years_far": 0.0,  # five or more: a port, a remaster or a remake — undecided
     "year_unknown": 0.0,  # nothing either way
     "demo_of": 7.0,  # a demo the game's name opens, released within a year
+    "tool_of": 7.0,  # a tool the game's name opens (a Creation Kit), whenever made
 }
 LINK_P = 0.85  # at or above: one game
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
@@ -162,6 +172,9 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
     demo = _demo_pair(a, b)
     if demo:
         f["demo_of"] = 1.0
+        f.pop("subtitle", None)
+    elif _tool_pair(a, b):
+        f["tool_of"] = 1.0
         f.pop("subtitle", None)
     elif name < 1.0 and _numbers(a) != _numbers(b):
         # A demo's own numbers ("1-Shot") are not a sequel's.
@@ -212,7 +225,7 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
     # How the later one belongs when its list says more than its name: a list
     # partly shared, or one of its own years later, is the game made again.
     own_list = "achievements_partly" in f or ("achievements_other" in f and "years_near" not in f)
-    kind = "remaster" if own_list and "demo_of" not in f else None
+    kind = "remaster" if own_list and not {"demo_of", "tool_of"} & f.keys() else None
     if p >= LINK_P:
         return Verdict("linked", p, reasons, kind=kind)
     if p >= REVIEW_P:
@@ -232,6 +245,21 @@ def _demo_pair(a: Candidate, b: Candidate) -> bool:
             and demo.year
             and game.year
             and abs(demo.year - game.year) <= NEAR_YEARS
+        ):
+            return True
+    return False
+
+
+def _tool_pair(a: Candidate, b: Candidate) -> bool:
+    """A tool whose game's name opens it ("Fallout 4" → "Fallout 4: Creation
+    Kit"), not filed by one store under another game of its own. Years say
+    nothing: a kit comes out when it comes out."""
+    for tool, game in ((a, b), (b, a)):
+        if (
+            kind_of(tool) == "tool"
+            and kind_of(game) not in ("tool", "demo")
+            and not _groups_differ(tool, game)
+            and _starts(game, tool)
         ):
             return True
     return False
@@ -382,7 +410,7 @@ def game_facts(versions: list[dict]) -> GameFacts:
     a remaster's studio is not the game's). Demos and compilations say
     nothing about the game (Halo: MCC is not when Halo 2 came out). Each
     version: name, release_date, hltb_year, developer, publisher, kind."""
-    own = [v for v in versions if v.get("kind") not in ("demo", "compilation")] or versions
+    own = [v for v in versions if v.get("kind") not in ("demo", "compilation", "tool")] or versions
     dated = sorted(
         (
             (version_year(v.get("name"), v.get("release_date"), v.get("hltb_year")) or 9999, i, v)
@@ -412,7 +440,11 @@ def game_facts(versions: list[dict]) -> GameFacts:
 def game_name(members: list[Candidate]) -> str:
     """A game is named by its plainest version: not an edition, a remaster or
     a demo where there is one, the earliest, by its cut name."""
-    plain = [m for m in members if kind_of(m) == "version"] or members
+    plain = (
+        [m for m in members if kind_of(m) == "version"]
+        or [m for m in members if kind_of(m) not in ("demo", "tool")]
+        or members
+    )
     plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]
     return core(first.names[0]) if first.names else first.product_id

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 
+import httpx
+
 from bot.services.stores import StoreVersion
 
 _TITLE_ID = re.compile(r"\b((?:CUSA|PPSA)\d{5}_\d{2})\b")
@@ -23,6 +25,45 @@ _IMAGE_ROLES = {
     "BACKGROUND": "background",
     "PORTRAIT_BANNER": "poster",
 }
+
+
+_PAGE_TITLE_ID = re.compile(r"\b((?:CUSA|PPSA)\d{5})(?:_\d{2})?\b")
+_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
+_HEADERS = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.8"}
+
+
+def page_slug(name: str) -> str:
+    """playstation.com's address for a game: "Grand Theft Auto V" →
+    grand-theft-auto-v."""
+    plain = re.sub(r"[™®©'’]", "", name).casefold()
+    return re.sub(r"[^a-z0-9]+", "-", plain).strip("-")
+
+
+async def game_page_title_ids(name: str) -> list[str]:
+    """The CUSA/PPSA ids playstation.com's own page for a game names
+    (owner, 2026-10-10: the store's search does not find GTA V or Fallout 4,
+    their pages list them). Not Sony's API, so no psnawp and none of its
+    pacing: one plain page read, and an empty list when there is no page."""
+    slug = page_slug(name)
+    if not slug:
+        return []
+    async with httpx.AsyncClient(
+        timeout=_TIMEOUT, headers=_HEADERS, follow_redirects=True
+    ) as client:
+        response = await client.get(f"https://www.playstation.com/en-us/games/{slug}/")
+    if response.status_code != 200:
+        return []
+    return title_ids_on_page(response.text)
+
+
+def title_ids_on_page(html: str) -> list[str]:
+    """Every CUSA/PPSA id a page names, as the store's `…_00` ids."""
+    found: list[str] = []
+    for match in _PAGE_TITLE_ID.findall(html):
+        title_id = f"{match}_00"
+        if title_id not in found:
+            found.append(title_id)
+    return found
 
 
 def title_ids_in_search(results: list[dict]) -> list[str]:

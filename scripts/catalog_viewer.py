@@ -683,6 +683,7 @@ _DECISIONS = (
     ("remaster", "remaster"),
     ("edition", "edition"),
     ("demo", "demo"),
+    ("tool", "a tool for it"),
     ("compilation", "part of a compilation"),
     ("remake", "remake: another game"),
     ("different", "a different game"),
@@ -788,9 +789,11 @@ async def game(request: web.Request) -> web.Response:
             " v.console, v.name, v.release_date, v.on_sale, v.origin, v.developer, v.platform,"
             " v.title_id, " + COVER + ","
             " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
-            " vl.of_version_id AS demo_of, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
+            " vl.of_version_id AS demo_of, vl.kind AS link_kind,"
+            " vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
-            " LEFT JOIN version_links vl ON vl.version_id = v.version_id AND vl.kind = 'demo_of'"
+            " LEFT JOIN version_links vl ON vl.version_id = v.version_id"
+            "  AND vl.kind IN ('demo_of', 'tool_of')"
             " WHERE vg.game_id = ? ORDER BY vg.state, v.release_date, v.console",
             (game_id,),
         ).fetchall()
@@ -927,7 +930,8 @@ def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
         if v["title_id"]:
             extra.append(f'<a href="{escape(_list_href(v))}">achievements</a>')
         if v["demo_of"]:
-            extra.append(f'demo of <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a>')
+            of = "tool for" if v["link_kind"] == "tool_of" else "demo of"
+            extra.append(f'{of} <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a>')
         if v["state"] != "linked" or v["source"] == "manual":
             extra.append(escape(f"{v['state']}, {v['source']}"))
         line = f"<p>{_img(v['cover'], 60)} {_version_line(v)}<br><small>{' · '.join(extra)}"
@@ -1030,7 +1034,7 @@ async def decide(request: web.Request) -> web.Response:
     version_id, game_id = int(str(form["version_id"])), int(str(form["game_id"]))
     decision, back = str(form["decision"]), str(form.get("back") or "/review")
     repo = _repo(request)
-    if decision in ("version", "remaster", "edition", "demo", "compilation"):
+    if decision in ("version", "remaster", "edition", "demo", "tool", "compilation"):
         await repo.set_link(
             version_id, game_id, kind=decision, state="linked", source="manual", decided_by="viewer"
         )

@@ -1173,7 +1173,7 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE TABLE IF NOT EXISTS version_games (
     version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
     game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    kind       TEXT NOT NULL,   -- version / edition / remaster / compilation / demo
+    kind       TEXT NOT NULL,   -- version / edition / remaster / compilation / demo / tool
     state      TEXT NOT NULL,   -- linked / review / rejected
     source     TEXT NOT NULL,   -- auto / manual
     score      REAL,
@@ -1198,7 +1198,7 @@ CREATE TABLE IF NOT EXISTS game_relations (
 CREATE TABLE IF NOT EXISTS version_links (
     version_id    INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
     of_version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    kind          TEXT NOT NULL,   -- demo_of
+    kind          TEXT NOT NULL,   -- demo_of / tool_of
     source        TEXT NOT NULL,   -- auto / manual
     decided_at    TEXT NOT NULL,
     PRIMARY KEY (version_id, kind),
