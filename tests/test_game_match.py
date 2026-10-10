@@ -61,7 +61,7 @@ def test_the_same_name_years_apart_goes_to_review() -> None:
     new = _c(2, "STAR WARS Battlefront II", year=2017)
     verdict = compare(old, new)
     assert verdict.state == "review"
-    assert "years far apart" in verdict.reasons
+    assert any(r.startswith("years_far") for r in verdict.reasons)
 
 
 def test_the_stores_own_group_links_editions() -> None:

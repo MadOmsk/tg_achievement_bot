@@ -658,70 +658,28 @@ def _decisions(version_id: int, game_id: int, back: str) -> str:
 
 
 async def rules(request: web.Request) -> web.Response:
-    """How the matcher decides, with the numbers it decides by now."""
+    """The matcher's signs and the weight of each, as it decides now."""
     from bot.services import game_match as m
 
-    rows = [
-        (
-            "1",
-            "A demo whose name the game's opens, nothing numbered after it, released within",
-            f"{m.NEAR_YEARS} year → linked (demo)",
-        ),
-        (
-            "2",
-            "Same store group (Xbox ProductGroup / PSN concept), same HLTB entry,"
-            " Steam's parent app",
-            "linked — unless the numbers in the names differ",
-        ),
-        ("3", "Cut names alike below", f"{m.NAME_FLOOR} → apart"),
-        (
-            "3",
-            'One cut name inside the other ("Modern Warfare 2" ⊂ "Call of Duty: …")',
-            f"name = {m.CONTAINED_NAME}",
-        ),
-        ("3", "Different numbers (Halo / Halo 2, Battlefront / Battlefront II)", "apart"),
-        (
-            "4",
-            f"Achievements' names agree ≥ {m.ACHIEVEMENTS_SAME:.0%}"
-            f" (both lists ≥ {m.ACHIEVEMENTS_MIN})",
-            "score ≥ 0.95, and that is proof",
-        ),
-        (
-            "4",
-            f"Achievements' names agree ≤ {m.ACHIEVEMENTS_OTHER:.0%}",
-            "review (two lists of their own)",
-        ),
-        (
-            "3",
-            'A name with a subtitle after the other ("Gears of War: Reloaded")',
-            f"linked as a remaster if ≥ {m.ACHIEVEMENTS_REMASTER:.0%} of the achievements shared",
-        ),
-        (
-            "4",
-            f"Achievements partly shared ({m.ACHIEVEMENTS_REMASTER:.0%}–{m.ACHIEVEMENTS_SAME:.0%}),"
-            " same name",
-            "linked as a remaster",
-        ),
-        ("5", "Same developer / same publisher", "+0.05 / +0.02"),
-        ("6", f"Years {m.FAR_YEARS}+ apart, no achievements proof", "review"),
-        ("6", f"Years more than {m.NEAR_YEARS} apart", "−0.05 a year past the first"),
-        ("6", f"Years within {m.NEAR_YEARS}", "proof"),
-        ("6", "A year unknown", "no proof from years"),
-        ("7", f"Score ≥ {m.LINK_SCORE} with a proof (achievements or close years)", "linked"),
-        ("7", f"Score ≥ {m.REVIEW_SCORE}", "review"),
-        ("7", "Otherwise", "apart"),
-    ]
+    rows = "".join(
+        f"<tr><td>{escape(k)}</td><td align=right>{w:+.1f}</td></tr>" for k, w in m.WEIGHTS.items()
+    )
     body = (
-        "<p>Each pair of versions sharing a telling word is compared; linked pairs make one game, "
-        "a review pair is filed once per version, on the side less is known about. "
-        "Manual decisions are never rewritten.</p><table border=1 cellpadding=3>"
-        "<tr><th>step</th><th>when</th><th>then</th></tr>"
-        + "".join(
-            f"<tr><td>{a}</td><td>{escape(b)}</td><td>{escape(c)}</td></tr>" for a, b, c in rows
-        )
-        + "</table><p>Kinds from the name: demo / trial / beta / prologue → demo; remaster(ed) /"
-        " definitive / anniversary / redux / HD / enhanced / director's cut → remaster;"
-        " GOTY / complete / deluxe / ultimate / gold / premium / legendary → edition.</p>"
+        "<p>Each pair of versions sharing a telling word is scored: every sign it shows adds"
+        " its weight to the log-odds that they are one game, and the logistic function turns"
+        f" the sum into a probability. At {m.LINK_P:.0%} or more they are linked; from"
+        f" {m.REVIEW_P:.0%} they go to the review list (one row per version, on the side less"
+        " is known about); below that they are apart. Nothing is certain: even one shared"
+        " achievement list is only a very large weight. Manual decisions are never"
+        " rewritten, and are what the weights will be fitted to.</p>"
+        "<p>name = name similarity − 0.8 (so 1.0 adds +2.0, 0.7 adds −1.0); years_between"
+        " counts the years past the first, under five; achievements are compared when both"
+        f" lists have {m.ACHIEVEMENTS_MIN}+ names.</p>"
+        f"<table border=1 cellpadding=3><tr><th>sign</th><th>weight</th></tr>{rows}</table>"
+        "<p>How a version belongs to its game: a demo by the store's kind or demo / trial /"
+        " beta / prologue in its name; a remaster by remaster(ed) / definitive / anniversary /"
+        " redux / HD / enhanced / director's cut, or by an achievement list partly its game's,"
+        " or by a list of its own years later under a name of its own.</p>"
     )
     return _page("How versions are matched", body)
 

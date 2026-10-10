@@ -612,12 +612,14 @@ What the stores and HLTB say about a game, collected but not shown yet
 - **Games** (stage 3, migration 092): `games`, `version_games (version, game,
   kind, state, source)`, `game_relations` (`remake_of`). After every collection
   `services/game_link.py` re-links the versions around that list
-  (`services/game_match.py` decides, no DB access): hard facts first (a store's
-  own group, an HLTB entry, a demo's game), then the cut name (a differing number
-  is never the same game), **and a proof** — the achievements' names agreeing
-  (≥ 60%) or the release years close. A name alone, years far apart, a year
-  unknown or two different achievement lists go to the **review list** (one row
-  per version, on the side less is known about). The matcher rewrites only its
+  (`services/game_match.py`, no DB access): **a weighted model** (owner,
+  2026-10-10: every rule a weight, nothing certain) — each pair's signs (one
+  achievement list, a store's own group, one HLTB entry, name similarity, a
+  sequel's number, achievements' names shared, studio, years, a demo of it) add
+  their `WEIGHTS` to the log-odds; the probability links at `LINK_P` (0.85) and
+  sends to the **review list** from `REVIEW_P` (0.15; one row per version, on the
+  side less is known about). The weights are to be fitted to the operator's
+  decisions; the viewer's «rules» page shows them. The matcher rewrites only its
   own (`auto`) rows: a `manual` link stays and a `manual` rejection keeps a
   version out of that game. **Disputed pairs are the operator's** (owner,
   2026-10-09; Haiku may advise one day, not decide).

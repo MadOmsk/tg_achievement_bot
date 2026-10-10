@@ -23,6 +23,7 @@ from bot.services.game_match import (
     Candidate,
     block_key,
     compare,
+    era,
     game_name,
     kind_of,
 )
@@ -115,6 +116,10 @@ class GameLinker:
             if target is None:
                 year = min((m.year for m in members if m.year), default=None)
                 target = await self._repo.create_game(game_name(members), year)
+            else:
+                # The matcher's own name follows what the game turned out to
+                # hold; a name the operator gave stays.
+                await self._repo.rename_game(target, game_name(members), None, "auto")
             kinds = _kinds(members)
             for member in members:
                 vid = member.version_id
@@ -282,13 +287,7 @@ def _release_name(name: str) -> str:
     return normalize(_PLATFORM_TAIL.sub("", name).strip())
 
 
-# When a version came out, for ordering only: its year, else its console's era
-# (a 360 game is older than anything on One).
-_CONSOLE_ERA = {"360": 2008, "ps3": 2008, "vita": 2012, "one": 2015, "ps4": 2015}
-
-
-def _era(m: Candidate) -> int:
-    return m.year or _CONSOLE_ERA.get(m.console, 0)
+_era = era
 
 
 def _opens(game: Candidate, demo: Candidate) -> bool:

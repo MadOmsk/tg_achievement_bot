@@ -1,21 +1,18 @@
-"""Which versions are one game (#147, stage 3) — decided from what the stores
-and our own achievement lists say, no database access here.
+"""Which versions are one game (#147) — a weighted model, no database access.
 
-Hard facts first: the same store group (Xbox ProductGroup / CrossGenSet, a
-PSN concept), the same HLTB entry, a Steam demo's own game. Then a score: the
-name with its edition and platform tails cut (as `hltb_match` cuts them; a
-differing number is never the same game), the achievements' names — the
-strongest sign, one list's names are the same on every platform — the
-developer, the publisher and the release year.
-
-A pair is `linked`, `review` (the operator decides) or apart. **The same name
-with release years far apart is always `review`** (owner, 2026-10-09): a port
-ten years later (Resident Evil 5 on PS4), a remaster and a remake (Resident
-Evil 2) look alike here, and only a person tells them apart.
+Every pair of versions shows signs (`features`): one achievement list, one
+store group or two, one HLTB entry, how alike the cut names are, a sequel's
+number, how many achievements' names they share, the studio, the years, a
+demo of the game. Each adds its weight (`WEIGHTS`) to the log-odds that the
+two are one game; the logistic function makes that a probability. Linked at
+`LINK_P`, the operator's to decide from `REVIEW_P`, apart below. **Nothing is
+certain** (owner, 2026-10-10): even a shared achievement list is only a very
+large weight, and the weights are to be fitted to the operator's decisions.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -34,8 +31,6 @@ _DEMO = re.compile(r"\b(demo|trial|prologue|beta)\b", re.IGNORECASE)
 
 NAME_FLOOR = 0.8  # below this, two versions are not compared further
 CONTAINED_NAME = 0.85
-LINK_SCORE = 0.85
-REVIEW_SCORE = 0.7
 FAR_YEARS = 5
 NEAR_YEARS = 1
 ACHIEVEMENTS_MIN = 5  # a list shorter than this says nothing
@@ -98,25 +93,123 @@ def kind_of(candidate: Candidate) -> str:
     return "version"
 
 
-def compare(a: Candidate, b: Candidate) -> Verdict:
-    reasons: list[str] = []
+# What each sign adds to the log-odds that two versions are one game (#147;
+# owner, 2026-10-10: every rule is a weight, nothing is certain). The sum goes
+# through the logistic function; the weights are meant to be fitted to the
+# operator's own decisions once there are enough of them.
+WEIGHTS: dict[str, float] = {
+    "bias": -3.0,
+    "one_list": 12.0,  # the same achievement list (Smart Delivery, Play Anywhere)
+    "same_group": 5.0,  # one store filed them under one game of its own
+    "groups_differ": -2.0,  # one store filed them under two
+    "same_hltb": 5.0,  # one HLTB entry
+    "steam_parent": 5.0,  # Steam names one the other's game
+    "name": 10.0,  # × (name similarity − 0.8)
+    "full_name": 4.4,  # the very same full name, released within a few years
+    "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
+    "numbers_differ": -9.0,  # Halo and Halo 2
+    "achievements_same": 6.0,  # ≥ 60% of the achievements' names shared
+    "achievements_partly": 3.5,  # 30–60%: the game made again
+    "achievements_other": -1.5,  # ≤ 15%: two lists of their own
+    "developer": 0.7,
+    "publisher": 0.3,
+    "years_near": 3.5,  # released within a year
+    "years_between": -0.5,  # × each year past the first, under five
+    "years_far": 0.0,  # five or more: a port, a remaster or a remake — undecided
+    "year_unknown": 0.0,  # nothing either way
+    "demo_of": 7.0,  # a demo the game's name opens, released within a year
+}
+LINK_P = 0.85  # at or above: one game
+REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
+
+
+def features(a: Candidate, b: Candidate) -> dict[str, float]:
+    """The signs one pair of versions shows, each 0..1 (or a count of years)."""
+    f: dict[str, float] = {"bias": 1.0}
     if a.list_key and a.list_key == b.list_key:
-        # One achievement list is one game, whatever the stores call them.
-        return Verdict("linked", 1.0, ["one achievement list"])
+        f["one_list"] = 1.0
+    if a.store_group and a.store == b.store and a.store_group == b.store_group:
+        f["same_group"] = 1.0
+    elif _groups_differ(a, b):
+        f["groups_differ"] = 1.0
+    if a.hltb_ids & b.hltb_ids:
+        f["same_hltb"] = 1.0
+    if a.store == b.store == "steam" and (
+        a.store_group == b.product_id or b.store_group == a.product_id
+    ):
+        f["steam_parent"] = 1.0
+
     name = max((similarity(x, y) for x in a.cores for y in b.cores), default=0.0)
     if any(x == y for x in a.fulls for y in b.fulls):
         name = 1.0
     elif name < CONTAINED_NAME and _contained(a, b):
-        # "Modern Warfare 2" is "Call of Duty: Modern Warfare 2" with less said.
         name = CONTAINED_NAME
-    # Halo and Halo 2, Battlefront and Battlefront II: a sequel is never the same game.
-    numbers_differ = name < 1.0 and _numbers(a) != _numbers(b)
+        f["franchise"] = 1.0
+    f["name"] = name - NAME_FLOOR
 
-    # A demo is its game's when the game's name starts the demo's ("RESIDENT
-    # EVIL 2" → "RESIDENT EVIL 2 1-Shot Demo"), whatever else the demo says.
-    # A demo of a sequel's base name is not its demo ("Resident Evil" →
-    # "Resident Evil 4 Chainsaw Demo"), and a demo years from the game is
-    # somebody else's ("Gears of War" → "Gears of War: E-Day Beta").
+    demo = _demo_pair(a, b)
+    if demo:
+        f["demo_of"] = 1.0
+    elif name < 1.0 and _numbers(a) != _numbers(b):
+        # A demo's own numbers ("1-Shot") are not a sequel's.
+        f["numbers_differ"] = 1.0
+
+    overlap = _overlap(a.achievements, b.achievements)
+    if overlap is not None:
+        if overlap >= ACHIEVEMENTS_SAME:
+            f["achievements_same"] = 1.0
+        elif overlap >= ACHIEVEMENTS_REMASTER:
+            f["achievements_partly"] = 1.0
+        elif overlap <= ACHIEVEMENTS_OTHER:
+            f["achievements_other"] = 1.0
+    if _same(a.developer, b.developer):
+        f["developer"] = 1.0
+    if _same(a.publisher, b.publisher):
+        f["publisher"] = 1.0
+    if a.year and b.year:
+        gap = abs(a.year - b.year)
+        if gap <= NEAR_YEARS:
+            f["years_near"] = 1.0
+        elif gap < FAR_YEARS:
+            f["years_between"] = float(gap - NEAR_YEARS)
+        else:
+            f["years_far"] = 1.0
+        if gap < FAR_YEARS and any(x == y for x in a.fulls for y in b.fulls):
+            # The very same name a few years apart: a store's own date is not
+            # always the release (Microsoft's "Remastered" is dated 2026).
+            f["full_name"] = 1.0
+    else:
+        f["year_unknown"] = 1.0
+    return f
+
+
+def probability(f: dict[str, float], weights: dict[str, float] | None = None) -> float:
+    w = weights or WEIGHTS
+    logit = sum(w.get(k, 0.0) * v for k, v in f.items())
+    return 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, logit))))
+
+
+def compare(a: Candidate, b: Candidate) -> Verdict:
+    """How likely two versions are one game, and what that makes them."""
+    f = features(a, b)
+    p = probability(f)
+    reasons = [f"p {p:.2f}"] + [
+        f"{k} {WEIGHTS.get(k, 0.0) * v:+.1f}" for k, v in f.items() if k != "bias"
+    ]
+    # How the later one belongs when its list says more than its name: a list
+    # partly shared, or one of its own years later, is the game made again.
+    own_list = "achievements_partly" in f or ("achievements_other" in f and "years_near" not in f)
+    kind = "remaster" if own_list and "demo_of" not in f else None
+    if p >= LINK_P:
+        return Verdict("linked", p, reasons, kind=kind)
+    if p >= REVIEW_P:
+        return Verdict("review", p, reasons, kind=kind)
+    return Verdict("apart", p, reasons)
+
+
+def _demo_pair(a: Candidate, b: Candidate) -> bool:
+    """A demo whose game's name opens it, released within a year of it, and
+    not filed by one store under another game of its own."""
     for demo, game in ((a, b), (b, a)):
         if (
             kind_of(demo) == "demo"
@@ -127,92 +220,8 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
             and game.year
             and abs(demo.year - game.year) <= NEAR_YEARS
         ):
-            return Verdict("linked", 0.9, ["a demo of it"])
-
-    # Hard facts: the stores and HLTB grouping them themselves.
-    hard = None
-    if a.store_group and a.store == b.store and a.store_group == b.store_group:
-        hard = f"same {a.store} group"
-    elif a.hltb_ids & b.hltb_ids:
-        hard = "same HLTB entry"
-    elif a.store == b.store == "steam" and (
-        a.store_group == b.product_id or b.store_group == a.product_id
-    ):
-        hard = "Steam's own parent app"
-    if hard and not numbers_differ:
-        return Verdict("linked", 1.0, [hard])
-
-    if name < NAME_FLOOR and not numbers_differ and _subtitled(a, b):
-        # "Gears of War: Reloaded" after "Gears of War": a name of its own
-        # ("Reloaded" is no mark of a remaster), so only the achievements can
-        # say it is the game made again. Judgment and E-Day share none.
-        overlap = _overlap(a.achievements, b.achievements)
-        if overlap is not None and overlap >= ACHIEVEMENTS_REMASTER:
-            return Verdict(
-                "linked",
-                0.9,
-                [f"name {name:.2f}", f"achievements {overlap:.0%}", "a subtitle"],
-                kind="remaster",
-            )
-    if name < NAME_FLOOR or numbers_differ:
-        return Verdict("apart", name, [f"name {name:.2f}"])
-    reasons.append(f"name {name:.2f}")
-    score = name
-    # A name alone links nothing: the achievements or the years must agree too.
-    proof = False
-
-    overlap = _overlap(a.achievements, b.achievements)
-    if overlap is not None:
-        reasons.append(f"achievements {overlap:.0%}")
-        if overlap >= ACHIEVEMENTS_SAME:
-            score = max(score, 0.95)
-            proof = True
-        elif overlap >= ACHIEVEMENTS_REMASTER and name >= 0.95:
-            # Partly one list under one name: the game made again.
-            return Verdict("linked", 0.9, [*reasons, "a list partly shared"], kind="remaster")
-        elif overlap <= ACHIEVEMENTS_OTHER:
-            # Two lists of their own: a remake or another game, or a remaster.
-            return Verdict("review", min(score, 1.0), [*reasons, "different achievements"])
-
-    if _same(a.developer, b.developer):
-        reasons.append("same developer")
-        score += 0.05
-    if _same(a.publisher, b.publisher):
-        reasons.append("same publisher")
-        score += 0.02
-
-    if a.year and b.year:
-        gap = abs(a.year - b.year)
-        reasons.append(f"years {a.year}/{b.year}")
-        if gap >= FAR_YEARS and not proof:
-            # A port, a remaster or a remake: a person tells them apart. A list
-            # of its own says remaster rather than a port.
-            own_list = overlap is not None and overlap < ACHIEVEMENTS_SAME
-            return Verdict(
-                "review",
-                min(score, 1.0),
-                [*reasons, "years far apart"],
-                kind="remaster" if own_list else None,
-            )
-        if gap > NEAR_YEARS:
-            score -= 0.05 * (gap - NEAR_YEARS)
-        else:
-            proof = True
-        if gap < FAR_YEARS and any(x == y for x in a.fulls for y in b.fulls):
-            # The very same name, a few years apart: a store's own date is not
-            # always the release (Microsoft's "Remastered" is dated 2026).
-            reasons.append("the same full name")
-            proof = True
-    else:
-        reasons.append("a year unknown")
-
-    score = min(score, 1.0)
-    if score >= LINK_SCORE and proof:
-        return Verdict("linked", score, reasons)
-    if score >= REVIEW_SCORE:
-        own_list = overlap is not None and overlap < ACHIEVEMENTS_SAME
-        return Verdict("review", score, reasons, kind="remaster" if own_list else None)
-    return Verdict("apart", score, reasons)
+            return True
+    return False
 
 
 _STOP = {"the", "of", "and", "for", "game", "edition", "a", "an", "to", "in", "on"}
@@ -279,11 +288,20 @@ def _starts(game: Candidate, demo: Candidate) -> bool:
     return False
 
 
+# When a version came out, for ordering only: its year, else its console's era
+# (a 360 game is older than anything on One).
+CONSOLE_ERA = {"360": 2008, "ps3": 2008, "vita": 2012, "one": 2015, "ps4": 2015}
+
+
+def era(m: Candidate) -> int:
+    return m.year or CONSOLE_ERA.get(m.console, 0)
+
+
 def game_name(members: list[Candidate]) -> str:
     """A game is named by its plainest version: not an edition, a remaster or
     a demo where there is one, the earliest, by its cut name."""
     plain = [m for m in members if kind_of(m) == "version"] or members
-    plain.sort(key=lambda m: (m.year or 9999, len(m.names[0] if m.names else "")))
+    plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]
     return core(first.names[0]) if first.names else first.product_id
 
