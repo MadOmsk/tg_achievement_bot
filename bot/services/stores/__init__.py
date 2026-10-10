@@ -49,3 +49,27 @@ class StoreVersion:
     # The ids of its add-ons, as the store lists them; named separately.
     dlc_ids: list[str] = field(default_factory=list)
     dlcs: list[StoreDlc] = field(default_factory=list)
+
+
+_EDITION_KINDS = (
+    ("preorder", ("pre-order", "preorder", "pre order")),
+    ("goty", ("game of the year", "goty", "g.o.t.y")),
+    ("anniversary", ("anniversary",)),
+    ("ultimate", ("ultimate",)),
+    ("premium", ("premium",)),
+    ("deluxe", ("deluxe",)),
+    ("gold", ("gold",)),
+    ("legendary", ("legendary",)),
+    ("complete", ("complete",)),
+    ("definitive", ("definitive",)),
+)
+
+
+def edition_kind(name: str | None) -> str:
+    """What kind of edition a store's name says it is (`standard` when it says
+    none); a pre-order says so first, as it is the one that vanishes."""
+    lowered = (name or "").lower()
+    for kind, words in _EDITION_KINDS:
+        if any(word in lowered for word in words):
+            return kind
+    return "standard"

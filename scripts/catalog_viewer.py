@@ -174,6 +174,15 @@ def _dlc_href(row: sqlite3.Row) -> str:
     return "#"
 
 
+def _edition_href(row: sqlite3.Row) -> str:
+    """An edition on its store: an Xbox bundle's page, a Steam package's."""
+    if row["store"] == "xbox":
+        return f"https://www.xbox.com/en-US/games/store/x/{row['store_id']}"
+    if row["store"] == "steam":
+        return f"https://store.steampowered.com/sub/{row['store_id']}"
+    return "#"
+
+
 def _list_href(row: sqlite3.Row) -> str:
     return f"/list/{quote(str(row['platform']))}/{quote(str(row['title_id']))}"
 
@@ -761,6 +770,16 @@ async def game(request: web.Request) -> web.Response:
             " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
             (game_id,),
         ).fetchall()
+        editions = conn.execute(
+            "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.kind,"
+            " e.first_seen_at, e.last_seen_at,"
+            " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
+            "  '; ') FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
+            " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
+            " JOIN version_games vg ON vg.version_id = i.version_id AND vg.state = 'linked'"
+            " WHERE vg.game_id = ? ORDER BY e.store, e.name",
+            (game_id,),
+        ).fetchall()
         hltb = conn.execute(
             "SELECT DISTINCT h.hltb_id, h.name, h.game_type FROM version_hltb vh"
             " JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
@@ -816,6 +835,8 @@ async def game(request: web.Request) -> web.Response:
         )
         + "<h2>Related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})
+        + "<h2>Editions (packs the stores sell)</h2>"
+        + _table(editions, {"name": _edition_href, "store_id": _edition_href})
         + "<h2>DLC, by version</h2>"
         + _dlcs_by_version(dlcs)
         + "<h2>HLTB</h2>"

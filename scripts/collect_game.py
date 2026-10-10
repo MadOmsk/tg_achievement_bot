@@ -10,6 +10,7 @@ Usage:
     .venv/Scripts/python.exe -X utf8 -m scripts.collect_game steam 292030
     .venv/Scripts/python.exe -X utf8 -m scripts.collect_game xbox_modern 1799887933 --force
     .venv/Scripts/python.exe -X utf8 -m scripts.collect_game psn NPWR07207_00
+    .venv/Scripts/python.exe -X utf8 -m scripts.collect_game --name "Skyrim" --name "Fallout 4"
     (the test server: BOT_ENV_FILE=.env.test …)
 """
 
@@ -34,8 +35,11 @@ logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("platform", choices=("steam", "xbox_modern", "xbox_360", "psn"))
-    parser.add_argument("title_id")
+    parser.add_argument("platform", nargs="?", choices=("steam", "xbox_modern", "xbox_360", "psn"))
+    parser.add_argument("title_id", nargs="?")
+    parser.add_argument(
+        "--name", action="append", help="collect a game by its name on every store (repeatable)"
+    )
     parser.add_argument("--force", action="store_true", help="ask even what is not due")
     args = parser.parse_args()
 
@@ -47,6 +51,18 @@ async def main() -> int:
     key = settings.steam_api_key
     steam = SteamAuth(repo, cipher, env_key=key.get_secret_value() if key else None)
     collector = StoreCollector(repo, psn, steam)
+    if args.name:
+        for name in args.name:
+            found = await collector.collect_name(name)
+            print(
+                f"{name}: versions {len(set(found.versions))}, dlc {found.dlcs},"
+                f" games {found.games}, to review {found.review}"
+                + (f", errors {found.errors}" if found.errors else "")
+            )
+        await database.close()
+        return 0
+    if not args.platform or not args.title_id:
+        parser.error("a platform and a title id, or --name")
     report = await collector.collect(args.platform, args.title_id, force=args.force)
 
     print(f"asked:   {', '.join(report.asked) or '—'}")

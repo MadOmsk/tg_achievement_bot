@@ -1195,3 +1195,30 @@ CREATE TABLE IF NOT EXISTS version_links (
     PRIMARY KEY (version_id, kind),
     CHECK (version_id <> of_version_id)
 );
+
+-- Editions as a store sells them: a pack of a game and its add-ons, not a
+-- re-release (094).
+CREATE TABLE IF NOT EXISTS editions (
+    edition_id    INTEGER PRIMARY KEY,
+    store         TEXT NOT NULL,    -- xbox / steam / psn
+    store_id      TEXT NOT NULL,    -- Xbox bundle bigId, Steam package id, PSN product id
+    name          TEXT,
+    kind          TEXT,             -- standard / deluxe / premium / ultimate / gold / goty /
+                                    -- complete / anniversary / preorder / bundle
+    first_seen_at TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL,
+    UNIQUE (store, store_id)
+);
+
+-- What an edition holds: its game (a version of ours, when we have it) and
+-- add-ons (our DLC rows, when we have them), currency kept as such.
+CREATE TABLE IF NOT EXISTS edition_items (
+    edition_id INTEGER NOT NULL REFERENCES editions(edition_id) ON DELETE CASCADE,
+    store_id   TEXT NOT NULL,       -- the item's own id on that store
+    name       TEXT,
+    item_kind  TEXT NOT NULL,       -- game / dlc / consumable / other
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
+    PRIMARY KEY (edition_id, store_id)
+);
+CREATE INDEX IF NOT EXISTS idx_edition_items_version ON edition_items(version_id);

@@ -26,7 +26,14 @@ from bot.services.hltb import ensure_title_match
 from bot.services.hltb_match import core, normalize, similarity
 from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
-from bot.services.stores import StoreVersion, hltb_page, psn_store, steam_store, xbox_catalog
+from bot.services.stores import (
+    StoreVersion,
+    edition_kind,
+    hltb_page,
+    psn_store,
+    steam_store,
+    xbox_catalog,
+)
 from bot.util import utcnow
 
 if TYPE_CHECKING:
@@ -36,6 +43,13 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# How close a store search's hit must be to the name asked for to be stored
+# (the matcher decides what it is).
+NAME_SEARCH_FLOOR = 0.7
+# HLTB entries read for one name (a game, its remaster, its remake…).
+HLTB_PER_NAME = 4
+# Editions (Steam packages) read per game.
+EDITIONS_PER_GAME = 8
 # PSN concepts looked at for one game's name: the closest few.
 SIBLING_CONCEPTS = 2
 # Steam DLC named in one pass; a game with more is finished in the passes after.
@@ -151,6 +165,7 @@ class StoreCollector:
         )
         report.versions.append(version_id)
         more = await self._steam_dlcs(version_id, version, report)
+        await self._steam_editions(appid, version_id, data, report)
         patched = await self._recently_patched(int(appid))
         await self._repo.record_fetch(
             subject, source, status="ok", changed=changed or patched, soon=more
@@ -175,6 +190,37 @@ class StoreCollector:
             report.dlcs += 1
         return len(missing) > DLC_NAMES_PER_PASS
 
+    async def _steam_editions(
+        self, appid: str, version_id: int, data: dict, report: CollectReport
+    ) -> None:
+        """The packages the app is sold as: its editions (Skyrim: Special,
+        Anniversary), with what each holds."""
+        for package_id in steam_store.package_ids(data)[:EDITIONS_PER_GAME]:
+            try:
+                package = await steam_store.package(package_id)
+            except Exception as exc:
+                report.errors.append(f"steam package {package_id}: {exc!r}")
+                return
+            if package is None:
+                continue
+            name = str(package.get("name") or "") or None
+            edition_id = await self._repo.save_edition(
+                "steam", package_id, name, edition_kind(name)
+            )
+            for app in package.get("apps") or []:
+                app_id = str(app.get("id") or "")
+                if not app_id:
+                    continue
+                is_game = app_id == appid
+                await self._repo.save_edition_item(
+                    edition_id,
+                    app_id,
+                    app.get("name"),
+                    "game" if is_game else "dlc",
+                    is_primary=is_game,
+                    version_id=version_id if is_game else None,
+                )
+
     async def _recently_patched(self, appid: int | None) -> bool:
         if appid is None:
             return False
@@ -195,7 +241,12 @@ class StoreCollector:
             report.errors.append(f"{source}: {exc!r}")
             await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
             return
-        games = [p for p in found if str(p.get("ProductType") or "") in ("Game", "Application")]
+        games = [
+            p
+            for p in found
+            if str(p.get("ProductType") or "") in ("Game", "Application")
+            and not xbox_catalog.bundle_items(p)
+        ]
         if not games:
             await self._repo.record_fetch(subject, source, status="not_found")
             return
@@ -235,6 +286,7 @@ class StoreCollector:
         changed = await self._repo.save_payload(
             f"xbox_addons:{product_id}", "xbox_catalog", {"editions": editions, "addons": found}
         )
+        await self._xbox_editions(editions, found, report)
         for product in found:
             addon = xbox_catalog.parse_addon(product)
             if addon is None:
@@ -243,6 +295,164 @@ class StoreCollector:
                 await self._repo.save_dlc(version_id, addon)
             report.dlcs += 1
         return changed
+
+    async def _xbox_editions(
+        self, editions: list[dict], items: list[dict], report: CollectReport
+    ) -> None:
+        """Bundles as editions (owner, 2026-10-10): a pack of a game and its
+        add-ons (the E-Day Premium Edition), kept with what it holds. A
+        bundle with no game of its own is a bundle of games."""
+        by_id = {str(p.get("ProductId")): p for p in items}
+        missing = [
+            big_id
+            for edition in editions
+            for big_id, _primary in xbox_catalog.bundle_items(edition)
+            if big_id not in by_id
+        ]
+        if missing:
+            try:
+                for product in await xbox_catalog.products(list(dict.fromkeys(missing))):
+                    by_id[str(product.get("ProductId"))] = product
+            except Exception as exc:
+                report.errors.append(f"xbox edition items: {exc!r}")
+        for edition in editions:
+            contents = xbox_catalog.bundle_items(edition)
+            if not contents:
+                continue
+            name = xbox_catalog.title_of(edition)
+            primary = any(is_primary for _id, is_primary in contents)
+            edition_id = await self._repo.save_edition(
+                "xbox",
+                str(edition.get("ProductId")),
+                name,
+                edition_kind(name) if primary else "bundle",
+            )
+            for big_id, is_primary in contents:
+                item = by_id.get(big_id, {})
+                product_type = str(item.get("ProductType") or "")
+                item_kind = {"Game": "game", "Durable": "dlc", "Consumable": "consumable"}.get(
+                    product_type, "other"
+                )
+                version_id = (
+                    await self._repo.version_of_product("xbox", big_id)
+                    if item_kind == "game"
+                    else None
+                )
+                await self._repo.save_edition_item(
+                    edition_id,
+                    big_id,
+                    xbox_catalog.title_of(item) if item else None,
+                    item_kind,
+                    is_primary=is_primary,
+                    version_id=version_id,
+                )
+
+    # ------------------------------------------------------------ by name (#147)
+
+    async def collect_name(self, name: str) -> CollectReport:
+        """A game by its name, on every store, nobody here needing to have it
+        (owner, 2026-10-10: seeding the matcher with games of many editions).
+        What each store's search finds close to the name is stored (versions
+        as `store`, editions, DLC) and then matched."""
+        report = CollectReport("name", name)
+        ours = name_key(name)
+        report.asked.append("search")
+        try:
+            await self._xbox_by_name(name, ours, report)
+        except Exception as exc:
+            report.errors.append(f"xbox search: {exc!r}")
+        try:
+            for item in await steam_store.search(name):
+                hit = name_key(str(item.get("name") or ""))
+                if item.get("type") != "app" or similarity(ours, hit) < NAME_SEARCH_FLOOR:
+                    continue
+                appid = str(item["id"])
+                held = await self._repo.title_record("steam", appid) is not None
+                await self._steam(appid, report, True, ours=held)
+                await self._steam_schema(appid)
+        except Exception as exc:
+            report.errors.append(f"steam search: {exc!r}")
+        try:
+            await self._psn_siblings([name], report)
+        except Exception as exc:
+            report.errors.append(f"psn search: {exc!r}")
+        try:
+            await self._hltb_by_name(name, ours, report)
+        except Exception as exc:
+            report.errors.append(f"hltb search: {exc!r}")
+        if report.versions:
+            linked = await GameLinker(self._repo).link_versions(sorted(set(report.versions)))
+            report.games = sorted(linked.games)
+            report.review = len(linked.review)
+        return report
+
+    async def _hltb_by_name(self, name: str, ours: str, report: CollectReport) -> None:
+        """HLTB's entries close to the name, each page read and kept; one is
+        linked to a Steam version only when its page names that very app."""
+        from bot.services.hltb import search_candidates
+
+        steam_versions = {}
+        for version_id in set(report.versions):
+            row = await self._repo.version_row(version_id)
+            if row and row["store"] == "steam":
+                steam_versions[str(row["product_id"])] = version_id
+        read = 0
+        for result in (await search_candidates(name))[: HLTB_PER_NAME * 3]:
+            if similarity(ours, name_key(result.name)) < NAME_SEARCH_FLOOR:
+                continue
+            data = await hltb_page.fetch_page(result.hltb_id)
+            entry = hltb_page.parse_page(data) if data else None
+            if entry is None:
+                continue
+            await self._repo.save_payload(f"hltb:{entry.hltb_id}", "hltb_page", data)
+            await self._repo.save_hltb_game(entry)
+            if entry.steam_appid and str(entry.steam_appid) in steam_versions:
+                await self._repo.link_version_hltb(
+                    steam_versions[str(entry.steam_appid)], entry.hltb_id
+                )
+            report.hltb_id = report.hltb_id or entry.hltb_id
+            read += 1
+            if read >= HLTB_PER_NAME:
+                break
+
+    async def _xbox_by_name(self, name: str, ours: str, report: CollectReport) -> None:
+        hits = [
+            p
+            for p in await xbox_catalog.search(name)
+            if p.get("Type") == "Game"
+            and similarity(ours, name_key(str(p.get("Title") or ""))) >= NAME_SEARCH_FLOOR
+        ]
+        if not hits:
+            return
+        products = await xbox_catalog.products([str(p["ProductId"]) for p in hits])
+        editions = [p for p in products if xbox_catalog.bundle_items(p)]
+        for product in products:
+            if xbox_catalog.bundle_items(product):
+                continue
+            title_ids = [
+                str(a.get("Value"))
+                for a in product.get("AlternateIds") or []
+                if a.get("IdType") == "XboxTitleId"
+            ]
+            held = None
+            for title_id in title_ids:
+                if await self._repo.title_record("xbox_modern", title_id) is not None:
+                    held = title_id
+                    break
+            versions = xbox_catalog.parse_product(product)
+            ids = [
+                await self._repo.save_version(
+                    v,
+                    platform="xbox_modern" if held else None,
+                    title_id=held,
+                    origin="played" if held else "store",
+                )
+                for v in versions
+            ]
+            report.versions += ids
+            if versions:
+                await self._xbox_addons(versions[0].product_id, versions[0].dlc_ids, ids, report)
+        await self._xbox_editions(editions, [], report)
 
     # ------------------------------------------------------------ other stores (stage 4)
 

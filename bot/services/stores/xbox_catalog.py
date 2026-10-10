@@ -125,6 +125,25 @@ def parse_product(product: dict) -> list[StoreVersion]:
     ]
 
 
+def bundle_items(product: dict) -> list[tuple[str, bool]]:
+    """What a bundle product holds, `(bigId, is_primary)`; empty for a product
+    that is not a bundle. A bundle is an edition (a pack), never a version."""
+    found: dict[str, bool] = {}
+    for availability in product.get("DisplaySkuAvailabilities") or []:
+        sku_props = (availability.get("Sku") or {}).get("Properties") or {}
+        for item in sku_props.get("BundledSkus") or []:
+            big_id = str(item.get("BigId") or "")
+            if big_id:
+                found[big_id] = found.get(big_id, False) or bool(item.get("IsPrimary"))
+    own = str(product.get("ProductId") or "")
+    found.pop(own, None)
+    return list(found.items())
+
+
+def title_of(product: dict) -> str | None:
+    return _text(((product.get("LocalizedProperties") or [{}])[0]).get("ProductTitle"))
+
+
 def bundled(products: list[dict], game_id: str) -> list[str]:
     """What these editions bundle besides the game itself: its add-ons."""
     found: list[str] = []

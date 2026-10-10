@@ -415,3 +415,61 @@ class _StoresRepo:
                         f"DELETE FROM {table} WHERE version_id = ?",
                         (version_id,),
                     )
+
+    # ------------------------------------------------------------ editions (094)
+
+    async def save_edition(
+        self, store: str, store_id: str, name: str | None, kind: str | None
+    ) -> int:
+        """An edition seen on its store now: kept, its last sighting stamped."""
+        now = utcnow_iso()
+        await self._conn.execute(
+            "INSERT INTO editions (store, store_id, name, kind, first_seen_at, last_seen_at)"
+            " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(store, store_id) DO UPDATE SET"
+            "  name = COALESCE(excluded.name, editions.name),"
+            "  kind = COALESCE(excluded.kind, editions.kind), last_seen_at = excluded.last_seen_at",
+            (store, store_id, name, kind, now, now),
+        )
+        cursor = await self._conn.execute(
+            "SELECT edition_id FROM editions WHERE store = ? AND store_id = ?", (store, store_id)
+        )
+        edition_id = int((await cursor.fetchone())["edition_id"])
+        await self._conn.commit()
+        return edition_id
+
+    async def save_edition_item(
+        self,
+        edition_id: int,
+        store_id: str,
+        name: str | None,
+        item_kind: str,
+        *,
+        is_primary: bool = False,
+        version_id: int | None = None,
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO edition_items (edition_id, store_id, name, item_kind, is_primary,"
+            " version_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(edition_id, store_id) DO UPDATE SET"
+            "  name = COALESCE(excluded.name, edition_items.name),"
+            "  item_kind = excluded.item_kind, is_primary = excluded.is_primary,"
+            "  version_id = COALESCE(excluded.version_id, edition_items.version_id)",
+            (edition_id, store_id, name, item_kind, 1 if is_primary else 0, version_id),
+        )
+        await self._conn.commit()
+
+    async def version_of_product(self, store: str, product_id: str) -> int | None:
+        """One of our versions of this store product (any console)."""
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE store = ? AND product_id = ?"
+            " ORDER BY version_id LIMIT 1",
+            (store, product_id),
+        )
+        row = await cursor.fetchone()
+        return int(row["version_id"]) if row else None
+
+    async def version_row(self, version_id: int) -> dict | None:
+        cursor = await self._conn.execute(
+            "SELECT * FROM versions WHERE version_id = ?", (version_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None

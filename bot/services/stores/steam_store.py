@@ -37,6 +37,39 @@ async def app_details(appid: str, language: str = "english") -> dict | None:
     return entry.get("data") if entry.get("success") else None
 
 
+SEARCH_URL = "https://store.steampowered.com/api/storesearch/"
+PACKAGES_URL = "https://store.steampowered.com/api/packagedetails"
+
+
+async def search(term: str) -> list[dict]:
+    """The storefront's hits for a name: `id`, `name`, `type`."""
+    await LIMITER.acquire()
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        response = await client.get(SEARCH_URL, params={"term": term, "cc": "us", "l": "en"})
+    response.raise_for_status()
+    return list((response.json() or {}).get("items") or [])
+
+
+async def package(package_id: str) -> dict | None:
+    """A package (an edition the app is sold as): its name and its apps."""
+    await LIMITER.acquire()
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        response = await client.get(PACKAGES_URL, params={"packageids": package_id, "cc": "us"})
+    response.raise_for_status()
+    entry = (response.json() or {}).get(str(package_id)) or {}
+    return entry.get("data") if entry.get("success") else None
+
+
+def package_ids(data: dict) -> list[str]:
+    """The packages an app's page sells it as: its editions."""
+    return [
+        str(sub["packageid"])
+        for group in data.get("package_groups") or []
+        for sub in group.get("subs") or []
+        if sub.get("packageid")
+    ]
+
+
 def parse_app(data: dict, data_ru: dict | None = None) -> StoreVersion:
     appid = str(data.get("steam_appid") or "")
     categories = {int(c.get("id", 0)) for c in data.get("categories") or [] if c.get("id")}

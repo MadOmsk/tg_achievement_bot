@@ -228,3 +228,41 @@ async def test_dlc_past_a_pass_are_named_in_the_next(
     )
     second = await StoreCollector(repo).collect("steam", "292030", force=True)
     assert second.dlcs == 1
+
+
+def test_an_editions_kind_is_read_from_its_name() -> None:
+    from bot.services.stores import edition_kind
+
+    assert edition_kind("Gears of War: E-Day Premium Edition Pre-Order") == "preorder"
+    assert edition_kind("Gears of War: E-Day Premium Edition") == "premium"
+    assert edition_kind("The Elder Scrolls V: Skyrim Anniversary Edition") == "anniversary"
+    assert edition_kind("Gears of War: E-Day") == "standard"
+
+
+def test_a_bundle_is_an_edition_with_its_contents() -> None:
+    bundle = {
+        "ProductId": "9PHPXPZ0JQ4T",
+        "DisplaySkuAvailabilities": [
+            {
+                "Sku": {
+                    "Properties": {
+                        "BundledSkus": [
+                            {"BigId": "9N4PT8HGCDHQ", "IsPrimary": True},
+                            {"BigId": "9MT5FQC6WQ7M", "IsPrimary": False},
+                        ]
+                    }
+                }
+            }
+        ],
+    }
+    assert xbox_catalog.bundle_items(bundle) == [("9N4PT8HGCDHQ", True), ("9MT5FQC6WQ7M", False)]
+    assert xbox_catalog.bundle_items({"ProductId": "X"}) == []
+
+
+def test_a_steam_apps_packages_are_its_editions() -> None:
+    data = {
+        "package_groups": [
+            {"subs": [{"packageid": 110687}, {"packageid": 626153}]},
+        ]
+    }
+    assert steam_store.package_ids(data) == ["110687", "626153"]
