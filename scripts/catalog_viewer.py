@@ -175,6 +175,10 @@ STORE_PAGE = (
 # the picture of the HLTB entry it is linked to.
 COVER = (
     "COALESCE(json_extract(v.media, '$.cover'), json_extract(v.media, '$.poster'),"
+    # The list's cover as the bot keeps it on disk (#55): Xbox's 360 art
+    # answers no https, so its address alone is no picture here.
+    " (SELECT '/covers/' || t.cover_path FROM titles t WHERE t.platform = v.platform"
+    "  AND t.title_id = v.title_id AND t.cover_path IS NOT NULL),"
     " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
     "  AND t.title_id = v.title_id),"
     " (SELECT h.image_url FROM version_hltb vh JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
@@ -419,6 +423,8 @@ async def version(request: web.Request) -> web.Response:
             "SELECT v.media,"
             " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
             "  AND t.title_id = v.title_id) AS list_icon,"
+            " (SELECT '/covers/' || t.cover_path FROM titles t WHERE t.platform = v.platform"
+            "  AND t.title_id = v.title_id) AS list_cover,"
             " (SELECT h.image_url FROM version_hltb vh JOIN hltb_games h"
             "  ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "  AND h.image_url IS NOT NULL LIMIT 1) AS hltb_image"
@@ -1197,7 +1203,11 @@ def _pictures(row: sqlite3.Row | None) -> str:
     for role, url in media.items():
         if isinstance(url, str) and url.startswith("http") and url not in seen:
             seen[url] = f"store: {role}"
-    for url, source in ((row["list_icon"], "achievement list"), (row["hltb_image"], "HLTB")):
+    for url, source in (
+        (row["list_cover"], "achievement list (kept)"),
+        (row["list_icon"], "achievement list"),
+        (row["hltb_image"], "HLTB"),
+    ):
         if url and url not in seen:
             seen[str(url)] = source
     if not seen:
@@ -1216,6 +1226,10 @@ def _pictures(row: sqlite3.Row | None) -> str:
 def build(db_path: Path) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
+    covers = db_path.resolve().parent / "covers"
+    if covers.is_dir():
+        # The covers the bot downloaded (#55), beside its database.
+        app.router.add_static("/covers/", covers)
     app.on_startup.append(_open)
     app.on_cleanup.append(_close)
     app.router.add_post("/title/{platform}/{title_id}/collect", collect)
