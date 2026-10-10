@@ -1,0 +1,25 @@
+/* Quiet, as the ranking's day / month pick: the block's own, not the page's. */
+.dd-trigger.games-month {
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.games-empty {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.games-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.games-tools .sort-toggle {
+  margin: -6px 0;
+}

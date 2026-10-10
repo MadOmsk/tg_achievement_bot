@@ -32,8 +32,10 @@
   letter-spacing: -0.02em;
 }
 
+/* As wide as the fields under it. */
 .login-tagline {
-  max-width: 30ch;
+  width: 100%;
+  text-wrap: balance;
   margin: -8px 0 6px;
   color: var(--text);
   font-size: 0.95rem;

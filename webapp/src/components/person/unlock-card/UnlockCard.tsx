@@ -1,7 +1,7 @@
 import type { Ref } from "react";
 import type { FeedItem } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { CoverImg, FitImg, gameRefOf, useOpenGame } from "../../shared/lib";
+import { CoverImg, FitImg, gameRefOf, useOpenAchievement, useOpenGame } from "../../shared/lib";
 import { feedKey } from "../utils";
 import { HeroGame } from "../hero-game/HeroGame";
 import { HeroMarks } from "../hero-marks/HeroMarks";
@@ -67,10 +67,12 @@ export function UnlockCard({
   const blur = secret ? "secret-blur" : undefined;
   const rarity = item.rarity_percent != null ? `${item.rarity_percent}%` : null;
   const openGame = useOpenGame();
-  // The gallery form opens the game itself — there is nothing else on it to
-  // tap through to.
-  const canOpenGame = Boolean(minimal && item.title_id && openGame && !secret);
-  const open = canOpenGame || (onOpen && !secret);
+  const openAchievement = useOpenAchievement();
+  // The gallery form opens the achievement's own page (owner, 2026-10-09);
+  // its game line opens the game.
+  const canOpenAchievement = Boolean(minimal && item.title_id && openAchievement && !secret);
+  const canOpenGame = Boolean(minimal && item.title_id && openGame);
+  const open = canOpenAchievement || (onOpen && !secret);
   return (
     <div
       className={[
@@ -84,7 +86,7 @@ export function UnlockCard({
       tabIndex={open ? 0 : undefined}
       onClick={
         open
-          ? () => (canOpenGame ? openGame?.(gameRefOf(item)) : onOpen?.(item))
+          ? () => (canOpenAchievement ? openAchievement?.(item) : onOpen?.(item))
           : undefined
       }
     >
@@ -145,7 +147,21 @@ export function UnlockCard({
             <span className={blur}>{item.name}</span>
           </h2>
           {item.description && <p className={["minimal-desc", blur].filter(Boolean).join(" ")}>{item.description}</p>}
-          {item.game && <p className="minimal-game">{item.game}</p>}
+          {item.game &&
+            (canOpenGame ? (
+              <button
+                type="button"
+                className="minimal-game"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openGame?.(gameRefOf(item));
+                }}
+              >
+                {item.game}
+              </button>
+            ) : (
+              <p className="minimal-game">{item.game}</p>
+            ))}
         </div>
       ) : gameInCopy ? (
         <div className="unlock-card-foot">
