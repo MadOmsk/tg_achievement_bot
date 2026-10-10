@@ -207,6 +207,14 @@ class _StoresRepo:
         await self._conn.commit()
         return version_id
 
+    async def add_store_id(self, version_id: int, store: str, store_id: str, source: str) -> None:
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO version_store_ids (store, store_id, version_id, source)"
+            " VALUES (?, ?, ?, ?)",
+            (store, store_id, version_id, source),
+        )
+        await self._conn.commit()
+
     async def versions_of_title(self, platform: str, title_id: str) -> list[dict[str, Any]]:
         cursor = await self._conn.execute(
             "SELECT * FROM versions WHERE platform = ? AND title_id = ? ORDER BY console",

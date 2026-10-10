@@ -23,7 +23,7 @@ from bot.services.hltb_match import core, normalize, similarity
 
 # A name tail that says which release of the game this is.
 _REMASTER = re.compile(
-    r"\b(remaster(?:ed)?|definitive|reloaded|anniversary|redux|hd|enhanced|director'?s cut)\b",
+    r"\b(remaster(?:ed)?|definitive|anniversary|redux|hd|enhanced|director'?s cut)\b",
     re.IGNORECASE,
 )
 _EDITION = re.compile(
@@ -142,6 +142,18 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
     if hard and not numbers_differ:
         return Verdict("linked", 1.0, [hard])
 
+    if name < NAME_FLOOR and not numbers_differ and _subtitled(a, b):
+        # "Gears of War: Reloaded" after "Gears of War": a name of its own
+        # ("Reloaded" is no mark of a remaster), so only the achievements can
+        # say it is the game made again. Judgment and E-Day share none.
+        overlap = _overlap(a.achievements, b.achievements)
+        if overlap is not None and overlap >= ACHIEVEMENTS_REMASTER:
+            return Verdict(
+                "linked",
+                0.9,
+                [f"name {name:.2f}", f"achievements {overlap:.0%}", "a subtitle"],
+                kind="remaster",
+            )
     if name < NAME_FLOOR or numbers_differ:
         return Verdict("apart", name, [f"name {name:.2f}"])
     reasons.append(f"name {name:.2f}")
@@ -236,6 +248,16 @@ def _groups_differ(a: Candidate, b: Candidate) -> bool:
     )
 
 
+def _subtitled(a: Candidate, b: Candidate) -> bool:
+    """One cut name opens the other, which goes on with a subtitle."""
+    for x in a.cores:
+        for y in b.cores:
+            short, long_ = sorted((_words(x), _words(y)), key=len)
+            if 2 <= len(short) < len(long_) and long_[: len(short)] == short:
+                return True
+    return False
+
+
 def _starts(game: Candidate, demo: Candidate) -> bool:
     """The game's cut name opens the demo's, and what follows is not a number
     — unless the game has one of its own ("RESIDENT EVIL 2 1-Shot Demo"). Its
@@ -272,7 +294,6 @@ _RELEASE_WORDS = {
     "remastered",
     "remaster",
     "definitive",
-    "reloaded",
     "anniversary",
     "redux",
     "hd",
@@ -285,6 +306,31 @@ _RELEASE_WORDS = {
     "premium",
     "legendary",
 }
+
+
+# Platforms a store puts in a product's name ("Resident Evil Village PS4 & PS5").
+_PLATFORM_WORDS = {
+    "ps4",
+    "ps5",
+    "ps3",
+    "and",
+    "xbox",
+    "one",
+    "series",
+    "x",
+    "s",
+    "pc",
+    "windows",
+    "10",
+}
+
+
+def name_key(name: str) -> str:
+    """A name as the matcher compares it, platforms said in it dropped too: what
+    a store search's hits are measured by."""
+    words = _unmarked(normalize(core(name))).split()
+    kept = [w for w in words if w not in _PLATFORM_WORDS] or words
+    return " ".join(kept)
 
 
 def _unmarked(name: str) -> str:

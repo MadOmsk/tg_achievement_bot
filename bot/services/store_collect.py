@@ -21,6 +21,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from bot.services.game_link import GameLinker
+from bot.services.game_match import name_key
 from bot.services.hltb import ensure_title_match
 from bot.services.hltb_match import core, normalize, similarity
 from bot.services.steam.client import get_schema
@@ -96,8 +97,10 @@ class StoreCollector:
             elif platform == "psn":
                 await self._psn(title_id, report, force)
             await self._list_version(platform, title_id, report)
-            await self._hltb(platform, title_id, report, force)
+            # Before HLTB: looking for the other stores finds the HLTB entry,
+            # which the HLTB step then links to every version of this list.
             await self._siblings(platform, title_id, report, force)
+            await self._hltb(platform, title_id, report, force)
             if report.asked or report.versions:
                 # What it is now known to be, put into games (stage 3).
                 linked = await GameLinker(self._repo).link_title(platform, title_id)
@@ -314,17 +317,13 @@ class StoreCollector:
             return
         client = await self._psn_auth.get_client()
         results = await psn.store_search(client, core(names[0]))
-        ours = normalize(core(names[0]))
+        ours = name_key(names[0])
         seen: set[str] = set()
         for item in results:
             result = item.get("result") or {}
             concept_id = str(item.get("id") or result.get("id") or "")
             name = str((result.get("defaultProduct") or {}).get("invariantName") or "")
-            if (
-                not concept_id
-                or concept_id in seen
-                or similarity(ours, normalize(core(name))) < 0.8
-            ):
+            if not concept_id or concept_id in seen or similarity(ours, name_key(name)) < 0.8:
                 continue
             seen.add(concept_id)
             title_ids = psn_store.title_ids_in_search([item])
@@ -369,9 +368,36 @@ class StoreCollector:
             kind="game",
             stand_in=True,
         )
-        report.versions.append(
-            await self._repo.save_version(version, platform=platform, title_id=title_id)
-        )
+        version_id = await self._repo.save_version(version, platform=platform, title_id=title_id)
+        report.versions.append(version_id)
+        if version.store == "xbox" and version.name:
+            await self._xbox_page(version_id, title_id, version.name)
+
+    async def _xbox_page(self, version_id: int, title_id: str, name: str) -> None:
+        """The store page of an Xbox game the catalog does not know by our id
+        (a 360 game played on One lives there under an id of its own): the
+        product its name search finds with the very same name. Only a link
+        for the operator — not proof the list is that product, so the
+        matcher never reads it."""
+        subject, source = f"xbox_page:{title_id}", "xbox_search"
+        if not await self._repo.fetch_due(subject, source):
+            return
+        try:
+            found = await xbox_catalog.search(name)
+        except Exception as exc:
+            await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
+            return
+        ours = normalize(name)
+        same = [
+            p
+            for p in found
+            if p.get("Type") == "Game" and normalize(str(p.get("Title") or "")) == ours
+        ]
+        if not same:
+            await self._repo.record_fetch(subject, source, status="not_found")
+            return
+        await self._repo.add_store_id(version_id, "xbox_page", str(same[0]["ProductId"]), "search")
+        await self._repo.record_fetch(subject, source, status="ok")
 
     # ------------------------------------------------------------ PSN
 

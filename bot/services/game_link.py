@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from bot.services.game_match import (
     ACHIEVEMENTS_MIN,
     ACHIEVEMENTS_SAME,
+    FAR_YEARS,
     Candidate,
     block_key,
     compare,
@@ -244,6 +245,11 @@ def _kinds(members: list[Candidate]) -> dict[int, str]:
         if m is base or kinds[m.version_id] not in ("version", "edition"):
             continue
         if m.list_key == base.list_key or _era(m) <= _era(base):
+            continue
+        if _era(m) - _era(base) >= FAR_YEARS and set(m.cores).isdisjoint(base.cores):
+            # Years later, under a name of its own, with a list of its own:
+            # the game made again (Gears of War → Gears of War: Reloaded).
+            kinds[m.version_id] = "remaster"
             continue
         shared = len(m.achievements & base.achievements) / min(
             len(m.achievements), len(base.achievements)

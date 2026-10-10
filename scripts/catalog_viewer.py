@@ -136,7 +136,11 @@ def _store_href(row: sqlite3.Row) -> str:
     """The version on its store: a product page, or a search for a stand-in."""
     store, product, name = row["store"], str(row["product_id"]), quote(str(row["name"] or ""))
     stand_in = "stand_in" in row.keys() and row["stand_in"]
+    page = row["store_page"] if "store_page" in row.keys() else None
     if store == "xbox":
+        if stand_in and page:
+            # The product the catalog's name search found (a 360 game on One).
+            return f"https://www.xbox.com/en-US/games/store/x/{page}"
         if stand_in:
             return f"https://www.xbox.com/en-US/search?q={name}"
         return f"https://www.xbox.com/en-US/games/store/x/{product}"
@@ -146,6 +150,27 @@ def _store_href(row: sqlite3.Row) -> str:
         if stand_in:
             return f"https://store.playstation.com/en-us/search/{name}"
         return f"https://store.playstation.com/en-us/concept/{product}"
+    return "#"
+
+
+# The store page found for a stand-in by its name (`xbox_page`), for links.
+STORE_PAGE = (
+    "(SELECT i.store_id FROM version_store_ids i WHERE i.version_id = v.version_id"
+    " AND i.store = 'xbox_page' LIMIT 1) AS store_page"
+)
+
+
+def _dlc_href(row: sqlite3.Row) -> str:
+    """A DLC on its store."""
+    store, store_id = row["store"], row["store_id"]
+    if not store_id:
+        return "#"
+    if store == "steam":
+        return f"https://store.steampowered.com/app/{store_id}"
+    if store == "xbox":
+        return f"https://www.xbox.com/en-US/games/store/x/{store_id}"
+    if store == "psn":
+        return f"https://store.playstation.com/en-us/product/{store_id}"
     return "#"
 
 
@@ -299,8 +324,9 @@ async def versions(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT version_id, store, product_id, stand_in, console, name, platform, title_id,"
-            " kind, release_date, origin FROM versions"
+            "SELECT v.version_id, v.store, v.product_id, v.stand_in, " + STORE_PAGE + ","
+            " v.console, v.name, v.platform, v.title_id, v.kind, v.release_date, v.origin"
+            " FROM versions v"
             " WHERE ? = '' OR name LIKE ? OR product_id = ? OR store_group = ?"
             " ORDER BY updated_at DESC LIMIT ?",
             (q, f"%{q}%", q, q, PAGE_SIZE),
@@ -314,7 +340,9 @@ async def versions(request: web.Request) -> web.Response:
 async def version(request: web.Request) -> web.Response:
     version_id = int(request.match_info["version_id"])
     with _db(request) as conn:
-        row = conn.execute("SELECT * FROM versions WHERE version_id = ?", (version_id,)).fetchone()
+        row = conn.execute(
+            "SELECT v.*, " + STORE_PAGE + " FROM versions v WHERE v.version_id = ?", (version_id,)
+        ).fetchone()
         ids = conn.execute(
             "SELECT store, store_id, source FROM version_store_ids WHERE version_id = ?",
             (version_id,),
@@ -663,6 +691,17 @@ async def rules(request: web.Request) -> web.Response:
             f"Achievements' names agree ≤ {m.ACHIEVEMENTS_OTHER:.0%}",
             "review (two lists of their own)",
         ),
+        (
+            "3",
+            'A name with a subtitle after the other ("Gears of War: Reloaded")',
+            f"linked as a remaster if ≥ {m.ACHIEVEMENTS_REMASTER:.0%} of the achievements shared",
+        ),
+        (
+            "4",
+            f"Achievements partly shared ({m.ACHIEVEMENTS_REMASTER:.0%}–{m.ACHIEVEMENTS_SAME:.0%}),"
+            " same name",
+            "linked as a remaster",
+        ),
         ("5", "Same developer / same publisher", "+0.05 / +0.02"),
         ("6", f"Years {m.FAR_YEARS}+ apart, no achievements proof", "review"),
         ("6", f"Years more than {m.NEAR_YEARS} apart", "−0.05 a year past the first"),
@@ -681,7 +720,7 @@ async def rules(request: web.Request) -> web.Response:
             f"<tr><td>{a}</td><td>{escape(b)}</td><td>{escape(c)}</td></tr>" for a, b, c in rows
         )
         + "</table><p>Kinds from the name: demo / trial / beta / prologue → demo; remaster(ed) /"
-        " definitive / reloaded / anniversary / redux / HD / enhanced / director's cut → remaster;"
+        " definitive / anniversary / redux / HD / enhanced / director's cut → remaster;"
         " GOTY / complete / deluxe / ultimate / gold / premium / legendary → edition.</p>"
     )
     return _page("How versions are matched", body)
@@ -739,8 +778,8 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
-            "SELECT vg.version_id, v.store, v.product_id, v.stand_in, v.console, v.name,"
-            " v.release_date, v.developer, v.platform, v.title_id,"
+            "SELECT vg.version_id, v.store, v.product_id, v.stand_in, " + STORE_PAGE + ","
+            " v.console, v.name, v.release_date, v.developer, v.platform, v.title_id,"
             " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
             " vl.of_version_id AS demo_of, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
@@ -757,7 +796,7 @@ async def game(request: web.Request) -> web.Response:
         ).fetchall()
         dlcs = conn.execute(
             "SELECT d.version_id, v.store, v.console, v.name AS version, v.product_id,"
-            " v.stand_in, d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
+            " v.stand_in, " + STORE_PAGE + ", d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
             " d.trophy_group_id FROM dlcs d"
             " JOIN version_games vg ON vg.version_id = d.version_id AND vg.state = 'linked'"
             " JOIN versions v ON v.version_id = d.version_id WHERE vg.game_id = ?"
@@ -848,10 +887,18 @@ def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
                 [
                     {
                         k: r[k]
-                        for k in ("name", "kind", "release_date", "store_id", "trophy_group_id")
+                        for k in (
+                            "name",
+                            "kind",
+                            "release_date",
+                            "store_id",
+                            "trophy_group_id",
+                            "store",
+                        )
                     }
                     for r in items
-                ]
+                ],
+                {"name": _dlc_href, "store_id": _dlc_href},
             )
         )
     return "".join(parts)

@@ -185,3 +185,17 @@ def test_a_remasters_release_word_keeps_others_demos_off() -> None:
     assert compare(reloaded, beta).state != "linked"
     eday = _c(3, "Gears of War: E-Day", store="steam", console="steam", year=2026)
     assert compare(eday, beta).state == "linked"
+
+
+def test_a_subtitled_name_is_the_same_game_only_by_its_achievements() -> None:
+    shared = frozenset(f"a{i}" for i in range(20))
+    gears = _c(1, "Gears of War", console="360", achievements=shared)
+    reloaded = _c(2, "Gears of War: Reloaded", console="series", year=2025, achievements=shared)
+    assert compare(gears, reloaded).state == "linked"
+    judgment = _c(
+        3,
+        "Gears of War: Judgment",
+        console="360",
+        achievements=frozenset(f"j{i}" for i in range(20)),
+    )
+    assert compare(gears, judgment).state == "apart"

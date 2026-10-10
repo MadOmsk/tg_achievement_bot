@@ -48,6 +48,22 @@ async def products_for_title(title_id: str) -> list[dict]:
     return list((response.json() or {}).get("Products") or [])
 
 
+async def search(name: str) -> list[dict]:
+    """The catalog's games for a name (its autosuggest): `ProductId`, `Title`,
+    `Type`. 360 games played on One are here under ids of their own."""
+    await LIMITER.acquire()
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        response = await client.get(
+            f"{CATALOG.rsplit('/', 1)[0]}/productFamilies/autosuggest",
+            params={"query": name, "productFamilyNames": "Games", **_PARAMS},
+        )
+    response.raise_for_status()
+    found: list[dict] = []
+    for family in (response.json() or {}).get("Results") or []:
+        found += [p for p in family.get("Products") or [] if p.get("ProductId")]
+    return found
+
+
 async def products(big_ids: list[str]) -> list[dict]:
     """The catalog's products for these ids, a batch at a time."""
     found: list[dict] = []
