@@ -90,6 +90,9 @@ class AdminContext:
     admin_id: int | None = None
     # Posting the app's promo to a chat — the caller's (it is Telegram's).
     send_promo: Callable[[ChatTarget], Awaitable[None]] | None = None
+    # A person's latest posts in every picture style, to the super-admin's
+    # own DM — the caller's too; answers how many pictures went.
+    send_picture_samples: Callable[[int], Awaitable[int]] | None = None
 
     def accounts(self) -> AdminAccounts:
         return AdminAccounts(
@@ -249,6 +252,30 @@ class _AvatarReset(_Action):
         return Done(True, _translator(locale)("admin-avatar-reset"))
 
 
+class _PictureTest(_Action):
+    """The person's latest achievement on each platform, as a post in every
+    picture style, sent to the super-admin's DM (owner, 2026-10-10): the
+    styles are compared on real posts before one is switched on."""
+
+    id, scope, order = "picture_test", "user", 35
+
+    def label(self, subject, target, _):
+        return _("admin-picture-test")
+
+    async def run(self, ctx, target, subject, locale):
+        _ = _translator(locale)
+        if ctx.send_picture_samples is None:
+            return Done(False, _("admin-picture-test-failed"))
+        try:
+            sent = await ctx.send_picture_samples(target.person)  # type: ignore[arg-type]
+        except Exception:
+            log.exception("picture samples for %s failed", target.encode())
+            return Done(False, _("admin-picture-test-failed"))
+        if not sent:
+            return Done(False, _("admin-picture-test-empty"))
+        return Done(True, _("admin-picture-test-sent", count=sent))
+
+
 class _Delete(_Action):
     id, scope, danger, confirms, order = "delete", "user", True, 2, 90
 
@@ -386,6 +413,7 @@ ACTIONS: tuple[_Action, ...] = (
     _Sync(),
     _Reset(),
     _AvatarReset(),
+    _PictureTest(),
     _Delete(),
     _Promo(),
     _DeleteLast(),
