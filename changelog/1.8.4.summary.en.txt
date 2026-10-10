@@ -1,0 +1,2 @@
+• Steam connects from the app again (it answered missing_identity)
+• The admin user list shows everybody, people with no game account too
