@@ -1159,6 +1159,11 @@ CREATE TABLE IF NOT EXISTS games (
     year        INTEGER,         -- the earliest of its versions'
     developer   TEXT,            -- 096: the earliest version's
     publisher   TEXT,            -- 096: the earliest version's
+    -- 097: the latest version's year; other versions by another studio,
+    -- another publisher ("Epic Games and others")
+    last_year       INTEGER,
+    more_developers INTEGER NOT NULL DEFAULT 0,
+    more_publishers INTEGER NOT NULL DEFAULT 0,
     name_source TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
     merged_into INTEGER REFERENCES games(game_id),  -- an old id keeps resolving
     created_at  TEXT NOT NULL,

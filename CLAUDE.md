@@ -614,7 +614,10 @@ What the stores and HLTB say about a game, collected but not shown yet
   096): a version's year is the earliest its name ("(Classic, 2005)"), its HLTB
   entry or its store gives; a version with no studio of its own (a stand-in)
   takes its HLTB entry's; demos and compilations say nothing. Refreshed after
-  every linking, the matcher's or the operator's.
+  every linking, the matcher's or the operator's. Beside them the game keeps how
+  far its versions spread (097: the latest year, other studios, other
+  publishers), shown as «2006–2025», «Epic Games и другие»; companies compare
+  by `game_match.company_key` ("CD PROJEKT S.A." is "CD Projekt").
 - **Games** (stage 3, migration 092): `games`, `version_games (version, game,
   kind, state, source)`, `game_relations` (`remake_of`). After every collection
   `services/game_link.py` re-links the versions around that list

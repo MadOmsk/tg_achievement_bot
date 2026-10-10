@@ -249,3 +249,31 @@ def test_game_facts_take_the_earliest_version():
         "CD PROJEKT RED",
         "CD PROJEKT",
     )
+
+
+def test_game_facts_spread_over_versions():
+    from bot.services.game_match import company_key, game_facts
+
+    assert company_key("CD PROJEKT S.A.") == company_key("CD Projekt")
+    assert company_key("BioWare™") == company_key("BioWare")
+    facts = game_facts(
+        [
+            {
+                "name": "Gears of War",
+                "release_date": None,
+                "hltb_year": 2006,
+                "developer": "Epic Games",
+                "publisher": "Microsoft Game Studios",
+                "kind": "version",
+            },
+            {
+                "name": "Gears of War: Reloaded",
+                "release_date": "2025-08-26",
+                "developer": "The Coalition",
+                "publisher": "Xbox Game Studios",
+                "kind": "remaster",
+            },
+        ]
+    )
+    assert (facts.year, facts.last_year) == (2006, 2025)
+    assert facts.more_developers and facts.more_publishers

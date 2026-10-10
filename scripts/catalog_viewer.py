@@ -897,13 +897,21 @@ def _identity(conn: sqlite3.Connection, game_id: int) -> str:
     """Which game this is, in one line: its name, year, developer and
     publisher as the game keeps them (`game_match.game_facts`)."""
     row = conn.execute(
-        "SELECT name, year, developer, publisher FROM games WHERE game_id = ?", (game_id,)
+        "SELECT name, year, last_year, developer, publisher, more_developers,"
+        " more_publishers FROM games WHERE game_id = ?",
+        (game_id,),
     ).fetchone()
     if row is None:
         return f"game {game_id}"
-    parts = [str(row["name"]), str(row["year"] or "year ?")]
-    parts += [str(row[k]) for k in ("developer", "publisher") if row[k]]
-    return f"{' · '.join(dict.fromkeys(parts))} (game {game_id})"
+    year = str(row["year"] or "year ?")
+    if row["year"] and row["last_year"] and row["last_year"] > row["year"]:
+        # Its versions came out over years: the first, to the latest.
+        year = f"{row['year']}–{row['last_year']}"
+    parts = [str(row["name"]), year]
+    for field in ("developer", "publisher"):
+        if row[field]:
+            parts.append(str(row[field]) + (" и другие" if row[f"more_{field}s"] else ""))
+    return f"{' · '.join(parts)} (game {game_id})"
 
 
 def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:

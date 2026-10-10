@@ -335,6 +335,45 @@ class GameFacts:
     year: int | None
     developer: str | None
     publisher: str | None
+    # The latest version's year, and whether another version names another
+    # studio or publisher.
+    last_year: int | None = None
+    more_developers: bool = False
+    more_publishers: bool = False
+
+
+# Words a company's name carries or drops from store to store.
+_COMPANY_TAIL = {
+    "inc",
+    "ltd",
+    "llc",
+    "sa",
+    "s",
+    "a",
+    "gmbh",
+    "co",
+    "corp",
+    "corporation",
+    "ab",
+    "plc",
+    "bv",
+    "srl",
+    "oy",
+    "kk",
+    "limited",
+    "entertainment",
+}
+
+
+def company_key(name: str) -> str:
+    """A company as one name whatever a store writes: "CD PROJEKT S.A.",
+    "CD Projekt" and "CD PROJEKT RED, Warner Bros." (its first) start alike;
+    "BioWare™" is BioWare."""
+    first = re.split(r"[,/&]| and ", name)[0]
+    words = re.sub(r"[^\w\s]", " ", first.replace("™", "").replace("®", "")).casefold().split()
+    while len(words) > 1 and words[-1] in _COMPANY_TAIL:
+        words.pop()
+    return " ".join(words)
 
 
 def game_facts(versions: list[dict]) -> GameFacts:
@@ -351,10 +390,23 @@ def game_facts(versions: list[dict]) -> GameFacts:
         ),
         key=lambda t: (t[0], t[1]),
     )
-    year = dated[0][0] if dated and dated[0][0] != 9999 else None
+    years = [y for y, _, _ in dated if y != 9999]
     developer = next((str(v["developer"]) for _, _, v in dated if v.get("developer")), None)
     publisher = next((str(v["publisher"]) for _, _, v in dated if v.get("publisher")), None)
-    return GameFacts(year, developer, publisher)
+
+    def more(field: str, first: str | None) -> bool:
+        return first is not None and any(
+            v.get(field) and company_key(str(v[field])) != company_key(first) for v in own
+        )
+
+    return GameFacts(
+        min(years) if years else None,
+        developer,
+        publisher,
+        last_year=max(years) if years else None,
+        more_developers=more("developer", developer),
+        more_publishers=more("publisher", publisher),
+    )
 
 
 def game_name(members: list[Candidate]) -> str:

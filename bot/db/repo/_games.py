@@ -205,20 +205,21 @@ class _GamesRepo:
             if not rows:
                 continue
             facts = game_facts(rows)
+            values = (
+                facts.year,
+                facts.developer,
+                facts.publisher,
+                facts.last_year,
+                int(facts.more_developers),
+                int(facts.more_publishers),
+            )
             await self._conn.execute(
-                "UPDATE games SET year = ?, developer = ?, publisher = ?, updated_at = ?"
+                "UPDATE games SET year = ?, developer = ?, publisher = ?, last_year = ?,"
+                " more_developers = ?, more_publishers = ?, updated_at = ?"
                 " WHERE game_id = ? AND (year IS NOT ? OR developer IS NOT ?"
-                "  OR publisher IS NOT ?)",
-                (
-                    facts.year,
-                    facts.developer,
-                    facts.publisher,
-                    utcnow_iso(),
-                    game_id,
-                    facts.year,
-                    facts.developer,
-                    facts.publisher,
-                ),
+                "  OR publisher IS NOT ? OR last_year IS NOT ? OR more_developers IS NOT ?"
+                "  OR more_publishers IS NOT ?)",
+                (*values, utcnow_iso(), game_id, *values),
             )
         await self._conn.commit()
 
