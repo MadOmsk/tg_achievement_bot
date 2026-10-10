@@ -291,3 +291,19 @@ async def test_the_bots_rules_screen_carries_the_test_button(repo) -> None:
     assert "a:x:g:all:notification_test:0" not in [
         b.callback_data for row in markup.inline_keyboard for b in row
     ]
+
+
+async def test_the_admin_picks_what_counts_as_a_small_icon(repo) -> None:
+    """Owner, 2026-10-10: the low-resolution limit is the admin's, four steps."""
+    from bot.services import admin_registry
+
+    trophy = _png((240, 240))  # a PS4 trophy's size
+    assert post_picture.compose(trophy, post_picture.Look("color", low_res=200)) is None
+    assert post_picture.compose(trophy, post_picture.Look("color", low_res=256)) is not None
+
+    assert (await post_picture.look_of(repo)).low_res == 200
+    await admin_registry.set_value(repo, "global", post_picture.LOW_RES_KEY, "512", None)
+    assert (await post_picture.look_of(repo)).low_res == 512
+    setting = admin_registry.find("global", post_picture.LOW_RES_KEY)
+    assert setting.options() == (128, 200, 256, 512)
+    assert admin_registry.value_label(setting, 256, locale="ru") == "меньше 256 px"
