@@ -179,3 +179,52 @@ class _GamesRepo:
             (version_id, of_version_id, kind, source, utcnow_iso()),
         )
         await self._conn.commit()
+
+    async def refresh_game_facts(self, game_ids: list[int] | None = None) -> None:
+        """Each game's year, developer and publisher from its linked versions
+        (`game_match.game_facts`); every game when none is named."""
+        from bot.services.game_match import game_facts
+
+        if game_ids is None:
+            cursor = await self._conn.execute("SELECT game_id FROM games WHERE merged_into IS NULL")
+            game_ids = [int(row[0]) for row in await cursor.fetchall()]
+        for game_id in dict.fromkeys(game_ids):
+            cursor = await self._conn.execute(
+                # A version's own studio, else its HLTB entry's: a stand-in (a
+                # 360 game) has none of its own.
+                "SELECT v.name, v.release_date, vg.kind, h.release_year AS hltb_year,"
+                " COALESCE(v.developer, h.developer) AS developer,"
+                " COALESCE(v.publisher, h.publisher) AS publisher"
+                " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+                " LEFT JOIN hltb_games h ON h.hltb_id = (SELECT MIN(vh.hltb_id)"
+                "  FROM version_hltb vh WHERE vh.version_id = v.version_id)"
+                " WHERE vg.game_id = ? AND vg.state = 'linked'",
+                (game_id,),
+            )
+            rows = [dict(row) for row in await cursor.fetchall()]
+            if not rows:
+                continue
+            facts = game_facts(rows)
+            await self._conn.execute(
+                "UPDATE games SET year = ?, developer = ?, publisher = ?, updated_at = ?"
+                " WHERE game_id = ? AND (year IS NOT ? OR developer IS NOT ?"
+                "  OR publisher IS NOT ?)",
+                (
+                    facts.year,
+                    facts.developer,
+                    facts.publisher,
+                    utcnow_iso(),
+                    game_id,
+                    facts.year,
+                    facts.developer,
+                    facts.publisher,
+                ),
+            )
+        await self._conn.commit()
+
+    async def games_of_version(self, version_id: int) -> list[int]:
+        """Every game a version has a row with, whatever its state."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT game_id FROM version_games WHERE version_id = ?", (version_id,)
+        )
+        return [int(row[0]) for row in await cursor.fetchall()]

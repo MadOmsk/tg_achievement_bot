@@ -218,3 +218,34 @@ def test_a_stores_group_holding_a_series_does_not_make_one_game() -> None:
     )
     rebirth = _c(2, "FINAL FANTASY VII REBIRTH", console="series", year=2026, store_group="ff7")
     assert compare(remake, rebirth).state != "linked"
+
+
+def test_game_facts_take_the_earliest_version():
+    from bot.services.game_match import game_facts, version_year
+
+    assert version_year("STAR WARS Battlefront II (Classic, 2005)", "2009-07-08") == 2005
+    assert version_year("Halo (PC)", "2003-09-30", 2001) == 2001
+    facts = game_facts(
+        [
+            {
+                "name": "The Witcher 3: Wild Hunt — Remastered",
+                "release_date": "2022-12-14",
+                "developer": "CD PROJEKT RED Remaster Team",
+                "publisher": "CD PROJEKT",
+                "kind": "remaster",
+            },
+            {
+                "name": "The Witcher 3: Wild Hunt",
+                "release_date": "2015-05-19",
+                "developer": "CD PROJEKT RED",
+                "publisher": None,
+                "kind": "version",
+            },
+            {"name": "A demo", "release_date": "2014-01-01", "developer": "X", "kind": "demo"},
+        ]
+    )
+    assert (facts.year, facts.developer, facts.publisher) == (
+        2015,
+        "CD PROJEKT RED",
+        "CD PROJEKT",
+    )

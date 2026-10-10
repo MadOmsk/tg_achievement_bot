@@ -609,6 +609,12 @@ What the stores and HLTB say about a game, collected but not shown yet
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
   stand-in (`store = 'list'`) is made from `titles`, and goes once a store
   product is found.
+- **A game's year is the earliest of its versions', its developer and publisher
+  the earliest version's** (owner, 2026-10-10; `game_match.game_facts`, migration
+  096): a version's year is the earliest its name ("(Classic, 2005)"), its HLTB
+  entry or its store gives; a version with no studio of its own (a stand-in)
+  takes its HLTB entry's; demos and compilations say nothing. Refreshed after
+  every linking, the matcher's or the operator's.
 - **Games** (stage 3, migration 092): `games`, `version_games (version, game,
   kind, state, source)`, `game_relations` (`remake_of`). After every collection
   `services/game_link.py` re-links the versions around that list

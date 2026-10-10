@@ -310,6 +310,53 @@ def era(m: Candidate) -> int:
     return m.year or CONSOLE_ERA.get(m.console, 0)
 
 
+# A year a store puts in a name: "STAR WARS Battlefront II (Classic, 2005)".
+_YEAR_IN_NAME = re.compile(r"\((?:[^()]*\D)?((?:19|20)\d\d)\)")
+
+
+def version_year(
+    name: str | None, release_date: str | None, hltb_year: int | None = None
+) -> int | None:
+    """When a version first came out, as early as anything says: the year
+    its name gives, its HLTB entry's, its store's date (a store's date is
+    often a re-release: Steam's classic Battlefront II says 2009)."""
+    years = []
+    if name and (m := _YEAR_IN_NAME.search(name)) is not None:
+        years.append(int(m.group(1)))
+    if hltb_year:
+        years.append(int(hltb_year))
+    if release_date and release_date[:4].isdigit():
+        years.append(int(release_date[:4]))
+    return min(years) if years else None
+
+
+@dataclass(slots=True)
+class GameFacts:
+    year: int | None
+    developer: str | None
+    publisher: str | None
+
+
+def game_facts(versions: list[dict]) -> GameFacts:
+    """A game's year is the earliest of its versions'; its developer and
+    publisher are the earliest version's that names one (owner, 2026-10-10:
+    a remaster's studio is not the game's). Demos and compilations say
+    nothing about the game (Halo: MCC is not when Halo 2 came out). Each
+    version: name, release_date, hltb_year, developer, publisher, kind."""
+    own = [v for v in versions if v.get("kind") not in ("demo", "compilation")] or versions
+    dated = sorted(
+        (
+            (version_year(v.get("name"), v.get("release_date"), v.get("hltb_year")) or 9999, i, v)
+            for i, v in enumerate(own)
+        ),
+        key=lambda t: (t[0], t[1]),
+    )
+    year = dated[0][0] if dated and dated[0][0] != 9999 else None
+    developer = next((str(v["developer"]) for _, _, v in dated if v.get("developer")), None)
+    publisher = next((str(v["publisher"]) for _, _, v in dated if v.get("publisher")), None)
+    return GameFacts(year, developer, publisher)
+
+
 def game_name(members: list[Candidate]) -> str:
     """A game is named by its plainest version: not an edition, a remaster or
     a demo where there is one, the earliest, by its cut name."""

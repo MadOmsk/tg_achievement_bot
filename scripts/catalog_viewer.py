@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sqlite3
 import zlib
 from html import escape
@@ -894,38 +893,17 @@ async def game(request: web.Request) -> web.Response:
     return _page(row["name"] if row else f"Game {game_id}", body)
 
 
-_YEAR_IN_NAME = re.compile(r"\((?:[^()]*\D)?((?:19|20)\d\d)\)")
-
-
 def _identity(conn: sqlite3.Connection, game_id: int) -> str:
-    """Which game this is, in one line: its name, the year it first came out
-    (the earliest of its HLTB entries' years, a year a store's name gives —
-    "(Classic, 2005)" — and the stores' dates) and who made it."""
-    row = conn.execute("SELECT name FROM games WHERE game_id = ?", (game_id,)).fetchone()
+    """Which game this is, in one line: its name, year, developer and
+    publisher as the game keeps them (`game_match.game_facts`)."""
+    row = conn.execute(
+        "SELECT name, year, developer, publisher FROM games WHERE game_id = ?", (game_id,)
+    ).fetchone()
     if row is None:
         return f"game {game_id}"
-    years: list[int] = []
-    developers: dict[str, None] = {}
-    for v in conn.execute(
-        "SELECT v.name, v.release_date, v.developer,"
-        " (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_games h"
-        "  ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_year"
-        " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
-        " WHERE vg.game_id = ? AND vg.state = 'linked'",
-        (game_id,),
-    ):
-        if v["hltb_year"]:
-            years.append(int(v["hltb_year"]))
-        if (m := _YEAR_IN_NAME.search(v["name"] or "")) is not None:
-            years.append(int(m.group(1)))
-        if (v["release_date"] or "")[:4].isdigit():
-            years.append(int(v["release_date"][:4]))
-        if v["developer"]:
-            developers[str(v["developer"])] = None
-    parts = [str(row["name"]), str(min(years)) if years else "year ?"]
-    if developers:
-        parts.append(", ".join(list(developers)[:2]))
-    return f"{' · '.join(parts)} (game {game_id})"
+    parts = [str(row["name"]), str(row["year"] or "year ?")]
+    parts += [str(row[k]) for k in ("developer", "publisher") if row[k]]
+    return f"{' · '.join(dict.fromkeys(parts))} (game {game_id})"
 
 
 def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
@@ -1069,6 +1047,7 @@ async def decide(request: web.Request) -> web.Response:
                 )
             await repo.relate_games(own, game_id, "remake_of", "manual")
     await repo.drop_empty_games()
+    await repo.refresh_game_facts(await repo.games_of_version(version_id))
     raise _back(back, f"version {version_id}: {decision}")
 
 
@@ -1090,6 +1069,7 @@ async def game_merge(request: web.Request) -> web.Response:
     if not into.isdigit() or int(into) == game_id:
         raise _back(f"/game/{game_id}", "a game id to merge into, please")
     await _repo(request).merge_games(game_id, int(into))
+    await _repo(request).refresh_game_facts([int(into)])
     raise _back(f"/game/{into}", f"game {game_id} merged here")
 
 
@@ -1115,6 +1095,7 @@ async def game_detach(request: web.Request) -> web.Response:
     await repo.set_link(
         version_id, own, kind="version", state="linked", source="manual", decided_by="viewer"
     )
+    await repo.refresh_game_facts([game_id, own])
     raise _back(f"/game/{own}", f"version {version_id} detached into its own game: rename it")
 
 

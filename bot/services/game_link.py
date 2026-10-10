@@ -107,6 +107,7 @@ class GameLinker:
                 if verdict.state == "linked":
                     parent[find(a.version_id)] = find(b.version_id)
 
+        touched: set[int] = set(game_of.values())
         groups: dict[int, list[Candidate]] = {}
         for c in around:
             groups.setdefault(find(c.version_id), []).append(c)
@@ -142,6 +143,7 @@ class GameLinker:
                 game_of[vid] = target
                 report.games.setdefault(target, []).append(vid)
             await self._link_demos(members, pinned)
+            touched.add(target)
 
         # The review list: a doubtful pair across two games, filed on the later
         # version. The matcher's earlier review rows around here are redrawn.
@@ -176,6 +178,7 @@ class GameLinker:
             )
             report.review.append((version_id, game, reasons))
         await self._repo.drop_empty_games()
+        await self._repo.refresh_game_facts(sorted(touched | set(game_of.values())))
         return report
 
     async def _link_demos(self, members: list[Candidate], pinned: set[int]) -> None:

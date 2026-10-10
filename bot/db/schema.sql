@@ -1156,7 +1156,9 @@ CREATE TABLE IF NOT EXISTS games (
     game_id     INTEGER PRIMARY KEY,
     name        TEXT NOT NULL,
     name_ru     TEXT,
-    year        INTEGER,
+    year        INTEGER,         -- the earliest of its versions'
+    developer   TEXT,            -- 096: the earliest version's
+    publisher   TEXT,            -- 096: the earliest version's
     name_source TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
     merged_into INTEGER REFERENCES games(game_id),  -- an old id keeps resolving
     created_at  TEXT NOT NULL,
