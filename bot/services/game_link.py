@@ -112,6 +112,24 @@ class GameLinker:
         for c in around:
             groups.setdefault(find(c.version_id), []).append(c)
 
+        removed: set[int] = set()
+        for key, members in list(groups.items()):
+            # A version HLTB only says exists goes once a store's version of
+            # the same game is found on that console: it stood in for it.
+            real = {
+                m.console
+                for m in members
+                if m.store != "hltb" and kind_of(m) not in ("demo", "tool")
+            }
+            gone = [m for m in members if m.store == "hltb" and m.console in real]
+            for m in gone:
+                if m.version_id not in pinned:
+                    await self._repo.delete_version(m.version_id)
+                    members.remove(m)
+                    removed.add(m.version_id)
+            if not members:
+                del groups[key]
+
         for members in groups.values():
             target = self._target(members, game_of, pinned)
             if target is None:
@@ -148,12 +166,14 @@ class GameLinker:
         # The review list: a doubtful pair across two games, filed on the later
         # version. The matcher's earlier review rows around here are redrawn.
         for c in around:
-            if c.version_id not in pinned:
+            if c.version_id not in pinned and c.version_id not in removed:
                 await self._repo.drop_auto_links(c.version_id, None, "review")
         # One review row per version: against the game it is most like. It is
         # filed on the side less is known about (no year, a stand-in, the later).
         best: dict[int, tuple[float, int, list[str], str | None]] = {}
         for (x, y), verdict in verdicts.items():
+            if x in removed or y in removed:
+                continue
             if verdict.state != "review" or game_of.get(x) == game_of.get(y):
                 continue
             subject, other = _weaker(candidates[x], candidates[y])
