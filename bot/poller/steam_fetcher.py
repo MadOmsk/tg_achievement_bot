@@ -317,6 +317,12 @@ class SteamFetcher:
                     except SteamApiError as exc:
                         log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)
                         parsed = []
+                    except Exception:
+                        # One game never takes the whole library down with it
+                        # (2026-10-10: one game's query failed, and nothing of
+                        # a new person's history was stored).
+                        log.exception("steam backfill of appid=%s failed", game.appid)
+                        parsed = []
                     rows.extend(to_achievement_row(item) for item in parsed)
                     done += 1
                     if progress is not None:

@@ -597,7 +597,8 @@ def _icon(user: AdminUserRow) -> str:
         parts.append("⚫" + VISIBILITY_ICON.get(user.steam_achievements_visible, "—"))
     if user.psn_account_id:
         parts.append("🔵" + VISIBILITY_ICON.get(user.psn_achievements_visible, "—"))
-    return "".join(parts)
+    # No game account yet: the panel's own "not connected" mark.
+    return "".join(parts) or "🔘"
 
 
 def _note(user: AdminUserRow, *, locale: str) -> str:
