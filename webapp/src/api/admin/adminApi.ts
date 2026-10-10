@@ -53,7 +53,7 @@ export class AdminApi extends BaseApi {
 
   fetchActions(
     initData: string,
-    scope: "user" | "chat",
+    scope: "user" | "chat" | "global",
     target: string,
   ): Promise<{ actions: AdminAction[] }> {
     const query = `?scope=${scope}&target=${encodeURIComponent(target)}`;

@@ -16,7 +16,7 @@ export function AdminActions({
   onDone,
 }: {
   data: string;
-  scope: "user" | "chat";
+  scope: "user" | "chat" | "global";
   target: string;
   /** Changes when the card reloads, so the list follows (a restored person
    * reads "Исключить" again). */

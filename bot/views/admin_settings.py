@@ -18,6 +18,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.i18n import translator
+from bot.services.admin_actions import ActionView
 from bot.services.admin_registry import (
     GROUPS,
     Kind,
@@ -78,10 +79,18 @@ def setting_rows(
 
 
 def render_settings_group(
-    group: str, current: dict[str, Any], *, locale: str, prefix: str = ""
+    group: str,
+    current: dict[str, Any],
+    *,
+    locale: str,
+    prefix: str = "",
+    actions: list[ActionView] | None = None,
 ) -> Screen:
+    """A global group's settings, then the app's actions that sit in it (the
+    notification test beside the post picture's settings)."""
     _ = translator("admin", locale)
     rows = setting_rows("global", group, current, locale=locale)
+    rows += action_rows(actions or [], section=group)
     rows.append([InlineKeyboardButton(text=_("admin-back"), callback_data="a:set")])
     text = _("admin-settings-group-title", group=group_label("global", group, locale=locale))
     return Screen(
@@ -138,3 +147,24 @@ def render_setting_prompt(setting: Setting, current: Any, *, locale: str, back: 
 
 def back_to_group(setting: Setting, chat_id: int | None = None) -> str:
     return _group_data(setting.scope, setting.group, chat_id)
+
+
+def action_rows(
+    views: list[ActionView], section: str | None = None
+) -> list[list[InlineKeyboardButton]]:
+    """An action registry's buttons: one row each, an account's side by side."""
+    rows: list[list[InlineKeyboardButton]] = []
+    last_row: str | None = None
+    for view in views:
+        if view.section != section:
+            continue
+        short = {"user": "u", "account": "a", "chat": "c", "global": "g"}[view.scope]
+        button = InlineKeyboardButton(
+            text=view.label, callback_data=f"a:x:{short}:{view.target}:{view.id}:0"
+        )
+        if rows and view.row == last_row:
+            rows[-1].append(button)
+        else:
+            rows.append([button])
+        last_row = view.row
+    return rows
