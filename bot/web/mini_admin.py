@@ -16,7 +16,7 @@ from aiohttp import web
 
 from bot.constants import Platform, TokenStatus
 from bot.db.repo import Repo
-from bot.handlers.delivery import send_promo
+from bot.handlers.delivery import send_picture_samples, send_promo
 from bot.i18n import translator
 from bot.services.admin_actions import AdminContext, Confirm, Target, perform
 from bot.services.admin_actions import available as available_actions
@@ -444,6 +444,13 @@ def _action_context(request: web.Request, admin: Any) -> AdminContext:
             raise RuntimeError("bot unavailable")
         await send_promo(bot, chat.chat_id, chat.locale, settings.mini_app_url)
 
+    async def samples() -> int:
+        if bot is None or admin.tg_id is None:
+            raise RuntimeError("bot unavailable")
+        repo: Repo = request.app["mini_repo"]
+        locale = await repo.user_locale(admin.person_id)
+        return await send_picture_samples(bot, repo, settings, admin.tg_id, locale=locale)
+
     return AdminContext(
         request.app["mini_repo"],
         settings,
@@ -453,6 +460,7 @@ def _action_context(request: web.Request, admin: Any) -> AdminContext:
         psn=request.app.get("mini_psn_fetcher"),
         admin_id=admin.tg_id,
         send_promo=promo,
+        send_picture_samples=samples,
     )
 
 
@@ -468,7 +476,7 @@ async def handle_admin_actions(request: web.Request) -> web.Response:
     (`services/admin_actions.py`)."""
     admin = await _require_superadmin(request)
     scope = request.query.get("scope", "")
-    if scope not in ("user", "chat"):
+    if scope not in ("user", "chat", "global"):
         raise web.HTTPBadRequest(text="bad scope")
     target = _action_target(scope, request.query.get("target", ""))
     repo: Repo = request.app["mini_repo"]
@@ -506,7 +514,7 @@ async def handle_admin_action(request: web.Request) -> web.Response:
     admin = await _require_superadmin(request)
     body = await request.json()
     scope = str(body.get("scope") or "")
-    if scope not in ("user", "account", "chat"):
+    if scope not in ("user", "account", "chat", "global"):
         raise web.HTTPBadRequest(text="bad scope")
     target = _action_target(scope, str(body.get("target") or ""))
     try:

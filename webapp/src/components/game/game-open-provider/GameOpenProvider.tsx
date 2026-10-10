@@ -1,14 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { GameRef } from "../../../api";
+import type { FeedItem, GameRef } from "../../../api";
 import type { Locale } from "../../../i18n";
-import { GameOpenContext } from "../../shared/lib";
+import { AchievementOpenContext, GameOpenContext } from "../../shared/lib";
 
 // The game page pulls in Swiper and its own carousels — heavy enough to
 // keep off Home's own critical bundle, loaded only once a game is actually
 // opened (including straight from a Mini App deep link).
 const loadTitleSheet = () => import("../title-sheet/TitleSheet");
 const TitleSheet = lazy(() => loadTitleSheet().then((m) => ({ default: m.TitleSheet })));
+const AchievementLoader = lazy(() =>
+  import("../achievement-page/AchievementLoader").then((m) => ({ default: m.AchievementLoader })),
+);
 
 /** Starts fetching the game page's code — for an app opened straight on a game,
  * while it still asks who is looking. */
@@ -42,6 +45,8 @@ export function GameOpenProvider({
 }) {
   const [game, setGame] = useState<GameRef | null>(initialGame);
   const open = useCallback((next: GameRef) => setGame(next), []);
+  const [achievement, setAchievement] = useState<FeedItem | null>(null);
+  const openAchievement = useCallback((item: FeedItem) => setAchievement(item), []);
 
   // While a game page covers the app, the app beneath stops being painted
   // (see base.css): a long feed of blurred, filtered cards under a full-screen
@@ -58,6 +63,7 @@ export function GameOpenProvider({
   }, [game]);
   return (
     <GameOpenContext.Provider value={open}>
+      <AchievementOpenContext.Provider value={openAchievement}>
       {children}
       {game &&
         createPortal(
@@ -75,6 +81,17 @@ export function GameOpenProvider({
           // so the page lands above them.
           document.body,
         )}
+      {achievement && (
+        <Suspense fallback={null}>
+          <AchievementLoader
+            data={data}
+            locale={locale}
+            item={achievement}
+            onClose={() => setAchievement(null)}
+          />
+        </Suspense>
+      )}
+      </AchievementOpenContext.Provider>
     </GameOpenContext.Provider>
   );
 }

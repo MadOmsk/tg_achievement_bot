@@ -379,9 +379,11 @@
   gap: 16px;
 }
 
+/* As far from the faces' last line as «Подписки» is from the gallery: the
+ * strip's own 6px under the names makes up the rest. */
 .friends + .achievements-head,
 .friends-empty + .achievements-head {
-  margin-top: 14px;
+  margin-top: 22px;
 }
 
 .friends:has(+ .achievements-head) {

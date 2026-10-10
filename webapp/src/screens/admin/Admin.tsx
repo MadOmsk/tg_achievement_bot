@@ -40,7 +40,13 @@ export function Admin({
       );
     case ADMIN_SCREENS.SETTINGS:
       return (
-        <AdminSettings data={data} locale={locale} onBack={onBack} onFail={fail} />
+        <AdminSettings
+          data={data}
+          locale={locale}
+          onBack={onBack}
+          onFlash={onFlash}
+          onFail={fail}
+        />
       );
     case ADMIN_SCREENS.USERS:
       return (

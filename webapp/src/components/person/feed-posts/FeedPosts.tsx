@@ -19,6 +19,8 @@ export function FeedPosts({
   showSecrets,
   onReveal,
   onOpenPerson,
+  months,
+  onMonth,
 }: {
   items: FeedItem[];
   locale: Locale;
@@ -26,6 +28,9 @@ export function FeedPosts({
   showSecrets?: boolean;
   onReveal: (key: string) => void;
   onOpenPerson: (personId: number) => void;
+  /** Every month with posts, and how to load one — from the day calendar. */
+  months?: string[];
+  onMonth?: (ym: string) => void;
 }) {
   const [built, setBuilt] = useState(FIRST_POSTS);
   const end = useRef<HTMLDivElement>(null);
@@ -68,7 +73,7 @@ export function FeedPosts({
   const jump = useDayJump(items, locale, (key) => {
     const need = through.get(key);
     if (need != null) setBuilt((n) => Math.max(n, need));
-  });
+  }, months && onMonth ? { months, onMonth } : undefined);
 
   useEffect(() => {
     const node = end.current;
@@ -95,7 +100,9 @@ export function FeedPosts({
     <div className="feed-days">
       {shown.map((day, i) => (
         <section
-          key={`${day.key}-${i}`}
+          // By place, not by day: a calendar left open on a label stays open
+          // while another month loads under it.
+          key={i}
           className="feed-day"
           ref={jump.register(day.key)}
         >

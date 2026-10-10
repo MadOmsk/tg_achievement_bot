@@ -6,7 +6,7 @@ import "swiper/css";
 import "swiper/css/effect-creative";
 import type { FeedItem } from "../../../api";
 import { t, timeAgo, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, FitImg, TierDisc, asTier, gameRefOf, useOpenGame, FEED_RATIO_MAX, isWide, useImageRatio } from "../../shared/lib";
+import { Avatar, CoverImg, FitImg, TierDisc, asTier, gameRefOf, useOpenAchievement, useOpenGame, FEED_RATIO_MAX, isWide, useImageRatio } from "../../shared/lib";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 import { feedKey, veiled } from "../utils";
 import "./FeedPost.css";
@@ -22,8 +22,8 @@ const CREATIVE_EFFECT: CreativeEffectOptions = {
 /**
  * One post in the Feed: the achievement's picture, with who and when over its
  * top, and on frosted glass over its foot the achievement's name, its worth and
- * its description, then the game. A tap anywhere on the post opens that game on
- * this person's progress. Several achievements of one person in one game
+ * its description, then the game. A tap on the post opens the achievement shown
+ * on its own page; the game's line opens the game. Several achievements of one person in one game
  * make one post whose pictures and text swipe; the author, the game and the
  * dots stay put.
  */
@@ -46,7 +46,9 @@ export function FeedPost({
   const openGame = useOpenGame();
   const many = items.length > 1;
   const [active, setActive] = useState(0);
+  const openAchievement = useOpenAchievement();
   const canOpenGame = Boolean(openGame && head.title_id);
+  const canOpen = Boolean(openAchievement && head.title_id);
   // The frame takes the first picture's proportions, and every slide shares
   // it: a post does not change height as it is swiped. A wide one has its
   // text under the picture rather than over it.
@@ -55,15 +57,15 @@ export function FeedPost({
 
   return (
     <article
-      className={["post", canOpenGame ? "is-link" : "", wide ? "is-wide" : "", many ? "has-dots" : ""].filter(Boolean).join(" ")}
-      // The whole post opens the game on this person's progress; the author, the
-      // game line and "Открыть" keep their own taps.
+      className={["post", canOpen ? "is-link" : "", wide ? "is-wide" : "", many ? "has-dots" : ""].filter(Boolean).join(" ")}
+      // The post opens the achievement on show (owner, 2026-10-09); the author
+      // and the game's line keep their own taps.
       onClick={
-        canOpenGame
+        canOpen
           ? (e) => {
               if ((e.target as HTMLElement).closest("button")) return;
               const open = items[active] ?? head;
-              if (!veiled(open, feedKey(open), revealed, showSecrets)) openGame?.(gameRefOf(open));
+              if (!veiled(open, feedKey(open), revealed, showSecrets)) openAchievement?.(open);
             }
           : undefined
       }

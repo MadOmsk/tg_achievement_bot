@@ -25,7 +25,7 @@ from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.db.repo import Repo
-from bot.handlers.delivery import send_promo
+from bot.handlers.delivery import send_picture_samples, send_promo
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -34,7 +34,7 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services.admin_actions import AdminContext, Confirm, Target, perform
+from bot.services.admin_actions import ACTIONS, AdminContext, Confirm, Target, perform
 from bot.services.admin_actions import Scope as ActionScope
 from bot.services.admin_credentials import (
     AdminCredentials,
@@ -49,9 +49,11 @@ from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
     SettingValueError,
 )
+from bot.views import Screen
 from bot.views.admin import (
     _cancel_input_keyboard,
     find_chat,
+    global_actions,
     render_action_confirm,
     render_chat_card,
     render_chat_list,
@@ -293,8 +295,7 @@ async def settings_group(callback: CallbackQuery, repo: Repo, i18n: I18nContext)
         await callback.answer()
         return
     _awaiting_input.pop(callback.from_user.id, None)
-    current = await registry_values(repo, "global")
-    await _redraw(callback, *render_settings_group(group, current, locale=i18n.locale).as_pair())
+    await _redraw(callback, *(await _global_group(repo, group, locale=i18n.locale)).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:cg:"))
@@ -401,10 +402,8 @@ async def _show_group(
     callback: CallbackQuery, repo: Repo, setting: Setting, chat_id: int | None, locale: str
 ) -> None:
     if setting.scope == "global":
-        current = await registry_values(repo, "global")
-        await _redraw(
-            callback, *render_settings_group(setting.group, current, locale=locale).as_pair()
-        )
+        screen = await _global_group(repo, setting.group, locale=locale)
+        await _redraw(callback, *screen.as_pair())
         return
     assert chat_id is not None
     await _redraw(
@@ -439,10 +438,8 @@ async def setting_number_input(message: Message, repo: Repo, i18n: I18nContext) 
         value=value_label(setting, value, locale=i18n.locale),
     )
     if scope == "global":
-        current = await registry_values(repo, "global")
-        text, markup = render_settings_group(
-            setting.group, current, locale=i18n.locale, prefix=saved
-        ).as_pair()
+        screen = await _global_group(repo, setting.group, locale=i18n.locale, prefix=saved)
+        text, markup = screen.as_pair()
     else:
         assert chat_id is not None
         card, markup = await render_chat_card(
@@ -524,7 +521,18 @@ async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> N
 # too. `a:x:<scope>:<target>:<action>:<step>`: step 0 is the tap, each
 # confirmation asks for the next, the last one runs it.
 
-_SCOPES: dict[str, ActionScope] = {"u": "user", "a": "account", "c": "chat"}
+_SCOPES: dict[str, ActionScope] = {"u": "user", "a": "account", "c": "chat", "g": "global"}
+
+
+async def _global_group(repo: Repo, group: str, *, locale: str, prefix: str = "") -> Screen:
+    """A global settings group, with the app's actions that sit in it."""
+    return render_settings_group(
+        group,
+        await registry_values(repo, "global"),
+        locale=locale,
+        prefix=prefix,
+        actions=await global_actions(repo, locale=locale),
+    )
 
 
 @router.callback_query(F.data.startswith("a:x:"))
@@ -552,6 +560,11 @@ async def admin_action(
     async def promo(chat: Any) -> None:
         await send_promo(bot, chat.chat_id, chat.locale, settings.mini_app_url)
 
+    async def samples() -> int:
+        return await send_picture_samples(
+            bot, repo, settings, callback.from_user.id, locale=i18n.locale
+        )
+
     ctx = AdminContext(
         repo,
         settings,
@@ -561,13 +574,15 @@ async def admin_action(
         psn=psn_fetcher,
         admin_id=callback.from_user.id,
         send_promo=promo,
+        send_picture_samples=samples,
     )
     section = "messages" if action_id != "promo" and scope == "chat" else None
-    back = (
-        f"a:u:p{target.person}"
-        if scope != "chat"
-        else (f"a:mdel:{target.chat_id}" if section else f"a:chat:{target.chat_id}")
-    )
+    if scope == "global":
+        back = f"a:sg:{_global_section(action_id)}"
+    elif scope == "chat":
+        back = f"a:mdel:{target.chat_id}" if section else f"a:chat:{target.chat_id}"
+    else:
+        back = f"a:u:p{target.person}"
     result = await perform(ctx, scope, target, action_id, step, locale=i18n.locale)
     if isinstance(result, Confirm):
         yes = f"a:x:{short}:{raw_target}:{action_id}:{result.step}"
@@ -580,7 +595,10 @@ async def admin_action(
     if result.gone:
         await _redraw(callback, *await render_user_list(repo, 0, locale=i18n.locale))
         return
-    if scope == "chat":
+    if scope == "global":
+        screen = await _global_group(repo, _global_section(action_id), locale=i18n.locale)
+        text, markup = screen.as_pair()
+    elif scope == "chat":
         text, markup = await render_chat_card(
             repo,
             target.chat_id,
@@ -603,3 +621,11 @@ async def _redraw(callback: CallbackQuery, text: str, markup: InlineKeyboardMark
             # Telegram refuses an edit that changes nothing — harmless.
             pass
     await callback.answer()
+
+
+def _global_section(action_id: str) -> str:
+    """The settings group a global action sits in — where to come back to."""
+    for action in ACTIONS:
+        if action.scope == "global" and action.id == action_id and action.section:
+            return action.section
+    return "rules"

@@ -14,6 +14,8 @@ export function useDayJump(
   locale: Locale,
   /** Called before a jump: a list that builds lazily builds up to that day. */
   ensure?: (key: string) => void,
+  /** Months beyond the one loaded, and how to load one: the calendar's arrows. */
+  monthNav?: { months: string[]; onMonth: (ym: string) => void },
 ) {
   const nodes = useRef(new Map<string, HTMLElement>());
 
@@ -58,6 +60,8 @@ export function useDayJump(
       days={counts}
       current={key}
       onPick={jumpTo}
+      months={monthNav?.months}
+      onMonth={monthNav?.onMonth}
       trigger={
         <>
           {text}
