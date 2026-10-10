@@ -107,8 +107,9 @@ WEIGHTS: dict[str, float] = {
     "name": 10.0,  # × (name similarity − 0.8)
     "full_name": 4.4,  # the very same full name, released within a few years
     "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
+    "subtitle": -1.5,  # one name opens the other, which goes on: mostly another game
     "numbers_differ": -9.0,  # Halo and Halo 2
-    "achievements_same": 6.0,  # ≥ 60% of the achievements' names shared
+    "achievements_same": 7.0,  # ≥ 60% of the achievements' names shared
     "achievements_partly": 3.5,  # 30–60%: the game made again
     "achievements_other": -1.5,  # ≤ 15%: two lists of their own
     "developer": 0.7,
@@ -147,9 +148,14 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
         f["franchise"] = 1.0
     f["name"] = name - NAME_FLOOR
 
+    if "franchise" not in f and name < 1.0 and _subtitled(a, b):
+        # "Mass Effect" → "Mass Effect: Andromeda": unless the achievements
+        # say otherwise (Gears of War: Reloaded), another game.
+        f["subtitle"] = 1.0
     demo = _demo_pair(a, b)
     if demo:
         f["demo_of"] = 1.0
+        f.pop("subtitle", None)
     elif name < 1.0 and _numbers(a) != _numbers(b):
         # A demo's own numbers ("1-Shot") are not a sequel's.
         f["numbers_differ"] = 1.0
