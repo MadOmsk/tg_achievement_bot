@@ -144,12 +144,10 @@ def _store_href(row: sqlite3.Row) -> str:
     """The version on its store: a product page, or a search for a stand-in."""
     store, product, name = row["store"], str(row["product_id"]), quote(str(row["name"] or ""))
     stand_in = "stand_in" in row.keys() and row["stand_in"]
-    page = row["store_page"] if "store_page" in row.keys() else None
     if store == "xbox":
-        if stand_in and page:
-            # The product the catalog's name search found (a 360 game on One).
-            return f"https://www.xbox.com/en-US/games/store/x/{page}"
         if stand_in:
+            # No product is known: a search for the operator, never taken for
+            # the game's page (owner, 2026-10-10: a name finds the 2023 RE4).
             return f"https://www.xbox.com/en-US/search?q={name}"
         return f"https://www.xbox.com/en-US/games/store/x/{product}"
     if store == "steam":
@@ -162,13 +160,6 @@ def _store_href(row: sqlite3.Row) -> str:
         # A version HLTB says exists, with nothing a store says of it.
         return f"https://howlongtobeat.com/game/{product}"
     return "#"
-
-
-# The store page found for a stand-in by its name (`xbox_page`), for links.
-STORE_PAGE = (
-    "(SELECT i.store_id FROM version_store_ids i WHERE i.version_id = v.version_id"
-    " AND i.store = 'xbox_page' LIMIT 1) AS store_page"
-)
 
 
 # A version's picture: its store's cover, else its achievement list's, else
@@ -373,7 +364,7 @@ async def versions(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT v.version_id, v.store, v.product_id, v.stand_in, " + STORE_PAGE + ","
+            "SELECT v.version_id, v.store, v.product_id, v.stand_in,"
             " v.console, v.name, v.platform, v.title_id, v.kind, v.release_date, v.origin"
             " FROM versions v"
             " WHERE ? = '' OR name LIKE ? OR product_id = ? OR store_group = ?"
@@ -390,7 +381,7 @@ async def version(request: web.Request) -> web.Response:
     version_id = int(request.match_info["version_id"])
     with _db(request) as conn:
         row = conn.execute(
-            "SELECT v.*, " + STORE_PAGE + " FROM versions v WHERE v.version_id = ?", (version_id,)
+            "SELECT v.* FROM versions v WHERE v.version_id = ?", (version_id,)
         ).fetchone()
         ids = conn.execute(
             "SELECT store, store_id, source FROM version_store_ids WHERE version_id = ?",
@@ -799,7 +790,7 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
-            "SELECT vg.version_id, v.store, v.product_id, v.stand_in, " + STORE_PAGE + ","
+            "SELECT vg.version_id, v.store, v.product_id, v.stand_in,"
             " v.console, v.name, v.release_date, v.on_sale, v.origin, v.developer, v.platform,"
             " v.title_id, " + COVER + ","
             " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
@@ -820,7 +811,7 @@ async def game(request: web.Request) -> web.Response:
         ).fetchall()
         dlcs = conn.execute(
             "SELECT d.version_id, v.store, v.console, v.name AS version, v.product_id,"
-            " v.stand_in, " + STORE_PAGE + ", d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
+            " v.stand_in, d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
             " d.trophy_group_id FROM dlcs d"
             " JOIN version_games vg ON vg.version_id = d.version_id AND vg.state = 'linked'"
             " JOIN versions v ON v.version_id = d.version_id WHERE vg.game_id = ?"
@@ -945,7 +936,7 @@ def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
         if v["demo_of"]:
             of = "tool for" if v["link_kind"] == "tool_of" else "demo of"
             kind += f'<br><small>{of} <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a></small>'
-        stand_in = " ·stand-in" if v["stand_in"] else ""
+        stand_in = " ·stand-in, search" if v["stand_in"] else ""
         cells = [
             _img(v["cover"], 36),
             f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>',
@@ -1028,7 +1019,7 @@ async def review(request: web.Request) -> web.Response:
     with _db(request) as conn:
         rows = conn.execute(
             "SELECT vg.version_id, v.name AS version, v.console, v.release_date,"
-            " v.store, v.product_id, v.stand_in, v.name, " + STORE_PAGE + ", " + COVER + ","
+            " v.store, v.product_id, v.stand_in, v.name, " + COVER + ","
             " vg.game_id, g.name AS game, vg.kind, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
             " JOIN games g ON g.game_id = vg.game_id WHERE vg.state = 'review'"
@@ -1039,7 +1030,7 @@ async def review(request: web.Request) -> web.Response:
         for game_id in {r["game_id"] for r in rows}:
             game_versions[game_id] = conn.execute(
                 "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.name, v.console,"
-                " v.release_date, " + STORE_PAGE + ", " + COVER + ", vg.kind"
+                " v.release_date, " + COVER + ", vg.kind"
                 " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
                 " WHERE vg.game_id = ? AND vg.state = 'linked'"
                 " ORDER BY v.release_date, v.console",
