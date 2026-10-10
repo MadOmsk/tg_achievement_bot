@@ -74,7 +74,15 @@ def _page(title: str, body: str) -> web.Response:
         ' · <a href="/payloads">payloads</a>'
     )
     html = (
-        f"<!doctype html><meta charset=utf-8><title>{escape(title)}</title>"
+        "<!doctype html><meta charset=utf-8>"
+        '<meta name=viewport content="width=device-width,initial-scale=1">'
+        "<style>body{font:14px system-ui,sans-serif;margin:8px}"
+        ".scroll{overflow-x:auto}"
+        "table.versions{border-collapse:collapse;font-size:13px}"
+        "table.versions td,table.versions th{border:1px solid #ccc;padding:3px 5px;"
+        "vertical-align:middle;text-align:left}"
+        "table.versions td:nth-child(2){min-width:140px}</style>"
+        f"<title>{escape(title)}</title>"
         f"<p>{nav}</p><h1>{escape(title)}</h1>{body}"
     )
     return web.Response(text=html, content_type="text/html")
@@ -864,7 +872,7 @@ async def game(request: web.Request) -> web.Response:
         _flash(request)
         + f"<p><b>{escape(identity)}</b></p>"
         + "<p>"
-        + "".join(_img(m["cover"], 120, m["console"]) for m in linked if m["cover"])
+        + "".join(_img(m["cover"], 56, m["console"]) for m in linked if m["cover"])
         + "</p>"
         + controls
         + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
@@ -918,30 +926,60 @@ def _identity(conn: sqlite3.Connection, game_id: int) -> str:
 
 
 def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
-    """Versions as lines a phone can read: the picture, what it is and where it
-    is sold, how it belongs; a review's answers under it."""
+    """Versions as one compact table (owner, 2026-10-10: lines were hard to
+    read): the picture, what it is, where it is sold, how it belongs; a
+    review row carries its probability and one picker for the answer."""
     if not rows:
         return "<p>(none)</p>"
-    parts = []
+    head = ["", "name", "console", "date", "store", "kind", "studio", "list"]
+    head += ["p", "answer"] if decide is not None else ["state"]
+    lines = []
     for v in rows:
-        extra = [escape(v["kind"])]
-        if v["developer"]:
-            extra.append(escape(v["developer"]))
-        if v["title_id"]:
-            extra.append(f'<a href="{escape(_list_href(v))}">achievements</a>')
+        kind = escape(v["kind"])
         if v["demo_of"]:
             of = "tool for" if v["link_kind"] == "tool_of" else "demo of"
-            extra.append(f'{of} <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a>')
-        if v["state"] != "linked" or v["source"] == "manual":
-            extra.append(escape(f"{v['state']}, {v['source']}"))
-        line = f"<p>{_img(v['cover'], 60)} {_version_line(v)}<br><small>{' · '.join(extra)}"
-        if v["reasons"] and v["state"] == "review":
-            line += f"<br>{escape(v['reasons'])}"
-        line += "</small></p>"
+            kind += f'<br><small>{of} <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a></small>'
+        stand_in = " ·stand-in" if v["stand_in"] else ""
+        cells = [
+            _img(v["cover"], 36),
+            f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>',
+            escape(v["console"]),
+            escape(v["release_date"] or "?"),
+            f'<a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
+            f"{stand_in} ↗</a>",
+            kind,
+            escape(v["developer"] or ""),
+            f'<a href="{escape(_list_href(v))}">list</a>' if v["title_id"] else "",
+        ]
         if decide is not None:
-            line += _decisions(v["version_id"], decide, f"/game/{decide}")
-        parts.append(line)
-    return "".join(parts)
+            score = f"{v['score']:.2f}" if v["score"] is not None else ""
+            cells.append(f'<span title="{escape(v["reasons"] or "")}">{score}</span>')
+            cells.append(_decision_picker(v["version_id"], decide, f"/game/{decide}"))
+        else:
+            cells.append(escape(f"{v['state']}, {v['source']}"))
+        lines.append("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
+    return (
+        "<div class=scroll><table class=versions><tr>"
+        + "".join(f"<th>{h}</th>" for h in head)
+        + "</tr>"
+        + "".join(lines)
+        + "</table></div>"
+    )
+
+
+def _decision_picker(version_id: int, game_id: int, back: str) -> str:
+    """The answers to one review row as one picker and a button."""
+    options = "".join(
+        f'<option value="{key}">{escape(label)}</option>' for key, label in _DECISIONS
+    )
+    return (
+        '<form method=post action="/decide" style="margin:0;white-space:nowrap">'
+        f'<input type=hidden name=version_id value="{version_id}">'
+        f'<input type=hidden name=game_id value="{game_id}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        "<select name=decision required><option value='' selected disabled>answer…</option>"
+        f"{options}</select> <button>ok</button></form>"
+    )
 
 
 def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:

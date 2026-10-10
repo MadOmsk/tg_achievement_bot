@@ -298,3 +298,18 @@ def test_a_creation_kit_is_its_games_tool():
     verdict = compare(game, kit)
     assert verdict.state == "linked"
     assert any(r.startswith("tool_of") for r in verdict.reasons)
+
+
+async def test_merging_a_game_keeps_a_version_the_other_had_under_review(repo: Repo) -> None:
+    remake = await _version(repo, "RE4R", "Resident Evil 4", "2023")
+    original = await _version(repo, "RE4", "resident evil 4", "2005")
+    new = await repo.create_game("Resident Evil 4", 2023)
+    old = await repo.create_game("resident evil 4", 2005)
+    await repo.set_link(remake, new, kind="version", state="linked", source="auto")
+    await repo.set_link(original, old, kind="version", state="linked", source="auto")
+    await repo.set_link(remake, old, kind="version", state="review", source="auto")
+
+    await repo.merge_games(new, old)
+
+    assert await repo.linked_game_of(remake) == old
+    assert await repo.linked_game_of(original) == old

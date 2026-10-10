@@ -144,9 +144,16 @@ class _GamesRepo:
         """Every link of `game_id` moves to `into` (a manual decision); the
         old id resolves to the new one."""
         async with self.transaction():
+            # A version already under `into` (as a review, say) takes the row it
+            # had in the merged game: merging says it is this game. Without this,
+            # an ignored update and the delete below dropped its link.
             await self._conn.execute(
-                "UPDATE OR IGNORE version_games SET game_id = ?, source = 'manual'"
-                " WHERE game_id = ?",
+                "DELETE FROM version_games WHERE game_id = ? AND version_id IN"
+                " (SELECT version_id FROM version_games WHERE game_id = ?)",
+                (into, game_id),
+            )
+            await self._conn.execute(
+                "UPDATE version_games SET game_id = ?, source = 'manual' WHERE game_id = ?",
                 (into, game_id),
             )
             await self._conn.execute("DELETE FROM version_games WHERE game_id = ?", (game_id,))
