@@ -453,10 +453,20 @@ class StoreCollector:
                 held = await self._repo.title_record("steam", str(appid)) is not None
                 await self._steam(str(appid), report, False, ours=held)
                 await self._steam_schema(str(appid))
+        # Only a game's own entry says a version exists: not a DLC's, and not
+        # an edition's (HLTB keeps "Fallout 4: Game of the Year Edition" apart).
+        if (entry.game_type or "game") != "game" or edition_kind(entry.name) != "standard":
+            return
         known = await self._repo.consoles_of_hltb(entry.hltb_id)
+        key = name_key(entry.name)
         for platform in entry.platforms:
             console = HLTB_CONSOLES.get(platform)
             if console is None or console in known:
+                continue
+            # A version of that very name on that console is already here.
+            if any(
+                name_key(name) == key for name in await self._repo.names_on_console(console, key)
+            ):
                 continue
             version = StoreVersion(
                 store="hltb",

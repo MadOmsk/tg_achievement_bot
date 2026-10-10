@@ -502,3 +502,13 @@ class _StoresRepo:
             (hltb_id,),
         )
         return {str(row[0]) for row in await cursor.fetchall()}
+
+    async def names_on_console(self, console: str, key: str) -> list[str]:
+        """Names of the versions on a console that could carry this name (the
+        first word of `key`), for the caller to compare."""
+        first = key.split()[0] if key else ""
+        cursor = await self._conn.execute(
+            "SELECT name FROM versions WHERE console = ? AND store <> 'hltb' AND name LIKE ?",
+            (console, f"%{first}%"),
+        )
+        return [str(row[0]) for row in await cursor.fetchall() if row[0]]
