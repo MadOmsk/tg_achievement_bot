@@ -64,7 +64,7 @@ class Candidate:
     def cores(self) -> tuple[str, ...]:
         """The cut names without the words that name a release, not the
         game ("Gears of War: Reloaded" is Gears of War)."""
-        return tuple(dict.fromkeys(_unmarked(normalize(core(n))) for n in self.names if n))
+        return tuple(dict.fromkeys(_unmarked(game_core(n)) for n in self.names if n))
 
     @property
     def fulls(self) -> tuple[str, ...]:
@@ -272,7 +272,7 @@ def _starts(game: Candidate, demo: Candidate) -> bool:
     — unless the game has one of its own ("RESIDENT EVIL 2 1-Shot Demo"). Its
     release words kept: "Gears of War: Reloaded" does not open "Gears of War:
     E-Day Multiplayer Beta"."""
-    for g in dict.fromkeys(normalize(core(n)) for n in game.names if n):
+    for g in dict.fromkeys(game_core(n) for n in game.names if n):
         head = _words(g)
         if not head:
             continue
@@ -343,10 +343,92 @@ _PLATFORM_WORDS = {
 }
 
 
+# Words an edition or a platform tail is made of: the only words a cut may
+# take. "Mass Effect: Andromeda Deluxe Edition" keeps "Andromeda" (owner,
+# 2026-10-10: after a separator, the phrase with "edition" is the edition;
+# a word that is not an edition's own is the game's).
+_EDITION_TAIL_WORDS = {
+    "edition",
+    "cut",
+    "bundle",
+    "deluxe",
+    "ultimate",
+    "gold",
+    "premium",
+    "legendary",
+    "complete",
+    "definitive",
+    "special",
+    "standard",
+    "digital",
+    "collectors",
+    "collector",
+    "directors",
+    "director",
+    "anniversary",
+    "enhanced",
+    "remastered",
+    "remaster",
+    "hd",
+    "game",
+    "of",
+    "the",
+    "year",
+    "goty",
+    "and",
+    "for",
+    "windows",
+    "10",
+    "11",
+    "pc",
+    "xbox",
+    "one",
+    "series",
+    "x",
+    "s",
+    "ps3",
+    "ps4",
+    "ps5",
+    "playstation",
+    "steam",
+    "preview",
+    "early",
+    "access",
+    "trial",
+    "demo",
+    "beta",
+    "upgrade",
+    "pack",
+}
+
+
+_PARENTHESIS = re.compile(r"(\s*[\(\[][^\)\]]*[\)\]])+\s*$")
+
+
+def game_core(name: str) -> str:
+    """The name without its edition and platform tail (as `hltb_match.core`
+    cuts it), normalized — but a cut that would take a word of the game's
+    own takes only the edition's words at the end."""
+    # A parenthesis at the end qualifies the release ("(Classic, 2005)", "(PC)").
+    name = _PARENTHESIS.sub("", name).strip() or name
+    full = normalize(name)
+    kept = normalize(core(name))
+    full_words, kept_words = full.split(), kept.split()
+    if full_words[: len(kept_words)] != kept_words:
+        return kept
+    removed = full_words[len(kept_words) :]
+    if all(w in _EDITION_TAIL_WORDS for w in removed):
+        return kept
+    words = list(full_words)
+    while len(words) > 1 and words[-1] in _EDITION_TAIL_WORDS:
+        words.pop()
+    return " ".join(words)
+
+
 def name_key(name: str) -> str:
     """A name as the matcher compares it, platforms said in it dropped too: what
     a store search's hits are measured by."""
-    words = _unmarked(normalize(core(name))).split()
+    words = _unmarked(game_core(name)).split()
     kept = [w for w in words if w not in _PLATFORM_WORDS] or words
     return " ".join(kept)
 

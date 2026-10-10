@@ -473,3 +473,14 @@ class _StoresRepo:
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+    async def delete_store_versions(self, store: str, product_id: str) -> None:
+        """Versions of a store product nobody here has, that turned out to be
+        no game (a DLC app a search found)."""
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE store = ? AND product_id = ?"
+            " AND origin = 'store' AND title_id IS NULL",
+            (store, product_id),
+        )
+        for row in await cursor.fetchall():
+            await self.delete_version(int(row["version_id"]))

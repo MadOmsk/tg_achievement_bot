@@ -199,3 +199,14 @@ def test_a_subtitled_name_is_the_same_game_only_by_its_achievements() -> None:
         achievements=frozenset(f"j{i}" for i in range(20)),
     )
     assert compare(gears, judgment).state == "apart"
+
+
+def test_an_edition_tail_never_takes_the_games_own_subtitle() -> None:
+    from bot.services.game_match import game_core
+
+    assert game_core("Mass Effect: Andromeda Deluxe Edition") == "mass effect andromeda"
+    assert game_core("Mass Effect Legendary Edition") == "mass effect"
+    assert game_core("Star Wars: Battlefront 2 (Classic, 2005)") == "star wars battlefront 2"
+    legendary = _c(1, "Mass Effect Legendary Edition", year=2021)
+    andromeda = _c(2, "Mass Effect: Andromeda Deluxe Edition", store="steam", year=2020)
+    assert compare(legendary, andromeda).state == "apart"

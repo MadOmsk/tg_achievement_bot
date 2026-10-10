@@ -44,8 +44,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # How close a store search's hit must be to the name asked for to be stored
-# (the matcher decides what it is).
-NAME_SEARCH_FLOOR = 0.7
+# (the matcher decides what it is): this alike, or the one name opening the
+# other ("The Last of Us" → "The Last of Us Part I").
+NAME_SEARCH_FLOOR = 0.8
 # HLTB entries read for one name (a game, its remaster, its remake…).
 HLTB_PER_NAME = 4
 # Editions (Steam packages) read per game.
@@ -156,6 +157,12 @@ class StoreCollector:
             await self._repo.record_fetch(subject, source, status="not_found")
             return
         changed = await self._repo.save_payload(subject, source, data)
+        if not ours and str(data.get("type") or "game") not in ("game", "demo"):
+            # A DLC, a soundtrack or a tool the search found: not a version of
+            # anything (it reaches its game as the game's DLC).
+            await self._repo.delete_store_versions("steam", appid)
+            await self._repo.record_fetch(subject, source, status="ok", changed=changed)
+            return
         version = steam_store.parse_app(data, data_ru)
         version_id = await self._repo.save_version(
             version,
@@ -364,7 +371,7 @@ class StoreCollector:
         try:
             for item in await steam_store.search(name):
                 hit = name_key(str(item.get("name") or ""))
-                if item.get("type") != "app" or similarity(ours, hit) < NAME_SEARCH_FLOOR:
+                if item.get("type") != "app" or not _close(ours, hit):
                     continue
                 appid = str(item["id"])
                 held = await self._repo.title_record("steam", appid) is not None
@@ -398,7 +405,7 @@ class StoreCollector:
                 steam_versions[str(row["product_id"])] = version_id
         read = 0
         for result in (await search_candidates(name))[: HLTB_PER_NAME * 3]:
-            if similarity(ours, name_key(result.name)) < NAME_SEARCH_FLOOR:
+            if not _close(ours, name_key(result.name)):
                 continue
             data = await hltb_page.fetch_page(result.hltb_id)
             entry = hltb_page.parse_page(data) if data else None
@@ -419,8 +426,7 @@ class StoreCollector:
         hits = [
             p
             for p in await xbox_catalog.search(name)
-            if p.get("Type") == "Game"
-            and similarity(ours, name_key(str(p.get("Title") or ""))) >= NAME_SEARCH_FLOOR
+            if p.get("Type") == "Game" and _close(ours, name_key(str(p.get("Title") or "")))
         ]
         if not hits:
             return
@@ -707,6 +713,14 @@ class StoreCollector:
     async def _title_steam_appid(self, platform: str, title_id: str) -> int | None:
         steam = await self._repo.title_steam(platform, title_id)
         return steam.steam_appid if steam else None
+
+
+def _close(ours: str, hit: str) -> bool:
+    if similarity(ours, hit) >= NAME_SEARCH_FLOOR:
+        return True
+    a, b = ours.split(), hit.split()
+    short, long_ = (a, b) if len(a) <= len(b) else (b, a)
+    return len(short) >= 2 and long_[: len(short)] == short
 
 
 def _store_of(platform: str) -> str:
