@@ -792,12 +792,13 @@ isn't muted there; it wasn't already published there.
   Steam's and Xbox 360's 64 px icons) is enlarged by a cheap filter
   (bicubic) and set in the middle of a card, rounded, with a shadow. Three
   global admin settings (/admin → Правила): the ground, `post_picture_style`
-  — `off` (as before, the default), `color` (the icon's average colour) or
-  `cover` (the game's cover, blurred and darkened; the colour without one);
-  the card, `post_picture_size` — `1024x1024` (default), `720x1280`, or
-  `original` (no card: the enlarged icon alone); the scale,
-  `post_picture_scale` — ×1 to ×5 (×3 default), never past 90% of the
-  card. Anything that cannot be drawn goes as before. «🖼 Тест
+  — `color` (the icon's average colour; the default), `cover` (the game's
+  cover, blurred and darkened; the colour without one) or `off` (as
+  before); the card, `post_picture_size` — `1024x1024` (default),
+  `720x1280`, or `original` (no card: the enlarged icon alone); the scale,
+  `post_picture_scale` — ×1 to ×8 (×4 default). **A zoom that would pass
+  the card's edges is no zoom** (owner, 2026-10-10): the icon goes on the
+  card at its own size. Anything that cannot be drawn goes as before. «🖼 Тест
   уведомлений», one global action beside these settings (/admin → ⚙️
   Настройки → Правила; the Mini App's admin settings), sends the newest
   achievement earned on each platform, whoever earned it

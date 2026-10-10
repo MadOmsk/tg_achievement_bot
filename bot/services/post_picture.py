@@ -6,13 +6,14 @@ as a tiny, blurry card, every post a different width. Here, at the moment a
 post is sent:
 
 - a picture of high resolution goes **as it is**, untouched;
-- a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×1–×5
-  by a cheap filter (`post_picture_scale`) and set in the middle of a card —
-  1024 × 1024, 720 × 1280, or none at all, the icon alone
+- a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×1–×8
+  by a cheap filter (`post_picture_scale`, ×4 by default; not at all when
+  that would pass the card's edges) and set in the middle of a card —
+  1024 × 1024 (default), 720 × 1280, or none at all, the icon alone
   (`post_picture_size`) — with rounded corners and a soft shadow.
 
-The ground is the style, an admin setting (`post_picture_style`): `color` —
-the icon's own average colour, darker at the edges; `cover` — the game's
+The ground is the style, an admin setting (`post_picture_style`): `color`
+(the default) — the icon's own average colour, darker at the edges; `cover` — the game's
 cover, blurred, darkened and paled (the colour when there is no cover);
 `off` — nothing is drawn, as before.
 
@@ -44,7 +45,7 @@ log = logging.getLogger(__name__)
 STYLE_KEY = "post_picture_style"
 STYLE_OFF, STYLE_COLOR, STYLE_COVER = "off", "color", "cover"
 STYLES = (STYLE_OFF, STYLE_COLOR, STYLE_COVER)
-STYLE_DEFAULT = STYLE_OFF
+STYLE_DEFAULT = STYLE_COLOR
 
 # The card a low-resolution icon is set on, and how many times it is
 # enlarged — the admin's, global (owner, 2026-10-10). `original` is no card:
@@ -54,10 +55,8 @@ SIZE_ORIGINAL = "original"
 SIZES = ("1024x1024", "720x1280", SIZE_ORIGINAL)
 SIZE_DEFAULT = "1024x1024"
 SCALE_KEY = "post_picture_scale"
-SCALES = (1, 2, 3, 4, 5)
-SCALE_DEFAULT = 3
-# An enlarged icon never takes more of the card than this, whatever the scale.
-MAX_SHARE = 0.9
+SCALES = (1, 2, 3, 4, 5, 6, 7, 8)
+SCALE_DEFAULT = 4
 
 # Under this on its longer side, a picture is low-resolution (Steam's and
 # Xbox 360's 64 px icons); at least this, it goes as it is.
@@ -150,10 +149,10 @@ def compose(icon: bytes, look: Look, cover: bytes | None = None) -> bytes | None
         return None
     card = look.card()
     scale = look.scale
-    if card is not None:
-        # Never past the card's edges, whatever scale was picked.
-        fits = min(card) * MAX_SHARE / max(picture.size)
-        scale = min(scale, fits)
+    if card is not None and (picture.width * scale > card[0] or picture.height * scale > card[1]):
+        # Enlarged past the card, it is not enlarged at all (owner,
+        # 2026-10-10): the icon goes on the card at its own size.
+        scale = 1
     size = (max(1, round(picture.width * scale)), max(1, round(picture.height * scale)))
     # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
     big = picture.resize(size, Image.Resampling.BICUBIC)
