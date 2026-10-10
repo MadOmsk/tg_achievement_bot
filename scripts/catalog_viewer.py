@@ -163,6 +163,31 @@ STORE_PAGE = (
 )
 
 
+# A version's picture: its store's cover, else its achievement list's, else
+# the picture of the HLTB entry it is linked to.
+COVER = (
+    "COALESCE(json_extract(v.media, '$.cover'), json_extract(v.media, '$.poster'),"
+    " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
+    "  AND t.title_id = v.title_id),"
+    " (SELECT h.image_url FROM version_hltb vh JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
+    "  WHERE vh.version_id = v.version_id AND h.image_url IS NOT NULL LIMIT 1)) AS cover"
+)
+
+
+def _img(url: object, height: int, title: str = "") -> str:
+    """A picture by its address (an http one asked over https: the viewer is
+    opened through a tunnel, and a browser blocks mixed content)."""
+    if not url:
+        return ""
+    src = str(url)
+    if src.startswith("http://"):
+        src = "https://" + src[len("http://") :]
+    return (
+        f'<img src="{escape(src)}" height={height} loading=lazy referrerpolicy=no-referrer'
+        f' title="{escape(title)}" style="vertical-align:middle;margin:2px">'
+    )
+
+
 def _dlc_href(row: sqlite3.Row) -> str:
     """A DLC on its store."""
     store, store_id = row["store"], row["store_id"]
@@ -382,6 +407,16 @@ async def version(request: web.Request) -> web.Response:
             "SELECT of_version_id FROM version_links WHERE version_id = ? AND kind = 'demo_of'",
             (version_id,),
         ).fetchone()
+        pictures = conn.execute(
+            "SELECT v.media,"
+            " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
+            "  AND t.title_id = v.title_id) AS list_icon,"
+            " (SELECT h.image_url FROM version_hltb vh JOIN hltb_games h"
+            "  ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
+            "  AND h.image_url IS NOT NULL LIMIT 1) AS hltb_image"
+            " FROM versions v WHERE v.version_id = ?",
+            (version_id,),
+        ).fetchone()
         games = conn.execute(
             "SELECT vg.game_id, g.name, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
             " FROM version_games vg JOIN games g ON g.game_id = vg.game_id"
@@ -425,6 +460,7 @@ async def version(request: web.Request) -> web.Response:
     )
     body = (
         _flash(request)
+        + _pictures(pictures)
         + controls
         + (
             f'<p><a href="{escape(_store_href(row))}">on the store</a>'
@@ -891,22 +927,48 @@ async def review(request: web.Request) -> web.Response:
     with _db(request) as conn:
         rows = conn.execute(
             "SELECT vg.version_id, v.name AS version, v.console, v.release_date,"
+            " v.store, v.product_id, v.stand_in, v.name, " + STORE_PAGE + ", " + COVER + ","
             " vg.game_id, g.name AS game, vg.kind, vg.score, vg.reasons"
             " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
             " JOIN games g ON g.game_id = vg.game_id WHERE vg.state = 'review'"
             " ORDER BY vg.decided_at DESC LIMIT ?",
             (PAGE_SIZE,),
         ).fetchall()
+        game_versions: dict[int, list[sqlite3.Row]] = {}
+        for game_id in {r["game_id"] for r in rows}:
+            game_versions[game_id] = conn.execute(
+                "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.name, v.console,"
+                " v.release_date, " + STORE_PAGE + ", " + COVER + ", vg.kind"
+                " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+                " WHERE vg.game_id = ? AND vg.state = 'linked'"
+                " ORDER BY v.release_date, v.console",
+                (game_id,),
+            ).fetchall()
     parts = []
     for r in rows:
+        theirs = "".join(
+            f"<li>{_img(v['cover'], 40)} {_version_line(v)} · {escape(v['kind'])}</li>"
+            for v in game_versions.get(r["game_id"], [])
+        )
         parts.append(
-            f'<hr><p><a href="/version/{r["version_id"]}">{escape(r["version"] or "")}</a>'
-            f" [{escape(r['console'])}, {escape(r['release_date'] or '?')}] →"
-            f' <a href="/game/{r["game_id"]}">{escape(r["game"])}</a>'
-            f" · {escape(r['reasons'] or '')}</p>"
+            f"<hr><p>{_img(r['cover'], 90)} {_version_line(r)}"
+            f' → <a href="/game/{r["game_id"]}">{escape(r["game"])}</a></p>'
+            f"<p><small>{escape(r['reasons'] or '')}</small></p>"
+            f"<details><summary>the game's versions</summary><ul>{theirs}</ul></details>"
             + _decisions(r["version_id"], r["game_id"], "/review")
         )
     return _page("To review", _flash(request) + ("".join(parts) or "<p>(nothing to review)</p>"))
+
+
+def _version_line(v: sqlite3.Row) -> str:
+    """A version in one line: its name, console and year, and its store page."""
+    stand_in = " (stand-in)" if v["stand_in"] else ""
+    return (
+        f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>'
+        f" [{escape(v['console'])}, {escape(v['release_date'] or '?')}]"
+        f' <a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
+        f" {escape(str(v['product_id']))}{stand_in} ↗</a>"
+    )
 
 
 async def decide(request: web.Request) -> web.Response:
@@ -1023,6 +1085,33 @@ def _secret(value: object) -> str | None:
 
 async def _close(app: web.Application) -> None:
     await app["database"].close()
+
+
+def _pictures(row: sqlite3.Row | None) -> str:
+    """Every picture a version has: the store's (cover, poster, hero…), its
+    achievement list's, its HLTB entry's — each once, named by where it came
+    from. Screenshots are left to the raw answer."""
+    if row is None:
+        return ""
+    seen: dict[str, str] = {}
+    media = json.loads(row["media"]) if row["media"] else {}
+    for role, url in media.items():
+        if isinstance(url, str) and url.startswith("http") and url not in seen:
+            seen[url] = f"store: {role}"
+    for url, source in ((row["list_icon"], "achievement list"), (row["hltb_image"], "HLTB")):
+        if url and url not in seen:
+            seen[str(url)] = source
+    if not seen:
+        return "<p>(no pictures)</p>"
+    return (
+        "<p>"
+        + "".join(
+            f"<figure style='display:inline-block;margin:4px'>{_img(url, 180, source)}"
+            f"<figcaption><small>{escape(source)}</small></figcaption></figure>"
+            for url, source in seen.items()
+        )
+        + "</p>"
+    )
 
 
 def build(db_path: Path) -> web.Application:
