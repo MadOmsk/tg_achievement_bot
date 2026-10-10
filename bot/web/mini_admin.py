@@ -449,7 +449,9 @@ def _action_context(request: web.Request, admin: Any) -> AdminContext:
             raise RuntimeError("bot unavailable")
         repo: Repo = request.app["mini_repo"]
         locale = await repo.user_locale(admin.person_id)
-        return await send_picture_samples(bot, repo, person_id, admin.tg_id, locale=locale)
+        return await send_picture_samples(
+            bot, repo, settings, person_id, admin.tg_id, locale=locale
+        )
 
     return AdminContext(
         request.app["mini_repo"],

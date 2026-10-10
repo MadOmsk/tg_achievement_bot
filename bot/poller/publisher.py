@@ -12,6 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from html import escape as html_escape
 from pathlib import Path
 
 from aiogram import Bot
@@ -80,6 +81,9 @@ class PublishJob:
     # one on a square (`services/post_picture.py`): one `Art` per gallery
     # entry, same order.
     art: list[Art] = field(default_factory=list)
+    # A picture style that overrides the admin's — only the super-admin's
+    # test of the styles (`Publisher.sample`) sets it.
+    style: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,6 +360,41 @@ class Publisher:
                     )
                 )
 
+    async def sample(
+        self,
+        item: AchievementRow,
+        person_id: int,
+        chat_id: int,
+        *,
+        locale: str,
+        style: str,
+        note: str,
+    ) -> int | None:
+        """One achievement as the whole post a chat would get — its text, the
+        progress, the Mini App button, the picture in `style` — sent to
+        `chat_id` with `note` under it: the super-admin's test of the post
+        picture, in their own DM (owner, 2026-10-10). Nothing is recorded as
+        published."""
+        game = (item.platform, item.title_id)
+        progress = await self._progress_for([item], item.xuid)
+        text = format_single(
+            await self._person_label(person_id),
+            item,
+            item.title_name,
+            locale=locale,
+            progress=progress.get((item.platform, item.title_id, item.trophy_group_id)),
+        )
+        job = PublishJob(
+            chat_id=chat_id,
+            text=f"{text}\n\n<i>{html_escape(note)}</i>",
+            gallery=_gallery([item]),
+            reply_markup=await self._markup_for(chat_id, locale, person_id=person_id, game=game),
+            backups=await self._backups(item),
+            art=await self._art([item]),
+            style=style,
+        )
+        return await self._deliver(job)
+
     def _tell_followers(
         self, person_id: int, achievements: list[AchievementRow], title_name: str | None
     ) -> None:
@@ -422,12 +461,10 @@ class Publisher:
         on a square per the admin's style — None for one that goes as it is
         (high resolution, or nothing could be drawn), and nothing at all while
         the style is off."""
-        style, scale = await post_picture.style_of(self._repo)
+        style = job.style or await post_picture.style_of(self._repo)
         if style == post_picture.STYLE_OFF or not job.art:
             return []
-        return [
-            await post_picture.build(art.icon, art.cover, style, scale) for art in job.art[:count]
-        ]
+        return [await post_picture.build(art.icon, art.cover, style) for art in job.art[:count]]
 
     async def _apply_flood_filter(
         self, person_id: int, chat: ChatTarget, allowed: list[AchievementRow]

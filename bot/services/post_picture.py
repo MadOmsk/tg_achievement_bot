@@ -6,9 +6,9 @@ as a tiny, blurry card, every post a different width. Here, at the moment a
 post is sent:
 
 - a picture of high resolution goes **as it is**, untouched;
-- a low-resolution one (under `LOW_RES` on its longer side) is enlarged by
-  a cheap filter, ×2 or ×3 (`post_picture_scale`), and set in the middle of a
-  square ground, with rounded corners and a soft shadow.
+- a low-resolution one (under `LOW_RES` on its longer side) is enlarged ×3
+  by a cheap filter and set in the middle of a 1024 × 1024 ground, with
+  rounded corners and a soft shadow.
 
 The ground is the style, an admin setting (`post_picture_style`): `color` —
 the icon's own average colour, darker at the edges; `cover` — the game's
@@ -16,7 +16,7 @@ cover, blurred, darkened and paled (the colour when there is no cover);
 `off` — nothing is drawn, as before.
 
 **The original is what is stored** (the icon cache, the cover, the URLs in
-the database); nothing composed is kept, so the style and the scale can
+the database); nothing composed is kept, so the style can
 change at any time. The Mini App is not touched by this.
 """
 
@@ -44,19 +44,17 @@ STYLE_OFF, STYLE_COLOR, STYLE_COVER = "off", "color", "cover"
 STYLES = (STYLE_OFF, STYLE_COLOR, STYLE_COVER)
 STYLE_DEFAULT = STYLE_OFF
 
-SCALE_KEY = "post_picture_scale"
-SCALES = (2, 3)
-SCALE_DEFAULT = 2
+# The square's side, and how many times a low-resolution icon is enlarged
+# on it (owner, 2026-10-10).
+SIDE = 1024
+SCALE = 3
 
 # Under this on its longer side, a picture is low-resolution (Steam's and
 # Xbox 360's 64 px icons); at least this, it goes as it is.
 LOW_RES = 200
-# How much of the square the enlarged icon takes, on its longer side.
-ICON_SHARE = 0.6
-
 # Composed pictures kept for a while: one achievement goes to several chats.
 _MEMO_SIZE = 32
-_memo: OrderedDict[tuple[str, int, str, str], bytes] = OrderedDict()
+_memo: OrderedDict[tuple[str, str, str], bytes] = OrderedDict()
 
 
 # ------------------------------------------------------------------ drawing
@@ -112,19 +110,19 @@ def _cover_ground(cover: Image.Image, side: int) -> Image.Image:
     return ImageEnhance.Brightness(ground).enhance(0.5)
 
 
-def compose(icon: bytes, style: str, cover: bytes | None = None, scale: int = 2) -> bytes | None:
-    """A low-resolution `icon` enlarged `scale` times on a square in `style`,
-    as a JPEG; None when it is of high resolution (it goes as it is), when
-    the style is off, or when `icon` is not a picture. CPU work — run it in a
-    thread."""
-    if style not in (STYLE_COLOR, STYLE_COVER) or scale not in SCALES:
+def compose(icon: bytes, style: str, cover: bytes | None = None) -> bytes | None:
+    """A low-resolution `icon` enlarged `SCALE` times on a `SIDE` square in
+    `style`, as a JPEG; None when it is of high resolution (it goes as it
+    is), when the style is off, or when `icon` is not a picture. CPU work —
+    run it in a thread."""
+    if style not in (STYLE_COLOR, STYLE_COVER):
         return None
     picture = _open(icon)
     if picture is None or not is_low_res(picture):
         return None
     # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
-    big = picture.resize((picture.width * scale, picture.height * scale), Image.Resampling.BICUBIC)
-    side = round(max(big.size) / ICON_SHARE)
+    big = picture.resize((picture.width * SCALE, picture.height * SCALE), Image.Resampling.BICUBIC)
+    side = SIDE
 
     cover_picture = _open(cover) if cover and style == STYLE_COVER else None
     ground = _cover_ground(cover_picture, side) if cover_picture else _color_ground(picture, side)
@@ -139,8 +137,9 @@ def compose(icon: bytes, style: str, cover: bytes | None = None, scale: int = 2)
     shadow = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     drop = Image.new("RGBA", big.size, (0, 0, 0, 0))
     drop.putalpha(Image.eval(alpha, lambda a: a * 150 // 255))
-    shadow.paste(drop, (at[0], at[1] + max(1, side // 64)), drop)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(max(1, side // 40)))
+    # The shadow belongs to the icon, so it is sized by the icon, not the square.
+    shadow.paste(drop, (at[0], at[1] + max(2, big.height // 24)), drop)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(max(2, big.height // 14)))
 
     canvas = Image.alpha_composite(ground.convert("RGBA"), shadow)
     canvas.paste(big, at, big)
@@ -164,15 +163,10 @@ async def sources(repo: Repo, item: AchievementRow) -> tuple[tuple[str, ...], tu
     return icon, cover
 
 
-async def style_of(repo: Repo) -> tuple[str, int]:
-    """The admin's style and scale, read on every post so a change applies at
-    once."""
+async def style_of(repo: Repo) -> str:
+    """The admin's style, read on every post so a change applies at once."""
     style = await repo.get_app_setting(STYLE_KEY)
-    scale = await repo.get_app_setting(SCALE_KEY)
-    return (
-        style if style in STYLES else STYLE_DEFAULT,
-        int(scale) if scale in {str(n) for n in SCALES} else SCALE_DEFAULT,
-    )
+    return style if style in STYLES else STYLE_DEFAULT
 
 
 async def _load(source: str) -> bytes | None:
@@ -203,15 +197,15 @@ def _low_res_bytes(data: bytes) -> bool:
 
 
 async def build(
-    icon_sources: Sequence[str], cover_sources: Sequence[str], style: str, scale: int
+    icon_sources: Sequence[str], cover_sources: Sequence[str], style: str
 ) -> bytes | None:
     """A post's enlarged, squared picture from the first icon source that
     loads (a file or a URL), on the first cover that loads; None — send the
     original as it is — when the style is off, the icon is of high
     resolution, nothing loads, or what loaded is not a picture."""
-    if style not in (STYLE_COLOR, STYLE_COVER) or scale not in SCALES or not icon_sources:
+    if style not in (STYLE_COLOR, STYLE_COVER) or not icon_sources:
         return None
-    key = (style, scale, icon_sources[0], cover_sources[0] if cover_sources else "")
+    key = (style, icon_sources[0], cover_sources[0] if cover_sources else "")
     if key in _memo:
         _memo.move_to_end(key)
         return _memo[key] or None
@@ -222,9 +216,7 @@ async def build(
     if _low_res_bytes(icon[1]):
         cover = await _first(cover_sources) if style == STYLE_COVER else None
         try:
-            composed = await asyncio.to_thread(
-                compose, icon[1], style, cover[1] if cover else None, scale
-            )
+            composed = await asyncio.to_thread(compose, icon[1], style, cover[1] if cover else None)
         except Exception:
             log.exception("could not compose a post picture from %s", icon[0])
             return None

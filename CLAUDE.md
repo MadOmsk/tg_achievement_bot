@@ -789,16 +789,16 @@ isn't muted there; it wasn't already published there.
   stored** (icon cache, cover, URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
   as it is.** A low-resolution one (under 200 px on its longer side —
-  Steam's and Xbox 360's 64 px icons) is enlarged by a cheap filter
-  (bicubic), ×2 or ×3 (`app_settings['post_picture_scale']`), and set in
-  the middle of a square ground (the icon 60% of it), rounded, with a
+  Steam's and Xbox 360's 64 px icons) is enlarged ×3 by a cheap filter
+  (bicubic) and set in the middle of a 1024 × 1024 ground, rounded, with a
   shadow. The ground is the admin's style (`post_picture_style`, /admin →
   Правила): `off` (as before, the default), `color` (the icon's average
   colour) or `cover` (the game's cover, blurred and darkened; the colour
   without one). Anything that cannot be drawn goes as before. The user
-  card's «🖼 Тест картинок постов» sends the person's latest achievement on
-  each platform as today, ×2 and ×3 on each ground, to the super-admin's
-  own DM. The Mini App is not touched by this.
+  card's «🖼 Тест уведомлений» sends the person's latest achievement on each
+  platform as the whole post a chat gets (`Publisher.sample`: text,
+  progress, Mini App button) — as today, then on each ground — to the
+  super-admin's own DM, recording nothing. The Mini App is not touched.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1363,8 +1363,8 @@ keyboard.
     (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
     steps and the words are the server's. Today: exclude / restore, refresh and
     reset an account (reset asks once, naming it), take a chosen picture down,
-    delete a person (asks twice), send their posts in every picture style to
-    one's own DM; on a chat, the promo (asks once), delete the
+    delete a person (asks twice), send their latest posts in every picture
+    style to one's own DM; on a chat, the promo (asks once), delete the
     last message, the three wipes (each asks once with the count). Under them,
     `services/admin_accounts.py` (refresh: presence, then the delta since the
     newest unlock; reset) and `services/admin_cleanup.py` (which messages a wipe
@@ -1392,7 +1392,7 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, the digest size, profile links, the post picture and its scale · Новые пользователи: the
+  rarity threshold, the digest size, profile links, the post picture · Новые пользователи: the
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.

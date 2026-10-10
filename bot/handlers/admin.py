@@ -554,7 +554,7 @@ async def admin_action(
 
     async def samples(person_id: int) -> int:
         return await send_picture_samples(
-            bot, repo, person_id, callback.from_user.id, locale=i18n.locale
+            bot, repo, settings, person_id, callback.from_user.id, locale=i18n.locale
         )
 
     ctx = AdminContext(

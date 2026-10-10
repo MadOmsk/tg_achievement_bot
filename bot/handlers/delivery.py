@@ -12,15 +12,14 @@ import contextlib
 import logging
 
 from aiogram import Bot
-from aiogram.enums import ParseMode
-from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
+from bot.config import Settings
 from bot.db.repo import AchievementRow, Repo
 from bot.i18n import gettext
 from bot.services import post_picture
 from bot.services.message_log import stats_category
 from bot.services.naming import person_name_of
-from bot.views.notification import format_single
 from bot.views.parts import platform_label
 from bot.views.promo import promo_keyboard, promo_text
 
@@ -84,12 +83,14 @@ async def send_promo(bot: Bot, chat_id: int, locale: str, mini_app_url: str | No
 
 
 async def send_picture_samples(
-    bot: Bot, repo: Repo, person_id: int, chat_id: int, *, locale: str
+    bot: Bot, repo: Repo, settings: Settings, person_id: int, chat_id: int, *, locale: str
 ) -> int:
-    """The person's latest achievement on each platform, as a post as sent
-    today, then — for a low-resolution icon — enlarged ×2 and ×3 on each
-    ground, to `chat_id`, the super-admin's DM (owner, 2026-10-10). Answers
-    how many pictures went."""
+    """The person's latest achievement on each platform as the whole post a
+    chat would get — as today, then on each ground — to `chat_id`, the
+    super-admin's DM (owner, 2026-10-10). A high-resolution picture goes as
+    it is, so it is sent once, said so. Answers how many posts went."""
+    from bot.poller.publisher import Publisher
+
     user = await repo.get_user(person_id)
     if user is None:
         return 0
@@ -110,40 +111,47 @@ async def send_picture_samples(
             title_name=row.game,
             is_secret=row.is_secret,
             trophy_type=row.trophy_type,
+            xuid=row.xuid or None,
+            trophy_group_id=row.trophy_group_id,
+            device=row.device,
+            game_platforms=row.game_platforms,
         )
     if not picked:
         return 0
-    name = person_name_of(user)
     await bot.send_message(
         chat_id,
-        gettext("admin", "admin-picture-test-intro", locale=locale, name=name, count=len(picked)),
+        gettext(
+            "admin",
+            "admin-picture-test-intro",
+            locale=locale,
+            name=person_name_of(user),
+            count=len(picked),
+        ),
     )
+    publisher = Publisher(bot, repo, settings)
     sent = 0
     for item in picked.values():
-        text = format_single(name, item, item.title_name, locale=locale)
         icon, cover = await post_picture.sources(repo, item)
-        variants: list[tuple[str, bytes | None]] = []
-        for scale in post_picture.SCALES:
-            for style in (post_picture.STYLE_COLOR, post_picture.STYLE_COVER):
-                data = await post_picture.build(icon, cover, style, scale)
-                if data is not None:
-                    note = gettext("admin", f"admin-post-picture-{style}", locale=locale)
-                    variants.append((f"×{scale} · {note}", data))
-        # As today first; alone, and said so, when the icon is of high
-        # resolution and goes as it is.
-        first = "admin-post-picture-off" if variants else "admin-picture-test-high-res"
-        variants.insert(0, (gettext("admin", first, locale=locale), None))
-        for note, data in variants:
+        styles = [
+            style
+            for style in (post_picture.STYLE_COLOR, post_picture.STYLE_COVER)
+            if await post_picture.build(icon, cover, style) is not None
+        ]
+        first = "admin-post-picture-off" if styles else "admin-picture-test-high-res"
+        for style, key in [(post_picture.STYLE_OFF, first)] + [
+            (style, f"admin-post-picture-{style}") for style in styles
+        ]:
             try:
-                await bot.send_photo(
+                if await publisher.sample(
+                    item,
+                    person_id,
                     chat_id,
-                    photo=BufferedInputFile(data, filename="post.jpg") if data else icon[-1],
-                    caption=f"{text}\n\n<i>{note}</i>",
-                    parse_mode=ParseMode.HTML,
-                    has_spoiler=item.is_secret,
-                )
-                sent += 1
+                    locale=locale,
+                    style=style,
+                    note=gettext("admin", key, locale=locale),
+                ):
+                    sent += 1
             except Exception as exc:
-                log.info("a picture sample (%s) did not go through: %r", note, exc)
+                log.info("a picture sample (%s) did not go through: %r", style, exc)
             await asyncio.sleep(0.3)
     return sent

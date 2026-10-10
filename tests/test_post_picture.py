@@ -20,18 +20,19 @@ def _picture(data: bytes) -> Image.Image:
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
-def test_a_low_res_icon_is_enlarged_two_or_three_times_on_a_square() -> None:
-    for scale in (2, 3):
-        data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COLOR, scale=scale)
-        assert data is not None
-        picture = _picture(data)
-        side = round(64 * scale / post_picture.ICON_SHARE)
-        assert picture.size == (side, side)
-        middle = picture.getpixel((side // 2, side // 2))
-        corner = picture.getpixel((1, 1))
-        # The icon's own red in the middle, a darker ground of its colour round it.
-        assert middle[0] > 150 and middle[1] < 80
-        assert sum(corner) < sum(middle)
+def test_a_low_res_icon_is_enlarged_three_times_on_a_1024_square() -> None:
+    data = post_picture.compose(_png((64, 64)), post_picture.STYLE_COLOR)
+    assert data is not None
+    picture = _picture(data)
+    assert picture.size == (1024, 1024)
+    # The icon's own red, 192 px across in the middle; a darker ground of its
+    # colour round it.
+    middle = picture.getpixel((512, 512))
+    assert middle[0] > 150 and middle[1] < 80
+    assert picture.getpixel((512 + 90, 512))[0] > 150
+    outside = picture.getpixel((512 + 110, 512 - 110))
+    assert sum(outside) < sum(middle)
+    assert sum(picture.getpixel((1, 1))) < sum(middle)
 
 
 def test_a_high_res_picture_is_left_as_it_is() -> None:
@@ -71,19 +72,18 @@ async def test_build_reads_the_first_source_that_loads(tmp_path, monkeypatch) ->
     monkeypatch.setattr(post_picture.images, "fetch", nothing)
     missing = str(tmp_path / "gone.png")
     color = post_picture.STYLE_COLOR
-    assert await post_picture.build((missing, str(small)), (), color, 3) is not None
-    assert await post_picture.build((str(large),), (), color, 2) is None
-    assert await post_picture.build((str(small),), (), post_picture.STYLE_OFF, 2) is None
-    assert await post_picture.build(("https://cdn/x.png",), (), post_picture.STYLE_COVER, 2) is None
+    assert await post_picture.build((missing, str(small)), (), color) is not None
+    assert await post_picture.build((str(large),), (), color) is None
+    assert await post_picture.build((str(small),), (), post_picture.STYLE_OFF) is None
+    assert await post_picture.build(("https://cdn/x.png",), (), post_picture.STYLE_COVER) is None
 
 
-async def test_the_style_is_off_and_the_scale_two_until_the_admin_picks(repo) -> None:
+async def test_the_style_is_off_until_the_admin_picks_one(repo) -> None:
     from bot.services import admin_registry
 
-    assert await post_picture.style_of(repo) == (post_picture.STYLE_OFF, 2)
+    assert await post_picture.style_of(repo) == post_picture.STYLE_OFF
     await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "cover", None)
-    await admin_registry.set_value(repo, "global", post_picture.SCALE_KEY, "3", None)
-    assert await post_picture.style_of(repo) == (post_picture.STYLE_COVER, 3)
+    assert await post_picture.style_of(repo) == post_picture.STYLE_COVER
 
 
 async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(
@@ -119,7 +119,7 @@ async def test_the_publisher_enlarges_only_a_low_res_icon_and_only_while_on(
     await admin_registry.set_value(repo, "global", post_picture.STYLE_KEY, "color", None)
     await pub._deliver(job(small, "https://cdn/icon.png"))
     assert isinstance(sent[-1], BufferedInputFile)
-    assert _picture(sent[-1].data).size[0] == round(128 / post_picture.ICON_SHARE)
+    assert _picture(sent[-1].data).size == (1024, 1024)
 
     await pub._deliver(job(large, "https://cdn/art.png"))
     assert sent[-1] == "https://cdn/art.png"
@@ -146,3 +146,46 @@ async def test_the_test_action_hands_the_person_to_the_panels_sender(repo, setti
     ctx = AdminContext(repo, settings, send_picture_samples=none)
     done = await perform(ctx, "user", Target(person=person), "picture_test", 0, locale="ru")
     assert isinstance(done, Done) and not done.ok
+
+
+async def test_the_sample_is_the_whole_post_in_the_style_asked(repo, tmp_path, monkeypatch) -> None:
+    """The super-admin's test sends what a chat would get — text, picture —
+    in the style asked, whatever the admin's setting, and records nothing."""
+    from types import SimpleNamespace
+
+    from aiogram.types import BufferedInputFile
+
+    from bot.db.repo import AchievementRow
+    from bot.poller.publisher import Publisher
+    from bot.services import achievement_icons
+
+    icon = tmp_path / "icon.png"
+    icon.write_bytes(_png((64, 64)))
+    monkeypatch.setattr(achievement_icons, "find_cached_icon", lambda *a, **k: icon)
+    sent: list[tuple[object, dict]] = []
+
+    class _Bot:
+        async def send_photo(self, chat_id, photo, **kwargs):
+            sent.append((photo, kwargs))
+            return SimpleNamespace(message_id=11)
+
+    person = await repo.ensure_user(1, "someone")
+    item = AchievementRow(
+        title_id="t1",
+        achievement_id="a1",
+        name="Оружейный мастер",
+        description="Улучшите оружие.",
+        icon_url="https://cdn/icon.png",
+        unlocked_at=None,
+        gamerscore=0,
+        rarity_percent=80.4,
+        platform="steam",
+        title_name="Resident Evil 3",
+    )
+    pub = Publisher(bot=_Bot(), repo=repo)
+    assert await pub.sample(item, person, 42, locale="ru", style="cover", note="обложка") == 11
+    photo, kwargs = sent[-1]
+    assert isinstance(photo, BufferedInputFile)
+    assert "Оружейный мастер" in kwargs["caption"] and "<i>обложка</i>" in kwargs["caption"]
+    assert await pub.sample(item, person, 42, locale="ru", style="off", note="как есть") == 11
+    assert sent[-1][0] == "https://cdn/icon.png"
