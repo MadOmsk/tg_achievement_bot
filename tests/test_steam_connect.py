@@ -141,3 +141,13 @@ async def test_prompt_arms_the_wait_and_sends_the_link_prompt(repo: Repo, steam_
     assert "steamcommunity.com" in text
     assert "публичной" in text  # the privacy warning is up front now, not just on failure
     awaiting.clear(TG_ID)
+
+
+def test_mini_app_steam_identity_reads_what_the_app_sends() -> None:
+    """The Mini App posts `steam_id`; reading only `identity` answered every
+    attempt with missing_identity."""
+    from bot.web.mini_api import steam_identity
+
+    assert steam_identity({"steam_id": " shishkapower "}) == "shishkapower"
+    assert steam_identity({"identity": "76561198000000000"}) == "76561198000000000"
+    assert steam_identity({}) == ""
