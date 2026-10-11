@@ -848,22 +848,37 @@ async def trophy_lists_of(
     only about titles that account has). The only proof that a store title is
     one of our trophy lists: a name match is never taken for one."""
     found: dict[str, set[str]] = {}
-    for start in range(0, len(title_ids), TITLE_IDS_PER_LOOKUP):
-        batch = title_ids[start : start + TITLE_IDS_PER_LOOKUP]
 
-        def run(batch: list[str] = batch) -> dict:
+    async def ask(batch: list[str]) -> dict:
+        def run() -> dict:
             return client.authenticator.get(
                 url=TROPHY_TITLES_URL.format(account=account_id),
                 params={"npTitleIds": ",".join(batch)},
             ).json()
 
         try:
-            data = await _call(run)
+            return await _call(run)
         except PSNAWPAuthenticationError as exc:
             raise PsnTokenDeadError(str(exc)) from None
+
+    for start in range(0, len(title_ids), TITLE_IDS_PER_LOOKUP):
+        batch = title_ids[start : start + TITLE_IDS_PER_LOOKUP]
+        try:
+            answers = [await ask(batch)]
+        except PSNAWPNotFoundError:
+            # One id Sony does not know (a store page names a CUSA it never
+            # shipped) fails the whole batch: ask one by one, skip the unknown.
+            answers = []
+            for title_id in batch:
+                try:
+                    answers.append(await ask([title_id]))
+                except PSNAWPNotFoundError:
+                    continue
+                except PSNAWPError as exc:
+                    raise PsnApiError(f"PSN trophy lists of {title_id} failed: {exc!r}") from None
         except PSNAWPError as exc:
             raise PsnApiError(f"PSN trophy lists of {batch} failed: {exc!r}") from None
-        for title in data.get("titles") or []:
+        for title in (t for data in answers for t in data.get("titles") or []):
             lists = {
                 str(entry["npCommunicationId"])
                 for entry in title.get("trophyTitles") or []
