@@ -685,7 +685,12 @@ What the stores and HLTB say about a game, collected but not shown yet
   version — or not related), the latter answered game against game, as a
   label between their anchors; "not related" clears every relation the model
   found between the two, and a pair of games once answered is not asked
-  again. **No authentication
+  again. **Answers are a tap** (owner, 2026-10-11): two games — "✓" the
+  model's guess, "another of the series" (label `series`: relates nothing,
+  like `other`, but tells the fit the model mixed up a series), "other: ask
+  later" (nothing written, the pair comes back after the rest); two versions —
+  same game, a different game, a remaster of it, a remake of it (one tap moves
+  the version out and relates the games). The rest is under "more…". **No authentication
   yet** (#186).
 
 ### Secrets

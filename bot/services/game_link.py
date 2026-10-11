@@ -47,6 +47,10 @@ log = logging.getLogger(__name__)
 
 # Labels that put two versions in one game; every other label keeps them apart.
 JOINING = {"same", "edition", "demo_of", "tool_of"}
+# Labels that relate two games in no way: "other", and "another game of its
+# series" (owner, 2026-10-11) — the same for building games, kept apart for
+# what it tells about the model's mistakes.
+NOT_RELATED = {"other", "series"}
 # A word in more versions' names than this tells nothing ("war", "star").
 COMMON_WORD = 60
 # One linker at a time in a process: two collections of one game's lists at
@@ -383,7 +387,7 @@ def _relations(
         # "Not one game, and not related" between any two of their versions:
         # nothing the model found between these two games stands.
         g, r = game_of.get(lab["version_id"]), game_of.get(lab["other_id"])
-        if lab["relation"] == "other" and g is not None and r is not None and g != r:
+        if lab["relation"] in NOT_RELATED and g is not None and r is not None and g != r:
             for kind in RELATIONS:
                 edges.pop((g, r, kind), None)
                 edges.pop((r, g, kind), None)

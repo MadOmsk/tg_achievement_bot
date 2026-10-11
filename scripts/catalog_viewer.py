@@ -710,18 +710,28 @@ _VERSION_LINKS = {
 }
 
 
-# The operator's answers about two versions: one game or not (owner,
-# 2026-10-11: version ↔ game is one question, game ↔ game another).
-_DECISIONS = (
+# The operator's answers, quick ones first (owner, 2026-10-11: the review
+# should take a tap; everything else is a step further). About two versions:
+_DECISIONS_QUICK = (
     ("same", "same game"),
+    ("other", "a different game"),
+    ("remaster_of", "a remaster of it"),
+    ("remake_of", "a remake of it"),
+)
+_DECISIONS_MORE = (
+    ("remaster_of:flip", "⇄ it is a remaster of this"),
+    ("remake_of:flip", "⇄ it is a remake of this"),
     ("demo_of", "a demo of it"),
     ("demo_of:flip", "⇄ it is a demo of this"),
     ("tool_of", "a tool for it"),
     ("tool_of:flip", "⇄ it is a tool for this"),
-    ("other", "a different game"),
+    ("series", "another game of its series"),
+    ("skip", "skip: ask again later"),
 )
 
-# …and about two games: how they relate, read "this game … that game".
+# …about two games ("this game … that game"); the quick ones are the model's
+# guess, "another of the series" (a label that relates nothing but tells the
+# model it mixed up a series) and "skip" (asked again later).
 _GAME_DECISIONS = (
     ("remaster_of", "this is a remaster of that"),
     ("remaster_of:flip", "that is a remaster of this"),
@@ -731,38 +741,70 @@ _GAME_DECISIONS = (
     ("contains:flip", "that compilation holds this"),
     ("vr_of", "this is the VR version of that"),
     ("vr_of:flip", "that is the VR version of this"),
+    ("series", "another game of the series"),
     ("other", "not related"),
     ("same", "one game after all"),
 )
+_GUESS_WORDS = {
+    "remaster_of": "this is a remaster of that",
+    "remake_of": "this is a remake of that",
+    "contains": "this compilation holds that",
+    "vr_of": "this is the VR version of that",
+}
 
 
-def _game_picker(game_id: int, other_game: int, back: str) -> str:
-    """One answer about two games: a picker and a button."""
-    options = "".join(
-        f'<option value="{key}">{escape(label)}</option>' for key, label in _GAME_DECISIONS
+def _answer_forms(
+    action: str,
+    hidden: dict[str, object],
+    quick: list[tuple[str, str]],
+    more: tuple[tuple[str, str], ...],
+    back: str,
+) -> str:
+    """Quick answers as buttons, the rest a step further under "more…"."""
+    fields = "".join(
+        f'<input type=hidden name={k} value="{escape(str(v))}">'
+        for k, v in {**hidden, "back": back}.items()
     )
-    return (
-        '<form method=post action="/decide-games" style="margin:0;white-space:nowrap">'
-        f'<input type=hidden name=game_id value="{game_id}">'
-        f'<input type=hidden name=other_game value="{other_game}">'
-        f'<input type=hidden name=back value="{escape(back)}">'
+    buttons = "".join(
+        f'<form method=post action="{action}" style="display:inline;margin:0">{fields}'
+        f'<input type=hidden name=decision value="{key}"><button>{escape(label)}</button></form> '
+        for key, label in quick
+    )
+    options = "".join(f'<option value="{k}">{escape(lbl)}</option>' for k, lbl in more)
+    rest = (
+        f"<details><summary><small>more…</small></summary>"
+        f'<form method=post action="{action}" style="margin:0">{fields}'
         "<select name=decision required><option value='' selected disabled>answer…</option>"
-        f"{options}</select> <button>ok</button></form>"
+        f"{options}</select> <button>ok</button></form></details>"
+    )
+    return f'<div style="white-space:nowrap">{buttons}</div>{rest}'
+
+
+def _game_picker(game_id: int, other_game: int, back: str, guess: str = "") -> str:
+    """The answers about two games: the model's guess, another of the series,
+    skip — the rest under "more…"."""
+    quick = []
+    if guess in _GUESS_WORDS:
+        quick.append((guess, f"✓ {_GUESS_WORDS[guess]}"))
+    quick += [("series", "another of the series"), ("skip", "other: ask later")]
+    return _answer_forms(
+        "/decide-games",
+        {"game_id": game_id, "other_game": other_game},
+        quick,
+        _GAME_DECISIONS,
+        back,
     )
 
 
 def _decision_picker(version_id: int, other_id: int, back: str) -> str:
-    """One answer about a pair: a picker and a button."""
-    options = "".join(
-        f'<option value="{key}">{escape(label)}</option>' for key, label in _DECISIONS
-    )
-    return (
-        '<form method=post action="/decide" style="margin:0;white-space:nowrap">'
-        f'<input type=hidden name=version_id value="{version_id}">'
-        f'<input type=hidden name=other_id value="{other_id}">'
-        f'<input type=hidden name=back value="{escape(back)}">'
-        "<select name=decision required><option value='' selected disabled>answer…</option>"
-        f"{options}</select> <button>ok</button></form>"
+    """The answers about two versions: one game, another game, a remaster, a
+    remake — the rest under "more…"."""
+    return _answer_forms(
+        "/decide",
+        {"version_id": version_id, "other_id": other_id},
+        list(_DECISIONS_QUICK),
+        _DECISIONS_MORE,
+        back,
     )
 
 
@@ -1191,11 +1233,18 @@ async def review(request: web.Request) -> web.Response:
             ).fetchone()[0]
             for name, clause in (("versions", versions_where), ("games", games_where))
         }
-        pairs = conn.execute(
+        everything = conn.execute(
             "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
-            f" mp.features FROM match_pairs mp WHERE {where} ORDER BY mp.p DESC LIMIT ?",
-            (*_GAME_RELATIONS, PAGE_SIZE),
+            f" mp.features FROM match_pairs mp WHERE {where} ORDER BY mp.p DESC",
+            _GAME_RELATIONS,
         ).fetchall()
+        # A pair answered "skip" comes back, after the rest (this run of the
+        # viewer remembers it; nothing is written).
+        skipped = request.app["skipped"]
+        pairs = sorted(
+            everything,
+            key=lambda r: frozenset((r["subject"], r["other"])) in skipped,
+        )[:PAGE_SIZE]
         back = f"/review?tab={tab}"
         cards = _game_pair_rows(conn, pairs, back) if games_tab else _pair_rows(conn, pairs, back)
     tabs = " · ".join(
@@ -1255,7 +1304,7 @@ def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: st
             f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
             f"<br><small>{escape(signs)}</small></td>"
             f"<td>{_game_card(conn, gb[0])}</td>"
-            f"<td>{_game_picker(ga[0], gb[0], back)}</td></tr>"
+            f"<td>{_game_picker(ga[0], gb[0], back, str(r['relation']))}</td></tr>"
         )
     return (
         "<div class=scroll><table class=versions><tr><th>this game</th><th>the model"
@@ -1312,6 +1361,9 @@ async def decide(request: web.Request) -> web.Response:
     version_id, other_id = int(str(form["version_id"])), int(str(form["other_id"]))
     decision, back = str(form["decision"]), str(form.get("back") or "/review")
     relation, _, flip = decision.partition(":")
+    if relation == "skip":
+        request.app["skipped"].add(frozenset((version_id, other_id)))
+        raise _back(back, f"versions {version_id} / {other_id}: asked again later")
     if flip:
         version_id, other_id = other_id, version_id
     await _label(_repo(request), version_id, other_id, relation)
@@ -1336,6 +1388,18 @@ async def decide_games(request: web.Request) -> web.Response:
     decision, back = str(form["decision"]), str(form.get("back") or "/review?tab=games")
     relation, _, flip = decision.partition(":")
     repo = _repo(request)
+    if relation == "skip":
+        # Every pair of versions between the two games comes back later.
+        with _db(request) as conn:
+            for row in conn.execute(
+                "SELECT mp.version_id, mp.other_id FROM match_pairs mp"
+                " JOIN game_versions a ON a.version_id = mp.version_id"
+                " JOIN game_versions b ON b.version_id = mp.other_id"
+                " WHERE (a.game_id = ? AND b.game_id = ?) OR (a.game_id = ? AND b.game_id = ?)",
+                (game_id, other_game, other_game, game_id),
+            ):
+                request.app["skipped"].add(frozenset((row[0], row[1])))
+        raise _back(back, f"games {game_id} / {other_game}: asked again later")
     if game_id == other_game:
         raise _back(back, f"game {game_id} is one game: answer its versions on the other tab")
     a, b = await _game_anchors(repo, game_id, other_game)
@@ -1483,6 +1547,7 @@ def _pictures(row: sqlite3.Row | None) -> str:
 def build(db_path: Path) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
+    app["skipped"] = set()  # pairs answered "skip": asked again, after the rest
     covers = db_path.resolve().parent / "covers"
     if covers.is_dir():
         # The covers the bot downloaded (#55), beside its database.

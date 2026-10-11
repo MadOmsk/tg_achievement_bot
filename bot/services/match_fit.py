@@ -28,6 +28,7 @@ LABEL_CLASS = {
     "contains": "contains",
     "vr_of": "vr_of",
     "other": "other",
+    "series": "other",  # another game of the series: not related
 }
 
 Weights = dict[str, dict[str, float]]
