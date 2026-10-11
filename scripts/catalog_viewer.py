@@ -109,8 +109,9 @@ def _table(rows: list[sqlite3.Row], links: dict[str, object] | None = None) -> s
         for column in columns:
             text = _cell(row[column])
             href = links.get(column)
-            if href is not None and row[column] is not None:
-                text = f'<a href="{escape(href(row))}">{text}</a>'  # type: ignore[operator]
+            target = href(row) if href is not None and row[column] is not None else ""  # type: ignore[operator]
+            if target:
+                text = f'<a href="{escape(target)}">{text}</a>'
             cells.append(f"<td>{text}</td>")
         body.append("<tr>" + "".join(cells) + "</tr>")
     return f"<div class=scroll><table><tr>{head}</tr>{''.join(body)}</table></div>"
@@ -141,22 +142,34 @@ def _record(row: sqlite3.Row | None, links: dict[str, object] | None = None) -> 
 
 
 def _store_href(row: sqlite3.Row) -> str:
-    """The version on its store: a product page, or a search for a stand-in."""
-    store, product, name = row["store"], str(row["product_id"]), quote(str(row["name"] or ""))
-    stand_in = "stand_in" in row.keys() and row["stand_in"]
+    """The version's own page on its store, or "" when no product is known
+    (a stand-in): never a search (owner, 2026-10-11) — a name finds other
+    games. A page of a product taken off sale is still its page."""
+    if "stand_in" in row.keys() and row["stand_in"]:
+        return ""
+    store, product = row["store"], str(row["product_id"])
     if store == "xbox":
-        if stand_in:
-            # No product is known: a search for the operator, never taken for
-            # the game's page (owner, 2026-10-10: a name finds the 2023 RE4).
-            return f"https://www.xbox.com/en-US/search?q={name}"
         return f"https://www.xbox.com/en-US/games/store/x/{product}"
     if store == "steam":
         return f"https://store.steampowered.com/app/{product}"
     if store == "psn":
-        if stand_in:
-            return f"https://store.playstation.com/en-us/search/{name}"
         return f"https://store.playstation.com/en-us/concept/{product}"
-    return "#"
+    return ""
+
+
+def _store_link(row: sqlite3.Row, label: str | None = None) -> str:
+    """The store, linked to the version's page, said to be off sale when it
+    is; no page known: said so, with no link."""
+    label = label if label is not None else str(row["store"])
+    href = _store_href(row)
+    if not href:
+        return f"{escape(label)} <small>(no store page)</small>"
+    off = (
+        " <small>(off sale)</small>"
+        if "on_sale" in row.keys() and row["on_sale"] is not None and not row["on_sale"]
+        else ""
+    )
+    return f'<a href="{escape(href)}" target=_blank>{escape(label)} ↗</a>{off}'
 
 
 # A version's picture: its store's cover, else its achievement list's, else
@@ -476,7 +489,7 @@ async def version(request: web.Request) -> web.Response:
         + _pictures(pictures)
         + controls
         + (
-            f'<p><a href="{escape(_store_href(row))}">on the store</a>'
+            f"<p>{_store_link(row, 'on the store')}"
             + (
                 f' · <a href="{escape(_list_href(row))}">its achievements</a>'
                 if row["title_id"]
@@ -840,7 +853,7 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
-            "SELECT gv.version_id, v.store, v.product_id, v.stand_in,"
+            "SELECT gv.version_id, v.store, v.product_id, v.stand_in, v.on_sale,"
             " v.console, v.name, v.release_date, v.developer, v.platform, v.title_id,"
             " " + COVER + ", gv.role, gv.of_version_id, gv.p"
             " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
@@ -1005,15 +1018,14 @@ def _version_cards(rows: list[sqlite3.Row]) -> str:
                 f'<br><small>of <a href="/version/{v["of_version_id"]}">'
                 f"{v['of_version_id']}</a></small>"
             )
-        stand_in = " ·stand-in, search" if v["stand_in"] else ""
+
         cells = [
             _img(v["cover"], 36),
             f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>',
             role,
             escape(v["console"]),
             escape(v["release_date"] or "?"),
-            f'<a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
-            f"{stand_in} ↗</a>",
+            _store_link(v),
             escape(v["developer"] or ""),
             f"{v['p']:.2f}" if v["p"] is not None else "",
             f'<a href="{escape(_list_href(v))}">list</a>' if v["title_id"] else "",
@@ -1039,7 +1051,8 @@ def _pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) ->
         r["version_id"]: r
         for r in conn.execute(
             "SELECT v.version_id, v.name, v.console, v.release_date, v.store, v.product_id,"
-            " v.stand_in, v.developer, " + COVER + ", gv.game_id, g.name AS game, g.year"
+            " v.stand_in, v.on_sale, v.developer, " + COVER + ", gv.game_id, g.name AS game,"
+            " g.year"
             " FROM versions v LEFT JOIN game_versions gv ON gv.version_id = v.version_id"
             " LEFT JOIN games g ON g.game_id = gv.game_id"
             f" WHERE v.version_id IN ({marks})",
@@ -1057,14 +1070,13 @@ def _pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) ->
             if v["game_id"]
             else ""
         )
-        stand_in = ", stand-in" if v["stand_in"] else ""
+
         return (
             f"{_img(v['cover'], 36)} "
             f'<a href="/version/{vid}">{escape(v["name"] or "")}</a>'
             f" <small>[{escape(v['console'])}, {escape((v['release_date'] or '?')[:4])},"
             f" {escape(v['developer'] or '?')}]"
-            f' <a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
-            f"{stand_in} ↗</a></small>{game}"
+            f" {_store_link(v)}</small>{game}"
         )
 
     lines = []
@@ -1098,7 +1110,7 @@ def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
         parts.append(
             f'<h3><a href="/version/{version_id}">{escape(head["version"] or "")}</a>'
             f" · {escape(head['store'])} {escape(head['console'])}"
-            f' · <a href="{escape(_store_href(head))}">store</a> · {len(items)} DLC</h3>'
+            f" · {_store_link(head, 'store')} · {len(items)} DLC</h3>"
             + _table(
                 [
                     {
@@ -1232,12 +1244,11 @@ async def decisions(request: web.Request) -> web.Response:
 
 def _version_line(v: sqlite3.Row) -> str:
     """A version in one line: its name, console and year, and its store page."""
-    stand_in = " (stand-in)" if v["stand_in"] else ""
+
     return (
         f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>'
         f" [{escape(v['console'])}, {escape(v['release_date'] or '?')}]"
-        f' <a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
-        f" {escape(str(v['product_id']))}{stand_in} ↗</a>"
+        f" {_store_link(v, str(v['store']) + ' ' + str(v['product_id']))}"
     )
 
 
