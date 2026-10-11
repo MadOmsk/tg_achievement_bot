@@ -204,7 +204,7 @@ async def sources(repo: Repo, item: AchievementRow) -> tuple[tuple[str, ...], tu
     the icon cached on disk before its URL, the cover's file before its URL."""
     cached = achievement_icons.find_cached_icon(item.platform, item.title_id, item.achievement_id)
     icon = tuple(s for s in (str(cached) if cached else None, item.icon_url) if s)
-    cover_path, cover_url = await repo.title_cover(item.title_id)
+    cover_path, cover_url = await repo.title_cover(item.platform, item.title_id)
     cover = tuple(
         s for s in (str(covers.cover_dir() / cover_path) if cover_path else None, cover_url) if s
     )
