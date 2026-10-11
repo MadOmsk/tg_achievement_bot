@@ -379,3 +379,8 @@ class _GamesRepo:
                 (*values, utcnow_iso(), game_id, *values),
             )
         await self._conn.commit()
+
+    async def all_decisions(self) -> list[dict[str, Any]]:
+        """Every label, for fitting the weights."""
+        cursor = await self._conn.execute("SELECT * FROM match_decisions ORDER BY decided_at")
+        return [dict(row) for row in await cursor.fetchall()]

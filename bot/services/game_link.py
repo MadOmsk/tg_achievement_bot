@@ -216,6 +216,16 @@ class GameLinker:
             c.achievements = frozenset(normalize(n) for n in found if n)
 
 
+async def load_candidates(repo: Repo, version_ids: list[int]) -> dict[int, Candidate]:
+    """These versions as the model reads them, achievements' names loaded —
+    for scoring a pair outside a linking run (fitting the weights)."""
+    rows = await repo.match_rows()
+    wanted = set(version_ids)
+    candidates = {int(r["version_id"]): _candidate(r) for r in rows if r["version_id"] in wanted}
+    await GameLinker(repo)._load_achievements(list(candidates.values()), rows)
+    return candidates
+
+
 class _Index:
     """Which versions could be which: a telling word of the cut name (one
     no more common than `COMMON_WORD`), a store's group or cross-gen set, an

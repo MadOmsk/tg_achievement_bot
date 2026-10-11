@@ -302,10 +302,12 @@ def subject_of(a: Candidate, b: Candidate) -> tuple[Candidate, Candidate]:
     return (a, b) if len(a.achievements) >= len(b.achievements) else (b, a)
 
 
-def features(a: Candidate, b: Candidate) -> dict[str, float]:
+def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, float]:
     """The signs one pair shows, read from the subject's side (see
-    `subject_of`): each 0..1, the name a similarity, the years a count."""
-    s, o = subject_of(a, b)
+    `subject_of`; `ordered`: `a` is the subject, as an operator's label
+    "a is a remaster of b" says): each 0..1, the name a similarity, the years
+    a count."""
+    s, o = (a, b) if ordered else subject_of(a, b)
     f: dict[str, float] = {"bias": 1.0}
     if s.list_key and s.list_key == o.list_key:
         f["one_list"] = 1.0

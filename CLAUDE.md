@@ -234,6 +234,7 @@ name, or when the tree goes stale.
 │   ├── check_integrity.py        stored achievements vs what each platform reports, read-only (#120)
 │   ├── collect_game.py           collect one game from the stores now (#147), beside a running bot
 │   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
+│   ├── fit_match_weights.py      the games matcher's weights fitted to the operator's labels (#147)
 │   ├── xbox-deploy.sh            what CI runs on the server (/usr/local/bin/xbox-deploy)
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
@@ -664,7 +665,15 @@ What the stores and HLTB say about a game, collected but not shown yet
     pair down, **never across a veto** (a pair under `VETO_P` "same" or a label
     saying no): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
-    transaction. The viewer's «rules» page shows every weight. **Disputed
+    transaction. The viewer's «rules» page shows every weight.
+  - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
+    every label's pair is read as the model reads it now (the label's own
+    version as the subject), and the weights are fitted by gradient descent
+    **pulled towards the current ones** (a proximal step), so a few dozen
+    labels move only what they clearly disagree with. The script prints
+    held-out accuracy before and after and the weights that moved, writes them
+    as JSON, and changes nothing: `WEIGHTS` is edited by hand once the fit is
+    judged better. **Disputed
     pairs are the operator's** (owner, 2026-10-09; Haiku may advise one day, not
     decide).
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
