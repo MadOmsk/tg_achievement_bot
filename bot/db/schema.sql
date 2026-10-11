@@ -1181,7 +1181,7 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE TABLE IF NOT EXISTS game_versions (
     version_id    INTEGER PRIMARY KEY REFERENCES versions(version_id) ON DELETE CASCADE,
     game_id       INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    role          TEXT NOT NULL,   -- version / edition / demo / tool
+    role          TEXT NOT NULL,   -- version / demo / tool
     of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
     p             REAL,
     linked_at     TEXT NOT NULL,

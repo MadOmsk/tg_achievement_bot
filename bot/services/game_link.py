@@ -4,7 +4,7 @@
 Around the seed versions, every version that could be one of them (a telling
 word of the name, a store's group or cross-gen set, an HLTB entry, a list) and
 every version of the games those are already in are scored pair by pair. The
-operator's labels (`match_decisions`) come first: "same" (edition, demo, tool)
+operator's labels (`match_decisions`) come first: "same" (a demo, a tool)
 always joins, anything else never does. Then pairs join from the surest down,
 but **never across a veto** — a pair the model is sure is not one game, or a
 label saying so — so A~B and B~C no longer drag A and C together. Each group
@@ -332,17 +332,11 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
         if lab["version_id"] in ids and lab["other_id"] in ids
     }
     games = [c for c in cluster if kind_of(c) not in ("demo", "tool")]
-    # An edition is one beside a plain version of its game; a game all of
-    # whose versions say "Ultimate Edition" (a remaster) has no edition.
-    has_plain = any(kind_of(c) == "version" for c in games)
     roles: dict[int, tuple[str, int | None]] = {}
     for c in cluster:
         relation, of = told.get(c.version_id, (None, None))
         if relation in ("demo_of", "tool_of"):
             roles[c.version_id] = (str(relation)[: -len("_of")], of)
-            continue
-        if relation == "edition":
-            roles[c.version_id] = ("edition", None)
             continue
         kind = kind_of(c)
         parents = [g for g in games if g.version_id != c.version_id]
@@ -358,8 +352,10 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
 
             roles[c.version_id] = (kind, max(parents, key=fit).version_id)
         else:
-            edition = kind == "edition" and has_plain
-            roles[c.version_id] = ("edition" if edition else "version", None)
+            # No "edition" role (owner, 2026-10-11): an edition is a pack the
+            # store sells around the same version (`editions`), and a product
+            # of its own is the game, or a remaster.
+            roles[c.version_id] = ("version", None)
     return roles
 
 

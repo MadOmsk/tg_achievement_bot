@@ -701,7 +701,6 @@ _VERSION_LINKS = {
 # 2026-10-11: version ↔ game is one question, game ↔ game another).
 _DECISIONS = (
     ("same", "same game"),
-    ("edition", "same game: an edition"),
     ("demo_of", "a demo of it"),
     ("demo_of:flip", "⇄ it is a demo of this"),
     ("tool_of", "a tool for it"),

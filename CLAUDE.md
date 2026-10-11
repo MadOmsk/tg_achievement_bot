@@ -634,11 +634,10 @@ What the stores and HLTB say about a game, collected but not shown yet
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions
-  (`match_decisions`: same / edition / demo_of / tool_of / remaster_of /
+  (`match_decisions`: same / demo_of / tool_of / remaster_of /
   remake_of / contains / vr_of / other, with the pair's signs and the model that
   saw them — what the weights will be fitted to); which game a version is in
-  (`game_versions`, **one game per version**, its role version / edition /
-  demo / tool and the version a demo or tool is of) and how games relate
+  (`game_versions`, **one game per version**, its role version / demo / tool and the version a demo or tool is of) and how games relate
   (`game_relations`) are rebuilt from the labels and the model by
   `services/game_link.py`, so a decision outlives every rebuild. A game keeps
   its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
@@ -648,8 +647,9 @@ What the stores and HLTB say about a game, collected but not shown yet
     related to the original: `remaster_of` / `remake_of` / `vr_of` point at the
     **earliest** original (no chains), `contains` from a compilation to each
     part. Inside a game: the same product across platforms (PS4 and PS5, One and
-    Series released together are one game, even with two lists), an edition
-    sold with the same list, demos and tools. A later product on a newer
+    Series released together are one game, even with two lists), demos and
+    tools. No "edition" role (owner, 2026-10-11): GOTY / Deluxe are packs the
+    stores sell around the same version (`editions`), not versions. A later product on a newer
     console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
     Witcher 3's next-gen products are a remaster, its Steam app the original.
     Such a game is named by its own release ("Gears of War: Ultimate Edition").
