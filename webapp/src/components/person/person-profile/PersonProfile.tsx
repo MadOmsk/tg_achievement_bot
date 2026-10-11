@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from "react";
-import type { PersonPayload } from "../../../api";
+import type { ReactNode } from "react";
+import type { FeedItem, PersonPayload } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import { Avatar, EmptyState, Icon, isOnline } from "../../shared/lib";
-import { PlayedGames } from "../played-games/PlayedGames";
+import { GamesSection } from "../games-section/GamesSection";
 import { RecentPosts } from "../recent-posts/RecentPosts";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 
@@ -12,7 +12,8 @@ export function PersonProfile({
   locale,
   revealed,
   showSecrets,
-  monthChip,
+  loadMonth,
+  aside,
   onBack,
   onOpenCard,
   onReveal,
@@ -24,7 +25,10 @@ export function PersonProfile({
   locale: Locale;
   revealed: Set<string>;
   showSecrets?: boolean;
-  monthChip?: ReactNode;
+  /** Their achievements in a past month, for the games block's own pick. */
+  loadMonth: (month: string) => Promise<FeedItem[]>;
+  /** At the head's right: the follow control, for somebody else. */
+  aside?: ReactNode;
   onBack: () => void;
   /** The nickname in the bar opens the person's card. */
   onOpenCard?: () => void;
@@ -32,11 +36,8 @@ export function PersonProfile({
   /** Whom they follow, as on Home: a strip under the gallery. */
   people?: ReactNode;
 }) {
-  const [gameSort, setGameSort] = useState<"recent" | "progress">("recent");
   const feed = person.feed ?? [];
-  const gameCount = new Set(
-    feed.filter((row) => row.game).map((row) => `${row.platform}:${row.title_id}`),
-  ).size;
+  const months = person.months ?? [];
   const live = isOnline(person.presence ?? {});
   const playing = Boolean(person.presence?.playing);
   return (
@@ -74,7 +75,7 @@ export function PersonProfile({
               {status && <small>{status}</small>}
             </span>
           </button>
-          {monthChip}
+          {aside && <span className="person-bar-aside">{aside}</span>}
         </div>
       </header>
       {feed.length > 0 ? (
@@ -93,28 +94,8 @@ export function PersonProfile({
         />
       )}
       {people}
-      {feed.length > 0 && (
-        <>
-      <div className="section-head achievements-head">
-        <span className="section-title-group">
-          <h1 className="kicker" style={{ margin: 0 }}>
-            {t(locale, "games")}
-          </h1>
-          {gameCount > 0 && <span className="section-count">{gameCount}</span>}
-        </span>
-        {gameCount > 1 && (
-          <button
-            type="button"
-            className="sort-toggle"
-            aria-label={t(locale, gameSort === "recent" ? "sortProgress" : "sortRecent")}
-            onClick={() => setGameSort((cur) => (cur === "recent" ? "progress" : "recent"))}
-          >
-            <Icon name={gameSort === "recent" ? "sort" : "stats"} size={18} />
-          </button>
-        )}
-      </div>
-      <PlayedGames items={feed} locale={locale} sort={gameSort} />
-        </>
+      {(feed.length > 0 || months.length > 0) && (
+        <GamesSection items={feed} months={months} locale={locale} load={loadMonth} />
       )}
     </>
   );

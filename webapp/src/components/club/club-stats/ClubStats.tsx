@@ -17,10 +17,11 @@ import {
   Sheet,
   StatsSkel,
   isOnline,
+  useOpenAchievement,
   useOpenGame,
 } from "../../shared/lib";
 import { UI_CONFIG } from "../../shared/constants";
-import { FeedRow, UnlockCard, feedKey, veiled } from "../../person";
+import { FeedRow, feedKey, veiled } from "../../person";
 import { AchievementRows } from "../achievement-rows/AchievementRows";
 import { GamesSheet } from "../games-sheet/GamesSheet";
 import {
@@ -106,7 +107,9 @@ export function ClubStats({
   const [board, setBoard] = useState<Period>("day");
   const [rareOpen, setRareOpen] = useState<RareFinder | null>(null);
   const [huntOpen, setHuntOpen] = useState<Hunt | null>(null);
-  const [item, setItem] = useState<FeedItem | null>(null);
+  // A row opens the achievement on its own page, as a post does (owner, 2026-10-09).
+  const openAchievement = useOpenAchievement();
+  const setItem = (row: FeedItem) => openAchievement?.(row);
 
   if (busy) {
     return (
@@ -386,23 +389,6 @@ export function ClubStats({
         </Sheet>
       )}
 
-      {item && (
-        <Sheet mid onClose={() => setItem(null)} title={item.game ?? undefined}>
-          <div className="sheet-unlock">
-            <UnlockCard
-              item={item}
-              locale={locale}
-              secret={Boolean(
-                item.is_secret && !showSecrets && !revealed.has(feedKey(item)),
-              )}
-              author
-              gameInCopy
-              onOpenPerson={onOpenPerson}
-              onReveal={onReveal}
-            />
-          </div>
-        </Sheet>
-      )}
     </>
   );
 }

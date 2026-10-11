@@ -249,6 +249,27 @@ class _MessagesRepo:
         )
         return [_recent(row, locale) for row in await cursor.fetchall()]
 
+    async def latest_per_platform(self, *, locale: str = "ru") -> list[RecentAchievement]:
+        """The newest achievement with a picture on each platform, whoever
+        earned it — the super-admin's notification test (owner, 2026-10-10).
+        One per platform in the display order (Xbox, its 360, PSN, Steam);
+        a platform nobody has earned anything on is left out."""
+        found: list[RecentAchievement] = []
+        for platform in ("xbox_modern", "xbox_360", "psn", "steam"):
+            cursor = await self._conn.execute(
+                _RECENT_COLUMNS
+                + "FROM users u "
+                + _RECENT_JOINS
+                + f"WHERE u.is_excluded = 0 AND {earned_date_is_real()} "
+                "AND s.platform = ? AND s.icon_url IS NOT NULL AND s.icon_url != '' "
+                f"ORDER BY {earned_at()} DESC LIMIT 1",
+                (platform,),
+            )
+            row = await cursor.fetchone()
+            if row is not None:
+                found.append(_recent(row, locale))
+        return found
+
     async def users_games_achievements(
         self,
         person_ids: Sequence[int],

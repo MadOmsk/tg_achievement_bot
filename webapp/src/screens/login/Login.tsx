@@ -211,7 +211,6 @@ export function Login({ locale, onSignedIn }: { locale: Locale; onSignedIn: () =
             <Wordmark />
           </h1>
           <p className="login-tagline">{t(locale, "loginTagline")}</p>
-          <p className="login-text">{t(locale, email ? "loginTextBoth" : "loginText")}</p>
           {config === null && <p className="login-text">{t(locale, "loginUnavailable")}</p>}
         </>
       )}

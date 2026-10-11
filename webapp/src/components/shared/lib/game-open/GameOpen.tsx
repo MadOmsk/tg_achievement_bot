@@ -13,6 +13,18 @@ export function useOpenGame(): OpenGame | null {
   return useContext(GameOpenContext);
 }
 
+type OpenAchievement = (item: FeedItem) => void;
+
+/**
+ * Opens an achievement's own page over everything (owner, 2026-10-09): a tap
+ * on a post or a gallery card. Its game opens only from the game's own line.
+ */
+export const AchievementOpenContext = createContext<OpenAchievement | null>(null);
+
+export function useOpenAchievement(): OpenAchievement | null {
+  return useContext(AchievementOpenContext);
+}
+
 /** The game an achievement or a game card belongs to, as the game page wants it. */
 export function gameRefOf(item: FeedItem): GameRef {
   return {

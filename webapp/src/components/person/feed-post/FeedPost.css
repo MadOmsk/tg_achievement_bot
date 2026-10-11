@@ -313,8 +313,11 @@
   mask-image: linear-gradient(180deg, #000 calc(100% - 28px), rgba(0, 0, 0, 0.35) 100%);
 }
 
+/* Every slide is as tall as the post's tallest: the glass fills its slide
+ * to the foot, or a shorter text left the bare picture under it. */
 .post.is-wide .post-copy {
   position: relative;
+  flex: 1 0 auto;
   padding-top: 12px;
   background: rgba(8, 10, 16, 0.5);
   backdrop-filter: none;
