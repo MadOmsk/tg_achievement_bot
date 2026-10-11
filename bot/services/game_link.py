@@ -22,6 +22,7 @@ from bot.services.game_match import (
     FAR_YEARS,
     Candidate,
     block_key,
+    candidate_year,
     compare,
     era,
     game_name,
@@ -112,24 +113,6 @@ class GameLinker:
         for c in around:
             groups.setdefault(find(c.version_id), []).append(c)
 
-        removed: set[int] = set()
-        for key, members in list(groups.items()):
-            # A version HLTB only says exists goes once a store's version of
-            # the same game is found on that console: it stood in for it.
-            real = {
-                m.console
-                for m in members
-                if m.store != "hltb" and kind_of(m) not in ("demo", "tool")
-            }
-            gone = [m for m in members if m.store == "hltb" and m.console in real]
-            for m in gone:
-                if m.version_id not in pinned:
-                    await self._repo.delete_version(m.version_id)
-                    members.remove(m)
-                    removed.add(m.version_id)
-            if not members:
-                del groups[key]
-
         for members in groups.values():
             target = self._target(members, game_of, pinned)
             if target is None:
@@ -166,14 +149,12 @@ class GameLinker:
         # The review list: a doubtful pair across two games, filed on the later
         # version. The matcher's earlier review rows around here are redrawn.
         for c in around:
-            if c.version_id not in pinned and c.version_id not in removed:
+            if c.version_id not in pinned:
                 await self._repo.drop_auto_links(c.version_id, None, "review")
         # One review row per version: against the game it is most like. It is
         # filed on the side less is known about (no year, a stand-in, the later).
         best: dict[int, tuple[float, int, list[str], str | None]] = {}
         for (x, y), verdict in verdicts.items():
-            if x in removed or y in removed:
-                continue
             if verdict.state != "review" or game_of.get(x) == game_of.get(y):
                 continue
             subject, other = _weaker(candidates[x], candidates[y])
@@ -328,7 +309,7 @@ def _candidate(row: dict) -> Candidate:
             if n and str(n).strip()
         )
     )
-    year = row["release_date"][:4] if row["release_date"] else None
+    year = candidate_year(row)
     return Candidate(
         version_id=int(row["version_id"]),
         store=row["store"],
@@ -338,8 +319,9 @@ def _candidate(row: dict) -> Candidate:
         kind=row["kind"],
         developer=row["developer"],
         publisher=row["publisher"],
-        year=int(year) if year and year.isdigit() else None,
+        year=year,
         store_group=row["store_group"],
+        cross_gen_set=row.get("cross_gen_set"),
         hltb_ids=frozenset(
             int(h) for h in str(row["hltb_ids"] or "").split(",") if h.strip().isdigit()
         ),

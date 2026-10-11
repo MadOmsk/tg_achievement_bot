@@ -47,22 +47,6 @@ log = logging.getLogger(__name__)
 # (the matcher decides what it is): this alike, or the one name opening the
 # other ("The Last of Us" → "The Last of Us Part I").
 NAME_SEARCH_FLOOR = 0.8
-# HLTB's platform names → our consoles, for versions HLTB says exist. PC is
-# left out: on PC a game is a store's (Steam, Microsoft), and HLTB does not say
-# which.
-HLTB_CONSOLES = {
-    "Xbox 360": "360",
-    "Xbox One": "one",
-    "Xbox Series X/S": "series",
-    "PlayStation 3": "ps3",
-    "PlayStation 4": "ps4",
-    "PlayStation 5": "ps5",
-    "PlayStation Vita": "vita",
-    "Nintendo Switch": "switch",
-    "Nintendo Switch 2": "switch2",
-    "Wii U": "wiiu",
-    "Nintendo 3DS": "3ds",
-}
 # HLTB entries read for one name (a game, its remaster, its remake…).
 HLTB_PER_NAME = 4
 # Editions (Steam packages) read per game.
@@ -445,45 +429,14 @@ class StoreCollector:
         """What an HLTB entry tells beyond itself (owner, 2026-10-10: a game
         off sale is still everybody's who has it). Its Steam apps — the main
         and the other one its page names — are read even when Steam no
-        longer lists them (Skyrim 2011). And each console it was released on
-        where none of its versions is: a version known to exist, from HLTB,
-        with nothing a store could say about it."""
+        longer lists them (Skyrim 2011). The consoles HLTB names are not made
+        versions (2026-10-11: HLTB is matched by name, and a version nobody
+        sells is no version): the game page shows them as HLTB's platforms."""
         for appid in dict.fromkeys(a for a in (entry.steam_appid, entry.steam_alt) if a):
             if await self._repo.version_of_product("steam", str(appid)) is None:
                 held = await self._repo.title_record("steam", str(appid)) is not None
                 await self._steam(str(appid), report, False, ours=held)
                 await self._steam_schema(str(appid))
-        # Only a game's own entry says a version exists: not a DLC's, and not
-        # an edition's (HLTB keeps "Fallout 4: Game of the Year Edition" apart).
-        if (entry.game_type or "game") != "game" or edition_kind(entry.name) != "standard":
-            return
-        known = await self._repo.consoles_of_hltb(entry.hltb_id)
-        key = name_key(entry.name)
-        for platform in entry.platforms:
-            console = HLTB_CONSOLES.get(platform)
-            if console is None or console in known:
-                continue
-            # A version of that very name on that console is already here.
-            if any(
-                name_key(name) == key for name in await self._repo.names_on_console(console, key)
-            ):
-                continue
-            version = StoreVersion(
-                store="hltb",
-                product_id=str(entry.hltb_id),
-                console=console,
-                name=entry.name,
-                kind="game",
-                developer=entry.developer,
-                publisher=entry.publisher,
-                release_date=str(entry.release_year) if entry.release_year else None,
-                stand_in=True,
-            )
-            version_id = await self._repo.save_version(
-                version, platform=None, title_id=None, origin="hltb"
-            )
-            await self._repo.link_version_hltb(version_id, entry.hltb_id)
-            report.versions.append(version_id)
 
     async def _xbox_by_name(self, name: str, ours: str, report: CollectReport) -> None:
         hits = [

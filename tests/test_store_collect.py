@@ -280,3 +280,39 @@ def test_a_steam_apps_packages_off_sale_are_its_editions_too() -> None:
     assert steam_store.package_ids(data) == ["110687", "12248"]
     version = steam_store.parse_app({**STEAM_APP, "package_groups": [], "is_free": False})
     assert version.on_sale is False
+
+
+def test_xbox_cross_gen_set_is_kept_apart_from_the_product_group() -> None:
+    """2026-10-11: a cross-gen set is one game; a product group can be a
+    series (FF7 Remake and Rebirth share one) — one field lost the other."""
+    [one, _series] = xbox_catalog.parse_product(
+        _xbox_product(ProductGroupId="GROUP", XboxCrossGenSetId="SET")
+    )
+    assert (one.store_group, one.cross_gen_set) == ("GROUP", "SET")
+
+
+def test_bundles_and_collections_are_named_so() -> None:
+    from bot.services.stores import edition_kind
+
+    assert edition_kind("Cyberpunk 2077 & Phantom Liberty Bundle") == "bundle"
+    assert edition_kind("BioShock: The Collection") == "collection"
+
+
+async def test_a_second_list_never_takes_the_first_ones_place(repo) -> None:
+    """A regional twin (another NPWR of the same PSN product) used to
+    overwrite the version's list; it is kept beside it instead."""
+    from bot.services.stores import StoreVersion
+
+    version = StoreVersion(store="psn", product_id="204794", console="ps4", name="Game")
+    first = await repo.save_version(version, platform="psn", title_id="NPWR00001_00")
+    again = await repo.save_version(version, platform="psn", title_id="NPWR00002_00")
+
+    assert first == again
+    row = await repo.version_row(first)
+    assert (row["platform"], row["title_id"]) == ("psn", "NPWR00001_00")
+    cur = await repo._conn.execute(
+        "SELECT store_id FROM version_store_ids WHERE version_id = ? AND store = 'list'"
+        " ORDER BY store_id",
+        (first,),
+    )
+    assert [r[0] for r in await cur.fetchall()] == ["psn:NPWR00001_00", "psn:NPWR00002_00"]

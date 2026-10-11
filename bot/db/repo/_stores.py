@@ -150,11 +150,13 @@ class _StoresRepo:
             "INSERT INTO versions (store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, developer, publisher, release_date, genres, also_on, store_group,"
             "  description_en, description_ru, media, live_service, origin, updated_at, stand_in,"
-            "  on_sale)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "  on_sale, cross_gen_set)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(store, product_id, console) DO UPDATE SET"
-            "  platform = COALESCE(excluded.platform, versions.platform),"
-            "  title_id = COALESCE(excluded.title_id, versions.title_id),"
+            # The first list proved stays the version's; another (a
+            # regional twin) is kept beside it as an id, never in its place.
+            "  platform = COALESCE(versions.platform, excluded.platform),"
+            "  title_id = COALESCE(versions.title_id, excluded.title_id),"
             "  name = COALESCE(excluded.name, versions.name),"
             "  name_ru = COALESCE(excluded.name_ru, versions.name_ru),"
             "  kind = COALESCE(excluded.kind, versions.kind),"
@@ -170,7 +172,8 @@ class _StoresRepo:
             "  origin = CASE WHEN versions.origin = 'played' THEN 'played'"
             "   ELSE excluded.origin END,"
             "  updated_at = excluded.updated_at,"
-            "  on_sale = COALESCE(excluded.on_sale, versions.on_sale)",
+            "  on_sale = COALESCE(excluded.on_sale, versions.on_sale),"
+            "  cross_gen_set = COALESCE(excluded.cross_gen_set, versions.cross_gen_set)",
             (
                 version.store,
                 version.product_id,
@@ -194,6 +197,7 @@ class _StoresRepo:
                 now,
                 1 if version.stand_in else 0,
                 None if version.on_sale is None else int(version.on_sale),
+                version.cross_gen_set,
             ),
         )
         cursor = await self._conn.execute(
@@ -201,7 +205,11 @@ class _StoresRepo:
             (version.store, version.product_id, version.console),
         )
         version_id = int((await cursor.fetchone())["version_id"])
-        for kind, store_id in version.store_ids:
+        ids = list(version.store_ids)
+        if platform and title_id:
+            # Every list proved to be this version, the first one included.
+            ids.append(("list", f"{platform}:{title_id}"))
+        for kind, store_id in ids:
             await self._conn.execute(
                 "INSERT OR IGNORE INTO version_store_ids (store, store_id, version_id, source)"
                 " VALUES (?, ?, ?, 'catalog')",
@@ -493,22 +501,3 @@ class _StoresRepo:
         )
         for row in await cursor.fetchall():
             await self.delete_version(int(row["version_id"]))
-
-    async def consoles_of_hltb(self, hltb_id: int) -> set[str]:
-        """The consoles of the versions an HLTB entry is linked to."""
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT v.console FROM version_hltb vh"
-            " JOIN versions v ON v.version_id = vh.version_id WHERE vh.hltb_id = ?",
-            (hltb_id,),
-        )
-        return {str(row[0]) for row in await cursor.fetchall()}
-
-    async def names_on_console(self, console: str, key: str) -> list[str]:
-        """Names of the versions on a console that could carry this name (the
-        first word of `key`), for the caller to compare."""
-        first = key.split()[0] if key else ""
-        cursor = await self._conn.execute(
-            "SELECT name FROM versions WHERE console = ? AND store <> 'hltb' AND name LIKE ?",
-            (console, f"%{first}%"),
-        )
-        return [str(row[0]) for row in await cursor.fetchall() if row[0]]

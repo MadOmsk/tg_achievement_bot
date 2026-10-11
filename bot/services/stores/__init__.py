@@ -38,6 +38,8 @@ class StoreVersion:
     genres: list[str] = field(default_factory=list)
     also_on: list[str] = field(default_factory=list)
     store_group: str | None = None
+    # Xbox's cross-gen set: the same game on One and Series.
+    cross_gen_set: str | None = None
     description_en: str | None = None
     description_ru: str | None = None
     media: dict[str, object] = field(default_factory=dict)
@@ -64,6 +66,10 @@ _EDITION_KINDS = (
     ("legendary", ("legendary",)),
     ("complete", ("complete",)),
     ("definitive", ("definitive",)),
+    # A pack of the game and its add-ons sold under its own name ("Cyberpunk
+    # 2077 & Phantom Liberty Bundle"), or several games ("… Collection").
+    ("bundle", ("bundle", " & ", " + ")),
+    ("collection", ("collection", "trilogy", "anthology")),
 )
 
 

@@ -156,9 +156,6 @@ def _store_href(row: sqlite3.Row) -> str:
         if stand_in:
             return f"https://store.playstation.com/en-us/search/{name}"
         return f"https://store.playstation.com/en-us/concept/{product}"
-    if store == "hltb":
-        # A version HLTB says exists, with nothing a store says of it.
-        return f"https://howlongtobeat.com/game/{product}"
     return "#"
 
 
@@ -829,7 +826,10 @@ async def game(request: web.Request) -> web.Response:
             (game_id,),
         ).fetchall()
         hltb = conn.execute(
-            "SELECT DISTINCT h.hltb_id, h.name, h.game_type FROM version_hltb vh"
+            # HLTB's platforms: where the game also came out, as no store
+            # we read says (Nintendo, older consoles, PC outside Steam).
+            "SELECT DISTINCT h.hltb_id, h.name, h.game_type, h.release_year,"
+            " h.platforms AS also_released_on FROM version_hltb vh"
             " JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
             " JOIN version_games vg ON vg.version_id = vh.version_id AND vg.state = 'linked'"
             " WHERE vg.game_id = ?",

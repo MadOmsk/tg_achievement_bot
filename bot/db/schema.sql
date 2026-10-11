@@ -1050,6 +1050,9 @@ CREATE TABLE IF NOT EXISTS versions (
     stand_in     INTEGER NOT NULL DEFAULT 0,
     -- Whether the store still sells it (095): 1 / 0, NULL when not known.
     on_sale      INTEGER,
+    -- Xbox's cross-gen set (098): one set is one game; store_group keeps
+    -- only the product group, which can hold a whole series.
+    cross_gen_set TEXT,
     UNIQUE (store, product_id, console)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);

@@ -60,6 +60,8 @@ class Candidate:
     publisher: str | None = None
     year: int | None = None
     store_group: str | None = None
+    # Xbox's cross-gen set: One and Series of one game.
+    cross_gen_set: str | None = None
     hltb_ids: frozenset[int] = frozenset()
     achievements: frozenset[str] = frozenset()
     # Its achievement list (`titles`): Smart Delivery's One and Series, and a
@@ -109,6 +111,7 @@ def kind_of(candidate: Candidate) -> str:
 WEIGHTS: dict[str, float] = {
     "bias": -3.0,
     "one_list": 12.0,  # the same achievement list (Smart Delivery, Play Anywhere)
+    "cross_gen_set": 6.0,  # Xbox's own "this is one game on One and Series"
     "same_group": 5.0,  # one store filed them under one game of its own, names alike
     # …under one group, names not alike: a store's group can hold a series
     # (Microsoft files FF7 Remake Intergrade and Rebirth together).
@@ -142,6 +145,8 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
     f: dict[str, float] = {"bias": 1.0}
     if a.list_key and a.list_key == b.list_key:
         f["one_list"] = 1.0
+    if a.cross_gen_set and a.store == b.store and a.cross_gen_set == b.cross_gen_set:
+        f["cross_gen_set"] = 1.0
     same_group = bool(a.store_group and a.store == b.store and a.store_group == b.store_group)
     if same_group:
         f["same_group"] = 1.0
@@ -358,6 +363,14 @@ def version_year(
     return min(years) if years else None
 
 
+def candidate_year(row: dict) -> int | None:
+    """The one year of a version, for the matcher and the game's facts
+    alike: its name's and its store's; its HLTB entry's only for a stand-in
+    no store describes (an HLTB entry is found by name — a weak sign)."""
+    hltb = row.get("hltb_year") if row.get("stand_in") else None
+    return version_year(row.get("name"), row.get("release_date"), hltb)
+
+
 @dataclass(slots=True)
 class GameFacts:
     year: int | None
@@ -412,10 +425,7 @@ def game_facts(versions: list[dict]) -> GameFacts:
     version: name, release_date, hltb_year, developer, publisher, kind."""
     own = [v for v in versions if v.get("kind") not in ("demo", "compilation", "tool")] or versions
     dated = sorted(
-        (
-            (version_year(v.get("name"), v.get("release_date"), v.get("hltb_year")) or 9999, i, v)
-            for i, v in enumerate(own)
-        ),
+        ((candidate_year(v) or 9999, i, v) for i, v in enumerate(own)),
         key=lambda t: (t[0], t[1]),
     )
     years = [y for y, _, _ in dated if y != 9999]
@@ -591,12 +601,16 @@ def _overlap(a: frozenset[str], b: frozenset[str]) -> float | None:
 def _numbers(candidate: Candidate) -> set[str]:
     found: set[str] = set()
     for name in candidate.cores:
-        found |= {tok for tok in name.split() if tok.isdigit() and len(tok) < 4}
+        # Four digits too: Battlefield 1942 is not 2042. A year a store adds
+        # in parentheses ("(2005)") is gone with the parenthesis already.
+        found |= {tok for tok in name.split() if tok.isdigit() and len(tok) <= 4}
     return found
 
 
 def _same(a: str | None, b: str | None) -> bool:
+    """One company however a store writes it: "CD PROJEKT S.A." and "CD
+    Projekt", "BioWare™" and "BioWare"."""
     if not a or not b:
         return False
-    x, y = normalize(a), normalize(b)
-    return bool(x and y) and (x == y or x in y or y in x)
+    x, y = company_key(a), company_key(b)
+    return bool(x and y) and (x == y or x.startswith(y + " ") or y.startswith(x + " "))

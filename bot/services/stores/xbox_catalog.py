@@ -101,7 +101,10 @@ def parse_product(product: dict) -> list[StoreVersion]:
         "release_date": _day(market.get("OriginalReleaseDate")),
         "genres": [str(c) for c in props.get("Categories") or [] if c]
         or ([str(props["Category"])] if props.get("Category") else []),
-        "store_group": _text(props.get("ProductGroupId")) or _text(props.get("XboxCrossGenSetId")),
+        # Two signs, kept apart: a cross-gen set is one game, a product
+        # group can be a series (FF7 Remake and Rebirth share one).
+        "store_group": _text(props.get("ProductGroupId")),
+        "cross_gen_set": _text(props.get("XboxCrossGenSetId")),
         "description_en": _text(local.get("ShortDescription"))
         or _text(local.get("ProductDescription")),
         "media": _media(local),

@@ -590,7 +590,9 @@ What the stores and HLTB say about a game, collected but not shown yet
   - Xbox `displaycatalog`, public, found by our title id (`lookup?alternateId=
     XboxTitleId`) — no login is spent. A game does not list its add-ons: its
     editions do (`BundledSkus`); only Durables are kept. An add-on sold only
-    on its own is not found this way. `9998-12-30` is "not on sale", no date;
+    on its own is not found this way. `9998-12-30` is "not on sale", no date.
+    Its cross-gen set (`versions.cross_gen_set`, 098) is one game on One and
+    Series; its product group (`store_group`) can hold a whole series;
   - PSN: the store is searched by name and a concept is accepted **only when
     Sony's trophy API says one of its title ids has our `NPWR…` list**, asked as
     an account that played it (`psn/client.trophy_lists_of`); never by name
@@ -600,7 +602,10 @@ What the stores and HLTB say about a game, collected but not shown yet
     version's DLC are its trophy groups for now;
   - the HLTB page (`hltb_games`, with DLC entries and per-platform times),
     linked to every version of a matched list (`version_hltb`). `hltb_cache`
-    stays for `/hltb`'s search until it is switched off.
+    stays for `/hltb`'s search until it is switched off. The consoles HLTB
+    names are **not** versions (2026-10-11, 098: HLTB is matched by name, and a
+    version nobody sells is no version); the game page shows them as "also
+    released on" (#194).
 - **When**: `StoreCollector.ensure` — after a game's first new achievement is
   published (beside the HLTB match) and when its page is opened — in the
   background, and only what is due (`fetch_state`), so many people in one game
@@ -613,11 +618,14 @@ What the stores and HLTB say about a game, collected but not shown yet
 - **Every achievement list is at least one version**: when no store describes it
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
   stand-in (`store = 'list'`) is made from `titles`, and goes once a store
-  product is found.
+  product is found. A version's first proved list stays its list; another one
+  (a regional twin) is kept beside it, as every list is, in `version_store_ids`
+  (`list`, `platform:title_id`).
 - **A game's year is the earliest of its versions', its developer and publisher
   the earliest version's** (owner, 2026-10-10; `game_match.game_facts`, migration
-  096): a version's year is the earliest its name ("(Classic, 2005)"), its HLTB
-  entry or its store gives; a version with no studio of its own (a stand-in)
+  096): a version's year (`game_match.candidate_year`, the matcher's too) is
+  the earliest its name ("(Classic, 2005)") or its store gives, and its HLTB
+  entry's only for a stand-in (2026-10-11); a version with no studio of its own (a stand-in)
   takes its HLTB entry's; demos and compilations say nothing. Refreshed after
   every linking, the matcher's or the operator's. Beside them the game keeps how
   far its versions spread (097: the latest year, other studios, other

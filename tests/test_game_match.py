@@ -259,8 +259,10 @@ def test_game_facts_spread_over_versions():
     facts = game_facts(
         [
             {
+                # The 360 list: a stand-in, dated by its HLTB entry.
                 "name": "Gears of War",
                 "release_date": None,
+                "stand_in": 1,
                 "hltb_year": 2006,
                 "developer": "Epic Games",
                 "publisher": "Microsoft Game Studios",
@@ -313,3 +315,32 @@ async def test_merging_a_game_keeps_a_version_the_other_had_under_review(repo: R
 
     assert await repo.linked_game_of(remake) == old
     assert await repo.linked_game_of(original) == old
+
+
+def test_one_year_for_the_matcher_and_the_facts() -> None:
+    """The matcher read only the store's date (Steam's 2009 for the 2005
+    Battlefront II); both now read `candidate_year`. HLTB's year counts only
+    for a stand-in no store describes."""
+    from bot.services.game_match import candidate_year
+
+    classic = {"name": "STAR WARS Battlefront II (Classic, 2005)", "release_date": "2009-07-08"}
+    assert candidate_year(classic) == 2005
+    assert candidate_year({"name": "Halo", "release_date": "2011-11-15", "hltb_year": 2001}) == 2011
+    assert candidate_year({"name": "Halo", "stand_in": 1, "hltb_year": 2001}) == 2001
+
+
+def test_four_digit_numbers_tell_games_apart_and_studios_compare_as_companies() -> None:
+    from bot.services.game_match import _same
+
+    a = Candidate(1, "steam", "1", "steam", ("Battlefield 1942",), year=2002)
+    b = Candidate(2, "steam", "2", "steam", ("Battlefield 2042",), year=2021)
+    assert any(r.startswith("numbers_differ") for r in compare(a, b).reasons)
+    assert _same("CD PROJEKT S.A.", "CD Projekt")
+    assert _same("BioWare™", "BioWare")
+    assert not _same("DICE", "Pandemic Studios")
+
+
+def test_a_cross_gen_set_is_a_strong_sign_of_one_game() -> None:
+    a = Candidate(1, "xbox", "A", "one", ("Game",), year=2020, cross_gen_set="SET")
+    b = Candidate(2, "xbox", "B", "series", ("Game: Next",), year=2020, cross_gen_set="SET")
+    assert any(r.startswith("cross_gen_set") for r in compare(a, b).reasons)

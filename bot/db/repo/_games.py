@@ -17,9 +17,12 @@ class _GamesRepo:
         cursor = await self._conn.execute(
             "SELECT v.version_id, v.store, v.product_id, v.console, v.platform, v.title_id,"
             "  v.name, v.name_ru, v.kind, v.developer, v.publisher, v.release_date,"
-            "  v.store_group, v.stand_in, t.name AS list_name, t.name_en AS list_name_en,"
+            "  v.store_group, v.cross_gen_set, v.stand_in, t.name AS list_name,"
+            "  t.name_en AS list_name_en,"
             "  (SELECT GROUP_CONCAT(vh.hltb_id) FROM version_hltb vh"
-            "   WHERE vh.version_id = v.version_id) AS hltb_ids"
+            "   WHERE vh.version_id = v.version_id) AS hltb_ids,"
+            "  (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_games h"
+            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_year"
             " FROM versions v LEFT JOIN titles t ON t.platform = v.platform"
             "  AND t.title_id = v.title_id"
         )
@@ -199,7 +202,8 @@ class _GamesRepo:
             cursor = await self._conn.execute(
                 # A version's own studio, else its HLTB entry's: a stand-in (a
                 # 360 game) has none of its own.
-                "SELECT v.name, v.release_date, vg.kind, h.release_year AS hltb_year,"
+                "SELECT v.name, v.release_date, vg.kind, v.stand_in,"
+                " h.release_year AS hltb_year,"
                 " COALESCE(v.developer, h.developer) AS developer,"
                 " COALESCE(v.publisher, h.publisher) AS publisher"
                 " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
