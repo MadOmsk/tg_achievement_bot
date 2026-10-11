@@ -26,7 +26,8 @@ _REMASTER = re.compile(
     re.IGNORECASE,
 )
 _EDITION = re.compile(
-    r"\b(game of the year|goty|complete|deluxe|ultimate|gold|premium|legendary|collector'?s)\b",
+    r"\b(game of the year|goty|complete|deluxe|ultimate|gold|premium|legendary|collector'?s"
+    r"|special edition)\b",
     re.IGNORECASE,
 )
 _DEMO = re.compile(r"\b(demo|trial|prologue|beta)\b", re.IGNORECASE)
@@ -132,6 +133,10 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "cross_gen_set": 6.0,  # Xbox: one game on One and Series
         "cross_gen_pair": 4.0,  # PS4/PS5, One/Series released together: one game
         "later_list_same_family": -4.0,  # a list of its own on a newer console, later
+        "later_list_same_store": -3.0,  # a list of its own in the same store, years later
+        "same_name_far": -2.5,  # the very same name, five years and more apart
+        "same_name_other_studio": -3.0,  # the very same name, another studio
+        "subtitles_differ": -4.0,  # one name, two subtitles: two games
         "same_group": 3.0,  # one store filed them under one game, names alike
         "same_group_other_name": 0.5,  # a store's group can hold a series
         "groups_differ": -2.0,
@@ -165,6 +170,9 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "cross_gen_set": -2.0,
         "cross_gen_pair": -1.0,
         "later_list_same_family": 3.0,  # Ghost of Tsushima DC on PS5 (owner, 2026-10-11)
+        "later_list_same_store": 3.0,  # Skyrim → Special Edition on Steam
+        "same_name_far": -2.0,  # same name, no release word: not a remaster
+        "subtitles_differ": -3.0,
         "same_group": 1.0,
         "steam_parent": -2.0,
         "same_hltb": 1.5,
@@ -194,6 +202,9 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "cross_gen_set": -2.0,
         "cross_gen_pair": -2.0,
         "later_list_same_family": 1.0,
+        "same_name_far": 3.0,  # the same name years later: a remake, or another game
+        "same_name_other_studio": -1.0,
+        "subtitles_differ": -1.0,
         "groups_differ": 0.5,
         "steam_parent": -2.0,
         "same_hltb": -1.0,
@@ -338,6 +349,20 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
         f["groups_differ"] = 1.0
     if "franchise" not in f and name < 1.0 and _subtitled(s, o):
         f["subtitle"] = 1.0
+    if _subtitles_differ(s, o):
+        # "FF7 Rebirth" and "FF7 Revelation", "Gears of War: Judgment" and
+        # "…: E-Day": one name goes on two ways — two games.
+        f["subtitles_differ"] = 1.0
+    if (
+        s.store == o.store
+        and s.console == o.console
+        and s.list_key
+        and o.list_key
+        and s.list_key != o.list_key
+        and gap is not None
+        and gap >= 2
+    ):
+        f["later_list_same_store"] = 1.0
 
     if _demo_pair(s, o):
         f["demo_of"] = 1.0
@@ -378,6 +403,14 @@ def features(a: Candidate, b: Candidate) -> dict[str, float]:
         f["developer_same" if _same(s.developer, o.developer) else "developer_differs"] = 1.0
     if _same(s.publisher, o.publisher):
         f["publisher_same"] = 1.0
+    if same_name(s, o):
+        # The very same name, no release word on either (owner, 2026-10-11):
+        # years apart or by another studio it may be a remake as well as
+        # another game — the operator looks at every such pair.
+        if gap is not None and gap >= FAR_YEARS:
+            f["same_name_far"] = 1.0
+        if "developer_differs" in f:
+            f["same_name_other_studio"] = 1.0
     if gap is None:
         f["year_unknown"] = 1.0
     elif gap <= NEAR_YEARS:
@@ -414,9 +447,11 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
     ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
     (relation, p), (_second, p2) = ranked[0], ranked[1]
     best_link = max(((c, probs[c]) for c in CLASSES), key=lambda kv: kv[1])
-    if relation != "other" and p >= LINK_P and p - p2 >= CLOSE_CALL:
+    namesake = "same_name_far" in f or "same_name_other_studio" in f
+    if relation != "other" and p >= LINK_P and p - p2 >= CLOSE_CALL and not namesake:
         state = "linked"
-    elif best_link[1] >= REVIEW_P:
+    elif best_link[1] >= REVIEW_P or namesake:
+        # One name, far apart: the operator decides, however sure the model.
         state = "review"
         relation, p = best_link
     else:
@@ -493,6 +528,30 @@ def _groups_differ(a: Candidate, b: Candidate) -> bool:
     return bool(
         a.store == b.store and a.store_group and b.store_group and a.store_group != b.store_group
     )
+
+
+def same_name(a: Candidate, b: Candidate) -> bool:
+    """The very same cut name, and neither says it is a remaster, a remake,
+    an edition or a compilation ("Resident Evil 4" and "Resident Evil 4
+    (2005)", "Call of Duty: Modern Warfare" 2007 and 2019)."""
+    if not any(x == y for x in a.cores for y in b.cores):
+        return False
+    marked = (_REMASTER, _REMAKE, _EDITION, _COMPILATION, _VR, _DEMO, _TOOL)
+    return not any(pat.search(n) for c in (a, b) for n in c.names for pat in marked)
+
+
+def _subtitles_differ(a: Candidate, b: Candidate) -> bool:
+    """Both cut names go on past a shared head of two words or more, each its
+    own way."""
+    for x in a.cores:
+        for y in b.cores:
+            wx, wy = _words(x), _words(y)
+            head = 0
+            while head < min(len(wx), len(wy)) and wx[head] == wy[head]:
+                head += 1
+            if head >= 2 and head < len(wx) and head < len(wy):
+                return True
+    return False
 
 
 def _subtitled(a: Candidate, b: Candidate) -> bool:

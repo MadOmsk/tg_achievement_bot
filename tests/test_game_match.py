@@ -485,3 +485,81 @@ async def test_a_stand_in_becomes_its_product_and_keeps_its_labels(repo: Repo) -
     pid = await repo.save_version(product, platform="xbox_modern", title_id="123")
     assert pid == sid
     assert await repo.decisions_among([sid])
+
+
+# ------------------------------------------- owner's second look (2026-10-11)
+
+
+def test_a_namesake_far_apart_is_always_the_operators() -> None:
+    """RE5 2009 and its 2016 release, CoD: Modern Warfare 2007 and 2019: one
+    name years apart may be a port, a remake or another game."""
+    re5 = _c(
+        1,
+        "RESIDENT EVIL 5",
+        console="360",
+        year=2009,
+        developer="CAPCOM",
+        list_key=("xbox_360", "1"),
+        achievements=_list("re5", 50),
+    )
+    re5_one = _c(
+        2,
+        "Resident Evil 5",
+        console="one",
+        year=2016,
+        developer="CAPCOM",
+        list_key=("xbox_modern", "2"),
+        achievements=_list("re5", 50),
+    )
+    assert compare(re5, re5_one).state == "review"
+    mw = _c(
+        3,
+        "Call of Duty 4: Modern Warfare",
+        store="steam",
+        console="steam",
+        year=2007,
+        developer="Infinity Ward",
+    )
+    mw19 = _c(
+        4,
+        "Call of Duty: Modern Warfare",
+        store="steam",
+        console="steam",
+        year=2019,
+        developer="Infinity Ward",
+    )
+    cod = _c(5, "Call of Duty: Modern Warfare", console="one", year=2019, developer="Infinity Ward")
+    assert compare(mw19, cod).relation == "same"
+    assert compare(mw, mw19).relation != "same" or compare(mw, mw19).state == "review"
+
+
+def test_two_subtitles_of_one_name_are_two_games() -> None:
+    rebirth = _c(1, "FINAL FANTASY VII REBIRTH", store="steam", console="steam", year=2025)
+    revelation = _c(2, "FINAL FANTASY VII REVELATION", store="steam", console="steam", year=2027)
+    assert compare(rebirth, revelation).relation != "same"
+
+
+def test_a_later_list_in_the_same_store_is_a_remaster() -> None:
+    """Skyrim (2011) and Special Edition (2016): two Steam apps, two lists."""
+    skyrim = _c(
+        1,
+        "The Elder Scrolls V: Skyrim",
+        store="steam",
+        console="steam",
+        year=2011,
+        developer="Bethesda Game Studios",
+        list_key=("steam", "72850"),
+        achievements=_list("sk", 75),
+    )
+    se = _c(
+        2,
+        "The Elder Scrolls V: Skyrim Special Edition",
+        store="steam",
+        console="steam",
+        year=2016,
+        developer="Bethesda Game Studios",
+        list_key=("steam", "489830"),
+        achievements=_list("sk", 75),
+    )
+    v = compare(skyrim, se)
+    assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
