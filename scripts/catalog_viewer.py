@@ -799,6 +799,38 @@ async def rules(request: web.Request) -> web.Response:
     return _page("How versions are matched", body)
 
 
+def _achievements_link(v: sqlite3.Row) -> str:
+    """A version's achievements: its list, or for a Steam app nobody here
+    has, the names its schema gives (what the matcher compares)."""
+    if v["title_id"]:
+        return f'<a href="{escape(_list_href(v))}">list</a>'
+    if v["store"] == "steam":
+        return f'<a href="/steam-schema/{quote(str(v["product_id"]))}">schema</a>'
+    return ""
+
+
+async def steam_schema(request: web.Request) -> web.Response:
+    """A Steam app's achievement names, as its schema gives them."""
+    appid = request.match_info["appid"]
+    with _db(request) as conn:
+        row = conn.execute(
+            "SELECT payload FROM source_payloads WHERE subject = ? AND source = 'steam_schema'",
+            (f"steam_schema:{appid}",),
+        ).fetchone()
+    names = json.loads(zlib.decompress(row["payload"])) if row else []
+    body = (
+        f'<p><a href="https://store.steampowered.com/app/{escape(appid)}" target=_blank>'
+        f"Steam {escape(appid)} ↗</a> · {len(names)} achievements in its schema"
+        " (nobody here has played it: names only)</p>"
+        + (
+            "<ol>" + "".join(f"<li>{escape(str(n))}</li>" for n in names) + "</ol>"
+            if names
+            else "<p>(no schema read)</p>"
+        )
+    )
+    return _page(f"Steam {appid}: achievements", body)
+
+
 async def achievement_list(request: web.Request) -> web.Response:
     """Every achievement of one list, as the catalog keeps them."""
     platform, title_id = request.match_info["platform"], request.match_info["title_id"]
@@ -1028,7 +1060,7 @@ def _version_cards(rows: list[sqlite3.Row]) -> str:
             _store_link(v),
             escape(v["developer"] or ""),
             f"{v['p']:.2f}" if v["p"] is not None else "",
-            f'<a href="{escape(_list_href(v))}">list</a>' if v["title_id"] else "",
+            _achievements_link(v),
         ]
         lines.append("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
     return (
@@ -1452,6 +1484,7 @@ def build(db_path: Path) -> web.Application:
     app.router.add_get("/games", games)
     app.router.add_get("/rules", rules)
     app.router.add_get("/list/{platform}/{title_id}", achievement_list)
+    app.router.add_get("/steam-schema/{appid}", steam_schema)
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
