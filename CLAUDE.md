@@ -669,8 +669,14 @@ What the stores and HLTB say about a game, collected but not shown yet
     decide).
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
-  review list answered pair by pair, the labels; merge / relate / detach are
-  labels too; rename, collect, re-link). **No authentication
+  labels; merge / relate / detach / "not related" are labels too; rename,
+  collect, re-link). **The review list has two questions** (owner,
+  2026-10-11): version ↔ game (one game, an edition, a demo, a tool — or
+  another game) and game ↔ game (a remaster, a remake, a compilation, a VR
+  version — or not related), the latter answered game against game, as a
+  label between their anchors; "not related" clears every relation the model
+  found between the two, and a pair of games once answered is not asked
+  again. **No authentication
   yet** (#186).
 
 ### Secrets

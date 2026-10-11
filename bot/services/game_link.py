@@ -154,7 +154,14 @@ class GameLinker:
             report.relations = list(relations)
 
             labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
-            review = _review(verdicts, game_of, relations, labelled)
+            # Two games the operator already said something about are not
+            # asked about again through another pair of their versions.
+            decided = {
+                frozenset((game_of[lab["version_id"]], game_of[lab["other_id"]]))
+                for lab in labels
+                if lab["version_id"] in game_of and lab["other_id"] in game_of
+            }
+            review = _review(verdicts, game_of, relations, labelled, decided)
             await self._repo.write_review(
                 list(around),
                 [(v.subject, v.other, v.relation, v.p, v.probs, v.features, MODEL) for v in review],
@@ -367,6 +374,14 @@ def _relations(
         if key not in edges or (edges[key][1] or 0.0) < v.p:
             edges[key] = ("auto", v.p)
     for lab in labels:
+        # "Not one game, and not related" between any two of their versions:
+        # nothing the model found between these two games stands.
+        g, r = game_of.get(lab["version_id"]), game_of.get(lab["other_id"])
+        if lab["relation"] == "other" and g is not None and r is not None and g != r:
+            for kind in RELATIONS:
+                edges.pop((g, r, kind), None)
+                edges.pop((r, g, kind), None)
+    for lab in labels:
         if lab["relation"] not in RELATIONS:
             continue
         g, r = game_of.get(lab["version_id"]), game_of.get(lab["other_id"])
@@ -424,6 +439,7 @@ def _review(
     game_of: dict[int, int],
     relations: Relations,
     labelled: set[frozenset[int]],
+    decided: set[frozenset[int]],
 ) -> list[Verdict]:
     """The doubtful pairs: one per pair of games (the surest), none the
     operator already answered, none whose games already relate."""
@@ -436,7 +452,7 @@ def _review(
         if ga is None or gb is None or (ga == gb and v.relation == "same"):
             continue
         key = frozenset((ga, gb))
-        if ga != gb and key in related:
+        if ga != gb and (key in related or key in decided):
             continue
         if key not in best or best[key].p < v.p:
             best[key] = v

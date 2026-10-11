@@ -697,23 +697,46 @@ _VERSION_LINKS = {
 }
 
 
-# The operator's answers about a pair: the subject (the first) and the other.
-# A relation reads "subject … other"; "⇄" asks the other way round.
+# The operator's answers about two versions: one game or not (owner,
+# 2026-10-11: version ↔ game is one question, game ↔ game another).
 _DECISIONS = (
     ("same", "same game"),
     ("edition", "same game: an edition"),
     ("demo_of", "a demo of it"),
+    ("demo_of:flip", "⇄ it is a demo of this"),
     ("tool_of", "a tool for it"),
-    ("remaster_of", "a remaster of it"),
-    ("remaster_of:flip", "⇄ it is a remaster of this"),
-    ("remake_of", "a remake of it"),
-    ("remake_of:flip", "⇄ it is a remake of this"),
-    ("contains", "a compilation holding it"),
-    ("contains:flip", "⇄ part of it (a compilation)"),
-    ("vr_of", "the VR version of it"),
-    ("vr_of:flip", "⇄ it is the VR version of this"),
+    ("tool_of:flip", "⇄ it is a tool for this"),
     ("other", "a different game"),
 )
+
+# …and about two games: how they relate, read "this game … that game".
+_GAME_DECISIONS = (
+    ("remaster_of", "this is a remaster of that"),
+    ("remaster_of:flip", "that is a remaster of this"),
+    ("remake_of", "this is a remake of that"),
+    ("remake_of:flip", "that is a remake of this"),
+    ("contains", "this compilation holds that"),
+    ("contains:flip", "that compilation holds this"),
+    ("vr_of", "this is the VR version of that"),
+    ("vr_of:flip", "that is the VR version of this"),
+    ("other", "not related"),
+    ("same", "one game after all"),
+)
+
+
+def _game_picker(game_id: int, other_game: int, back: str) -> str:
+    """One answer about two games: a picker and a button."""
+    options = "".join(
+        f'<option value="{key}">{escape(label)}</option>' for key, label in _GAME_DECISIONS
+    )
+    return (
+        '<form method=post action="/decide-games" style="margin:0;white-space:nowrap">'
+        f'<input type=hidden name=game_id value="{game_id}">'
+        f'<input type=hidden name=other_game value="{other_game}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        "<select name=decision required><option value='' selected disabled>answer…</option>"
+        f"{options}</select> <button>ok</button></form>"
+    )
 
 
 def _decision_picker(version_id: int, other_id: int, back: str) -> str:
@@ -917,6 +940,16 @@ async def game(request: web.Request) -> web.Response:
         + _version_cards(members)
         + "<h2>Family: related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})
+        + "".join(
+            "<p>"
+            + _button(
+                f"{here}/unrelate",
+                f"not related to game {r['game_id']}",
+                {"other_game": r["game_id"]},
+            )
+            + "</p>"
+            for r in relations
+        )
         + ("<h2>To review</h2>" + cards if pairs else "")
         + "<h2>The operator's labels on these versions</h2>"
         + _table(
@@ -1088,18 +1121,94 @@ def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
     return "".join(parts)
 
 
+# Which review pairs ask about one game, and which about two related games.
+_GAME_RELATIONS = ("remaster_of", "remake_of", "contains", "vr_of")
+
+
 async def review(request: web.Request) -> web.Response:
+    """Two questions, two tabs (owner, 2026-10-11): is this version that game
+    (versions), and how do these two games relate (games)."""
+    tab = request.query.get("tab", "versions")
+    marks = ",".join("?" * len(_GAME_RELATIONS))
+    games_tab = tab == "games"
+    where = f"relation IN ({marks})" if games_tab else f"relation NOT IN ({marks})"
     with _db(request) as conn:
+        counts = {
+            name: conn.execute(
+                f"SELECT COUNT(*) FROM match_pairs WHERE relation {op} ({marks})",
+                _GAME_RELATIONS,
+            ).fetchone()[0]
+            for name, op in (("versions", "NOT IN"), ("games", "IN"))
+        }
         pairs = conn.execute(
             "SELECT version_id AS subject, other_id AS other, relation, p, features"
-            " FROM match_pairs ORDER BY p DESC LIMIT ?",
-            (PAGE_SIZE,),
+            f" FROM match_pairs WHERE {where} ORDER BY p DESC LIMIT ?",
+            (*_GAME_RELATIONS, PAGE_SIZE),
         ).fetchall()
-        total = conn.execute("SELECT COUNT(*) FROM match_pairs").fetchone()[0]
-        cards = _pair_rows(conn, pairs, "/review")
-    return _page(
-        "To review",
-        _flash(request) + f"<p>{total} pairs, the surest first.</p>" + cards,
+        back = f"/review?tab={tab}"
+        cards = _game_pair_rows(conn, pairs, back) if games_tab else _pair_rows(conn, pairs, back)
+    tabs = " · ".join(
+        (
+            f"<b>{label} ({counts[name]})</b>"
+            if name == tab
+            else f'<a href="/review?tab={name}">{label} ({counts[name]})</a>'
+        )
+        for name, label in (("versions", "version ↔ game"), ("games", "game ↔ game"))
+    )
+    note = (
+        "<p>How two games relate: a remaster, a remake, a compilation, a VR version — or"
+        " nothing. Each answer is a label between the two games' anchors.</p>"
+        if games_tab
+        else "<p>Is this version that game (or its edition, demo, tool) — or another game?</p>"
+    )
+    return _page("To review", _flash(request) + f"<p>{tabs}</p>" + note + cards)
+
+
+def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
+    """A game in one cell: its covers, name and identity, consoles."""
+    row = conn.execute(
+        "SELECT (SELECT GROUP_CONCAT(DISTINCT v.console) FROM game_versions gv"
+        "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?) AS consoles,"
+        " (SELECT " + COVER.replace(" AS cover", "") + " FROM game_versions gv"
+        "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?"
+        "  AND gv.role IN ('version', 'edition') LIMIT 1) AS cover",
+        (game_id, game_id),
+    ).fetchone()
+    return (
+        f"{_img(row['cover'], 40)} "
+        f'<a href="/game/{game_id}">{escape(_identity(conn, game_id))}</a>'
+        f"<br><small>{escape(row['consoles'] or '')}</small>"
+    )
+
+
+def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) -> str:
+    """Doubtful relations between games, game against game."""
+    if not pairs:
+        return "<p>(nothing to review)</p>"
+    lines = []
+    seen: set[frozenset[int]] = set()
+    for r in pairs:
+        ga = conn.execute(
+            "SELECT game_id FROM game_versions WHERE version_id = ?", (r["subject"],)
+        ).fetchone()
+        gb = conn.execute(
+            "SELECT game_id FROM game_versions WHERE version_id = ?", (r["other"],)
+        ).fetchone()
+        if ga is None or gb is None or frozenset((ga[0], gb[0])) in seen:
+            continue  # one row per pair of games, the surest
+        seen.add(frozenset((ga[0], gb[0])))
+        feats = json.loads(r["features"]) if r["features"] else {}
+        signs = ", ".join(k for k in feats if k != "bias")
+        lines.append(
+            f"<tr><td>{_game_card(conn, ga[0])}</td>"
+            f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
+            f"<br><small>{escape(signs)}</small></td>"
+            f"<td>{_game_card(conn, gb[0])}</td>"
+            f"<td>{_game_picker(ga[0], gb[0], back)}</td></tr>"
+        )
+    return (
+        "<div class=scroll><table class=versions><tr><th>this game</th><th>the model"
+        " thinks</th><th>…that game</th><th>answer</th></tr>" + "".join(lines) + "</table></div>"
     )
 
 
@@ -1168,6 +1277,31 @@ async def game_rename(request: web.Request) -> web.Response:
             game_id, name, str(form.get("name_ru") or "").strip() or None, "manual"
         )
     raise _back(f"/game/{game_id}", "renamed")
+
+
+async def decide_games(request: web.Request) -> web.Response:
+    """An answer about two games: a label between their anchors."""
+    form = await request.post()
+    game_id, other_game = int(str(form["game_id"])), int(str(form["other_game"]))
+    decision, back = str(form["decision"]), str(form.get("back") or "/review?tab=games")
+    relation, _, flip = decision.partition(":")
+    repo = _repo(request)
+    a, b = await _game_anchors(repo, game_id, other_game)
+    if flip:
+        a, b = b, a
+    await _label(repo, a, b, relation)
+    raise _back(back, f"game {game_id} / game {other_game}: {decision}")
+
+
+async def game_unrelate(request: web.Request) -> web.Response:
+    """Take a relation away: "not related" between the two games."""
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    other = int(str(form["other_game"]))
+    repo = _repo(request)
+    a, b = await _game_anchors(repo, game_id, other)
+    await _label(repo, a, b, "other")
+    raise _back(f"/game/{game_id}", f"game {game_id} and game {other}: not related")
 
 
 async def _game_anchors(repo: Repo, game_id: int, other: int) -> tuple[int, int]:
@@ -1311,6 +1445,8 @@ def build(db_path: Path) -> web.Application:
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
+    app.router.add_post("/decide-games", decide_games)
+    app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
     app.router.add_post("/decide", decide)
     app.router.add_post("/game/{game_id:\\d+}/rename", game_rename)
     app.router.add_post("/game/{game_id:\\d+}/merge", game_merge)

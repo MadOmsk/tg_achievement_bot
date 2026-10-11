@@ -563,3 +563,24 @@ def test_a_later_list_in_the_same_store_is_a_remaster() -> None:
     )
     v = compare(skyrim, se)
     assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
+
+
+async def test_not_related_takes_every_link_between_two_games_away(repo: Repo) -> None:
+    """Owner, 2026-10-11: game ↔ game is its own question; "not related"
+    between the two games clears the model's relation and its review row."""
+    old = await _version(repo, "DS", "Dark Souls", "2011", developer="FromSoftware")
+    old_pc = await _version(
+        repo, "DSPC", "Dark Souls", "2011", store="steam", console="steam", developer="FromSoftware"
+    )
+    new = await _version(repo, "DSR", "Dark Souls Remastered", "2018", developer="FromSoftware")
+    linker = GameLinker(repo)
+    await linker.link_versions([old, old_pc, new])
+    assert await repo.linked_game_of(new) != await repo.linked_game_of(old)
+    await repo.save_decision(new, old, "other", features=None, model=None, decided_by="t")
+    await linker.link_all()
+    cur = await repo._conn.execute("SELECT COUNT(*) FROM game_relations")
+    assert (await cur.fetchone())[0] == 0
+    cur = await repo._conn.execute(
+        "SELECT COUNT(*) FROM match_pairs WHERE ? IN (version_id, other_id)", (new,)
+    )
+    assert (await cur.fetchone())[0] == 0
