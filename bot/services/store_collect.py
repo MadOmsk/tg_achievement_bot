@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from bot.services.game_link import GameLinker
 from bot.services.game_match import name_key
 from bot.services.hltb import ensure_title_match
-from bot.services.hltb_match import core, similarity
+from bot.services.hltb_match import core, normalize, similarity
 from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
 from bot.services.stores import (
@@ -604,7 +604,16 @@ class StoreCollector:
             store=_store_of(platform),
             product_id=title_id,
             console=_console_of(platform, str(record.get("platforms") or "")),
-            name=str(record.get("name") or "") or None,
+            # A list whose name was lost ("?" on production's PSN lists)
+            # is named by its English name.
+            name=next(
+                (
+                    str(n)
+                    for n in (record.get("name"), record.get("name_en"))
+                    if n and normalize(str(n))
+                ),
+                None,
+            ),
             name_ru=record.get("name_ru"),  # type: ignore[arg-type]
             kind="game",
             stand_in=True,

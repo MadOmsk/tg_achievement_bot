@@ -76,11 +76,12 @@ class Candidate:
     def cores(self) -> tuple[str, ...]:
         """The cut names without the words that name a release, not the
         game ("Gears of War: Reloaded" is Gears of War)."""
-        return tuple(dict.fromkeys(_unmarked(game_core(n)) for n in self.names if n))
+        cut = (_unmarked(game_core(n)) for n in self.names if n)
+        return tuple(dict.fromkeys(c for c in cut if c.strip()))
 
     @property
     def fulls(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(normalize(n) for n in self.names if n))
+        return tuple(dict.fromkeys(f for f in (normalize(n) for n in self.names if n) if f))
 
 
 @dataclass(slots=True)
@@ -134,6 +135,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "cross_gen_pair": 4.0,  # PS4/PS5, One/Series released together: one game
         "later_list_same_family": -4.0,  # a list of its own on a newer console, later
         "later_list_same_store": -3.0,  # a list of its own in the same store, years later
+        "same_name": 2.0,  # the very same name, no release word on either
         "same_name_far": -2.5,  # the very same name, five years and more apart
         "same_name_other_studio": -3.0,  # the very same name, another studio
         "subtitles_differ": -4.0,  # one name, two subtitles: two games
@@ -171,7 +173,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "cross_gen_pair": -1.0,
         "later_list_same_family": 3.0,  # Ghost of Tsushima DC on PS5 (owner, 2026-10-11)
         "later_list_same_store": 3.0,  # Skyrim → Special Edition on Steam
-        "same_name_far": -2.0,  # same name, no release word: not a remaster
+        "same_name": -4.0,  # same name, no release word: not a remaster
+        "same_name_far": -2.0,
         "subtitles_differ": -3.0,
         "same_group": 1.0,
         "steam_parent": -2.0,
@@ -271,7 +274,7 @@ CLOSE_CALL = 0.2  # two classes this close: the operator decides
 VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
 
 _REMAKE = re.compile(r"\b(remake|reimagined|reignited|n sane|rehydrated|part i)\b", re.I)
-_COMPILATION = re.compile(r"\b(collection|trilogy|anthology|legendary edition)\b|\s[+&]\s", re.I)
+_COMPILATION = re.compile(r"\b(collection|trilogy|anthology|legendary edition)\b|\s\+\s", re.I)
 _VR = re.compile(r"\bvr\b", re.I)
 _FAMILIES = {
     "360": "xbox",
@@ -406,6 +409,9 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     if _same(s.publisher, o.publisher):
         f["publisher_same"] = 1.0
     if same_name(s, o):
+        # One name, no release word: a port, not a remaster (RE5, Terraria;
+        # owner, 2026-10-11).
+        f["same_name"] = 1.0
         # The very same name, no release word on either (owner, 2026-10-11):
         # years apart or by another studio it may be a remake as well as
         # another game — the operator looks at every such pair.
@@ -515,12 +521,15 @@ def _words(name: str) -> list[str]:
 def _contained(a: Candidate, b: Candidate) -> bool:
     """One cut name ends the other, whole, two words at least: a franchise
     said before it ("Call of Duty: Modern Warfare 2"). Not one that starts the
-    other — a subtitle after it is another game ("Gears of War: Judgment")."""
+    other — a subtitle after it is another game ("Gears of War: Judgment") —
+    and not a LEGO game's ("LEGO Marvel's Avengers" is not "Marvel's
+    Avengers")."""
     for x in a.cores:
         for y in b.cores:
             short, long_ = sorted((_words(x), _words(y)), key=len)
             if 2 <= len(short) < len(long_) and long_[-len(short) :] == short:
-                return True
+                if "lego" not in long_[: len(long_) - len(short)]:
+                    return True
     return False
 
 
@@ -712,11 +721,17 @@ def game_name(members: list[Candidate]) -> str:
     first = plain[0]
     if not first.names:
         return first.product_id
+    name = next((n for n in first.names if normalize(n)), first.names[0])
     if any(_COMPILATION.search(n) for n in first.names):
         # A compilation's own words are its name ("Mass Effect Legendary
         # Edition" is not "Mass Effect").
-        return release_name(first.names[0])
-    return core(first.names[0])
+        return release_name(name)
+    cut = core(name)
+    if normalize(cut) != game_core(name):
+        # The cut took words of the game's own ("The Elder Scrolls V" of
+        # "…: Skyrim Special Edition"): the release name instead.
+        return release_name(name)
+    return cut
 
 
 _PLATFORM_TAIL = re.compile(

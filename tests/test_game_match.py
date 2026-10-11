@@ -584,3 +584,55 @@ async def test_not_related_takes_every_link_between_two_games_away(repo: Repo) -
         "SELECT COUNT(*) FROM match_pairs WHERE ? IN (version_id, other_id)", (new,)
     )
     assert (await cur.fetchone())[0] == 0
+
+
+# ------------------------------------------------ the full run's lessons
+
+
+def test_a_lost_name_says_nothing() -> None:
+    """Production's PSN lists named "?": "?" and "?" are not one name."""
+    a = _c(1, "?", store="psn", console="ps4", year=2014)
+    b = _c(2, "?", store="psn", console="ps4", year=2017)
+    assert compare(a, b).relation != "same"
+
+
+def test_a_lego_game_is_not_its_namesake() -> None:
+    lego = _c(1, "LEGO Marvel's Avengers", year=2016)
+    game = _c(2, "Marvel's Avengers", year=2020)
+    v = compare(lego, game)
+    assert not (v.state == "linked" and v.relation != "other"), v.reasons
+
+
+def test_an_ampersand_is_no_compilation() -> None:
+    two = _c(1, "Coffee Talk Episode 2: Hibiscus & Butterfly", year=2023)
+    one = _c(2, "Coffee Talk", year=2020)
+    assert "compilation_word" not in compare(two, one).features
+
+
+def test_the_same_name_a_few_years_later_on_a_newer_console_is_a_port() -> None:
+    """Terraria 360 (2011) and One (2014): no release word, not a remaster."""
+    old = _c(
+        1,
+        "Terraria",
+        console="360",
+        year=2011,
+        list_key=("xbox_360", "1"),
+        achievements=_list("t", 40),
+    )
+    new = _c(
+        2,
+        "Terraria",
+        console="one",
+        year=2014,
+        list_key=("xbox_modern", "2"),
+        achievements=_list("t", 60),
+    )
+    assert compare(old, new).relation != "remaster_of"
+
+
+def test_a_game_name_keeps_the_games_own_words() -> None:
+    from bot.services.game_match import game_name
+
+    se = _c(1, "The Elder Scrolls V: Skyrim Special Edition", store="steam", console="steam")
+    assert game_name([se]) == "The Elder Scrolls V: Skyrim Special Edition"
+    assert game_name([_c(2, "Gears of War 4")]) == "Gears of War 4"

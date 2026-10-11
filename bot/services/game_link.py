@@ -437,7 +437,16 @@ def _relations(
     for (g, r, k), value in edges.items():
         if k == "contains":
             result[(g, r, k)] = value
-    return result
+    # One relation per pair of games (Brothers was both a remaster and a
+    # remake): the operator's, else the surest.
+    best: dict[frozenset[int], tuple[int, int, str]] = {}
+    for key, (source, p) in result.items():
+        pair = frozenset(key[:2])
+        rank = (source == "manual", p or 0.0)
+        kept = best.get(pair)
+        if kept is None or rank > (result[kept][0] == "manual", result[kept][1] or 0.0):
+            best[pair] = key
+    return {key: result[key] for key in best.values()}
 
 
 def _review(
@@ -475,7 +484,7 @@ def _candidate(row: dict) -> Candidate:
         dict.fromkeys(
             str(n)
             for n in (row["name"], row["list_name_en"], row["list_name"])
-            if n and str(n).strip()
+            if n and normalize(str(n))  # "?" (a name lost on production) is none
         )
     )
     return Candidate(
