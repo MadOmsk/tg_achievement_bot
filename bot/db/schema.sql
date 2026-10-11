@@ -1170,42 +1170,65 @@ CREATE TABLE IF NOT EXISTS games (
     name_source TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
     merged_into INTEGER REFERENCES games(game_id),  -- an old id keeps resolving
     created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    updated_at  TEXT NOT NULL,
+    -- 099: the version that keeps the game's id through every rebuild (its
+    -- first linked one that is no demo); one anchor anchors one game.
+    anchor_version_id INTEGER UNIQUE REFERENCES versions(version_id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS version_games (
-    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    kind       TEXT NOT NULL,   -- version / edition / remaster / compilation / demo / tool
-    state      TEXT NOT NULL,   -- linked / review / rejected
-    source     TEXT NOT NULL,   -- auto / manual
-    score      REAL,
-    reasons    TEXT,            -- JSON list: the signals that decided it
-    decided_by TEXT,
-    decided_at TEXT NOT NULL,
-    PRIMARY KEY (version_id, game_id)
+-- A game's versions (099): the matcher's output, rebuilt from the operator's
+-- labels and the model; a version is in exactly one game.
+CREATE TABLE IF NOT EXISTS game_versions (
+    version_id    INTEGER PRIMARY KEY REFERENCES versions(version_id) ON DELETE CASCADE,
+    game_id       INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,   -- version / edition / demo / tool
+    of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
+    p             REAL,
+    linked_at     TEXT NOT NULL,
+    CHECK (of_version_id IS NULL OR role IN ('demo', 'tool'))
 );
-CREATE INDEX IF NOT EXISTS idx_version_games_game ON version_games(game_id, state);
+CREATE INDEX IF NOT EXISTS idx_game_versions_game ON game_versions(game_id, role);
+
+-- The operator's decisions (099): labels on pairs of versions, the input the
+-- games are rebuilt from, with the pair's signs for fitting the weights.
+CREATE TABLE IF NOT EXISTS match_decisions (
+    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    other_id   INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    relation   TEXT NOT NULL,   -- same / edition / demo_of / tool_of / remaster_of /
+                                -- remake_of / contains / vr_of / other
+    features   TEXT,            -- JSON: the pair's signs when it was decided
+    model      TEXT,            -- which weights saw them
+    decided_by TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    PRIMARY KEY (version_id, other_id),
+    CHECK (version_id <> other_id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_decisions_other ON match_decisions(other_id);
+
+-- The model's latest doubtful pairs (099): the review list.
+CREATE TABLE IF NOT EXISTS match_pairs (
+    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    other_id   INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    relation   TEXT NOT NULL,
+    p          REAL NOT NULL,
+    probs      TEXT NOT NULL,   -- JSON: every class's probability
+    features   TEXT NOT NULL,
+    model      TEXT NOT NULL,
+    scored_at  TEXT NOT NULL,
+    PRIMARY KEY (version_id, other_id)
+);
 
 CREATE TABLE IF NOT EXISTS game_relations (
     game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
     related_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    kind       TEXT NOT NULL,   -- remake_of
-    source     TEXT NOT NULL,
+    -- game_id is the later one: remaster_of / remake_of / vr_of the original
+    -- (always the earliest, no chains), or contains (a compilation → a part).
+    kind       TEXT NOT NULL,
+    source     TEXT NOT NULL,   -- auto / manual
     created_at TEXT NOT NULL,
+    p          REAL,            -- 099: the model's confidence
     PRIMARY KEY (game_id, related_id, kind),
     CHECK (game_id <> related_id)
-);
-
--- Which version a demo is of (093): the RE2 demo on One → RE2 on One.
-CREATE TABLE IF NOT EXISTS version_links (
-    version_id    INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    of_version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    kind          TEXT NOT NULL,   -- demo_of / tool_of
-    source        TEXT NOT NULL,   -- auto / manual
-    decided_at    TEXT NOT NULL,
-    PRIMARY KEY (version_id, kind),
-    CHECK (version_id <> of_version_id)
 );
 
 -- Editions as a store sells them: a pack of a game and its add-ons, not a

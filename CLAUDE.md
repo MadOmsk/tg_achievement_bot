@@ -579,11 +579,10 @@ What the stores and HLTB say about a game, collected but not shown yet
   A version points at its achievement list (`platform`, `title_id`) once that is
   proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).
-- **Kinds of link** (owner, 2026-10-09, for stage 3): a port is just a version
-  of another platform, however late; a remaster is a version with kind
-  `remaster`; a remake is another game linked `remake_of`. A demo and a tool
-  (a Creation Kit, an editor — owner, 2026-10-10) belong to one version of
-  their game: `version_links` `demo_of` / `tool_of`.
+- **Kinds of link**: see Games below — a remaster, a remake, a compilation, a
+  VR version are games of their own (2026-10-11); a demo and a tool (a
+  Creation Kit, an editor — owner, 2026-10-10) belong to one version of their
+  game (`game_versions.of_version_id`).
 - **Sources**, one module each in `services/stores/`, network only:
   - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
     `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour);
@@ -631,23 +630,47 @@ What the stores and HLTB say about a game, collected but not shown yet
   far its versions spread (097: the latest year, other studios, other
   publishers), shown as «2006–2025», «Epic Games и другие»; companies compare
   by `game_match.company_key` ("CD PROJEKT S.A." is "CD Projekt").
-- **Games** (stage 3, migration 092): `games`, `version_games (version, game,
-  kind, state, source)`, `game_relations` (`remake_of`). After every collection
-  `services/game_link.py` re-links the versions around that list
-  (`services/game_match.py`, no DB access): **a weighted model** (owner,
-  2026-10-10: every rule a weight, nothing certain) — each pair's signs (one
-  achievement list, a store's own group, one HLTB entry, name similarity, a
-  sequel's number, achievements' names shared, studio, years, a demo of it) add
-  their `WEIGHTS` to the log-odds; the probability links at `LINK_P` (0.85) and
-  sends to the **review list** from `REVIEW_P` (0.15; one row per version, on the
-  side less is known about). The weights are to be fitted to the operator's
-  decisions; the viewer's «rules» page shows them. The matcher rewrites only its
-  own (`auto`) rows: a `manual` link stays and a `manual` rejection keeps a
-  version out of that game. **Disputed pairs are the operator's** (owner,
-  2026-10-09; Haiku may advise one day, not decide).
+- **Games** (migrations 092, 099; the model after the review, owner,
+  2026-10-11; decisions in #147). **The operator's decisions are input, a
+  game's versions are output**: a decision is a label on a pair of versions
+  (`match_decisions`: same / edition / demo_of / tool_of / remaster_of /
+  remake_of / contains / vr_of / other, with the pair's signs and the model that
+  saw them — what the weights will be fitted to); which game a version is in
+  (`game_versions`, **one game per version**, its role version / edition /
+  demo / tool and the version a demo or tool is of) and how games relate
+  (`game_relations`) are rebuilt from the labels and the model by
+  `services/game_link.py`, so a decision outlives every rebuild. A game keeps
+  its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
+  first plain version); a list's stand-in that becomes a store product keeps
+  its row and id.
+  - **A remaster, a remake, a compilation, a VR version is a game of its own**,
+    related to the original: `remaster_of` / `remake_of` / `vr_of` point at the
+    **earliest** original (no chains), `contains` from a compilation to each
+    part. Inside a game: the same product across platforms (PS4 and PS5, One and
+    Series released together are one game, even with two lists), an edition
+    sold with the same list, demos and tools. A later product on a newer
+    console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
+    Witcher 3's next-gen products are a remaster, its Steam app the original.
+    Such a game is named by its own release ("Gears of War: Ultimate Edition").
+  - **The model** (`services/game_match.py`, no DB access): every pair that
+    could be one game (a telling word of the name — none in more than
+    `COMMON_WORD` versions —, a store's group or cross-gen set, an HLTB entry,
+    one list) is read from its subject's side (the VR one, the compilation, the
+    later one); each class sums its `WEIGHTS` over the pair's signs and a
+    softmax against "other" gives probabilities (owner, 2026-10-10: every rule a
+    weight, nothing certain). The likeliest at `LINK_P` (0.85) and `CLOSE_CALL`
+    ahead is taken; from `REVIEW_P` (0.15) the pair goes to the **review list**
+    (`match_pairs`, one per pair of games). Versions join a game from the surest
+    pair down, **never across a veto** (a pair under `VETO_P` "same" or a label
+    saying no): A~B and B~C no longer drag A and C together. The operator's
+    labels come first. One linker at a time; a component is written in one
+    transaction. The viewer's «rules» page shows every weight. **Disputed
+    pairs are the operator's** (owner, 2026-10-09; Haiku may advise one day, not
+    decide).
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
-  decide: `scripts/catalog_viewer.py` (bare HTML; games, the review list with
-  its answers, merge / detach / rename, collect, re-link). **No authentication
+  decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
+  review list answered pair by pair, the labels; merge / relate / detach are
+  labels too; rename, collect, re-link). **No authentication
   yet** (#186).
 
 ### Secrets

@@ -1,14 +1,17 @@
-"""Which versions are one game (#147, stage 3): the matcher's decisions on the
-cases the owner named, and the linker keeping a manual decision."""
+"""How versions relate (#147; owner, 2026-10-10/11): the model's answers on
+the cases the owner named and the false friends the review listed, and the
+linker building games from labels and the model."""
 
 from __future__ import annotations
+
+import pytest
 
 from bot.db.repo import Repo
 from bot.services.game_link import GameLinker
 from bot.services.game_match import Candidate, compare, kind_of
 from bot.services.stores import StoreVersion
 
-WITCHER_ACHIEVEMENTS = frozenset(f"achievement {i}" for i in range(50))
+WITCHER = frozenset(f"witcher {i}" for i in range(50))
 
 
 def _c(version_id: int, name: str, **kw: object) -> Candidate:
@@ -22,13 +25,21 @@ def _c(version_id: int, name: str, **kw: object) -> Candidate:
     )
 
 
-def test_the_same_game_on_two_platforms_is_linked() -> None:
+def _list(prefix: str, n: int) -> frozenset[str]:
+    return frozenset(f"{prefix} {i}" for i in range(n))
+
+
+def _linked(a: Candidate, b: Candidate, relation: str) -> bool:
+    v = compare(a, b)
+    return v.state == "linked" and v.relation == relation
+
+
+# ------------------------------------------------------------------ one game
+
+
+def test_the_same_game_on_two_stores_is_one_game() -> None:
     xbox = _c(
-        1,
-        "The Witcher 3: Wild Hunt",
-        year=2015,
-        developer="CD PROJEKT RED",
-        achievements=WITCHER_ACHIEVEMENTS,
+        1, "The Witcher 3: Wild Hunt", year=2015, developer="CD PROJEKT RED", achievements=WITCHER
     )
     steam = _c(
         2,
@@ -37,168 +48,261 @@ def test_the_same_game_on_two_platforms_is_linked() -> None:
         console="steam",
         year=2015,
         developer="CD PROJEKT RED",
-        achievements=WITCHER_ACHIEVEMENTS,
+        achievements=WITCHER,
     )
-    verdict = compare(xbox, steam)
-    assert verdict.state == "linked", verdict.reasons
+    assert _linked(xbox, steam, "same"), compare(xbox, steam).reasons
     assert kind_of(steam) == "edition"
-
-
-def test_a_sequel_is_never_the_same_game() -> None:
-    assert (
-        compare(
-            _c(1, "STAR WARS Battlefront", year=2015), _c(2, "STAR WARS Battlefront II", year=2017)
-        ).state
-        == "apart"
-    )
-    assert compare(_c(1, "Halo 3", year=2007), _c(2, "Halo 4", year=2012)).state == "apart"
-
-
-def test_the_same_name_years_apart_goes_to_review() -> None:
-    old = _c(
-        1, "Star Wars: Battlefront 2 (Classic, 2005)", store="steam", console="steam", year=2005
-    )
-    new = _c(2, "STAR WARS Battlefront II", year=2017)
-    verdict = compare(old, new)
-    assert verdict.state == "review"
-    assert any(r.startswith("years_far") for r in verdict.reasons)
-
-
-def test_the_stores_own_group_links_editions() -> None:
-    a = _c(1, "Forza Horizon 3", store_group="g1")
-    b = _c(2, "Forza Horizon 3 Ultimate Edition", store_group="g1")
-    assert compare(a, b).state == "linked"
-    # …but never across a number.
-    c = _c(3, "Forza Horizon 4", store_group="g1")
-    assert compare(a, c).state == "apart"
-
-
-def test_a_demo_and_a_remaster_are_told_by_their_names() -> None:
-    assert kind_of(_c(1, "RESIDENT EVIL 2 1-Shot Demo")) == "demo"
-    assert kind_of(_c(2, "Call of Duty: Modern Warfare Remastered")) == "remaster"
-    assert kind_of(_c(3, "Resident Evil 2")) == "version"
-
-
-async def _version(repo: Repo, product: str, name: str, year: str, **kw: object) -> int:
-    version = StoreVersion(
-        store=str(kw.pop("store", "xbox")),
-        product_id=product,
-        console=str(kw.pop("console", "one")),
-        name=name,
-        kind="game",
-        developer="CD PROJEKT RED",
-        release_date=f"{year}-05-19",
-    )
-    return await repo.save_version(version, platform=None, title_id=None)
-
-
-async def test_versions_become_one_game_and_a_manual_rejection_stays(repo: Repo) -> None:
-    xbox = await _version(repo, "BR765873CQJD", "The Witcher 3: Wild Hunt", "2015")
-    steam = await _version(
-        repo, "292030", "The Witcher 3: Wild Hunt", "2015", store="steam", console="steam"
-    )
-    linker = GameLinker(repo)
-
-    report = await linker.link_versions([xbox, steam])
-    [(game, members)] = report.games.items()
-    assert sorted(members) == sorted([xbox, steam])
-
-    # The operator says the Steam one is not this game: a re-run keeps it out.
-    await repo.set_link(steam, game, kind="version", state="rejected", source="manual")
-    await linker.link_versions([xbox, steam])
-    assert await repo.linked_game_of(xbox) == game
-    assert await repo.linked_game_of(steam) not in (None, game)
-
-
-async def test_a_manual_link_is_never_moved(repo: Repo) -> None:
-    a = await _version(repo, "A", "Gears of War", "2006")
-    b = await _version(repo, "B", "Gears of War: Ultimate Edition", "2015")
-    linker = GameLinker(repo)
-    report = await linker.link_versions([a, b])
-    # Nine years apart: the operator decides.
-    assert report.review
-    version_id, game_id, _why = report.review[0]
-    await repo.set_link(version_id, game_id, kind="remaster", state="linked", source="manual")
-    await repo.drop_auto_links(version_id, game_id, "linked")
-    await linker.link_versions([a, b])
-    assert await repo.linked_game_of(version_id) == game_id
-
-
-def test_a_demo_is_its_own_games_not_a_namesakes() -> None:
-    re2 = _c(1, "RESIDENT EVIL 2", year=2019)
-    assert compare(re2, _c(2, "RESIDENT EVIL 2 1-Shot Demo", year=2019)).state == "linked"
-    # "Resident Evil" opens "Resident Evil 4 Chainsaw Demo", but 4 is another game.
-    re1 = _c(3, "Resident Evil", year=2015)
-    assert compare(re1, _c(4, "Resident Evil 4 Chainsaw Demo", year=2023)).state != "linked"
-    # Years apart: not this game's beta.
-    gears = _c(5, "Gears of War", year=2006)
-    assert (
-        compare(gears, _c(6, "Gears of War: E-Day Multiplayer Beta", year=2026)).state != "linked"
-    )
 
 
 def test_one_achievement_list_is_one_game() -> None:
     """Smart Delivery and Play Anywhere share one list (owner, 2026-10-09)."""
     one = _c(1, "Forza Horizon 4", console="one", list_key=("xbox_modern", "1"))
     pc = _c(2, "Forza Horizon 4 for Windows 10", console="pc", list_key=("xbox_modern", "1"))
-    assert compare(one, pc).state == "linked"
+    assert _linked(one, pc, "same")
 
 
-def test_a_subtitle_after_the_name_is_another_game() -> None:
-    gears = _c(1, "Gears of War", console="360")
-    assert compare(gears, _c(2, "Gears of War: Judgment", console="360")).state == "apart"
-    # A franchise said before the name is the same game.
-    mw2 = _c(3, "Modern Warfare 2", console="360", year=2009)
-    full = _c(4, "Call of Duty: Modern Warfare 2", store="steam", console="steam", year=2009)
-    assert compare(mw2, full).state != "apart"
+def test_ps4_and_ps5_released_together_are_one_game() -> None:
+    """Owner, 2026-10-11: even with two trophy lists."""
+    ps4 = _c(
+        1,
+        "Marvel's Spider-Man: Miles Morales",
+        store="psn",
+        console="ps4",
+        year=2020,
+        list_key=("psn", "A"),
+        achievements=_list("mm", 40),
+    )
+    ps5 = _c(
+        2,
+        "Marvel's Spider-Man: Miles Morales",
+        store="psn",
+        console="ps5",
+        year=2020,
+        list_key=("psn", "B"),
+        achievements=_list("mm", 40),
+    )
+    assert _linked(ps4, ps5, "same"), compare(ps4, ps5).reasons
 
 
-def test_an_edition_with_a_list_of_its_own_is_a_remaster() -> None:
-    from bot.services.game_link import _kinds
+def test_the_stores_own_group_holds_an_edition_but_not_a_sequel() -> None:
+    a = _c(1, "Forza Horizon 3", store_group="g1", year=2016)
+    b = _c(2, "Forza Horizon 3 Ultimate Edition", store_group="g1", year=2016)
+    assert _linked(a, b, "same")
+    c = _c(3, "Forza Horizon 4", store_group="g1", year=2018)
+    assert compare(a, c).relation == "other"
 
-    shared = frozenset(f"a{i}" for i in range(20))
-    base = _c(1, "Gears of War", year=2006, achievements=shared, list_key=("xbox_360", "1"))
+
+def test_a_cross_gen_set_is_a_strong_sign_of_one_game() -> None:
+    a = _c(1, "Game", console="one", year=2020, cross_gen_set="SET")
+    b = _c(2, "Game: Next", console="series", year=2020, cross_gen_set="SET")
+    assert "cross_gen_set" in compare(a, b).features
+
+
+def test_a_demo_and_a_tool_join_their_game() -> None:
+    re2 = _c(1, "RESIDENT EVIL 2", year=2019)
+    assert _linked(re2, _c(2, "RESIDENT EVIL 2 1-Shot Demo", year=2019), "same")
+    fallout = _c(
+        3, "Fallout 4", store="steam", console="steam", year=2015, developer="Bethesda Game Studios"
+    )
+    kit = _c(
+        4,
+        "Fallout 4: Creation Kit",
+        store="steam",
+        console="steam",
+        year=2022,
+        developer="Bethesda Game Studios",
+    )
+    assert kind_of(kit) == "tool"
+    assert _linked(fallout, kit, "same")
+    assert "tool_of" in compare(fallout, kit).features
+
+
+def test_a_demo_is_its_own_games_not_a_namesakes() -> None:
+    re1 = _c(3, "Resident Evil", year=2015)
+    assert compare(re1, _c(4, "Resident Evil 4 Chainsaw Demo", year=2023)).state != "linked"
+    gears = _c(5, "Gears of War", year=2006)
+    assert (
+        compare(gears, _c(6, "Gears of War: E-Day Multiplayer Beta", year=2026)).relation != "same"
+    )
+
+
+# ------------------------------------------------------------- other games
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        (_c(1, "STAR WARS Battlefront", year=2015), _c(2, "STAR WARS Battlefront II", year=2017)),
+        (_c(1, "Halo 3", year=2007), _c(2, "Halo 4", year=2012)),
+        (_c(1, "Battlefield 1942", year=2002), _c(2, "Battlefield 2042", year=2021)),
+        (
+            _c(1, "Gears of War", console="360", achievements=_list("g", 50)),
+            _c(2, "Gears of War: Judgment", console="360", year=2013, achievements=_list("j", 50)),
+        ),
+        (
+            _c(1, "Mass Effect Legendary Edition", year=2021),
+            _c(2, "Mass Effect: Andromeda Deluxe Edition", store="steam", year=2020),
+        ),
+        (
+            _c(
+                1,
+                "FINAL FANTASY VII REMAKE INTERGRADE",
+                console="series",
+                year=2026,
+                store_group="ff7",
+            ),
+            _c(2, "FINAL FANTASY VII REBIRTH", console="series", year=2026, store_group="ff7"),
+        ),
+    ],
+)
+def test_other_games_are_never_one_game(a: Candidate, b: Candidate) -> None:
+    v = compare(a, b)
+    assert not (v.state == "linked" and v.relation == "same"), v.reasons
+
+
+def test_a_namesake_by_another_studio_is_another_game() -> None:
+    """Battlefront II 2005 (Pandemic) and 2017 (DICE): one name, two games."""
+    old = _c(
+        1,
+        "STAR WARS Battlefront II (Classic, 2005)",
+        store="steam",
+        console="steam",
+        year=2005,
+        developer="Pandemic Studios",
+        achievements=_list("old", 30),
+    )
+    new = _c(
+        2, "STAR WARS Battlefront II", year=2017, developer="DICE", achievements=_list("new", 40)
+    )
+    v = compare(old, new)
+    assert v.relation != "same" and not (v.state == "linked" and v.relation == "remake_of")
+
+
+# --------------------------------------------------------- related games
+
+
+def test_a_remaster_with_a_list_partly_its_originals() -> None:
+    """Gears of War → Ultimate Edition: no "remaster" in the name, 40% shared."""
+    shared = _list("g", 20)
+    gears = _c(
+        1,
+        "Gears of War",
+        console="360",
+        developer="Epic Games",
+        publisher="Microsoft Game Studios",
+        achievements=shared,
+        list_key=("xbox_360", "1"),
+    )
     ue = _c(
         2,
         "Gears of War: Ultimate Edition",
+        console="one",
         year=2015,
-        achievements=frozenset(list(shared)[:8]) | frozenset(f"b{i}" for i in range(12)),
+        developer="The Coalition",
+        publisher="Microsoft Studios",
+        achievements=frozenset(list(shared)[:8]) | _list("ue", 12),
         list_key=("xbox_modern", "2"),
     )
-    assert _kinds([base, ue])[2] == "remaster"
+    v = compare(gears, ue)
+    assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
 
 
-async def test_a_demo_is_linked_to_the_version_on_its_console(repo: Repo) -> None:
-    game_one = await _version(repo, "RE2", "RESIDENT EVIL 2", "2019", console="one")
-    game_series = await _version(repo, "RE2", "RESIDENT EVIL 2", "2019", console="series")
-    demo = await _version(repo, "DEMO", "RESIDENT EVIL 2 1-Shot Demo", "2019", console="series")
-    await GameLinker(repo).link_versions([game_one, game_series, demo])
-    cursor = await repo._conn.execute(
-        "SELECT of_version_id FROM version_links WHERE version_id = ? AND kind = 'demo_of'", (demo,)
+def test_a_later_product_on_a_new_console_with_its_own_list_is_a_remaster() -> None:
+    """Ghost of Tsushima Director's Cut on PS5 (owner, 2026-10-11)."""
+    ps4 = _c(
+        1,
+        "Ghost of Tsushima",
+        store="psn",
+        console="ps4",
+        year=2020,
+        developer="Sucker Punch",
+        list_key=("psn", "A"),
+        achievements=_list("got", 50),
     )
-    assert (await cursor.fetchone())["of_version_id"] == game_series
+    ps5 = _c(
+        2,
+        "Ghost of Tsushima Director's Cut",
+        store="psn",
+        console="ps5",
+        year=2021,
+        developer="Sucker Punch",
+        list_key=("psn", "B"),
+        achievements=_list("got", 50) | _list("iki", 16),
+    )
+    v = compare(ps4, ps5)
+    assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
 
 
-def test_a_remasters_release_word_keeps_others_demos_off() -> None:
-    reloaded = _c(1, "Gears of War: Reloaded", store="steam", console="steam", year=2025)
-    beta = _c(2, "Gears of War: E-Day Multiplayer Beta", console="series", year=2026)
-    assert compare(reloaded, beta).state != "linked"
-    eday = _c(3, "Gears of War: E-Day", store="steam", console="steam", year=2026)
-    assert compare(eday, beta).state == "linked"
+def test_a_remake_by_the_same_studio() -> None:
+    old = _c(
+        1,
+        "Resident Evil 4 (2005)",
+        store="steam",
+        console="steam",
+        year=2005,
+        developer="CAPCOM",
+        publisher="CAPCOM",
+        achievements=_list("re4", 40),
+    )
+    new = _c(
+        2,
+        "Resident Evil 4",
+        store="steam",
+        console="steam",
+        year=2023,
+        developer="CAPCOM",
+        publisher="CAPCOM",
+        achievements=_list("re4r", 40),
+    )
+    v = compare(old, new)
+    assert (v.subject, v.relation) == (2, "remake_of"), v.reasons
+    assert v.state in ("linked", "review")
 
 
-def test_a_subtitled_name_is_the_same_game_only_by_its_achievements() -> None:
-    shared = frozenset(f"a{i}" for i in range(20))
-    gears = _c(1, "Gears of War", console="360", achievements=shared)
-    reloaded = _c(2, "Gears of War: Reloaded", console="series", year=2025, achievements=shared)
-    assert compare(gears, reloaded).state == "linked"
-    judgment = _c(
-        3,
-        "Gears of War: Judgment",
+def test_a_vr_version() -> None:
+    skyrim = _c(
+        1,
+        "The Elder Scrolls V: Skyrim Special Edition",
+        store="steam",
+        console="steam",
+        year=2016,
+        developer="Bethesda Game Studios",
+    )
+    vr = _c(
+        2,
+        "The Elder Scrolls V: Skyrim VR",
+        store="steam",
+        console="steam",
+        year=2018,
+        developer="Bethesda Game Studios",
+    )
+    v = compare(skyrim, vr)
+    assert (v.subject, v.relation) == (2, "vr_of"), v.reasons
+
+
+def test_a_compilation_holds_its_parts() -> None:
+    halo3 = _c(
+        1,
+        "Halo 3",
         console="360",
-        achievements=frozenset(f"j{i}" for i in range(20)),
+        year=2007,
+        developer="Bungie",
+        publisher="Microsoft Game Studios",
+        achievements=_list("h3", 49),
     )
-    assert compare(gears, judgment).state == "apart"
+    mcc = _c(
+        2,
+        "Halo: The Master Chief Collection",
+        year=2014,
+        developer="343 Industries",
+        publisher="Microsoft Game Studios",
+        achievements=_list("h3", 49) | _list("h2", 60) | _list("ce", 40),
+    )
+    v = compare(halo3, mcc)
+    assert (v.subject, v.relation) == (2, "contains"), v.reasons
+
+
+# ------------------------------------------------------------------ helpers
 
 
 def test_an_edition_tail_never_takes_the_games_own_subtitle() -> None:
@@ -207,20 +311,9 @@ def test_an_edition_tail_never_takes_the_games_own_subtitle() -> None:
     assert game_core("Mass Effect: Andromeda Deluxe Edition") == "mass effect andromeda"
     assert game_core("Mass Effect Legendary Edition") == "mass effect"
     assert game_core("Star Wars: Battlefront 2 (Classic, 2005)") == "star wars battlefront 2"
-    legendary = _c(1, "Mass Effect Legendary Edition", year=2021)
-    andromeda = _c(2, "Mass Effect: Andromeda Deluxe Edition", store="steam", year=2020)
-    assert compare(legendary, andromeda).state == "apart"
 
 
-def test_a_stores_group_holding_a_series_does_not_make_one_game() -> None:
-    remake = _c(
-        1, "FINAL FANTASY VII REMAKE INTERGRADE", console="series", year=2026, store_group="ff7"
-    )
-    rebirth = _c(2, "FINAL FANTASY VII REBIRTH", console="series", year=2026, store_group="ff7")
-    assert compare(remake, rebirth).state != "linked"
-
-
-def test_game_facts_take_the_earliest_version():
+def test_game_facts_take_the_earliest_version() -> None:
     from bot.services.game_match import game_facts, version_year
 
     assert version_year("STAR WARS Battlefront II (Classic, 2005)", "2009-07-08") == 2005
@@ -228,30 +321,26 @@ def test_game_facts_take_the_earliest_version():
     facts = game_facts(
         [
             {
-                "name": "The Witcher 3: Wild Hunt — Remastered",
-                "release_date": "2022-12-14",
-                "developer": "CD PROJEKT RED Remaster Team",
-                "publisher": "CD PROJEKT",
-                "kind": "remaster",
-            },
-            {
                 "name": "The Witcher 3: Wild Hunt",
                 "release_date": "2015-05-19",
                 "developer": "CD PROJEKT RED",
                 "publisher": None,
                 "kind": "version",
             },
+            {
+                "name": "The Witcher 3: Wild Hunt GOTY",
+                "release_date": "2016-08-30",
+                "developer": "CD PROJEKT RED Team",
+                "publisher": "CD PROJEKT",
+                "kind": "edition",
+            },
             {"name": "A demo", "release_date": "2014-01-01", "developer": "X", "kind": "demo"},
         ]
     )
-    assert (facts.year, facts.developer, facts.publisher) == (
-        2015,
-        "CD PROJEKT RED",
-        "CD PROJEKT",
-    )
+    assert (facts.year, facts.developer, facts.publisher) == (2015, "CD PROJEKT RED", "CD PROJEKT")
 
 
-def test_game_facts_spread_over_versions():
+def test_game_facts_spread_over_versions() -> None:
     from bot.services.game_match import company_key, game_facts
 
     assert company_key("CD PROJEKT S.A.") == company_key("CD Projekt")
@@ -259,7 +348,6 @@ def test_game_facts_spread_over_versions():
     facts = game_facts(
         [
             {
-                # The 360 list: a stand-in, dated by its HLTB entry.
                 "name": "Gears of War",
                 "release_date": None,
                 "stand_in": 1,
@@ -269,58 +357,19 @@ def test_game_facts_spread_over_versions():
                 "kind": "version",
             },
             {
-                "name": "Gears of War: Reloaded",
-                "release_date": "2025-08-26",
-                "developer": "The Coalition",
-                "publisher": "Xbox Game Studios",
-                "kind": "remaster",
+                "name": "Gears of War for Windows",
+                "release_date": "2007-11-06",
+                "developer": "Epic Games, People Can Fly",
+                "publisher": "Microsoft Studios",
+                "kind": "version",
             },
         ]
     )
-    assert (facts.year, facts.last_year) == (2006, 2025)
-    assert facts.more_developers and facts.more_publishers
-
-
-def test_a_creation_kit_is_its_games_tool():
-    from bot.services.game_match import Candidate, compare, kind_of
-
-    game = Candidate(
-        1, "steam", "377160", "steam", ("Fallout 4",), year=2015, developer="Bethesda Game Studios"
-    )
-    kit = Candidate(
-        2,
-        "steam",
-        "1946160",
-        "steam",
-        ("Fallout 4: Creation Kit",),
-        year=2022,
-        developer="Bethesda Game Studios",
-    )
-    assert kind_of(kit) == "tool"
-    verdict = compare(game, kit)
-    assert verdict.state == "linked"
-    assert any(r.startswith("tool_of") for r in verdict.reasons)
-
-
-async def test_merging_a_game_keeps_a_version_the_other_had_under_review(repo: Repo) -> None:
-    remake = await _version(repo, "RE4R", "Resident Evil 4", "2023")
-    original = await _version(repo, "RE4", "resident evil 4", "2005")
-    new = await repo.create_game("Resident Evil 4", 2023)
-    old = await repo.create_game("resident evil 4", 2005)
-    await repo.set_link(remake, new, kind="version", state="linked", source="auto")
-    await repo.set_link(original, old, kind="version", state="linked", source="auto")
-    await repo.set_link(remake, old, kind="version", state="review", source="auto")
-
-    await repo.merge_games(new, old)
-
-    assert await repo.linked_game_of(remake) == old
-    assert await repo.linked_game_of(original) == old
+    assert (facts.year, facts.last_year) == (2006, 2007)
+    assert facts.more_publishers
 
 
 def test_one_year_for_the_matcher_and_the_facts() -> None:
-    """The matcher read only the store's date (Steam's 2009 for the 2005
-    Battlefront II); both now read `candidate_year`. HLTB's year counts only
-    for a stand-in no store describes."""
     from bot.services.game_match import candidate_year
 
     classic = {"name": "STAR WARS Battlefront II (Classic, 2005)", "release_date": "2009-07-08"}
@@ -329,18 +378,110 @@ def test_one_year_for_the_matcher_and_the_facts() -> None:
     assert candidate_year({"name": "Halo", "stand_in": 1, "hltb_year": 2001}) == 2001
 
 
-def test_four_digit_numbers_tell_games_apart_and_studios_compare_as_companies() -> None:
+def test_studios_compare_as_companies() -> None:
     from bot.services.game_match import _same
 
-    a = Candidate(1, "steam", "1", "steam", ("Battlefield 1942",), year=2002)
-    b = Candidate(2, "steam", "2", "steam", ("Battlefield 2042",), year=2021)
-    assert any(r.startswith("numbers_differ") for r in compare(a, b).reasons)
     assert _same("CD PROJEKT S.A.", "CD Projekt")
     assert _same("BioWare™", "BioWare")
     assert not _same("DICE", "Pandemic Studios")
 
 
-def test_a_cross_gen_set_is_a_strong_sign_of_one_game() -> None:
-    a = Candidate(1, "xbox", "A", "one", ("Game",), year=2020, cross_gen_set="SET")
-    b = Candidate(2, "xbox", "B", "series", ("Game: Next",), year=2020, cross_gen_set="SET")
-    assert any(r.startswith("cross_gen_set") for r in compare(a, b).reasons)
+# ------------------------------------------------------------------- linker
+
+
+async def _version(repo: Repo, product: str, name: str, year: str, **kw: object) -> int:
+    version = StoreVersion(
+        store=str(kw.pop("store", "xbox")),
+        product_id=product,
+        console=str(kw.pop("console", "one")),
+        name=name,
+        kind="game",
+        developer=str(kw.pop("developer", "CD PROJEKT RED")),
+        release_date=f"{year}-05-19",
+    )
+    return await repo.save_version(version, platform=None, title_id=None)
+
+
+async def test_versions_become_one_game_and_a_label_keeps_one_out(repo: Repo) -> None:
+    xbox = await _version(repo, "BR765873CQJD", "The Witcher 3: Wild Hunt", "2015")
+    steam = await _version(
+        repo, "292030", "The Witcher 3: Wild Hunt", "2015", store="steam", console="steam"
+    )
+    linker = GameLinker(repo)
+    report = await linker.link_versions([xbox, steam])
+    [(game, members)] = report.games.items()
+    assert sorted(members) == sorted([xbox, steam])
+
+    # The operator says the Steam one is not this game: every rebuild keeps it out.
+    await repo.save_decision(steam, xbox, "other", features=None, model=None, decided_by="t")
+    await linker.link_versions([xbox, steam])
+    assert await repo.linked_game_of(xbox) == game
+    assert await repo.linked_game_of(steam) not in (None, game)
+    await linker.link_all()
+    assert await repo.linked_game_of(steam) != await repo.linked_game_of(xbox)
+
+
+async def test_a_label_makes_a_relation_and_survives_rebuilds(repo: Repo) -> None:
+    old = await _version(repo, "RE4", "resident evil 4", "2005", developer="Capcom")
+    new = await _version(repo, "RE4R", "Resident Evil 4", "2023", developer="Capcom")
+    linker = GameLinker(repo)
+    await linker.link_versions([old, new])
+    await repo.save_decision(new, old, "remake_of", features=None, model=None, decided_by="t")
+    await linker.link_versions([old, new])
+    g_old, g_new = await repo.linked_game_of(old), await repo.linked_game_of(new)
+    assert g_old != g_new
+    cur = await repo._conn.execute("SELECT game_id, related_id, kind, source FROM game_relations")
+    assert [tuple(r) for r in await cur.fetchall()] == [(g_new, g_old, "remake_of", "manual")]
+    await linker.link_all()
+    assert (await repo.linked_game_of(old), await repo.linked_game_of(new)) == (g_old, g_new)
+
+
+async def test_chains_do_not_drag_other_games_in(repo: Repo) -> None:
+    """A~B and B~C used to put A and C in one game even when A and C are
+    sure to differ; a veto now keeps them apart."""
+    a = await _version(repo, "A", "Gears of War", "2006")
+    b = await _version(repo, "B", "Gears of War", "2006", store="steam", console="steam")
+    c = await _version(repo, "C", "Gears of War 2", "2008")
+    await repo.save_decision(b, c, "same", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([a, b, c])
+    # b joins c by the label; a is sure to differ from c, so it stays apart.
+    assert await repo.linked_game_of(b) == await repo.linked_game_of(c)
+    assert await repo.linked_game_of(a) != await repo.linked_game_of(c)
+
+
+async def test_a_demo_is_of_the_version_on_its_console(repo: Repo) -> None:
+    game_one = await _version(repo, "RE2", "RESIDENT EVIL 2", "2019", console="one")
+    game_series = await _version(repo, "RE2", "RESIDENT EVIL 2", "2019", console="series")
+    demo = await _version(repo, "DEMO", "RESIDENT EVIL 2 1-Shot Demo", "2019", console="series")
+    await GameLinker(repo).link_versions([game_one, game_series, demo])
+    cur = await repo._conn.execute(
+        "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (demo,)
+    )
+    assert tuple(await cur.fetchone()) == ("demo", game_series)
+
+
+async def test_a_game_keeps_its_id_through_a_rebuild(repo: Repo) -> None:
+    a = await _version(repo, "A", "Cyberpunk 2077", "2020")
+    b = await _version(repo, "B", "Cyberpunk 2077", "2020", store="steam", console="steam")
+    linker = GameLinker(repo)
+    await linker.link_versions([a, b])
+    game = await repo.linked_game_of(a)
+    await repo.rename_game(game, "Киберпанк", None, "manual")
+    await linker.link_all()
+    await linker.link_versions([b])
+    assert await repo.linked_game_of(a) == await repo.linked_game_of(b) == game
+    cur = await repo._conn.execute("SELECT name FROM games WHERE game_id = ?", (game,))
+    assert (await cur.fetchone())[0] == "Киберпанк"
+
+
+async def test_a_stand_in_becomes_its_product_and_keeps_its_labels(repo: Repo) -> None:
+    stand_in = StoreVersion(
+        store="xbox", product_id="123", console="one", name="Game", stand_in=True
+    )
+    sid = await repo.save_version(stand_in, platform="xbox_modern", title_id="123")
+    other = await _version(repo, "OTHER", "Other Game", "2015")
+    await repo.save_decision(sid, other, "other", features=None, model=None, decided_by="t")
+    product = StoreVersion(store="xbox", product_id="BIGID", console="one", name="Game")
+    pid = await repo.save_version(product, platform="xbox_modern", title_id="123")
+    assert pid == sid
+    assert await repo.decisions_among([sid])

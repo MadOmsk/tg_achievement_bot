@@ -1,13 +1,15 @@
-"""Which versions are one game (#147) — a weighted model, no database access.
+"""How two versions relate (#147) — a weighted model, no database access.
 
-Every pair of versions shows signs (`features`): one achievement list, one
-store group or two, one HLTB entry, how alike the cut names are, a sequel's
-number, how many achievements' names they share, the studio, the years, a
-demo of the game. Each adds its weight (`WEIGHTS`) to the log-odds that the
-two are one game; the logistic function makes that a probability. Linked at
-`LINK_P`, the operator's to decide from `REVIEW_P`, apart below. **Nothing is
-certain** (owner, 2026-10-10): even a shared achievement list is only a very
-large weight, and the weights are to be fitted to the operator's decisions.
+Every pair of versions shows signs (`features`), read from its subject's side
+(the later release, the compilation, the VR one): one achievement list, an
+Xbox cross-gen set, a store's group, one HLTB entry, how alike the cut names
+are, a sequel's number, a remaster's or a remake's word, how many of the
+achievements' names they share, the studio, the years. Each class — one game,
+or the subject a remaster, a remake, a compilation or the VR version of the
+other (owner, 2026-10-11) — adds up its weights (`WEIGHTS`), and a softmax
+against "other" makes probabilities. **Nothing is certain** (owner,
+2026-10-10): the weights are starting values, to be fitted to the operator's
+decisions.
 """
 
 from __future__ import annotations
@@ -82,160 +84,350 @@ class Candidate:
 
 @dataclass(slots=True)
 class Verdict:
+    """What the model says about one pair: which is the subject (the later
+    release, the compilation, the VR one), the most likely relation, every
+    class's probability, and the signs that decided it."""
+
+    subject: int  # version id
+    other: int
+    relation: str  # same / remaster_of / remake_of / contains / vr_of / other
+    p: float  # the probability of `relation`
+    probs: dict[str, float]
     state: str  # linked / review / apart
-    score: float
+    features: dict[str, float] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
-    # A review's guess at how the later version belongs, when its own list says
-    # more than its name: a list of its own is a remaster, not an edition.
-    kind: str | None = None
+
+    @property
+    def p_same(self) -> float:
+        return self.probs.get("same", 0.0)
 
 
 def kind_of(candidate: Candidate) -> str:
-    """How a version belongs to its game, from the store's own kind first and
-    the name second."""
+    """A version's role inside its game, from the store's own kind first and
+    the name second: a demo, a tool, an edition, or the game itself. (A
+    remaster is no role: it is a game of its own, 2026-10-11.)"""
     if any(_TOOL.search(n) for n in candidate.names):
         return "tool"
     if (candidate.kind or "") == "demo" or any(_DEMO.search(n) for n in candidate.names):
         return "demo"
-    if any(_REMASTER.search(n) for n in candidate.names):
-        return "remaster"
     if any(_EDITION.search(n) for n in candidate.names):
         return "edition"
     return "version"
 
 
-# What each sign adds to the log-odds that two versions are one game (#147;
-# owner, 2026-10-10: every rule is a weight, nothing is certain). The sum goes
-# through the logistic function; the weights are meant to be fitted to the
-# operator's own decisions once there are enough of them.
-WEIGHTS: dict[str, float] = {
-    "bias": -3.0,
-    "one_list": 12.0,  # the same achievement list (Smart Delivery, Play Anywhere)
-    "cross_gen_set": 6.0,  # Xbox's own "this is one game on One and Series"
-    "same_group": 5.0,  # one store filed them under one game of its own, names alike
-    # …under one group, names not alike: a store's group can hold a series
-    # (Microsoft files FF7 Remake Intergrade and Rebirth together).
-    "same_group_other_name": 0.5,
-    "groups_differ": -2.0,  # one store filed them under two
-    "same_hltb": 5.0,  # one HLTB entry
-    "steam_parent": 5.0,  # Steam names one the other's game
-    "name": 10.0,  # × (name similarity − 0.8)
-    "full_name": 4.4,  # the very same full name, released within a few years
-    "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
-    "subtitle": -1.5,  # one name opens the other, which goes on: mostly another game
-    "numbers_differ": -9.0,  # Halo and Halo 2
-    "achievements_same": 7.0,  # ≥ 60% of the achievements' names shared
-    "achievements_partly": 3.5,  # 30–60%: the game made again
-    "achievements_other": -1.5,  # ≤ 15%: two lists of their own
-    "developer": 0.7,
-    "publisher": 0.3,
-    "years_near": 3.5,  # released within a year
-    "years_between": -0.5,  # × each year past the first, under five
-    "years_far": 0.0,  # five or more: a port, a remaster or a remake — undecided
-    "year_unknown": 0.0,  # nothing either way
-    "demo_of": 7.0,  # a demo the game's name opens, released within a year
-    "tool_of": 7.0,  # a tool the game's name opens (a Creation Kit), whenever made
+# The relations a pair of versions can have (#147; owner, 2026-10-11): one
+# game, or two games of which the first (the subject) is a remaster, a remake,
+# a compilation or the VR version of the second — or nothing ("other").
+CLASSES = ("same", "remaster_of", "remake_of", "contains", "vr_of")
+RELATIONS = CLASSES[1:]
+
+# What each sign adds to each class's log-odds against "other" (whose log-odds
+# is 0); a softmax makes them probabilities. Every rule is a weight, nothing is
+# certain (owner, 2026-10-10); the weights are starting values, to be fitted to
+# the operator's decisions (`match_decisions` keeps each pair's signs).
+WEIGHTS: dict[str, dict[str, float]] = {
+    "same": {
+        "bias": -3.0,
+        "one_list": 12.0,  # the same achievement list (Smart Delivery, Play Anywhere)
+        "cross_gen_set": 6.0,  # Xbox: one game on One and Series
+        "cross_gen_pair": 4.0,  # PS4/PS5, One/Series released together: one game
+        "later_list_same_family": -4.0,  # a list of its own on a newer console, later
+        "same_group": 3.0,  # one store filed them under one game, names alike
+        "same_group_other_name": 0.5,  # a store's group can hold a series
+        "groups_differ": -2.0,
+        "steam_parent": 6.0,  # Steam names one the other's game (a demo, a tool)
+        "same_hltb": 2.5,  # one HLTB entry — found by name, so a weak sign
+        "name": 10.0,  # × (name similarity − 0.8)
+        "full_name": 4.4,  # the very same full name, a few years apart at most
+        "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
+        "subtitle": -1.5,  # one name opens the other, which goes on
+        "numbers_differ": -9.0,  # Halo and Halo 2
+        "remaster_word": -1.0,
+        "remake_word": -2.0,
+        "edition_word_near": 1.5,  # GOTY / Complete, close in years
+        "compilation_word": -1.0,
+        "vr_word": -4.0,
+        "list_subset": -2.0,
+        "overlap_high": 5.0,  # ≥ 60% of the achievements' names shared
+        "overlap_partial": 1.0,
+        "overlap_low": -2.0,
+        "years_near": 3.5,
+        "years_gap": -0.4,  # × each year past the first (at most 9)
+        "developer_same": 0.7,
+        "developer_differs": -1.0,
+        "publisher_same": 0.3,
+        "demo_of": 7.0,
+        "tool_of": 7.0,
+    },
+    "remaster_of": {
+        "bias": -5.0,
+        "one_list": -6.0,
+        "cross_gen_set": -2.0,
+        "cross_gen_pair": -1.0,
+        "later_list_same_family": 3.0,  # Ghost of Tsushima DC on PS5 (owner, 2026-10-11)
+        "same_group": 1.0,
+        "steam_parent": -2.0,
+        "same_hltb": 1.5,
+        "name": 8.0,
+        "full_name": 1.0,
+        "franchise": 1.0,
+        "subtitle": -1.0,
+        "numbers_differ": -9.0,
+        "remaster_word": 3.0,
+        "remake_word": 0.5,
+        "edition_word_near": -0.5,
+        "vr_word": -4.0,
+        "overlap_high": 4.0,
+        "overlap_partial": 3.5,  # Gears → Ultimate Edition shares 43%
+        "overlap_low": -1.0,
+        "years_near": -2.0,
+        "years_gap": 0.15,
+        "developer_same": 0.2,
+        "developer_differs": -0.5,
+        "publisher_same": 0.8,
+        "demo_of": -5.0,
+        "tool_of": -5.0,
+    },
+    "remake_of": {
+        "bias": -6.0,
+        "one_list": -6.0,
+        "cross_gen_set": -2.0,
+        "cross_gen_pair": -2.0,
+        "later_list_same_family": 1.0,
+        "groups_differ": 0.5,
+        "steam_parent": -2.0,
+        "same_hltb": -1.0,
+        "name": 8.0,
+        "full_name": 2.0,
+        "subtitle": 0.5,
+        "numbers_differ": -6.0,
+        "remaster_word": -1.0,
+        "remake_word": 4.0,
+        "edition_word_near": -1.0,
+        "compilation_word": -1.0,
+        "vr_word": -4.0,
+        "list_subset": -1.0,
+        "overlap_high": -1.0,
+        "overlap_partial": 1.5,
+        "overlap_low": 1.0,
+        "years_near": -4.0,
+        "years_gap": 0.3,
+        # The same studio remaking its game (RE4) against another studio's
+        # game of the same name (Battlefront II, NFS: Most Wanted).
+        "developer_same": 1.0,
+        "developer_differs": -1.5,
+        "publisher_same": 1.2,
+        "demo_of": -5.0,
+        "tool_of": -5.0,
+    },
+    "contains": {
+        "bias": -6.0,
+        "one_list": -6.0,
+        "cross_gen_set": -2.0,
+        "cross_gen_pair": -2.0,
+        "steam_parent": -2.0,
+        "same_hltb": -1.0,
+        "franchise": 1.0,
+        "compilation_word": 3.0,
+        "list_subset": 4.0,  # the part's list sits inside the compilation's
+        "overlap_high": -1.0,
+        "overlap_partial": 2.0,
+        "overlap_low": -1.0,
+        "years_gap": 0.1,
+        "developer_same": 0.5,
+        "publisher_same": 1.0,
+        "demo_of": -5.0,
+        "tool_of": -5.0,
+    },
+    "vr_of": {  # owner, 2026-10-11: a VR version is its own relation
+        "bias": -6.0,
+        "one_list": -6.0,
+        "vr_word": 8.0,
+        "name": 8.0,
+        "numbers_differ": -9.0,
+        "overlap_high": 1.0,
+        "overlap_partial": 1.0,
+        "developer_same": 0.5,
+        "publisher_same": 0.5,
+        "demo_of": -5.0,
+        "tool_of": -5.0,
+    },
 }
-LINK_P = 0.85  # at or above: one game
+MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
+LINK_P = 0.85  # at or above: linked (one game, or the relation)
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
+CLOSE_CALL = 0.2  # two classes this close: the operator decides
+VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
+
+_REMAKE = re.compile(r"\b(remake|reimagined|reignited|n sane|rehydrated|part i)\b", re.I)
+_COMPILATION = re.compile(r"\b(collection|trilogy|anthology|legendary edition)\b|\s[+&]\s", re.I)
+_VR = re.compile(r"\bvr\b", re.I)
+_FAMILIES = {
+    "360": "xbox",
+    "one": "xbox",
+    "series": "xbox",
+    "pc": "xbox",
+    "ps3": "psn",
+    "ps4": "psn",
+    "ps5": "psn",
+    "vita": "psn",
+    "steam": "steam",
+}
+_GENERATION = {"360": 1, "ps3": 1, "vita": 1, "one": 2, "ps4": 2, "series": 3, "ps5": 3}
+_CROSS_GEN = ({"ps4", "ps5"}, {"one", "series"})
+
+
+def subject_of(a: Candidate, b: Candidate) -> tuple[Candidate, Candidate]:
+    """(subject, other): the VR one, else the compilation, else the later one,
+    else the one with the larger list — the side a relation points from."""
+    for test in (
+        lambda c: any(_VR.search(n) for n in c.names),
+        lambda c: any(_COMPILATION.search(n) for n in c.names),
+    ):
+        if test(a) != test(b):
+            return (a, b) if test(a) else (b, a)
+    if era(a) != era(b):
+        return (a, b) if era(a) > era(b) else (b, a)
+    return (a, b) if len(a.achievements) >= len(b.achievements) else (b, a)
 
 
 def features(a: Candidate, b: Candidate) -> dict[str, float]:
-    """The signs one pair of versions shows, each 0..1 (or a count of years)."""
+    """The signs one pair shows, read from the subject's side (see
+    `subject_of`): each 0..1, the name a similarity, the years a count."""
+    s, o = subject_of(a, b)
     f: dict[str, float] = {"bias": 1.0}
-    if a.list_key and a.list_key == b.list_key:
+    if s.list_key and s.list_key == o.list_key:
         f["one_list"] = 1.0
-    if a.cross_gen_set and a.store == b.store and a.cross_gen_set == b.cross_gen_set:
+    if s.cross_gen_set and s.store == o.store and s.cross_gen_set == o.cross_gen_set:
         f["cross_gen_set"] = 1.0
-    same_group = bool(a.store_group and a.store == b.store and a.store_group == b.store_group)
-    if same_group:
-        f["same_group"] = 1.0
-    elif _groups_differ(a, b):
-        f["groups_differ"] = 1.0
-    if a.hltb_ids & b.hltb_ids:
+    gap = abs(s.year - o.year) if s.year and o.year else None
+    # Released together (the same year): one game even with two lists; a
+    # year later on the newer console it is a remaster (owner, 2026-10-11).
+    if {s.console, o.console} in _CROSS_GEN and gap == 0:
+        f["cross_gen_pair"] = 1.0
+    if (
+        s.list_key
+        and o.list_key
+        and s.list_key != o.list_key
+        and _FAMILIES.get(s.console) == _FAMILIES.get(o.console)
+        and _GENERATION.get(s.console, 0) > _GENERATION.get(o.console, 0)
+        and (gap is None or gap >= NEAR_YEARS)
+        and "cross_gen_pair" not in f
+    ):
+        f["later_list_same_family"] = 1.0
+    same_group = bool(s.store_group and s.store == o.store and s.store_group == o.store_group)
+    if s.hltb_ids & o.hltb_ids:
         f["same_hltb"] = 1.0
-    if a.store == b.store == "steam" and (
-        a.store_group == b.product_id or b.store_group == a.product_id
+    if s.store == o.store == "steam" and (
+        s.store_group == o.product_id or o.store_group == s.product_id
     ):
         f["steam_parent"] = 1.0
 
-    name = max((similarity(x, y) for x in a.cores for y in b.cores), default=0.0)
-    if any(x == y for x in a.fulls for y in b.fulls):
+    name = max((similarity(x, y) for x in s.cores for y in o.cores), default=0.0)
+    if any(x == y for x in s.fulls for y in o.fulls):
         name = 1.0
-    elif name < CONTAINED_NAME and _contained(a, b):
+        if gap is None or gap < FAR_YEARS:
+            f["full_name"] = 1.0
+    elif name < CONTAINED_NAME and _contained(s, o):
         name = CONTAINED_NAME
         f["franchise"] = 1.0
     f["name"] = name - NAME_FLOOR
-    if same_group and name < NAME_FLOOR:
-        del f["same_group"]
-        f["same_group_other_name"] = 1.0
-
-    if "franchise" not in f and name < 1.0 and _subtitled(a, b):
-        # "Mass Effect" → "Mass Effect: Andromeda": unless the achievements
-        # say otherwise (Gears of War: Reloaded), another game.
+    if same_group:
+        f["same_group" if name >= NAME_FLOOR else "same_group_other_name"] = 1.0
+    elif _groups_differ(s, o):
+        f["groups_differ"] = 1.0
+    if "franchise" not in f and name < 1.0 and _subtitled(s, o):
         f["subtitle"] = 1.0
-    demo = _demo_pair(a, b)
-    if demo:
+
+    if _demo_pair(s, o):
         f["demo_of"] = 1.0
         f.pop("subtitle", None)
-    elif _tool_pair(a, b):
+    elif _tool_pair(s, o):
         f["tool_of"] = 1.0
         f.pop("subtitle", None)
-    elif name < 1.0 and _numbers(a) != _numbers(b):
-        # A demo's own numbers ("1-Shot") are not a sequel's.
+    elif name < 1.0 and _numbers(s) != _numbers(o):
         f["numbers_differ"] = 1.0
 
-    overlap = _overlap(a.achievements, b.achievements)
-    if overlap is not None:
-        if overlap >= ACHIEVEMENTS_SAME:
-            f["achievements_same"] = 1.0
+    def says(pattern: re.Pattern[str], c: Candidate) -> bool:
+        return any(pattern.search(n) for n in c.names)
+
+    if says(_REMASTER, s) and not says(_REMASTER, o):
+        f["remaster_word"] = 1.0
+    if says(_REMAKE, s) and not says(_REMAKE, o):
+        f["remake_word"] = 1.0
+    if says(_EDITION, s) and gap is not None and gap <= NEAR_YEARS:
+        f["edition_word_near"] = 1.0
+    if says(_COMPILATION, s) and not says(_COMPILATION, o):
+        f["compilation_word"] = 1.0
+    if says(_VR, s) and not says(_VR, o):
+        f["vr_word"] = 1.0
+
+    if len(s.achievements) >= ACHIEVEMENTS_MIN and len(o.achievements) >= ACHIEVEMENTS_MIN:
+        shared = len(s.achievements & o.achievements)
+        if len(s.achievements) >= 1.8 * len(o.achievements) and shared >= 0.5 * len(o.achievements):
+            f["list_subset"] = 1.0
+        overlap = shared / min(len(s.achievements), len(o.achievements))
+        if overlap >= ACHIEVEMENTS_SAME and "list_subset" not in f:
+            f["overlap_high"] = 1.0
         elif overlap >= ACHIEVEMENTS_REMASTER:
-            f["achievements_partly"] = 1.0
+            f["overlap_partial"] = 1.0
         elif overlap <= ACHIEVEMENTS_OTHER:
-            f["achievements_other"] = 1.0
-    if _same(a.developer, b.developer):
-        f["developer"] = 1.0
-    if _same(a.publisher, b.publisher):
-        f["publisher"] = 1.0
-    if a.year and b.year:
-        gap = abs(a.year - b.year)
-        if gap <= NEAR_YEARS:
-            f["years_near"] = 1.0
-        elif gap < FAR_YEARS:
-            f["years_between"] = float(gap - NEAR_YEARS)
-        else:
-            f["years_far"] = 1.0
-        if gap < FAR_YEARS and any(x == y for x in a.fulls for y in b.fulls):
-            # The very same name a few years apart: a store's own date is not
-            # always the release (Microsoft's "Remastered" is dated 2026).
-            f["full_name"] = 1.0
-    else:
+            f["overlap_low"] = 1.0
+
+    if s.developer and o.developer:
+        f["developer_same" if _same(s.developer, o.developer) else "developer_differs"] = 1.0
+    if _same(s.publisher, o.publisher):
+        f["publisher_same"] = 1.0
+    if gap is None:
         f["year_unknown"] = 1.0
+    elif gap <= NEAR_YEARS:
+        f["years_near"] = 1.0
+    else:
+        f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
+    if "demo_of" in f or "tool_of" in f:
+        # Its game's name opens it (that is what made it one): the rest of
+        # its name says nothing more, nor, for a tool, its years.
+        f["name"] = 0.0
+        if "tool_of" in f:
+            f.pop("years_gap", None)
     return f
 
 
-def probability(f: dict[str, float], weights: dict[str, float] | None = None) -> float:
+def probabilities(
+    f: dict[str, float], weights: dict[str, dict[str, float]] | None = None
+) -> dict[str, float]:
+    """Each class's probability (and "other"'s): a softmax over the log-odds."""
     w = weights or WEIGHTS
-    logit = sum(w.get(k, 0.0) * v for k, v in f.items())
-    return 1.0 / (1.0 + math.exp(-max(-40.0, min(40.0, logit))))
+    logits = {c: sum(w[c].get(k, 0.0) * v for k, v in f.items()) for c in CLASSES}
+    logits["other"] = 0.0
+    top = max(logits.values())
+    exp = {c: math.exp(max(-40.0, x - top)) for c, x in logits.items()}
+    total = sum(exp.values())
+    return {c: v / total for c, v in exp.items()}
 
 
 def compare(a: Candidate, b: Candidate) -> Verdict:
-    """How likely two versions are one game, and what that makes them."""
+    """How two versions relate, and how sure the model is."""
+    s, o = subject_of(a, b)
     f = features(a, b)
-    p = probability(f)
-    reasons = [f"p {p:.2f}"] + [
-        f"{k} {WEIGHTS.get(k, 0.0) * v:+.1f}" for k, v in f.items() if k != "bias"
+    probs = probabilities(f)
+    ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
+    (relation, p), (_second, p2) = ranked[0], ranked[1]
+    best_link = max(((c, probs[c]) for c in CLASSES), key=lambda kv: kv[1])
+    if relation != "other" and p >= LINK_P and p - p2 >= CLOSE_CALL:
+        state = "linked"
+    elif best_link[1] >= REVIEW_P:
+        state = "review"
+        relation, p = best_link
+    else:
+        state = "apart"
+    w = WEIGHTS.get(relation, {})
+    reasons = [f"{relation} {p:.2f}"] + [
+        f"{k} {w.get(k, 0.0) * v:+.1f}"
+        for k, v in sorted(f.items(), key=lambda kv: -abs(w.get(kv[0], 0.0) * kv[1]))
+        if k != "bias" and w.get(k, 0.0)
     ]
-    # How the later one belongs when its list says more than its name: a list
-    # partly shared, or one of its own years later, is the game made again.
-    own_list = "achievements_partly" in f or ("achievements_other" in f and "years_near" not in f)
-    kind = "remaster" if own_list and not {"demo_of", "tool_of"} & f.keys() else None
-    if p >= LINK_P:
-        return Verdict("linked", p, reasons, kind=kind)
-    if p >= REVIEW_P:
-        return Verdict("review", p, reasons, kind=kind)
-    return Verdict("apart", p, reasons)
+    return Verdict(s.version_id, o.version_id, relation, p, probs, state, f, reasons)
 
 
 def _demo_pair(a: Candidate, b: Candidate) -> bool:
@@ -457,7 +649,29 @@ def game_name(members: list[Candidate]) -> str:
     )
     plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]
-    return core(first.names[0]) if first.names else first.product_id
+    if not first.names:
+        return first.product_id
+    if any(_COMPILATION.search(n) for n in first.names):
+        # A compilation's own words are its name ("Mass Effect Legendary
+        # Edition" is not "Mass Effect").
+        return release_name(first.names[0])
+    return core(first.names[0])
+
+
+_PLATFORM_TAIL = re.compile(
+    r"[\s:\-–—]*\b(?:for\s+)?(?:windows(?:\s*10|\s*11)?|pc"
+    r"|xbox(?:\s+one|\s+series(?:\s+x\s*\|?\s*s)?)?|ps[345]|playstation\s*[345]?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def release_name(name: str) -> str:
+    """A version's name as the release it names, edition words kept, only
+    trademarks, a qualifying parenthesis and a platform tail cut: what a
+    remaster or a compilation is called ("Gears of War: Ultimate Edition")."""
+    text = re.sub(r"[™®©℠]", "", name)
+    text = _PARENTHESIS.sub("", text).strip() or text
+    return _PLATFORM_TAIL.sub("", text).strip() or text
 
 
 # Words that name a release of a game, not the game: dropped before names are

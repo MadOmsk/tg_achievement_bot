@@ -240,7 +240,9 @@ def _search_form(action: str, q: str) -> str:
 
 _HOME_LINKS = {
     "games": "/games",
-    "version_games": "/review",
+    "game_versions": "/games",
+    "match_pairs": "/review",
+    "match_decisions": "/decisions",
     "titles": "/titles",
     "versions": "/versions",
     "version_store_ids": "/versions",
@@ -258,7 +260,9 @@ async def home(request: web.Request) -> web.Response:
             (table, conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             for table in (
                 "games",
-                "version_games",
+                "game_versions",
+                "match_pairs",
+                "match_decisions",
                 "titles",
                 "versions",
                 "version_store_ids",
@@ -404,7 +408,8 @@ async def version(request: web.Request) -> web.Response:
             else []
         )
         demo_of = conn.execute(
-            "SELECT of_version_id FROM version_links WHERE version_id = ? AND kind = 'demo_of'",
+            "SELECT of_version_id, role FROM game_versions WHERE version_id = ?"
+            " AND of_version_id IS NOT NULL",
             (version_id,),
         ).fetchone()
         pictures = conn.execute(
@@ -420,10 +425,16 @@ async def version(request: web.Request) -> web.Response:
             (version_id,),
         ).fetchone()
         games = conn.execute(
-            "SELECT vg.game_id, g.name, vg.kind, vg.state, vg.source, vg.score, vg.reasons"
-            " FROM version_games vg JOIN games g ON g.game_id = vg.game_id"
-            " WHERE vg.version_id = ? ORDER BY vg.state, vg.game_id",
+            "SELECT gv.game_id, g.name, gv.role, gv.p FROM game_versions gv"
+            " JOIN games g ON g.game_id = gv.game_id WHERE gv.version_id = ?",
             (version_id,),
+        ).fetchall()
+        labels = conn.execute(
+            "SELECT d.version_id, d.relation, d.other_id, v.name AS other, d.decided_at"
+            " FROM match_decisions d JOIN versions v ON v.version_id ="
+            "  CASE WHEN d.version_id = ? THEN d.other_id ELSE d.version_id END"
+            " WHERE d.version_id = ? OR d.other_id = ?",
+            (version_id, version_id, version_id),
         ).fetchall()
         payloads = (
             conn.execute(
@@ -472,7 +483,8 @@ async def version(request: web.Request) -> web.Response:
                 else ""
             )
             + (
-                f' · demo of <a href="/version/{demo_of["of_version_id"]}">version'
+                f" · {escape(demo_of['role'])} of"
+                f' <a href="/version/{demo_of["of_version_id"]}">version'
                 f" {demo_of['of_version_id']}</a>"
                 if demo_of
                 else ""
@@ -482,10 +494,15 @@ async def version(request: web.Request) -> web.Response:
             else ""
         )
         + _record(row, {"title_id": _title_href})
-        + "<h2>Games</h2>"
+        + "<h2>Game</h2>"
         + _table(games, {"game_id": _game_href, "name": _game_href})
-        + "".join(
-            _decisions(version_id, g["game_id"], here) for g in games if g["state"] == "review"
+        + "<h2>The operator's labels</h2>"
+        + _table(
+            labels,
+            {
+                "version_id": lambda r: f"/version/{r['version_id']}",
+                "other_id": lambda r: f"/version/{r['other_id']}",
+            },
         )
         + "<h2>Store ids</h2>"
         + _table(ids)
@@ -680,57 +697,69 @@ _VERSION_LINKS = {
 }
 
 
+# The operator's answers about a pair: the subject (the first) and the other.
+# A relation reads "subject … other"; "⇄" asks the other way round.
 _DECISIONS = (
-    ("version", "same game: a version"),
-    ("remaster", "remaster"),
-    ("edition", "edition"),
-    ("demo", "demo"),
-    ("tool", "a tool for it"),
-    ("compilation", "part of a compilation"),
-    ("remake", "remake: another game"),
-    ("different", "a different game"),
+    ("same", "same game"),
+    ("edition", "same game: an edition"),
+    ("demo_of", "a demo of it"),
+    ("tool_of", "a tool for it"),
+    ("remaster_of", "a remaster of it"),
+    ("remaster_of:flip", "⇄ it is a remaster of this"),
+    ("remake_of", "a remake of it"),
+    ("remake_of:flip", "⇄ it is a remake of this"),
+    ("contains", "a compilation holding it"),
+    ("contains:flip", "⇄ part of it (a compilation)"),
+    ("vr_of", "the VR version of it"),
+    ("vr_of:flip", "⇄ it is the VR version of this"),
+    ("other", "a different game"),
 )
 
 
-def _decisions(version_id: int, game_id: int, back: str) -> str:
-    """The operator's answers to one review row."""
+def _decision_picker(version_id: int, other_id: int, back: str) -> str:
+    """One answer about a pair: a picker and a button."""
+    options = "".join(
+        f'<option value="{key}">{escape(label)}</option>' for key, label in _DECISIONS
+    )
     return (
-        f"<p>version {version_id} → game {game_id}: "
-        + "".join(
-            _button(
-                "/decide",
-                label,
-                {"version_id": version_id, "game_id": game_id, "decision": key, "back": back},
-            )
-            for key, label in _DECISIONS
-        )
-        + "</p>"
+        '<form method=post action="/decide" style="margin:0;white-space:nowrap">'
+        f'<input type=hidden name=version_id value="{version_id}">'
+        f'<input type=hidden name=other_id value="{other_id}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        "<select name=decision required><option value='' selected disabled>answer…</option>"
+        f"{options}</select> <button>ok</button></form>"
     )
 
 
 async def rules(request: web.Request) -> web.Response:
-    """The matcher's signs and the weight of each, as it decides now."""
+    """The model's signs and each class's weight for each, as it decides now."""
     from bot.services import game_match as m
 
+    signs = list(dict.fromkeys(k for c in m.CLASSES for k in m.WEIGHTS[c]))
+    head = "".join(f"<th>{escape(c)}</th>" for c in m.CLASSES)
     rows = "".join(
-        f"<tr><td>{escape(k)}</td><td align=right>{w:+.1f}</td></tr>" for k, w in m.WEIGHTS.items()
+        f"<tr><td>{escape(k)}</td>"
+        + "".join(
+            f"<td align=right>{m.WEIGHTS[c][k]:+.1f}</td>" if k in m.WEIGHTS[c] else "<td></td>"
+            for c in m.CLASSES
+        )
+        + "</tr>"
+        for k in signs
     )
     body = (
-        "<p>Each pair of versions sharing a telling word is scored: every sign it shows adds"
-        " its weight to the log-odds that they are one game, and the logistic function turns"
-        f" the sum into a probability. At {m.LINK_P:.0%} or more they are linked; from"
-        f" {m.REVIEW_P:.0%} they go to the review list (one row per version, on the side less"
-        " is known about); below that they are apart. Nothing is certain: even one shared"
-        " achievement list is only a very large weight. Manual decisions are never"
-        " rewritten, and are what the weights will be fitted to.</p>"
-        "<p>name = name similarity − 0.8 (so 1.0 adds +2.0, 0.7 adds −1.0); years_between"
-        " counts the years past the first, under five; achievements are compared when both"
-        f" lists have {m.ACHIEVEMENTS_MIN}+ names.</p>"
-        f"<table><tr><th>sign</th><th>weight</th></tr>{rows}</table>"
-        "<p>How a version belongs to its game: a demo by the store's kind or demo / trial /"
-        " beta / prologue in its name; a remaster by remaster(ed) / definitive / anniversary /"
-        " redux / HD / enhanced / director's cut, or by an achievement list partly its game's,"
-        " or by a list of its own years later under a name of its own.</p>"
+        "<p>Each pair of versions that could be one game (a telling word of the name, a"
+        " store's group or cross-gen set, an HLTB entry, one list) is read from its subject's"
+        " side — the VR one, the compilation, the later one — and every sign adds its weight"
+        " to each class's log-odds against <b>other</b> (0). A softmax gives probabilities."
+        f" The likeliest class at {m.LINK_P:.0%} or more, {m.CLOSE_CALL:.0%} ahead of the next,"
+        f" is taken; a class from {m.REVIEW_P:.0%} goes to the review list. Versions join"
+        f" one game from the surest pair down, never across a pair below {m.VETO_P:.0%}"
+        " <i>same</i> or a label saying no; a remaster, remake or VR version relates to the"
+        " earliest original, a compilation to each part. The operator's labels come first,"
+        f" and are what the weights will be fitted to. Model: {escape(m.MODEL)}.</p>"
+        "<p>name = similarity − 0.8; years_gap counts the years past the first (at most 9);"
+        f" achievements are compared when both lists have {m.ACHIEVEMENTS_MIN}+ names.</p>"
+        f"<div class=scroll><table><tr><th>sign</th>{head}</tr>{rows}</table></div>"
     )
     return _page("How versions are matched", body)
 
@@ -762,14 +791,16 @@ async def games(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT g.game_id, g.name, g.year, g.name_source,"
-            "  (SELECT COUNT(*) FROM version_games vg WHERE vg.game_id = g.game_id"
-            "   AND vg.state = 'linked') AS versions,"
-            "  (SELECT COUNT(*) FROM version_games vg WHERE vg.game_id = g.game_id"
-            "   AND vg.state = 'review') AS review,"
-            "  (SELECT GROUP_CONCAT(DISTINCT v.console) FROM version_games vg"
-            "   JOIN versions v ON v.version_id = vg.version_id"
-            "   WHERE vg.game_id = g.game_id AND vg.state = 'linked') AS consoles"
+            "SELECT g.game_id, g.name, g.year, g.developer, g.name_source,"
+            "  (SELECT COUNT(*) FROM game_versions gv WHERE gv.game_id = g.game_id) AS versions,"
+            "  (SELECT COUNT(*) FROM match_pairs mp JOIN game_versions gv"
+            "   ON gv.version_id IN (mp.version_id, mp.other_id)"
+            "   WHERE gv.game_id = g.game_id) AS review,"
+            "  (SELECT GROUP_CONCAT(r.kind || ' ' || r.related_id) FROM game_relations r"
+            "   WHERE r.game_id = g.game_id) AS relates,"
+            "  (SELECT GROUP_CONCAT(DISTINCT v.console) FROM game_versions gv"
+            "   JOIN versions v ON v.version_id = gv.version_id"
+            "   WHERE gv.game_id = g.game_id) AS consoles"
             " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name LIKE ?)"
             " ORDER BY versions DESC, g.game_id DESC LIMIT ?",
             (q, f"%{q}%", PAGE_SIZE * 3),
@@ -787,31 +818,42 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
-            "SELECT vg.version_id, v.store, v.product_id, v.stand_in,"
-            " v.console, v.name, v.release_date, v.on_sale, v.origin, v.developer, v.platform,"
-            " v.title_id, " + COVER + ","
-            " CASE WHEN v.title_id IS NULL THEN NULL ELSE 'achievements' END AS achievements,"
-            " vl.of_version_id AS demo_of, vl.kind AS link_kind,"
-            " vg.kind, vg.state, vg.source, vg.score, vg.reasons"
-            " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
-            " LEFT JOIN version_links vl ON vl.version_id = v.version_id"
-            "  AND vl.kind IN ('demo_of', 'tool_of')"
-            " WHERE vg.game_id = ? ORDER BY vg.state, v.release_date, v.console",
+            "SELECT gv.version_id, v.store, v.product_id, v.stand_in,"
+            " v.console, v.name, v.release_date, v.developer, v.platform, v.title_id,"
+            " " + COVER + ", gv.role, gv.of_version_id, gv.p"
+            " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
+            " WHERE gv.game_id = ? ORDER BY v.release_date, v.console",
             (game_id,),
         ).fetchall()
         relations = conn.execute(
-            "SELECT r.kind, r.related_id AS game_id, g.name, r.source FROM game_relations r"
+            "SELECT 'this ' || r.kind AS relation, r.related_id AS game_id, g.name, g.year,"
+            " r.source, ROUND(r.p, 2) AS p FROM game_relations r"
             " JOIN games g ON g.game_id = r.related_id WHERE r.game_id = ?"
-            " UNION ALL SELECT r.kind || ' (of this)', r.game_id, g.name, r.source"
+            " UNION ALL SELECT r.kind || ' this', r.game_id, g.name, g.year, r.source,"
+            " ROUND(r.p, 2)"
             " FROM game_relations r JOIN games g ON g.game_id = r.game_id WHERE r.related_id = ?",
             (game_id, game_id),
+        ).fetchall()
+        mine = [m["version_id"] for m in members]
+        marks = ",".join("?" * len(mine)) or "NULL"
+        pairs = conn.execute(
+            "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
+            " mp.features FROM match_pairs mp"
+            f" WHERE mp.version_id IN ({marks}) OR mp.other_id IN ({marks})"
+            " ORDER BY mp.p DESC",
+            (*mine, *mine),
+        ).fetchall()
+        labels = conn.execute(
+            "SELECT d.version_id, d.relation, d.other_id, d.decided_at FROM match_decisions d"
+            f" WHERE d.version_id IN ({marks}) OR d.other_id IN ({marks})",
+            (*mine, *mine),
         ).fetchall()
         dlcs = conn.execute(
             "SELECT d.version_id, v.store, v.console, v.name AS version, v.product_id,"
             " v.stand_in, d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
             " d.trophy_group_id FROM dlcs d"
-            " JOIN version_games vg ON vg.version_id = d.version_id AND vg.state = 'linked'"
-            " JOIN versions v ON v.version_id = d.version_id WHERE vg.game_id = ?"
+            " JOIN game_versions gv ON gv.version_id = d.version_id"
+            " JOIN versions v ON v.version_id = d.version_id WHERE gv.game_id = ?"
             " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
             (game_id,),
         ).fetchall()
@@ -821,8 +863,8 @@ async def game(request: web.Request) -> web.Response:
             " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
             "  '; ') FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
             " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
-            " JOIN version_games vg ON vg.version_id = i.version_id AND vg.state = 'linked'"
-            " WHERE vg.game_id = ? ORDER BY e.store, e.name",
+            " JOIN game_versions gv ON gv.version_id = i.version_id"
+            " WHERE gv.game_id = ? ORDER BY e.store, e.name",
             (game_id,),
         ).fetchall()
         hltb = conn.execute(
@@ -831,8 +873,8 @@ async def game(request: web.Request) -> web.Response:
             "SELECT DISTINCT h.hltb_id, h.name, h.game_type, h.release_year,"
             " h.platforms AS also_released_on FROM version_hltb vh"
             " JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
-            " JOIN version_games vg ON vg.version_id = vh.version_id AND vg.state = 'linked'"
-            " WHERE vg.game_id = ?",
+            " JOIN game_versions gv ON gv.version_id = vh.version_id"
+            " WHERE gv.game_id = ?",
             (game_id,),
         ).fetchall()
     here = f"/game/{game_id}"
@@ -845,7 +887,9 @@ async def game(request: web.Request) -> web.Response:
             "<button>rename</button></form>"
             f'<form method=post action="{here}/merge">merge this game into game id: '
             "<input name=into size=8> <button>merge</button></form>"
-            f'<form method=post action="{here}/relate">this game is a remake of game id: '
+            f'<form method=post action="{here}/relate">this game is a '
+            "<select name=kind><option>remaster_of</option><option>remake_of</option>"
+            "<option>vr_of</option><option>contains</option></select> game id: "
             "<input name=related size=8> <button>link</button></form>"
         )
     detach = "".join(
@@ -857,38 +901,31 @@ async def game(request: web.Request) -> web.Response:
         )
         + "</p>"
         for m in members
-        if m["state"] == "linked"
     )
-    reviews = "".join(
-        _decisions(m["version_id"], game_id, here) for m in members if m["state"] == "review"
-    )
-    linked = [m for m in members if m["state"] == "linked"]
     with _db(request) as conn:
         identity = _identity(conn, game_id)
+        cards = _pair_rows(conn, pairs, here)
     body = (
         _flash(request)
         + f"<p><b>{escape(identity)}</b></p>"
         + "<p>"
-        + "".join(_img(m["cover"], 56, m["console"]) for m in linked if m["cover"])
+        + "".join(_img(m["cover"], 56, m["console"]) for m in members if m["cover"])
         + "</p>"
         + controls
         + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
         + "<h2>Versions</h2>"
-        + _version_cards(linked)
-        + (
-            "<h2>To review: may be this game</h2>"
-            + _version_cards([m for m in members if m["state"] == "review"], decide=game_id)
-            if reviews
-            else ""
-        )
-        + (
-            "<h2>Decided: not this game</h2>"
-            + _version_cards([m for m in members if m["state"] == "rejected"])
-            if any(m["state"] == "rejected" for m in members)
-            else ""
-        )
-        + "<h2>Related games</h2>"
+        + _version_cards(members)
+        + "<h2>Family: related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})
+        + ("<h2>To review</h2>" + cards if pairs else "")
+        + "<h2>The operator's labels on these versions</h2>"
+        + _table(
+            labels,
+            {
+                "version_id": lambda r: f"/version/{r['version_id']}",
+                "other_id": lambda r: f"/version/{r['other_id']}",
+            },
+        )
         + "<h2>Editions (packs the stores sell)</h2>"
         + _table(editions, {"name": _edition_href, "store_id": _edition_href})
         + "<h2>DLC, by version</h2>"
@@ -922,38 +959,33 @@ def _identity(conn: sqlite3.Connection, game_id: int) -> str:
     return f"{' · '.join(parts)} (game {game_id})"
 
 
-def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
-    """Versions as one compact table (owner, 2026-10-10: lines were hard to
-    read): the picture, what it is, where it is sold, how it belongs; a
-    review row carries its probability and one picker for the answer."""
+def _version_cards(rows: list[sqlite3.Row]) -> str:
+    """A game's versions as one compact table: the picture, what it is, its
+    role (and the version a demo or tool is of), where it is sold."""
     if not rows:
         return "<p>(none)</p>"
-    head = ["", "name", "link", "console", "date", "store", "studio", "decided", "list"]
-    head += ["p", "answer"] if decide is not None else []
+    head = ["", "name", "role", "console", "date", "store", "studio", "p", "list"]
     lines = []
     for v in rows:
-        kind = escape(v["kind"])
-        if v["demo_of"]:
-            of = "tool for" if v["link_kind"] == "tool_of" else "demo of"
-            kind += f'<br><small>{of} <a href="/version/{v["demo_of"]}">{v["demo_of"]}</a></small>'
+        role = escape(v["role"])
+        if v["of_version_id"]:
+            role += (
+                f'<br><small>of <a href="/version/{v["of_version_id"]}">'
+                f"{v['of_version_id']}</a></small>"
+            )
         stand_in = " ·stand-in, search" if v["stand_in"] else ""
         cells = [
             _img(v["cover"], 36),
             f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>',
-            kind,
+            role,
             escape(v["console"]),
             escape(v["release_date"] or "?"),
             f'<a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
             f"{stand_in} ↗</a>",
             escape(v["developer"] or ""),
-            # Who put it here: the matcher (auto) or the operator (manual).
-            escape(v["source"]),
+            f"{v['p']:.2f}" if v["p"] is not None else "",
             f'<a href="{escape(_list_href(v))}">list</a>' if v["title_id"] else "",
         ]
-        if decide is not None:
-            score = f"{v['score']:.2f}" if v["score"] is not None else ""
-            cells.append(f'<span title="{escape(v["reasons"] or "")}">{score}</span>')
-            cells.append(_decision_picker(v["version_id"], decide, f"/game/{decide}"))
         lines.append("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>")
     return (
         "<div class=scroll><table class=versions><tr>"
@@ -964,18 +996,59 @@ def _version_cards(rows: list[sqlite3.Row], decide: int | None = None) -> str:
     )
 
 
-def _decision_picker(version_id: int, game_id: int, back: str) -> str:
-    """The answers to one review row as one picker and a button."""
-    options = "".join(
-        f'<option value="{key}">{escape(label)}</option>' for key, label in _DECISIONS
-    )
+def _pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) -> str:
+    """Doubtful pairs as one table: the subject and its game, what the model
+    thinks and how sure, the other and its game, and the answer."""
+    if not pairs:
+        return "<p>(nothing to review)</p>"
+    ids = sorted({r["subject"] for r in pairs} | {r["other"] for r in pairs})
+    marks = ",".join("?" * len(ids))
+    info = {
+        r["version_id"]: r
+        for r in conn.execute(
+            "SELECT v.version_id, v.name, v.console, v.release_date, v.store, v.product_id,"
+            " v.stand_in, v.developer, " + COVER + ", gv.game_id, g.name AS game, g.year"
+            " FROM versions v LEFT JOIN game_versions gv ON gv.version_id = v.version_id"
+            " LEFT JOIN games g ON g.game_id = gv.game_id"
+            f" WHERE v.version_id IN ({marks})",
+            ids,
+        ).fetchall()
+    }
+
+    def side(vid: int) -> str:
+        v = info.get(vid)
+        if v is None:
+            return str(vid)
+        game = (
+            f'<br><small>in <a href="/game/{v["game_id"]}">{escape(v["game"] or "")}'
+            f" ({v['year'] or '?'})</a></small>"
+            if v["game_id"]
+            else ""
+        )
+        stand_in = ", stand-in" if v["stand_in"] else ""
+        return (
+            f"{_img(v['cover'], 36)} "
+            f'<a href="/version/{vid}">{escape(v["name"] or "")}</a>'
+            f" <small>[{escape(v['console'])}, {escape((v['release_date'] or '?')[:4])},"
+            f" {escape(v['developer'] or '?')}]"
+            f' <a href="{escape(_store_href(v))}" target=_blank>{escape(v["store"])}'
+            f"{stand_in} ↗</a></small>{game}"
+        )
+
+    lines = []
+    for r in pairs:
+        feats = json.loads(r["features"]) if r["features"] else {}
+        signs = ", ".join(k for k in feats if k != "bias")
+        lines.append(
+            f"<tr><td>{side(r['subject'])}</td>"
+            f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
+            f"<br><small>{escape(signs)}</small></td>"
+            f"<td>{side(r['other'])}</td>"
+            f"<td>{_decision_picker(r['subject'], r['other'], back)}</td></tr>"
+        )
     return (
-        '<form method=post action="/decide" style="margin:0;white-space:nowrap">'
-        f'<input type=hidden name=version_id value="{version_id}">'
-        f'<input type=hidden name=game_id value="{game_id}">'
-        f'<input type=hidden name=back value="{escape(back)}">'
-        "<select name=decision required><option value='' selected disabled>answer…</option>"
-        f"{options}</select> <button>ok</button></form>"
+        "<div class=scroll><table class=versions><tr><th>this version</th><th>the model"
+        " thinks</th><th>…that version</th><th>answer</th></tr>" + "".join(lines) + "</table></div>"
     )
 
 
@@ -1017,40 +1090,36 @@ def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
 
 async def review(request: web.Request) -> web.Response:
     with _db(request) as conn:
-        rows = conn.execute(
-            "SELECT vg.version_id, v.name AS version, v.console, v.release_date,"
-            " v.store, v.product_id, v.stand_in, v.name, " + COVER + ","
-            " vg.game_id, g.name AS game, vg.kind, vg.score, vg.reasons"
-            " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
-            " JOIN games g ON g.game_id = vg.game_id WHERE vg.state = 'review'"
-            " ORDER BY vg.decided_at DESC LIMIT ?",
+        pairs = conn.execute(
+            "SELECT version_id AS subject, other_id AS other, relation, p, features"
+            " FROM match_pairs ORDER BY p DESC LIMIT ?",
             (PAGE_SIZE,),
         ).fetchall()
-        game_versions: dict[int, list[sqlite3.Row]] = {}
-        for game_id in {r["game_id"] for r in rows}:
-            game_versions[game_id] = conn.execute(
-                "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.name, v.console,"
-                " v.release_date, " + COVER + ", vg.kind"
-                " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
-                " WHERE vg.game_id = ? AND vg.state = 'linked'"
-                " ORDER BY v.release_date, v.console",
-                (game_id,),
-            ).fetchall()
-        identities = {game_id: _identity(conn, game_id) for game_id in game_versions}
-    parts = []
-    for r in rows:
-        theirs = "".join(
-            f"<li>{_img(v['cover'], 40)} {_version_line(v)} · {escape(v['kind'])}</li>"
-            for v in game_versions.get(r["game_id"], [])
-        )
-        parts.append(
-            f"<hr><p>{_img(r['cover'], 90)} {_version_line(r)}"
-            f' → <a href="/game/{r["game_id"]}">{escape(identities[r["game_id"]])}</a></p>'
-            f"<p><small>{escape(r['reasons'] or '')}</small></p>"
-            f"<details><summary>the game's versions</summary><ul>{theirs}</ul></details>"
-            + _decisions(r["version_id"], r["game_id"], "/review")
-        )
-    return _page("To review", _flash(request) + ("".join(parts) or "<p>(nothing to review)</p>"))
+        total = conn.execute("SELECT COUNT(*) FROM match_pairs").fetchone()[0]
+        cards = _pair_rows(conn, pairs, "/review")
+    return _page(
+        "To review",
+        _flash(request) + f"<p>{total} pairs, the surest first.</p>" + cards,
+    )
+
+
+async def decisions(request: web.Request) -> web.Response:
+    """Every label the operator gave, newest first."""
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT d.version_id, a.name AS this, d.relation, d.other_id, b.name AS that,"
+            " d.model, d.decided_at FROM match_decisions d"
+            " JOIN versions a ON a.version_id = d.version_id"
+            " JOIN versions b ON b.version_id = d.other_id ORDER BY d.decided_at DESC LIMIT ?",
+            (PAGE_SIZE * 3,),
+        ).fetchall()
+    links = {
+        "version_id": lambda r: f"/version/{r['version_id']}",
+        "this": lambda r: f"/version/{r['version_id']}",
+        "other_id": lambda r: f"/version/{r['other_id']}",
+        "that": lambda r: f"/version/{r['other_id']}",
+    }
+    return _page("The operator's labels", _table(rows, links))
 
 
 def _version_line(v: sqlite3.Row) -> str:
@@ -1064,38 +1133,30 @@ def _version_line(v: sqlite3.Row) -> str:
     )
 
 
+async def _label(
+    repo: Repo, version_id: int, other_id: int, relation: str, *, by: str = "viewer"
+) -> None:
+    """A label, with the signs the model saw for the pair, then the two
+    versions linked again around it."""
+    from bot.services.game_link import GameLinker
+    from bot.services.game_match import MODEL
+
+    features, model = await repo.pair_features(version_id, other_id)
+    await repo.save_decision(
+        version_id, other_id, relation, features=features, model=model or MODEL, decided_by=by
+    )
+    await GameLinker(repo).link_versions([version_id, other_id])
+
+
 async def decide(request: web.Request) -> web.Response:
     form = await request.post()
-    version_id, game_id = int(str(form["version_id"])), int(str(form["game_id"]))
+    version_id, other_id = int(str(form["version_id"])), int(str(form["other_id"]))
     decision, back = str(form["decision"]), str(form.get("back") or "/review")
-    repo = _repo(request)
-    if decision in ("version", "remaster", "edition", "demo", "tool", "compilation"):
-        await repo.set_link(
-            version_id, game_id, kind=decision, state="linked", source="manual", decided_by="viewer"
-        )
-        if decision != "compilation":
-            # It is this game now: out of the one the matcher had put it in.
-            await repo.drop_auto_links(version_id, game_id, "linked")
-    else:
-        await repo.set_link(
-            version_id,
-            game_id,
-            kind="version",
-            state="rejected",
-            source="manual",
-            decided_by="viewer",
-        )
-        if decision == "remake":
-            own = await repo.linked_game_of(version_id)
-            if own is None or own == game_id:
-                own = await repo.create_game(f"version {version_id}", None)
-                await repo.set_link(
-                    version_id, own, kind="version", state="linked", source="manual"
-                )
-            await repo.relate_games(own, game_id, "remake_of", "manual")
-    await repo.drop_empty_games()
-    await repo.refresh_game_facts(await repo.games_of_version(version_id))
-    raise _back(back, f"version {version_id}: {decision}")
+    relation, _, flip = decision.partition(":")
+    if flip:
+        version_id, other_id = other_id, version_id
+    await _label(_repo(request), version_id, other_id, relation)
+    raise _back(back, f"version {version_id} {relation} version {other_id}")
 
 
 async def game_rename(request: web.Request) -> web.Response:
@@ -1109,41 +1170,60 @@ async def game_rename(request: web.Request) -> web.Response:
     raise _back(f"/game/{game_id}", "renamed")
 
 
+async def _game_anchors(repo: Repo, game_id: int, other: int) -> tuple[int, int]:
+    a, b = await repo.anchor_of(game_id), await repo.anchor_of(other)
+    if a is None or b is None:
+        raise _back(f"/game/{game_id}", "no such game, or it has no version")
+    return a, b
+
+
 async def game_merge(request: web.Request) -> web.Response:
+    """ "One game": a label `same` between the two games' anchors."""
     game_id = int(request.match_info["game_id"])
     form = await request.post()
     into = str(form.get("into") or "").strip()
     if not into.isdigit() or int(into) == game_id:
         raise _back(f"/game/{game_id}", "a game id to merge into, please")
-    await _repo(request).merge_games(game_id, int(into))
-    await _repo(request).refresh_game_facts([int(into)])
-    raise _back(f"/game/{into}", f"game {game_id} merged here")
+    repo = _repo(request)
+    a, b = await _game_anchors(repo, game_id, int(into))
+    await _label(repo, a, b, "same")
+    target = await repo.linked_game_of(b) or int(into)
+    raise _back(f"/game/{target}", f"game {game_id} is game {into}")
 
 
 async def game_relate(request: web.Request) -> web.Response:
+    """ "This game is a remaster / remake / VR version of that one, or holds
+    it": a label between the two games' anchors."""
     game_id = int(request.match_info["game_id"])
     form = await request.post()
-    related = str(form.get("related") or "").strip()
+    related, kind = str(form.get("related") or "").strip(), str(form.get("kind") or "")
     if not related.isdigit() or int(related) == game_id:
         raise _back(f"/game/{game_id}", "a game id, please")
-    await _repo(request).relate_games(game_id, int(related), "remake_of", "manual")
-    raise _back(f"/game/{game_id}", f"a remake of game {related}")
+    if kind not in ("remaster_of", "remake_of", "vr_of", "contains"):
+        raise _back(f"/game/{game_id}", "which relation?")
+    repo = _repo(request)
+    a, b = await _game_anchors(repo, game_id, int(related))
+    await _label(repo, a, b, kind)
+    raise _back(f"/game/{await repo.linked_game_of(a) or game_id}", f"{kind} game {related}")
 
 
 async def game_detach(request: web.Request) -> web.Response:
+    """ "Not this game": a label `other` against another version of it."""
     game_id = int(request.match_info["game_id"])
     form = await request.post()
     version_id = int(str(form["version_id"]))
     repo = _repo(request)
-    await repo.set_link(
-        version_id, game_id, kind="version", state="rejected", source="manual", decided_by="viewer"
-    )
-    own = await repo.create_game(f"version {version_id}", None)
-    await repo.set_link(
-        version_id, own, kind="version", state="linked", source="manual", decided_by="viewer"
-    )
-    await repo.refresh_game_facts([game_id, own])
-    raise _back(f"/game/{own}", f"version {version_id} detached into its own game: rename it")
+    with _db(request) as conn:
+        row = conn.execute(
+            "SELECT version_id FROM game_versions WHERE game_id = ? AND version_id <> ?"
+            " ORDER BY version_id = (SELECT anchor_version_id FROM games WHERE game_id = ?) DESC,"
+            " version_id LIMIT 1",
+            (game_id, version_id, game_id),
+        ).fetchone()
+    if row is None:
+        raise _back(f"/game/{game_id}", "the only version of its game")
+    await _label(repo, version_id, int(row[0]), "other")
+    raise _back(f"/version/{version_id}", f"version {version_id} is not game {game_id}")
 
 
 async def relink(request: web.Request) -> web.Response:
@@ -1230,6 +1310,7 @@ def build(db_path: Path) -> web.Application:
     app.router.add_get("/list/{platform}/{title_id}", achievement_list)
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
+    app.router.add_get("/decisions", decisions)
     app.router.add_post("/decide", decide)
     app.router.add_post("/game/{game_id:\\d+}/rename", game_rename)
     app.router.add_post("/game/{game_id:\\d+}/merge", game_merge)

@@ -1,32 +1,42 @@
-"""Putting versions into games (#147, stage 3): `services/game_match.py`
-decides, this reads and writes.
+"""Putting versions into games, and games into relations (#147; owner,
+2026-10-11). `services/game_match.py` decides about pairs; this builds games.
 
-Run around one achievement list after it is collected: its versions and the
-versions that could be them (sharing the first word of a cut name, a store
-group or an HLTB entry) are compared, linked pairs make one game, doubtful
-ones go to the review list. Only the matcher's own (`auto`) rows are ever
-rewritten: a manual link stays, and a manual rejection keeps the version out
-of that game for good.
+Around the seed versions, every version that could be one of them (a telling
+word of the name, a store's group or cross-gen set, an HLTB entry, a list) and
+every version of the games those are already in are scored pair by pair. The
+operator's labels (`match_decisions`) come first: "same" (edition, demo, tool)
+always joins, anything else never does. Then pairs join from the surest down,
+but **never across a veto** — a pair the model is sure is not one game, or a
+label saying so — so A~B and B~C no longer drag A and C together. Each group
+keeps the game anchored on one of its versions, or gets a new one; the games
+it came from are merged into it. Between groups, a sure remaster, remake,
+compilation or VR version becomes a relation to the **earliest** original;
+doubtful pairs go to the review list. All of it is rewritten for the versions
+around the seeds, in one transaction.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bot.services.game_match import (
-    ACHIEVEMENTS_MIN,
-    ACHIEVEMENTS_SAME,
-    FAR_YEARS,
+    LINK_P,
+    MODEL,
+    RELATIONS,
+    VETO_P,
     Candidate,
+    Verdict,
     block_key,
     candidate_year,
     compare,
     era,
     game_name,
     kind_of,
+    release_name,
 )
 from bot.services.hltb_match import normalize
 
@@ -35,11 +45,22 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# Labels that put two versions in one game; every other label keeps them apart.
+JOINING = {"same", "edition", "demo_of", "tool_of"}
+# A word in more versions' names than this tells nothing ("war", "star").
+COMMON_WORD = 60
+# One linker at a time in a process: two collections of one game's lists at
+# once must not each build their own game.
+_LOCK = asyncio.Lock()
+
+Relations = dict[tuple[int, int, str], tuple[str, float | None]]
+
 
 @dataclass(slots=True)
 class LinkReport:
     games: dict[int, list[int]] = field(default_factory=dict)  # game → its versions
-    review: list[tuple[int, int, list[str]]] = field(default_factory=list)  # version, game, why
+    relations: list[tuple[int, int, str]] = field(default_factory=list)
+    review: list[tuple[int, int, str, float]] = field(default_factory=list)
 
 
 class GameLinker:
@@ -48,252 +69,378 @@ class GameLinker:
 
     async def link_title(self, platform: str, title_id: str) -> LinkReport:
         rows = await self._repo.match_rows()
-        seeds = [r for r in rows if r["platform"] == platform and r["title_id"] == title_id]
+        seeds = [
+            int(r["version_id"])
+            for r in rows
+            if (r["platform"], r["title_id"]) == (platform, title_id)
+        ]
         return await self._link(rows, seeds)
 
     async def link_versions(self, version_ids: list[int]) -> LinkReport:
-        rows = await self._repo.match_rows()
-        wanted = set(version_ids)
-        return await self._link(rows, [r for r in rows if r["version_id"] in wanted])
+        return await self._link(await self._repo.match_rows(), version_ids)
 
-    async def _link(self, rows: list[dict], seeds: list[dict]) -> LinkReport:
+    async def link_all(self) -> LinkReport:
+        rows = await self._repo.match_rows()
+        return await self._link(rows, [int(r["version_id"]) for r in rows])
+
+    async def _link(self, rows: list[dict], seed_ids: list[int]) -> LinkReport:
+        async with _LOCK:
+            return await self._link_locked(rows, seed_ids)
+
+    async def _link_locked(self, rows: list[dict], seed_ids: list[int]) -> LinkReport:
         report = LinkReport()
+        candidates = {int(r["version_id"]): _candidate(r) for r in rows}
+        seeds = [candidates[v] for v in seed_ids if v in candidates]
         if not seeds:
             return report
-        candidates = {r["version_id"]: _candidate(r) for r in rows}
-        around = self._around([candidates[s["version_id"]] for s in seeds], candidates)
-        for candidate in around:
-            row = next(r for r in rows if r["version_id"] == candidate.version_id)
-            if row["platform"] and row["title_id"]:
-                names = await self._repo.achievement_names(row["platform"], row["title_id"])
+        index = _Index(list(candidates.values()))
+        around = index.around(seeds)
+        # Every version of the games these are in: a game is rebuilt whole.
+        now_in = await self._repo.memberships(list(around))
+        more = await self._repo.versions_of_games(list({m["game_id"] for m in now_in.values()}))
+        around |= {v for v in more if v in candidates}
+        now_in = await self._repo.memberships(list(around))
+        members = [candidates[v] for v in around]
+        await self._load_achievements(members, rows)
+        labels = [
+            lab
+            for lab in await self._repo.decisions_among(list(around))
+            if lab["version_id"] in around and lab["other_id"] in around
+        ]
+
+        pairs = index.pairs(members)
+        verdicts: dict[tuple[int, int], Verdict] = await asyncio.to_thread(
+            lambda: {(a, b): compare(candidates[a], candidates[b]) for a, b in pairs}
+        )
+        groups = _cluster(members, verdicts, labels)
+        group_of = {v: i for i, g in enumerate(groups) for v in g}
+        surest: dict[int, float] = {}
+        for (a, b), v in verdicts.items():
+            if group_of[a] == group_of[b]:
+                surest[a] = max(surest.get(a, 0.0), v.p_same)
+                surest[b] = max(surest.get(b, 0.0), v.p_same)
+
+        anchors = await self._repo.games_anchored_in(list(around))
+        old_games = {int(m["game_id"]) for m in now_in.values()}
+        assignment: dict[int, tuple[int, str, int | None, float | None]] = {}
+        game_of: dict[int, int] = {}
+        async with self._repo.transaction():
+            for group in groups:
+                cluster = [candidates[v] for v in group]
+                games_here = sorted({anchors[v] for v in group if v in anchors})
+                anchor = _anchor(cluster)
+                if games_here:
+                    target = games_here[0]
+                    for other in games_here[1:]:
+                        await self._repo.merge_game_into(other, target)
+                else:
+                    target = await self._repo.create_game(
+                        game_name(cluster), anchor.year, anchor.version_id
+                    )
+                await self._repo.rename_game(target, game_name(cluster), None, "auto")
+                for version_id, (role, of) in _roles(cluster, labels).items():
+                    assignment[version_id] = (target, role, of, surest.get(version_id))
+                    game_of[version_id] = target
+                report.games[target] = sorted(group)
+            await self._repo.write_members(assignment)
+
+            relations = _relations(groups, game_of, verdicts, labels, candidates)
+            await self._name_releases(relations, groups, game_of, candidates)
+            touched = sorted(set(game_of.values()) | old_games)
+            await self._repo.write_relations(
+                touched,
+                [(g, r, kind, source, p) for (g, r, kind), (source, p) in relations.items()],
+            )
+            report.relations = list(relations)
+
+            labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
+            review = _review(verdicts, game_of, relations, labelled)
+            await self._repo.write_review(
+                list(around),
+                [(v.subject, v.other, v.relation, v.p, v.probs, v.features, MODEL) for v in review],
+            )
+            report.review = [(v.subject, v.other, v.relation, v.p) for v in review]
+        await self._repo.drop_empty_games()
+        await self._repo.refresh_game_facts(sorted(set(game_of.values())))
+        return report
+
+    async def _name_releases(
+        self,
+        relations: Relations,
+        groups: list[set[int]],
+        game_of: dict[int, int],
+        candidates: dict[int, Candidate],
+    ) -> None:
+        """A remaster, remake or VR version cut down to its original's name
+        ("Gears of War") is called by its own release name ("Gears of War:
+        Ultimate Edition")."""
+        clusters = {game_of[next(iter(g))]: [candidates[v] for v in g] for g in groups}
+        names = await self._repo.game_names(
+            list({g for g, _, _ in relations} | {r for _, r, _ in relations})
+        )
+        for g, r, kind in relations:
+            if kind == "contains" or g not in clusters:
+                continue
+            mine, theirs = names.get(g), names.get(r)
+            if not mine or not theirs or mine[1] != "auto":
+                continue
+            if normalize(mine[0]) == normalize(theirs[0]):
+                anchor = _anchor(clusters[g])
+                if anchor.names:
+                    await self._repo.rename_game(g, release_name(anchor.names[0]), None, "auto")
+
+    async def _load_achievements(self, members: list[Candidate], rows: list[dict]) -> None:
+        by_id = {int(r["version_id"]): r for r in rows}
+        names = await self._repo.achievement_names_of(
+            [c.list_key for c in members if c.list_key]  # type: ignore[misc]
+        )
+        for c in members:
+            row = by_id[c.version_id]
+            if c.list_key:
+                found = names.get(c.list_key, [])
             elif row["store"] == "steam":
-                # A Steam app nobody here has: its schema's names (stage 4).
-                names = (
+                # A Steam app nobody here has: its schema's names.
+                found = (
                     await self._repo.payload(f"steam_schema:{row['product_id']}", "steam_schema")
                     or []
                 )
             else:
-                names = []
-            candidate.achievements = frozenset(normalize(n) for n in names if n)
+                found = []
+            c.achievements = frozenset(normalize(n) for n in found if n)
 
-        links = await self._repo.links_of([c.version_id for c in around])
-        manual = {
-            (link["version_id"], link["game_id"]): link
-            for link in links
-            if link["source"] == "manual"
+
+class _Index:
+    """Which versions could be which: a telling word of the cut name (one
+    no more common than `COMMON_WORD`), a store's group or cross-gen set, an
+    HLTB entry, an achievement list."""
+
+    def __init__(self, candidates: list[Candidate]) -> None:
+        self._by_key: dict[tuple, set[int]] = defaultdict(set)
+        self._keys: dict[int, set[tuple]] = {}
+        for c in candidates:
+            keys: set[tuple] = {("w", w) for w in block_key(c)}
+            if c.store_group:
+                keys.add(("g", c.store, c.store_group))
+            if c.cross_gen_set:
+                keys.add(("x", c.cross_gen_set))
+            keys |= {("h", h) for h in c.hltb_ids}
+            if c.list_key:
+                keys.add(("l", c.list_key))
+            self._keys[c.version_id] = keys
+            for k in keys:
+                self._by_key[k].add(c.version_id)
+        self._common = {
+            k for k, vs in self._by_key.items() if k[0] == "w" and len(vs) > COMMON_WORD
         }
-        rejected = {key for key, link in manual.items() if link["state"] == "rejected"}
-        game_of: dict[int, int] = {}
-        for link in links:
-            if link["state"] == "linked" and (
-                link["source"] == "manual" or link["version_id"] not in game_of
-            ):
-                game_of[link["version_id"]] = link["game_id"]
-        pinned = {vid for (vid, _gid), link in manual.items() if link["state"] == "linked"}
 
-        # Linked pairs make groups; doubtful pairs are kept for the review list.
-        parent = {c.version_id: c.version_id for c in around}
+    def _telling(self, version_id: int) -> set[tuple]:
+        return self._keys.get(version_id, set()) - self._common
 
-        def find(x: int) -> int:
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
+    def around(self, seeds: list[Candidate]) -> set[int]:
+        found = {s.version_id for s in seeds}
+        for s in seeds:
+            for k in self._telling(s.version_id):
+                found |= self._by_key[k]
+        return found
 
-        verdicts = {}
-        for i, a in enumerate(around):
-            for b in around[i + 1 :]:
-                verdict = compare(a, b)
-                verdicts[(a.version_id, b.version_id)] = verdict
-                if verdict.state == "linked":
-                    parent[find(a.version_id)] = find(b.version_id)
+    def pairs(self, members: list[Candidate]) -> set[tuple[int, int]]:
+        ids = {m.version_id for m in members}
+        found: set[tuple[int, int]] = set()
+        for m in members:
+            for k in self._telling(m.version_id):
+                for other in self._by_key[k] & ids:
+                    if other != m.version_id:
+                        found.add((min(m.version_id, other), max(m.version_id, other)))
+        return found
 
-        touched: set[int] = set(game_of.values())
-        groups: dict[int, list[Candidate]] = {}
-        for c in around:
-            groups.setdefault(find(c.version_id), []).append(c)
 
-        for members in groups.values():
-            target = self._target(members, game_of, pinned)
-            if target is None:
-                year = min((m.year for m in members if m.year), default=None)
-                target = await self._repo.create_game(game_name(members), year)
-            else:
-                # The matcher's own name follows what the game turned out to
-                # hold; a name the operator gave stays.
-                await self._repo.rename_game(target, game_name(members), None, "auto")
-            kinds = _kinds(members)
-            for member in members:
-                vid = member.version_id
-                if vid in pinned:
-                    continue
-                if (vid, target) in rejected:
-                    # Decided by hand: not this game. It keeps (or gets) one of its own.
-                    own = game_of.get(vid)
-                    if own is None or own == target:
-                        own = await self._repo.create_game(game_name([member]), member.year)
-                    await self._repo.set_link(
-                        vid, own, kind=kind_of(member), state="linked", source="auto"
-                    )
-                    game_of[vid] = own
-                    continue
-                await self._repo.set_link(
-                    vid, target, kind=kinds[vid], state="linked", source="auto", score=1.0
-                )
-                await self._repo.drop_auto_links(vid, target, "linked")
-                game_of[vid] = target
-                report.games.setdefault(target, []).append(vid)
-            await self._link_demos(members, pinned)
-            touched.add(target)
+def _cluster(
+    members: list[Candidate],
+    verdicts: dict[tuple[int, int], Verdict],
+    labels: list[dict],
+) -> list[set[int]]:
+    """Groups of one game: the operator's joins first, then the model's from
+    the surest down, never across a label or a veto."""
+    group = {m.version_id: {m.version_id} for m in members}
+    forbidden: dict[int, set[int]] = defaultdict(set)
+    for lab in labels:
+        if lab["relation"] not in JOINING:
+            forbidden[lab["version_id"]].add(lab["other_id"])
+            forbidden[lab["other_id"]].add(lab["version_id"])
+    for (a, b), v in verdicts.items():
+        if v.p_same < VETO_P and "one_list" not in v.features:
+            forbidden[a].add(b)
+            forbidden[b].add(a)
 
-        # The review list: a doubtful pair across two games, filed on the later
-        # version. The matcher's earlier review rows around here are redrawn.
-        for c in around:
-            if c.version_id not in pinned:
-                await self._repo.drop_auto_links(c.version_id, None, "review")
-        # One review row per version: against the game it is most like. It is
-        # filed on the side less is known about (no year, a stand-in, the later).
-        best: dict[int, tuple[float, int, list[str], str | None]] = {}
-        for (x, y), verdict in verdicts.items():
-            if verdict.state != "review" or game_of.get(x) == game_of.get(y):
-                continue
-            subject, other = _weaker(candidates[x], candidates[y])
-            game = game_of.get(other.version_id)
-            if (
-                game is None
-                or subject.version_id in pinned
-                or (subject.version_id, game) in rejected
-            ):
-                continue
-            if verdict.score > best.get(subject.version_id, (-1.0, 0, [], None))[0]:
-                best[subject.version_id] = (verdict.score, game, verdict.reasons, verdict.kind)
-        for version_id, (score, game, reasons, hint) in best.items():
-            await self._repo.set_link(
-                version_id,
-                game,
-                kind=hint or kind_of(candidates[version_id]),
-                state="review",
-                source="auto",
-                score=score,
-                reasons=reasons,
-            )
-            report.review.append((version_id, game, reasons))
-        await self._repo.drop_empty_games()
-        await self._repo.refresh_game_facts(sorted(touched | set(game_of.values())))
-        return report
+    def join(a: int, b: int, *, force: bool) -> None:
+        ga, gb = group[a], group[b]
+        if ga is gb:
+            return
+        if not force and any(forbidden[x] & gb for x in ga):
+            return
+        if len(ga) < len(gb):
+            ga, gb = gb, ga
+        ga |= gb
+        for x in gb:
+            group[x] = ga
 
-    async def _link_demos(self, members: list[Candidate], pinned: set[int]) -> None:
-        """A demo, and a tool (a Creation Kit), belongs to one version (owner,
-        2026-10-09, 2026-10-10): the one of its game on the same console,
-        else on the same store, else any — the version whose name opens its
-        name first."""
-        games = [m for m in members if kind_of(m) not in ("demo", "tool")]
-        for demo in (m for m in members if kind_of(m) in ("demo", "tool")):
-            if not games or demo.version_id in pinned:
-                continue
+    for lab in labels:
+        if lab["relation"] in JOINING:
+            join(lab["version_id"], lab["other_id"], force=True)
+    for (a, b), v in sorted(verdicts.items(), key=lambda kv: -kv[1].p_same):
+        if v.p_same < LINK_P:
+            break
+        join(a, b, force=False)
+    unique: dict[int, set[int]] = {}
+    for g in group.values():
+        unique[id(g)] = g
+    return list(unique.values())
 
-            def fit(v: Candidate, demo: Candidate = demo) -> tuple[int, int, int, int]:
+
+def _anchor(cluster: list[Candidate]) -> Candidate:
+    """The version a game is anchored on: its earliest that is the game
+    itself (no demo, no tool), the first one known on a tie."""
+    plain = [c for c in cluster if kind_of(c) not in ("demo", "tool")] or cluster
+    return min(plain, key=lambda c: (era(c) or 9999, c.version_id))
+
+
+def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str, int | None]]:
+    """Each version's role in its game, and for a demo or a tool the version
+    it is of (owner, 2026-10-09): the one on the same console, else the same
+    store, else any — the one whose name opens it first."""
+    ids = {c.version_id for c in cluster}
+    told = {
+        lab["version_id"]: (lab["relation"], lab["other_id"])
+        for lab in labels
+        if lab["version_id"] in ids and lab["other_id"] in ids
+    }
+    games = [c for c in cluster if kind_of(c) not in ("demo", "tool")]
+    # An edition is one beside a plain version of its game; a game all of
+    # whose versions say "Ultimate Edition" (a remaster) has no edition.
+    has_plain = any(kind_of(c) == "version" for c in games)
+    roles: dict[int, tuple[str, int | None]] = {}
+    for c in cluster:
+        relation, of = told.get(c.version_id, (None, None))
+        if relation in ("demo_of", "tool_of"):
+            roles[c.version_id] = (str(relation)[: -len("_of")], of)
+            continue
+        if relation == "edition":
+            roles[c.version_id] = ("edition", None)
+            continue
+        kind = kind_of(c)
+        parents = [g for g in games if g.version_id != c.version_id]
+        if kind in ("demo", "tool") and parents:
+
+            def fit(v: Candidate, d: Candidate = c) -> tuple[int, int, int, int]:
                 return (
-                    1 if v.console == demo.console else 0,
-                    1 if v.store == demo.store else 0,
-                    1 if _opens(v, demo) else 0,
+                    1 if v.console == d.console else 0,
+                    1 if v.store == d.store else 0,
+                    1 if _opens(v, d) else 0,
                     -(v.year or 9999),
                 )
 
-            parent = max(games, key=fit)
-            link = "tool_of" if kind_of(demo) == "tool" else "demo_of"
-            await self._repo.set_version_link(demo.version_id, parent.version_id, link, "auto")
-
-    @staticmethod
-    def _around(seeds: list[Candidate], candidates: dict[int, Candidate]) -> list[Candidate]:
-        """The seeds and every version that could be one of them."""
-        keys = set().union(*(block_key(s) for s in seeds))
-        groups = {(s.store, s.store_group) for s in seeds if s.store_group}
-        hltb = frozenset().union(*(s.hltb_ids for s in seeds))
-        found = {s.version_id: s for s in seeds}
-        for c in candidates.values():
-            if c.version_id in found:
-                continue
-            if block_key(c) & keys or (c.store, c.store_group) in groups or c.hltb_ids & hltb:
-                found[c.version_id] = c
-        return list(found.values())
-
-    @staticmethod
-    def _target(members: list[Candidate], game_of: dict[int, int], pinned: set[int]) -> int | None:
-        """The game a group joins: one a member is manually in, else the
-        oldest game any member already is in, else none (a new one)."""
-        manual = [game_of[m.version_id] for m in members if m.version_id in pinned]
-        if manual:
-            return manual[0]
-        known = [game_of[m.version_id] for m in members if m.version_id in game_of]
-        return min(known) if known else None
+            roles[c.version_id] = (kind, max(parents, key=fit).version_id)
+        else:
+            edition = kind == "edition" and has_plain
+            roles[c.version_id] = ("edition" if edition else "version", None)
+    return roles
 
 
-def _weaker(a: Candidate, b: Candidate) -> tuple[Candidate, Candidate]:
-    """(the version a review is filed on, the other): the one without a year,
-    else a stand-in for a list no store described, else the later one."""
-
-    def known(c: Candidate) -> tuple[int, int, int]:
-        return (1 if c.year else 0, 0 if c.stand_in else 1, -(c.year or 0))
-
-    return (a, b) if known(a) <= known(b) else (b, a)
-
-
-def _kinds(members: list[Candidate]) -> dict[int, str]:
-    """How each version belongs to its game. The name says it first; but an
-    'edition' with an achievement list of its own, later than the game's
-    first list, is a remaster (Gears of War → Ultimate Edition)."""
-    kinds = {m.version_id: kind_of(m) for m in members}
-    listed = [m for m in members if len(m.achievements) >= ACHIEVEMENTS_MIN and _era(m)]
-    base = min(
-        (m for m in listed if kinds[m.version_id] not in ("demo", "tool")),
-        key=_era,
-        default=None,
-    )
-    if base is None:
-        return kinds
-    for m in listed:
-        if m is base or kinds[m.version_id] not in ("version", "edition"):
+def _relations(
+    groups: list[set[int]],
+    game_of: dict[int, int],
+    verdicts: dict[tuple[int, int], Verdict],
+    labels: list[dict],
+    candidates: dict[int, Candidate],
+) -> Relations:
+    """Relations between games: the operator's labels, then the model's sure
+    ones; a remaster, remake or VR version points at the **earliest** original
+    (owner, 2026-10-11: no chains), a compilation at each of its parts."""
+    edges: Relations = {}
+    for v in verdicts.values():
+        if v.state != "linked" or v.relation not in RELATIONS:
             continue
-        if m.list_key == base.list_key or _era(m) <= _era(base):
+        g, r = game_of.get(v.subject), game_of.get(v.other)
+        if g is None or r is None or g == r:
             continue
-        if _era(m) - _era(base) >= FAR_YEARS and set(m.cores).isdisjoint(base.cores):
-            # Years later, under a name of its own, with a list of its own:
-            # the game made again (Gears of War → Gears of War: Reloaded).
-            kinds[m.version_id] = "remaster"
+        key = (g, r, v.relation)
+        if key not in edges or (edges[key][1] or 0.0) < v.p:
+            edges[key] = ("auto", v.p)
+    for lab in labels:
+        if lab["relation"] not in RELATIONS:
             continue
-        shared = len(m.achievements & base.achievements) / min(
-            len(m.achievements), len(base.achievements)
-        )
-        if shared < ACHIEVEMENTS_SAME:
-            kinds[m.version_id] = "remaster"
-    # One release under one name is one kind on every store: "Ultimate Edition
-    # for Windows 10" is the remaster its console namesakes are.
-    by_release: dict[str, set[str]] = {}
-    for m in members:
-        for name in m.names:
-            by_release.setdefault(_release_name(name), set()).add(kinds[m.version_id])
-    for m in members:
-        if kinds[m.version_id] in ("version", "edition") and any(
-            "remaster" in by_release.get(_release_name(n), set()) for n in m.names
-        ):
-            kinds[m.version_id] = "remaster"
-    return kinds
+        g, r = game_of.get(lab["version_id"]), game_of.get(lab["other_id"])
+        if g is None or r is None or g == r:
+            continue
+        # The operator's word stands over the model's on this pair of games.
+        for kind in RELATIONS:
+            edges.pop((g, r, kind), None)
+            edges.pop((r, g, kind), None)
+        edges[(g, r, lab["relation"])] = ("manual", None)
+
+    # A game that contains two or more is a compilation: its "remaster of" a
+    # part is containing it (Mass Effect Legendary Edition → ME1, ME2, ME3).
+    contains: dict[int, set[int]] = defaultdict(set)
+    for g, r, kind in edges:
+        if kind == "contains":
+            contains[g].add(r)
+    for g, r, kind in list(edges):
+        if kind == "remaster_of" and len(contains[g]) >= 2 and edges[(g, r, kind)][0] == "auto":
+            edges[(g, r, "contains")] = edges.pop((g, r, kind))
+
+    game_era: dict[int, int] = {}
+    for group in groups:
+        g = game_of.get(next(iter(group)))
+        if g is not None:
+            game_era[g] = min(era(candidates[v]) or 9999 for v in group)
+
+    def root(game: int, seen: set[int]) -> int:
+        """Follow remaster/remake links back to the earliest original."""
+        for g, r, kind in edges:
+            if g == game and kind in ("remaster_of", "remake_of") and r not in seen:
+                return root(r, seen | {r})
+        return game
+
+    result: Relations = {}
+    for kind in ("remaster_of", "remake_of", "vr_of"):
+        by_subject: dict[int, list[tuple[int, tuple[str, float | None]]]] = defaultdict(list)
+        for (g, r, k), value in edges.items():
+            if k == kind:
+                by_subject[g].append((r, value))
+        for g, targets in by_subject.items():
+            pick = [t for t in targets if t[1][0] == "manual"] or targets
+            r, value = min(pick, key=lambda t: (game_era.get(t[0], 9999), t[0]))
+            original = r if kind == "vr_of" else root(r, {g, r})
+            if original != g:
+                result[(g, original, kind)] = value
+    for (g, r, k), value in edges.items():
+        if k == "contains":
+            result[(g, r, k)] = value
+    return result
 
 
-_PLATFORM_TAIL = re.compile(
-    r"[\s:\-–—]*\b(?:for\s+)?(?:windows(?:\s*10|\s*11)?|pc"
-    r"|xbox(?:\s+one|\s+series(?:\s+x\s*s)?)?|ps[345]|playstation\s*[345]?)\s*$",
-    re.IGNORECASE,
-)
-
-
-def _release_name(name: str) -> str:
-    """A version's name without the platform it names."""
-    return normalize(_PLATFORM_TAIL.sub("", name).strip())
-
-
-_era = era
+def _review(
+    verdicts: dict[tuple[int, int], Verdict],
+    game_of: dict[int, int],
+    relations: Relations,
+    labelled: set[frozenset[int]],
+) -> list[Verdict]:
+    """The doubtful pairs: one per pair of games (the surest), none the
+    operator already answered, none whose games already relate."""
+    related = {frozenset((g, r)) for g, r, _ in relations}
+    best: dict[frozenset[int], Verdict] = {}
+    for (a, b), v in verdicts.items():
+        if v.state != "review" or frozenset((a, b)) in labelled:
+            continue
+        ga, gb = game_of.get(a), game_of.get(b)
+        if ga is None or gb is None or (ga == gb and v.relation == "same"):
+            continue
+        key = frozenset((ga, gb))
+        if ga != gb and key in related:
+            continue
+        if key not in best or best[key].p < v.p:
+            best[key] = v
+    return sorted(best.values(), key=lambda v: -v.p)
 
 
 def _opens(game: Candidate, demo: Candidate) -> bool:
@@ -309,7 +456,6 @@ def _candidate(row: dict) -> Candidate:
             if n and str(n).strip()
         )
     )
-    year = candidate_year(row)
     return Candidate(
         version_id=int(row["version_id"]),
         store=row["store"],
@@ -319,7 +465,7 @@ def _candidate(row: dict) -> Candidate:
         kind=row["kind"],
         developer=row["developer"],
         publisher=row["publisher"],
-        year=year,
+        year=candidate_year(row),
         store_group=row["store_group"],
         cross_gen_set=row.get("cross_gen_set"),
         hltb_ids=frozenset(

@@ -1,6 +1,8 @@
-"""Games over versions (#147, stage 3; migration 092): which game each version
-is, how, and who decided it. The matcher writes only `auto` rows; a `manual`
-row — a rejection included — is the operator's and stays."""
+"""Games over versions (#147; migrations 092, 099). The operator's decisions
+are labels on pairs of versions (`match_decisions`, input); which game each
+version is in (`game_versions`) and how games relate (`game_relations`) are
+the matcher's output, rebuilt from the labels and the model — so a decision
+outlives every rebuild."""
 
 from __future__ import annotations
 
@@ -13,7 +15,7 @@ from bot.util import utcnow_iso
 class _GamesRepo:
     async def match_rows(self) -> list[dict[str, Any]]:
         """Every version as the matcher reads it: names, studio, year, store
-        group and its HLTB entries. A few thousand rows — read whole."""
+        group and cross-gen set, its HLTB entries. Read whole."""
         cursor = await self._conn.execute(
             "SELECT v.version_id, v.store, v.product_id, v.console, v.platform, v.title_id,"
             "  v.name, v.name_ru, v.kind, v.developer, v.publisher, v.release_date,"
@@ -31,36 +33,158 @@ class _GamesRepo:
     async def achievement_names(self, platform: str, title_id: str) -> list[str]:
         """The English names of a list's achievements (the platform's own),
         what tells one list from another across platforms."""
-        cursor = await self._conn.execute(
-            "SELECT COALESCE(name_en, name_ru) FROM title_achievements"
-            " WHERE platform = ? AND title_id = ?",
-            (platform, title_id),
-        )
-        names = [str(row[0]) for row in await cursor.fetchall() if row[0]]
-        if names:
-            return names
-        # A list whose catalog was never read: what people here earned in it.
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT name FROM seen_achievements WHERE platform = ? AND title_id = ?",
-            (platform, title_id),
-        )
-        return [str(row[0]) for row in await cursor.fetchall() if row[0]]
+        found = await self.achievement_names_of([(platform, title_id)])
+        return found.get((platform, title_id), [])
 
-    async def links_of(self, version_ids: list[int]) -> list[dict[str, Any]]:
-        if not version_ids:
-            return []
-        marks = ",".join("?" * len(version_ids))
-        cursor = await self._conn.execute(
-            f"SELECT * FROM version_games WHERE version_id IN ({marks})",
-            version_ids,
-        )
-        return [dict(row) for row in await cursor.fetchall()]
+    async def achievement_names_of(
+        self, lists: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], list[str]]:
+        """Many lists' names at once, a batch per platform; a list whose
+        catalog was never read gives what people here earned in it."""
+        found: dict[tuple[str, str], list[str]] = {}
+        by_platform: dict[str, list[str]] = {}
+        for platform, title_id in dict.fromkeys(lists):
+            by_platform.setdefault(platform, []).append(title_id)
+        for platform, ids in by_platform.items():
+            for start in range(0, len(ids), 500):
+                batch = ids[start : start + 500]
+                marks = ",".join("?" * len(batch))
+                for table, column in (
+                    ("title_achievements", "COALESCE(name_en, name_ru)"),
+                    ("seen_achievements", "name"),
+                ):
+                    missing = [t for t in batch if (platform, t) not in found]
+                    if not missing:
+                        break
+                    marks = ",".join("?" * len(missing))
+                    cursor = await self._conn.execute(
+                        f"SELECT DISTINCT title_id, {column} FROM {table}"
+                        f" WHERE platform = ? AND title_id IN ({marks})",
+                        (platform, *missing),
+                    )
+                    for row in await cursor.fetchall():
+                        if row[1]:
+                            found.setdefault((platform, str(row[0])), []).append(str(row[1]))
+        return found
 
-    async def create_game(self, name: str, year: int | None) -> int:
+    # ---------------------------------------------------------------- labels
+
+    async def decisions_among(self, version_ids: list[int]) -> list[dict[str, Any]]:
+        """The operator's labels with either side among these versions."""
+        rows: list[dict[str, Any]] = []
+        ids = list(dict.fromkeys(version_ids))
+        for start in range(0, len(ids), 400):
+            batch = ids[start : start + 400]
+            marks = ",".join("?" * len(batch))
+            cursor = await self._conn.execute(
+                "SELECT * FROM match_decisions"
+                f" WHERE version_id IN ({marks}) OR other_id IN ({marks})",
+                (*batch, *batch),
+            )
+            rows += [dict(row) for row in await cursor.fetchall()]
+        return list({(r["version_id"], r["other_id"]): r for r in rows}.values())
+
+    async def save_decision(
+        self,
+        version_id: int,
+        other_id: int,
+        relation: str,
+        *,
+        features: dict[str, float] | None,
+        model: str | None,
+        decided_by: str,
+    ) -> None:
+        """The operator's label on a pair; a pair has one label, whichever way
+        round it was given."""
+        async with self.transaction():
+            await self._conn.execute(
+                "DELETE FROM match_decisions WHERE version_id = ? AND other_id = ?",
+                (other_id, version_id),
+            )
+            await self._conn.execute(
+                "INSERT INTO match_decisions (version_id, other_id, relation, features, model,"
+                " decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(version_id, other_id) DO UPDATE SET relation = excluded.relation,"
+                "  features = excluded.features, model = excluded.model,"
+                "  decided_by = excluded.decided_by, decided_at = excluded.decided_at",
+                (
+                    version_id,
+                    other_id,
+                    relation,
+                    json.dumps(features) if features is not None else None,
+                    model,
+                    decided_by,
+                    utcnow_iso(),
+                ),
+            )
+            await self._conn.execute(
+                "DELETE FROM match_pairs WHERE (version_id = ? AND other_id = ?)"
+                " OR (version_id = ? AND other_id = ?)",
+                (version_id, other_id, other_id, version_id),
+            )
+
+    # ---------------------------------------------------------------- output
+
+    async def memberships(self, version_ids: list[int]) -> dict[int, dict[str, Any]]:
+        found: dict[int, dict[str, Any]] = {}
+        ids = list(dict.fromkeys(version_ids))
+        for start in range(0, len(ids), 500):
+            batch = ids[start : start + 500]
+            marks = ",".join("?" * len(batch))
+            cursor = await self._conn.execute(
+                f"SELECT * FROM game_versions WHERE version_id IN ({marks})", batch
+            )
+            found.update({int(r["version_id"]): dict(r) for r in await cursor.fetchall()})
+        return found
+
+    async def versions_of_games(self, game_ids: list[int]) -> list[int]:
+        ids = list(dict.fromkeys(game_ids))
+        found: list[int] = []
+        for start in range(0, len(ids), 500):
+            batch = ids[start : start + 500]
+            marks = ",".join("?" * len(batch))
+            cursor = await self._conn.execute(
+                f"SELECT version_id FROM game_versions WHERE game_id IN ({marks})", batch
+            )
+            found += [int(r[0]) for r in await cursor.fetchall()]
+        return found
+
+    async def games_anchored_in(self, version_ids: list[int]) -> dict[int, int]:
+        """`{anchor version: game}` for the games anchored on these versions."""
+        found: dict[int, int] = {}
+        ids = list(dict.fromkeys(version_ids))
+        for start in range(0, len(ids), 500):
+            batch = ids[start : start + 500]
+            marks = ",".join("?" * len(batch))
+            cursor = await self._conn.execute(
+                "SELECT anchor_version_id, game_id FROM games"
+                f" WHERE merged_into IS NULL AND anchor_version_id IN ({marks})",
+                batch,
+            )
+            found.update({int(r[0]): int(r[1]) for r in await cursor.fetchall()})
+        return found
+
+    async def game_names(self, game_ids: list[int]) -> dict[int, tuple[str, str]]:
+        """`{game: (name, name_source)}`."""
+        found: dict[int, tuple[str, str]] = {}
+        ids = list(dict.fromkeys(game_ids))
+        for start in range(0, len(ids), 500):
+            batch = ids[start : start + 500]
+            marks = ",".join("?" * len(batch))
+            cursor = await self._conn.execute(
+                f"SELECT game_id, name, name_source FROM games WHERE game_id IN ({marks})", batch
+            )
+            found.update({int(r[0]): (str(r[1]), str(r[2])) for r in await cursor.fetchall()})
+        return found
+
+    async def create_game(
+        self, name: str, year: int | None, anchor_version_id: int | None = None
+    ) -> int:
         now = utcnow_iso()
         cursor = await self._conn.execute(
-            "INSERT INTO games (name, year, created_at, updated_at) VALUES (?, ?, ?, ?)",
-            (name, year, now, now),
+            "INSERT INTO games (name, year, anchor_version_id, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (name, year, anchor_version_id, now, now),
         )
         await self._conn.commit()
         return int(cursor.lastrowid)
@@ -69,129 +193,151 @@ class _GamesRepo:
         """A manual name is never renamed by the matcher."""
         await self._conn.execute(
             "UPDATE games SET name = ?, name_ru = COALESCE(?, name_ru), name_source = ?,"
-            " updated_at = ? WHERE game_id = ? AND (name_source = 'auto' OR ? = 'manual')",
-            (name, name_ru, source, utcnow_iso(), game_id, source),
+            " updated_at = ? WHERE game_id = ? AND (name_source = 'auto' OR ? = 'manual')"
+            " AND (name IS NOT ? OR name_source IS NOT ?)",
+            (name, name_ru, source, utcnow_iso(), game_id, source, name, source),
         )
         await self._conn.commit()
 
-    async def set_link(
-        self,
-        version_id: int,
-        game_id: int,
-        *,
-        kind: str,
-        state: str,
-        source: str,
-        score: float | None = None,
-        reasons: list[str] | None = None,
-        decided_by: str | None = None,
+    async def merge_game_into(self, game_id: int, into: int) -> None:
+        """The matcher found one game where there were two: the old id
+        resolves to the kept one, its manual name goes with it if the kept
+        one has none."""
+        await self._conn.execute(
+            "UPDATE games SET name = (SELECT g.name FROM games g WHERE g.game_id = ?),"
+            " name_ru = COALESCE(name_ru, (SELECT g.name_ru FROM games g WHERE g.game_id = ?)),"
+            " name_source = 'manual', updated_at = ?"
+            " WHERE game_id = ? AND name_source = 'auto'"
+            " AND (SELECT g.name_source FROM games g WHERE g.game_id = ?) = 'manual'",
+            (game_id, game_id, utcnow_iso(), into, game_id),
+        )
+        await self._conn.execute(
+            "UPDATE games SET merged_into = ?, anchor_version_id = NULL, updated_at = ?"
+            " WHERE game_id = ?",
+            (into, utcnow_iso(), game_id),
+        )
+        await self._conn.execute(
+            "UPDATE games SET merged_into = ? WHERE merged_into = ?", (into, game_id)
+        )
+        await self._conn.commit()
+
+    async def set_anchor(self, game_id: int, version_id: int) -> None:
+        await self._conn.execute(
+            "UPDATE games SET anchor_version_id = NULL"
+            " WHERE anchor_version_id = ? AND game_id <> ?",
+            (version_id, game_id),
+        )
+        await self._conn.execute(
+            "UPDATE games SET anchor_version_id = ? WHERE game_id = ?", (version_id, game_id)
+        )
+        await self._conn.commit()
+
+    async def write_members(
+        self, members: dict[int, tuple[int, str, int | None, float | None]]
     ) -> None:
-        """One version → game link. An `auto` write never replaces a
-        `manual` row."""
-        await self._conn.execute(
-            "INSERT INTO version_games (version_id, game_id, kind, state, source, score, reasons,"
-            "  decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT(version_id, game_id) DO UPDATE SET kind = excluded.kind,"
-            "  state = excluded.state, source = excluded.source, score = excluded.score,"
-            "  reasons = excluded.reasons, decided_by = excluded.decided_by,"
-            "  decided_at = excluded.decided_at"
-            " WHERE version_games.source = 'auto' OR excluded.source = 'manual'",
-            (
-                version_id,
-                game_id,
-                kind,
-                state,
-                source,
-                score,
-                json.dumps(reasons or [], ensure_ascii=False),
-                decided_by,
-                utcnow_iso(),
-            ),
+        """`{version: (game, role, of_version, p)}` — these versions' rows,
+        replaced."""
+        now = utcnow_iso()
+        await self._conn.executemany(
+            "INSERT INTO game_versions (version_id, game_id, role, of_version_id, p, linked_at)"
+            " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(version_id) DO UPDATE SET"
+            "  game_id = excluded.game_id, role = excluded.role,"
+            "  of_version_id = excluded.of_version_id, p = excluded.p,"
+            "  linked_at = CASE WHEN game_versions.game_id = excluded.game_id"
+            "   THEN game_versions.linked_at ELSE excluded.linked_at END",
+            [(vid, g, role, of, p, now) for vid, (g, role, of, p) in members.items()],
         )
         await self._conn.commit()
 
-    async def drop_auto_links(self, version_id: int, keep_game: int | None, state: str) -> None:
-        """The matcher's own rows of one state for this version, except the
-        one to `keep_game`."""
-        await self._conn.execute(
-            "DELETE FROM version_games WHERE version_id = ? AND source = 'auto' AND state = ?"
-            " AND game_id IS NOT ?",
-            (version_id, state, keep_game),
+    async def write_relations(
+        self, game_ids: list[int], relations: list[tuple[int, int, str, str, float | None]]
+    ) -> None:
+        """These games' relations, rebuilt: `(game, related, kind, source, p)`."""
+        ids = list(dict.fromkeys(game_ids))
+        for start in range(0, len(ids), 400):
+            batch = ids[start : start + 400]
+            marks = ",".join("?" * len(batch))
+            await self._conn.execute(
+                f"DELETE FROM game_relations WHERE game_id IN ({marks}) OR related_id IN ({marks})",
+                (*batch, *batch),
+            )
+        now = utcnow_iso()
+        await self._conn.executemany(
+            "INSERT OR REPLACE INTO game_relations"
+            " (game_id, related_id, kind, source, created_at, p)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            [(g, r, kind, source, now, p) for g, r, kind, source, p in relations if g != r],
         )
         await self._conn.commit()
+
+    async def write_review(
+        self, version_ids: list[int], pairs: list[tuple[int, int, str, float, dict, dict, str]]
+    ) -> None:
+        """The doubtful pairs around these versions, replaced:
+        `(subject, other, relation, p, probs, features, model)`."""
+        ids = list(dict.fromkeys(version_ids))
+        for start in range(0, len(ids), 400):
+            batch = ids[start : start + 400]
+            marks = ",".join("?" * len(batch))
+            await self._conn.execute(
+                f"DELETE FROM match_pairs WHERE version_id IN ({marks}) OR other_id IN ({marks})",
+                (*batch, *batch),
+            )
+        now = utcnow_iso()
+        await self._conn.executemany(
+            "INSERT OR REPLACE INTO match_pairs (version_id, other_id, relation, p, probs,"
+            " features, model, scored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (s, o, rel, p, json.dumps(probs), json.dumps(feats), model, now)
+                for s, o, rel, p, probs, feats, model in pairs
+            ],
+        )
+        await self._conn.commit()
+
+    async def pair_features(self, version_id: int, other_id: int) -> tuple[dict | None, str | None]:
+        """The signs the model last saw for a pair, if it was in review."""
+        cursor = await self._conn.execute(
+            "SELECT features, model FROM match_pairs WHERE (version_id = ? AND other_id = ?)"
+            " OR (version_id = ? AND other_id = ?)",
+            (version_id, other_id, other_id, version_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None, None
+        return json.loads(row["features"]), str(row["model"])
 
     async def drop_empty_games(self) -> int:
-        """Games no version is linked to any more (and nothing points at)."""
+        """Games no version is in any more, that nothing points at."""
         cursor = await self._conn.execute(
-            "DELETE FROM games WHERE NOT EXISTS (SELECT 1 FROM version_games vg"
-            "  WHERE vg.game_id = games.game_id AND vg.state = 'linked')"
-            " AND NOT EXISTS (SELECT 1 FROM version_games vg WHERE vg.game_id = games.game_id"
-            "  AND vg.source = 'manual')"
-            " AND NOT EXISTS (SELECT 1 FROM game_relations r"
-            "  WHERE r.game_id = games.game_id OR r.related_id = games.game_id)"
+            "DELETE FROM games WHERE NOT EXISTS (SELECT 1 FROM game_versions gv"
+            "  WHERE gv.game_id = games.game_id)"
             " AND NOT EXISTS (SELECT 1 FROM games g WHERE g.merged_into = games.game_id)"
             " AND merged_into IS NULL"
         )
         await self._conn.commit()
         return cursor.rowcount or 0
 
-    async def relate_games(self, game_id: int, related_id: int, kind: str, source: str) -> None:
-        await self._conn.execute(
-            "INSERT OR IGNORE INTO game_relations (game_id, related_id, kind, source, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (game_id, related_id, kind, source, utcnow_iso()),
-        )
-        await self._conn.commit()
-
-    async def merge_games(self, game_id: int, into: int) -> None:
-        """Every link of `game_id` moves to `into` (a manual decision); the
-        old id resolves to the new one."""
-        async with self.transaction():
-            # A version already under `into` (as a review, say) takes the row it
-            # had in the merged game: merging says it is this game. Without this,
-            # an ignored update and the delete below dropped its link.
-            await self._conn.execute(
-                "DELETE FROM version_games WHERE game_id = ? AND version_id IN"
-                " (SELECT version_id FROM version_games WHERE game_id = ?)",
-                (into, game_id),
-            )
-            await self._conn.execute(
-                "UPDATE version_games SET game_id = ?, source = 'manual' WHERE game_id = ?",
-                (into, game_id),
-            )
-            await self._conn.execute("DELETE FROM version_games WHERE game_id = ?", (game_id,))
-            await self._conn.execute(
-                "UPDATE games SET merged_into = ?, updated_at = ? WHERE game_id = ?",
-                (into, utcnow_iso(), game_id),
-            )
-
     async def linked_game_of(self, version_id: int) -> int | None:
-        """The game a version is in (a manual link first)."""
+        """The game a version is in."""
         cursor = await self._conn.execute(
-            "SELECT game_id FROM version_games WHERE version_id = ? AND state = 'linked'"
-            " ORDER BY source = 'manual' DESC, game_id LIMIT 1",
-            (version_id,),
+            "SELECT game_id FROM game_versions WHERE version_id = ?", (version_id,)
         )
         row = await cursor.fetchone()
         return int(row["game_id"]) if row else None
 
-    async def set_version_link(
-        self, version_id: int, of_version_id: int, kind: str, source: str
-    ) -> None:
-        """Which version this one is of (`demo_of`). An `auto` write never
-        replaces a `manual` one."""
-        await self._conn.execute(
-            "INSERT INTO version_links (version_id, of_version_id, kind, source, decided_at)"
-            " VALUES (?, ?, ?, ?, ?) ON CONFLICT(version_id, kind) DO UPDATE SET"
-            "  of_version_id = excluded.of_version_id, source = excluded.source,"
-            "  decided_at = excluded.decided_at"
-            " WHERE version_links.source = 'auto' OR excluded.source = 'manual'",
-            (version_id, of_version_id, kind, source, utcnow_iso()),
+    async def anchor_of(self, game_id: int) -> int | None:
+        """A version that stands for the game: its anchor, else any of its."""
+        cursor = await self._conn.execute(
+            "SELECT COALESCE(g.anchor_version_id,"
+            " (SELECT MIN(gv.version_id) FROM game_versions gv WHERE gv.game_id = g.game_id))"
+            " FROM games g WHERE g.game_id = ?",
+            (game_id,),
         )
-        await self._conn.commit()
+        row = await cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else None
 
     async def refresh_game_facts(self, game_ids: list[int] | None = None) -> None:
-        """Each game's year, developer and publisher from its linked versions
+        """Each game's year, developer and publisher from its versions
         (`game_match.game_facts`); every game when none is named."""
         from bot.services.game_match import game_facts
 
@@ -202,14 +348,14 @@ class _GamesRepo:
             cursor = await self._conn.execute(
                 # A version's own studio, else its HLTB entry's: a stand-in (a
                 # 360 game) has none of its own.
-                "SELECT v.name, v.release_date, vg.kind, v.stand_in,"
+                "SELECT v.name, v.release_date, gv.role AS kind, v.stand_in,"
                 " h.release_year AS hltb_year,"
                 " COALESCE(v.developer, h.developer) AS developer,"
                 " COALESCE(v.publisher, h.publisher) AS publisher"
-                " FROM version_games vg JOIN versions v ON v.version_id = vg.version_id"
+                " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
                 " LEFT JOIN hltb_games h ON h.hltb_id = (SELECT MIN(vh.hltb_id)"
                 "  FROM version_hltb vh WHERE vh.version_id = v.version_id)"
-                " WHERE vg.game_id = ? AND vg.state = 'linked'",
+                " WHERE gv.game_id = ?",
                 (game_id,),
             )
             rows = [dict(row) for row in await cursor.fetchall()]
@@ -233,10 +379,3 @@ class _GamesRepo:
                 (*values, utcnow_iso(), game_id, *values),
             )
         await self._conn.commit()
-
-    async def games_of_version(self, version_id: int) -> list[int]:
-        """Every game a version has a row with, whatever its state."""
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT game_id FROM version_games WHERE version_id = ?", (version_id,)
-        )
-        return [int(row[0]) for row in await cursor.fetchall()]

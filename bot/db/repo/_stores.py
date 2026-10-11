@@ -146,6 +146,26 @@ class _StoresRepo:
         """Store a version as its store describes it, and every id that names
         it; its achievement list is kept once known, never blanked."""
         now = utcnow_iso()
+        if platform and title_id and not version.stand_in:
+            # The list's stand-in becomes this product, row and id alike, so
+            # what was decided about it (`match_decisions`) stays with it.
+            await self._conn.execute(
+                "UPDATE versions SET store = ?, product_id = ?, console = ?, stand_in = 0"
+                " WHERE version_id = (SELECT version_id FROM versions WHERE platform = ?"
+                "  AND title_id = ? AND stand_in = 1 ORDER BY version_id LIMIT 1)"
+                " AND NOT EXISTS (SELECT 1 FROM versions WHERE store = ? AND product_id = ?"
+                "  AND console = ?)",
+                (
+                    version.store,
+                    version.product_id,
+                    version.console,
+                    platform,
+                    title_id,
+                    version.store,
+                    version.product_id,
+                    version.console,
+                ),
+            )
         await self._conn.execute(
             "INSERT INTO versions (store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, developer, publisher, release_date, genres, also_on, store_group,"
