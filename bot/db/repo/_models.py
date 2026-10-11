@@ -351,8 +351,8 @@ class AdminUserRow:
     NOT NULL`, admin_users() below), so a Steam-only person never showed up
     in the admin panel at all (2026-09-05 follow-up, SPEC 9 M-Steam-2e:
     the same class of gap /stats had before it summed both platforms).
-    `xuid` and the Steam fields are each optional now — never both None,
-    admin_users() only returns someone connected on at least one."""
+    Every platform's fields are optional: since 2026-10-10 the list has
+    everybody, a person with no game account too."""
 
     tg_id: int
     gamertag: str | None

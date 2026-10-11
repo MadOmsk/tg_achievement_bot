@@ -1,0 +1,3 @@
+• Steam connects from the app again (it answered missing_identity)
+• A Steam history loads in full, games with thousands of achievements too
+• The admin user list shows everybody, people with no game account too

@@ -10,9 +10,14 @@ row it creates is filled in by the catalog refresh later.
 
 from __future__ import annotations
 
+from typing import Any
+
 from bot.db.repo._models import CachedDescription
 from bot.db.repo._sql import OWNED_BY_PERSON
 from bot.util import utcnow_iso
+
+# Achievement ids per catalog read: far under SQLite's limit on variables.
+CATALOG_BATCH = 500
 
 # The catalog row of a `seen_achievements s`, as `d`.
 _CATALOG_ROW = (
@@ -127,23 +132,41 @@ class _DescriptionsRepo:
         reasoning as `cached_descriptions` below: a digest can carry a whole
         game's worth of achievements, and the anti-flood one can mix games and
         platforms, so one query per line would be one query per line."""
-        if not keys:
-            return {}
-        clause = " OR ".join(["(platform = ? AND title_id = ? AND achievement_id = ?)"] * len(keys))
-        parameters = [value for key in keys for value in key]
-        cursor = await self._conn.execute(
-            "SELECT platform, title_id, achievement_id, name_ru, name_en "
-            f"FROM title_achievements WHERE ({clause})"
-            "  AND (name_ru IS NOT NULL OR name_en IS NOT NULL)",
-            parameters,
+        rows = await self._catalog_rows(
+            "name_ru, name_en", "(name_ru IS NOT NULL OR name_en IS NOT NULL)", keys
         )
         return {
             (row["platform"], row["title_id"], row["achievement_id"]): (
                 row["name_ru"],
                 row["name_en"],
             )
-            for row in await cursor.fetchall()
+            for row in rows
         }
+
+    async def _catalog_rows(
+        self, columns: str, condition: str, keys: list[tuple[str, str, str]]
+    ) -> list[Any]:
+        """Catalog rows for many achievements: one query per game and per
+        `CATALOG_BATCH` ids, an `IN` list each. One `OR` per achievement
+        broke on a game with a thousand of them — SQLite refuses an
+        expression that deep, and a Steam backfill died of it (2026-10-10)."""
+        by_title: dict[tuple[str, str], list[str]] = {}
+        for platform, title_id, achievement_id in keys:
+            by_title.setdefault((platform, title_id), []).append(achievement_id)
+        found: list[Any] = []
+        for (platform, title_id), ids in by_title.items():
+            unique = list(dict.fromkeys(ids))
+            for start in range(0, len(unique), CATALOG_BATCH):
+                batch = unique[start : start + CATALOG_BATCH]
+                placeholders = ", ".join("?" * len(batch))
+                cursor = await self._conn.execute(
+                    f"SELECT platform, title_id, achievement_id, {columns}"
+                    " FROM title_achievements WHERE platform = ? AND title_id = ?"
+                    f" AND achievement_id IN ({placeholders}) AND {condition}",
+                    (platform, title_id, *batch),
+                )
+                found += await cursor.fetchall()
+        return found
 
     async def names_missing(self, platform: str, title_id: str, ids: list[str]) -> set[str]:
         """Which of these achievements have no cached name yet — the other
@@ -330,18 +353,12 @@ class _DescriptionsRepo:
         than one shared title, because that flood digest genuinely mixes
         them. Missing keys are simply absent from the result.
         """
-        if not keys:
-            return {}
-        clause = " OR ".join(["(platform = ? AND title_id = ? AND achievement_id = ?)"] * len(keys))
-        parameters = [value for key in keys for value in key]
         # Any stored description renders, even one never through the
         # translator: it is what the platform said, and better than nothing.
-        cursor = await self._conn.execute(
-            "SELECT platform, title_id, achievement_id, description_ru, description_en,"
-            "       description_source AS source "
-            f"FROM title_achievements WHERE ({clause})"
-            "  AND (description_ru IS NOT NULL OR description_en IS NOT NULL)",
-            parameters,
+        rows = await self._catalog_rows(
+            "description_ru, description_en, description_source AS source",
+            "(description_ru IS NOT NULL OR description_en IS NOT NULL)",
+            keys,
         )
         return {
             (row["platform"], row["title_id"], row["achievement_id"]): CachedDescription(
@@ -349,7 +366,7 @@ class _DescriptionsRepo:
                 description_en=row["description_en"],
                 source=row["source"],
             )
-            for row in await cursor.fetchall()
+            for row in rows
         }
 
     async def cache_description(

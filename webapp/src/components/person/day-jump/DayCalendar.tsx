@@ -16,7 +16,9 @@ function calendarKey(year: number, month: number, day: number): string {
 /**
  * A month's calendar that unfolds from a day label, the screen's width
  * (owner, 2026-10-07): only days that have something are enabled, with how
- * many; the arrows step between the months that have any.
+ * many; the arrows step between the months that have any. Given `months`,
+ * the arrows walk all of them and `onMonth` loads the one stepped to (owner,
+ * 2026-10-09: the Feed's only month picker), its days filling in as it lands.
  */
 export function DayCalendar({
   locale,
@@ -25,6 +27,8 @@ export function DayCalendar({
   onPick,
   trigger,
   className,
+  months: allMonths,
+  onMonth,
 }: {
   locale: Locale;
   /** day key -> how many entries fall on it */
@@ -34,12 +38,20 @@ export function DayCalendar({
   onPick: (key: string) => void;
   trigger: ReactNode;
   className?: string;
+  /** Every month with entries, as "YYYY-MM", beyond the one loaded. */
+  months?: string[];
+  onMonth?: (ym: string) => void;
 }) {
   const button = useRef<HTMLButtonElement>(null);
   const [place, setPlace] = useState<{ top?: number; bottom?: number } | null>(null);
   const [cursor, setCursor] = useState(() => monthOf(current));
 
-  const months = [...new Set([...days.keys()].map((key) => monthIndex(monthOf(key))))].sort((a, b) => a - b);
+  const months = [
+    ...new Set([
+      ...[...days.keys()].map((key) => monthIndex(monthOf(key))),
+      ...(allMonths ?? []).map((ym) => monthIndex(monthOf(ym))),
+    ]),
+  ].sort((a, b) => a - b);
 
   const open = () => {
     const rect = button.current?.getBoundingClientRect();
@@ -86,7 +98,10 @@ export function DayCalendar({
   const at = months.indexOf(monthIndex(cursor));
   const step = (by: number) => {
     const next = months[at + by];
-    if (next != null) setCursor({ year: Math.floor(next / 12), month: next % 12 });
+    if (next == null) return;
+    const to = { year: Math.floor(next / 12), month: next % 12 };
+    setCursor(to);
+    onMonth?.(`${to.year}-${String(to.month + 1).padStart(2, "0")}`);
   };
 
   return (

@@ -1,0 +1,6 @@
+• Tapping a post opens the achievement's page; its name opens the game
+• The same in Home's gallery and "Hunting together"
+• Pick the games' month in the Games block, the sort beside it
+• The feed's month changes with the arrows in its day calendar
+• Follow and block from a profile's header
+• Steam and Xbox 360 small icons in posts are larger, on a square card

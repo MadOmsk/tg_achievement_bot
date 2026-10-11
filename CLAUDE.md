@@ -159,6 +159,7 @@ name, or when the tree goes stale.
 │   │   ├── achievement_icons.py  achievement icons on disk under data/achievements/ (#99)
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
+│   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -873,6 +874,28 @@ isn't muted there; it wasn't already published there.
   fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
+- **A low-resolution post picture is enlarged on a square** (owner,
+  2026-10-10; `services/post_picture.py`). **The original is what is
+  stored** (icon cache, cover, URLs); the square is drawn when a post is
+  sent, single or album, and kept nowhere. **A high-resolution picture goes
+  as it is.** A low-resolution one (smaller on its longer side than
+  `post_picture_low_res`: 128, 200 — the default —, 256 or 512 px; Steam's
+  and Xbox 360's icons are 64 px, PS4's trophies 240) is enlarged by a cheap
+  filter (bicubic) and set in the middle of a card, rounded, with a shadow.
+  Four global admin settings (/admin → Правила): that limit; the ground, `post_picture_style`
+  — `color` (the icon's average colour; the default), `cover` (the game's
+  cover, blurred and darkened; the colour without one) or `off` (as
+  before); the card, `post_picture_size` — `1024x1024` (default),
+  `720x1280`, or `original` (no card: the enlarged icon alone); the scale,
+  `post_picture_scale` — ×1 to ×8 (×4 default), never past 90% of the
+  card. Anything that cannot be drawn goes as before. «🖼 Тест
+  уведомлений», one global action beside these settings (/admin → ⚙️
+  Настройки → Правила; the Mini App's admin settings), sends the newest
+  achievement earned on each platform, whoever earned it
+  (`repo.latest_per_platform`), as the whole post a chat gets
+  (`Publisher.sample`: text, progress, Mini App button) — as today, then
+  on each ground — to the super-admin's own DM, recording nothing. The
+  Mini App's own pictures are not touched.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1266,6 +1289,16 @@ elsewhere in this file still describe the bot.
   «Охотятся вместе» lists each achievement once, with the faces of everybody
   who earned it (as the game page's compare), the most shared first; its page is
   titled «Охотятся вместе», the game under the head.
+- **No global month** (owner, 2026-10-09): no month chip in a page's head.
+  Home and a profile open on the month now, their gallery stays on it, and
+  the «Игры» block picks its own month at its right
+  (`person/games-section/GamesSection`, a past month read with
+  `/club/people?month=`; the sort toggle left of it). The Feed
+  changes month in its day calendar — its arrows walk every month with posts
+  and load the one stepped to, the calendar staying open as its days fill in.
+  News is the month now; only the Ranking keeps a month in its head. Somebody
+  else's profile has the follow control (`FollowButton`: follow, or «Подписан
+  ⌄» with unfollow and block) at its head's right.
 - **No drawers: pages** (owner, 2026-10-07; `shared/lib/sheet/Sheet`): what rose
   from the bottom as a drawer — notifications, a person's card, follows, the
   month's games, a ranking's lists, an achievement, an HLTB game, the merge — is
@@ -1276,7 +1309,7 @@ elsewhere in this file still describe the bot.
   game account is open, several start closed. The follows page names its list in the head and picks it at the
   right (following / friends / followers / blocked, each with its count), and
   searches the list shown by nickname under the head. A pick from a short list is the `Dropdown`, never a page: the
-  month, the ranking's day / month. The day to jump to in a feed is the month's
+  games block's month, the ranking's month and day / month. The day to jump to in a feed is the month's
   calendar unfolding under the day's label, the screen's width
   (`person/day-jump/DayCalendar`: days with posts enabled, with their counts).
   The feed's posts are built as the reader nears the end (`FeedPosts`, eight
@@ -1418,7 +1451,9 @@ keyboard.
   - `services/admin_credentials.py` — the shared credentials (`set` raising
     `CredentialInvalid` / `CredentialSetupError`, `clear`).
   - `services/admin_actions.py` — **every action**, one class each: what it
-    is about (a person, one game account, a chat), its label, whether it is
+    is about (a person, one game account, a chat, or the app as a whole —
+    `global`, target `all`, drawn in the settings group its `section`
+    names), its label, whether it is
     dangerous, how many confirmations it takes and their words, what it does.
     `available` lists a card's actions; `perform` takes one a step at a time —
     `Confirm` (the words, the "yes", the next step) until the last step, then
@@ -1427,7 +1462,8 @@ keyboard.
     (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
     steps and the words are the server's. Today: exclude / restore, refresh and
     reset an account (reset asks once, naming it), take a chosen picture down,
-    delete a person (asks twice); on a chat, the promo (asks once), delete the
+    delete a person (asks twice); globally, the notification test (in
+    Правила); on a chat, the promo (asks once), delete the
     last message, the three wipes (each asks once with the count). Under them,
     `services/admin_accounts.py` (refresh: presence, then the delta since the
     newest unlock; reset) and `services/admin_cleanup.py` (which messages a wipe
@@ -1455,7 +1491,7 @@ keyboard.
   mail login (#17) — a key is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
-  rarity threshold, the digest size, profile links · Новые пользователи: the
+  rarity threshold, the digest size, profile links, the post picture, its card, scale and small-icon limit · Новые пользователи: the
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.
@@ -1602,7 +1638,7 @@ History: #111.
 | `/recent` | listing, quoted | `repo.chat_recent()` | the chat's subscribers | `unlocked_at` ↓ | `recent_limit`, or the command's `N` (≤ `RECENT_MAX`) |
 | summary leaderboards | listing, quoted | `repo.chat_member_stats()` | every subscriber, **zeroes included** | the window's count ↓ | `summary_top_limit` |
 | `/online` | listing, plain | `repo.chat_member_presence()` | subscribers ∪ `chat_seen` | playing → online → offline, then `updated_at` ↓ | — |
-| the admin's user list | listing (plain) **and** inline | `repo.admin_users()` | anyone with a platform linked | `is_excluded` ↑, `last_online_at` ↓ | `PAGE_SIZE`, `◀️ N/M ▶️` |
+| the admin's user list | listing (plain) **and** inline | `repo.admin_users()` | everybody, 🔘 with no game account (owner, 2026-10-10) | `is_excluded` ↑, `last_online_at` ↓, newest first | `PAGE_SIZE`, `◀️ N/M ▶️` |
 | the admin's chat list | inline | `repo.admin_chats()` | every chat | `is_active` ↓, title ↑ | — |
 | `/who`'s picker | inline | `repo.chat_member_presence()` | as `/online` | as `/online` | — (three per row) |
 | `/panel`'s "Мои чаты" | inline | `repo.user_chats()` | active chats this person subscribed to or wrote in | title ↑ | — |
@@ -1829,7 +1865,11 @@ sent to a chat.
 - **An achievement has a page of its own** (owner, 2026-10-05;
   `components/game/achievement-page/AchievementPage`, on the same layout as a
   post's page, `components/game/post-page/PostPage.css`): a row on the game page
-  opens it (a secret one is revealed first). The game in the head, its rarity and
+  opens it (a secret one is revealed first), and so does a tap on a post in
+  the Feed, a card in Home's gallery or a row of the Ranking's lists («Охотятся
+  вместе», rare finds) (owner, 2026-10-09;
+  `AchievementLoader`, opened through `useOpenAchievement` like a game) — over
+  everything, on its own; the post's or card's game line is what opens the game. The game in the head, its rarity and
   points (or trophy) at the head's right, as the game page shows its score; the
   picture whole; when it was earned; its name and description; then «Как
   получить», the Steam guides' tip whole, when there is one — a row with a tip
@@ -1842,7 +1882,7 @@ sent to a chat.
   of a post's or an achievement's page, and a face that zooms. Never on Steam. As
   large as the screen allows, all of it; two fingers zoom and move it, a double
   tap zooms in or back; a tap at its own size or the phone's back closes it —
-  nothing is drawn over the picture. The feeds keep their taps (a post opens its game or its page).
+  nothing is drawn over the picture. The feeds keep their taps (an achievement's post opens the achievement, a news post its page).
 - **A post's frame is its picture's shape** (owner, 2026-10-05; both feeds,
   `shared/lib/img-ratio`): proportions read when the picture loads and
   remembered (`localStorage`), kept between 4:5 and 1.91:1; beyond that the
@@ -2043,7 +2083,9 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `prerelease`: `changelog/<v>.ru.md`, `.en.md`, `.contributors.md`, and
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
-  links never 404.
+  links never 404. Under each note's title, a line links its other language
+  (owner, 2026-10-10): `**Русский** · [English](<v>.en.md)` in the Russian one,
+  `[Русский](<v>.ru.md) · **English**` in the English one.
 - **A release is: notes, a short review, then `prerelease` → `main`** (owner,
   2026-09-25). A contributor's pull request targets `prerelease`, never `main`: #129
   merged into `main` deployed at once, and production announced a version with no

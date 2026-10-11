@@ -353,6 +353,13 @@ async def handle_disconnect_xbox(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "revoke_url": REVOKE_URL})
 
 
+def steam_identity(body: dict) -> str:
+    """The profile the person typed: the Mini App sends it as `steam_id`
+    (since 2026-09-25), older clients as `identity` — read both, as PSN's
+    connect reads `online_id` and `identity`."""
+    return str(body.get("steam_id") or body.get("identity") or "").strip()
+
+
 async def handle_connect_steam(request: web.Request) -> web.Response:
     user = await _require_user(request)
     steam_auth: SteamAuth | None = request.app["mini_steam_auth"]
@@ -363,8 +370,7 @@ async def handle_connect_steam(request: web.Request) -> web.Response:
     if await steam_auth.get_key() is None:
         return web.json_response({"ok": False, "error": "not_configured"}, status=400)
 
-    body = await _json_body(request)
-    raw = str(body.get("identity") or "").strip()
+    raw = steam_identity(await _json_body(request))
     if not raw:
         return web.json_response({"ok": False, "error": "missing_identity"}, status=400)
 

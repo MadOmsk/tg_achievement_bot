@@ -1,11 +1,9 @@
-import { useState } from "react";
 import type { FeedItem } from "../../../api";
 import { dayKey, dayLabel, type Locale } from "../../../i18n";
-import { Sheet } from "../../shared/lib";
+import { useOpenAchievement } from "../../shared/lib";
 import { feedKey, veiled } from "../utils";
 import { useDayJump } from "../day-jump/useDayJump";
 import { FeedRow } from "../feed-row/FeedRow";
-import { UnlockCard } from "../unlock-card/UnlockCard";
 
 export function FeedList({
   items,
@@ -13,16 +11,18 @@ export function FeedList({
   revealed,
   showSecrets,
   onReveal,
-  onOpenPerson,
 }: {
   items: FeedItem[];
   locale: Locale;
   revealed: Set<string>;
   showSecrets?: boolean;
   onReveal: (key: string) => void;
+  /** Kept for callers; an achievement's page names its game, not its author. */
   onOpenPerson?: (personId: number) => void;
 }) {
-  const [item, setItem] = useState<FeedItem | null>(null);
+  // A row opens the achievement on its own page, as a post does (owner, 2026-10-09).
+  const openAchievement = useOpenAchievement();
+  const setItem = (row: FeedItem) => openAchievement?.(row);
   const jump = useDayJump(items, locale);
   const groups: Array<{ key: string; label: string; items: FeedItem[] }> = [];
   for (const row of items) {
@@ -60,21 +60,6 @@ export function FeedList({
           })}
         </section>
       ))}
-      {item && (
-        <Sheet mid onClose={() => setItem(null)} title={item.game ?? undefined}>
-          <div className="sheet-unlock">
-            <UnlockCard
-              item={item}
-              locale={locale}
-              secret={veiled(item, feedKey(item), revealed, showSecrets)}
-              author
-              gameInCopy
-              onOpenPerson={onOpenPerson}
-              onReveal={onReveal}
-            />
-          </div>
-        </Sheet>
-      )}
     </div>
   );
 }
