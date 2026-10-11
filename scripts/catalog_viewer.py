@@ -1174,18 +1174,26 @@ async def review(request: web.Request) -> web.Response:
     tab = request.query.get("tab", "versions")
     marks = ",".join("?" * len(_GAME_RELATIONS))
     games_tab = tab == "games"
-    where = f"relation IN ({marks})" if games_tab else f"relation NOT IN ({marks})"
+    # A pair is about two games only when its versions are in two games; a
+    # doubt inside one game (is this version a remaster after all?) is a
+    # version question: keep it here, or move it out as another game.
+    two_games = (
+        "(SELECT game_id FROM game_versions WHERE version_id = mp.version_id) IS NOT"
+        " (SELECT game_id FROM game_versions WHERE version_id = mp.other_id)"
+    )
+    games_where = f"mp.relation IN ({marks}) AND {two_games}"
+    versions_where = f"NOT ({games_where})"
+    where = games_where if games_tab else versions_where
     with _db(request) as conn:
         counts = {
             name: conn.execute(
-                f"SELECT COUNT(*) FROM match_pairs WHERE relation {op} ({marks})",
-                _GAME_RELATIONS,
+                f"SELECT COUNT(*) FROM match_pairs mp WHERE {clause}", _GAME_RELATIONS
             ).fetchone()[0]
-            for name, op in (("versions", "NOT IN"), ("games", "IN"))
+            for name, clause in (("versions", versions_where), ("games", games_where))
         }
         pairs = conn.execute(
-            "SELECT version_id AS subject, other_id AS other, relation, p, features"
-            f" FROM match_pairs WHERE {where} ORDER BY p DESC LIMIT ?",
+            "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
+            f" mp.features FROM match_pairs mp WHERE {where} ORDER BY mp.p DESC LIMIT ?",
             (*_GAME_RELATIONS, PAGE_SIZE),
         ).fetchall()
         back = f"/review?tab={tab}"
@@ -1328,6 +1336,8 @@ async def decide_games(request: web.Request) -> web.Response:
     decision, back = str(form["decision"]), str(form.get("back") or "/review?tab=games")
     relation, _, flip = decision.partition(":")
     repo = _repo(request)
+    if game_id == other_game:
+        raise _back(back, f"game {game_id} is one game: answer its versions on the other tab")
     a, b = await _game_anchors(repo, game_id, other_game)
     if flip:
         a, b = b, a
