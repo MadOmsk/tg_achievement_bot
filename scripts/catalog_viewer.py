@@ -1342,12 +1342,29 @@ def _proposal_decision(answer: str, model: str) -> str | None:
     return None
 
 
+def _current_game(conn: sqlite3.Connection, game_id: int) -> int:
+    """The game a game id stands for now: a game merged into another is an
+    empty row pointing at it (merged_into), followed to its end."""
+    seen = {game_id}
+    while True:
+        row = conn.execute("SELECT merged_into FROM games WHERE game_id = ?", (game_id,)).fetchone()
+        if row is None or row[0] is None or row[0] in seen:
+            return game_id
+        game_id = row[0]
+        seen.add(game_id)
+
+
 def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
     """A game in a card: its covers, identity, and every version with its
     store page (or that it has none)."""
     row = conn.execute("SELECT game_id FROM games WHERE game_id = ?", (game_id,)).fetchone()
     if row is None:
         return f"<p>game {game_id} is gone (rebuilt since)</p>"
+    now = _current_game(conn, game_id)
+    if now != game_id:
+        return f"<p><small>game {game_id} was merged into game {now}:</small></p>" + (
+            _game_detail(conn, now)
+        )
     versions = conn.execute(
         "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.on_sale, v.name,"
         " v.console, v.release_date, v.platform, v.title_id, gv.role, " + COVER + ","
@@ -1399,7 +1416,15 @@ async def proposals(request: web.Request) -> web.Response:
 
         for n, item in enumerate(items, 1):
             item["n"] = n
-        open_items = [i for i in items if not answered(i["game_a"], i["game_b"])]
+            # A game merged since (answered "one game", here or elsewhere) is
+            # the game it went into; two that became one are answered.
+            item["game_a"] = _current_game(conn, item["game_a"])
+            item["game_b"] = _current_game(conn, item["game_b"])
+        open_items = [
+            i
+            for i in items
+            if i["game_a"] != i["game_b"] and not answered(i["game_a"], i["game_b"])
+        ]
         counts: dict[str, int] = {}
         for i in open_items:
             key = i["answer"].split(":")[0]
