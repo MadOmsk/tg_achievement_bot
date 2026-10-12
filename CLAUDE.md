@@ -789,7 +789,10 @@ isn't muted there; it wasn't already published there.
   2026-10-10; `services/post_picture.py`). **The original is what is
   stored** (icon cache, cover, URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
-  as it is.** A low-resolution one (smaller on its longer side than
+  as it is** — unless more than a tenth of it is see-through (2026-10-12:
+  Aniimo's white PSN trophies on nothing reached the chat as an empty
+  square, Telegram flattening the transparency): that one is set on the
+  card at its own size, never enlarged. A low-resolution one (smaller on its longer side than
   `post_picture_low_res`: 128, 200 — the default —, 256 or 512 px; Steam's
   and Xbox 360's icons are 64 px, PS4's trophies 240) is enlarged by a cheap
   filter (bicubic) and set in the middle of a card, rounded, with a shadow.
