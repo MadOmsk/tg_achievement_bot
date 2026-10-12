@@ -426,9 +426,12 @@ def _relations(
             game_era[g] = min(era(candidates[v]) or 9999 for v in group)
 
     def root(game: int, seen: set[int]) -> int:
-        """Follow remaster/remake links back to the earliest original."""
+        """Follow remaster links back to the earliest original. A remake is
+        an original of its own (owner, 2026-10-12): a remaster of it points
+        at it — Gears of War: Reloaded at Ultimate Edition, a remake of
+        Gears of War."""
         for g, r, kind in edges:
-            if g == game and kind in ("remaster_of", "remake_of") and r not in seen:
+            if g == game and kind == "remaster_of" and r not in seen:
                 return root(r, seen | {r})
         return game
 

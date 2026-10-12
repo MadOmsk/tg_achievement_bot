@@ -645,8 +645,10 @@ What the stores and HLTB say about a game, collected but not shown yet
   its row and id.
   - **A remaster, a remake, a compilation, a VR version is a game of its own**,
     related to the original: `remaster_of` / `remake_of` / `vr_of` point at the
-    **earliest** original (no chains), `contains` from a compilation to each
-    part. Inside a game: the same product across platforms (PS4 and PS5, One and
+    **earliest** original (no chains through remasters), `contains` from a
+    compilation to each part. **A remake is an original of its own** (owner,
+    2026-10-12): a remaster of a remake points at the remake — Gears of War:
+    Reloaded is a remaster of Ultimate Edition, a remake of Gears of War. Inside a game: the same product across platforms (PS4 and PS5, One and
     Series released together under one name are one game, even with two lists —
     not two games of one pack, Return to Arkham), demos (betas and tech tests too) and
     tools. No "edition" role (owner, 2026-10-11): GOTY / Deluxe are packs the

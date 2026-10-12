@@ -674,3 +674,24 @@ async def test_a_beta_stays_with_its_game_ported_years_later(repo: Repo) -> None
     game = await repo.linked_game_of(one)
     assert await repo.linked_game_of(steam) == game
     assert await repo.linked_game_of(beta) == game
+
+
+async def test_a_remaster_of_a_remake_points_at_the_remake(repo: Repo) -> None:
+    """Gears of War (owner, 2026-10-12): Ultimate Edition is a remake of the
+    2006 game, Reloaded a remaster of Ultimate Edition — not of the 2006 one."""
+    gow = await _version(repo, "GOW", "Gears of War", "2006", developer="Epic Games")
+    ue = await _version(
+        repo, "UE", "Gears of War: Ultimate Edition", "2015", developer="The Coalition"
+    )
+    reloaded = await _version(
+        repo, "RL", "Gears of War: Reloaded", "2025", developer="The Coalition"
+    )
+    await repo.save_decision(ue, gow, "remake_of", features=None, model=None, decided_by="t")
+    await repo.save_decision(reloaded, ue, "remaster_of", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([gow, ue, reloaded])
+    g_gow, g_ue, g_rl = [await repo.linked_game_of(v) for v in (gow, ue, reloaded)]
+    assert len({g_gow, g_ue, g_rl}) == 3
+    cur = await repo._conn.execute("SELECT game_id, related_id, kind FROM game_relations")
+    assert sorted(tuple(r) for r in await cur.fetchall()) == sorted(
+        [(g_ue, g_gow, "remake_of"), (g_rl, g_ue, "remaster_of")]
+    )
