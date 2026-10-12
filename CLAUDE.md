@@ -180,6 +180,8 @@ name, or when the tree goes stale.
 │   │   ├── stores/               what each store says about a game (#147), network and parsing only:
 │   │   │                         steam_store.py, xbox_catalog.py, psn_store.py, hltb_page.py
 │   │   ├── store_collect.py      collecting one game from them: versions, DLC, HLTB, when due
+│   │   ├── advice.py             the advisers' review of the games matcher: questions, answers,
+│   │   │                         the agreement rule, `data/advice/` (#147, no DB access)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -236,6 +238,8 @@ name, or when the tree goes stale.
 │   ├── reparse_store_payloads.py the store side again from the kept answers, no request (#147)
 │   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
 │   ├── fit_match_weights.py      the games matcher's weights fitted to the operator's labels (#147)
+│   ├── advise_pairs.py           the matcher's doubtful pairs to Claude and Gemini and back:
+│   │                             export / import / status / apply / conflicts (#147)
 │   ├── xbox-deploy.sh            what CI runs on the server (/usr/local/bin/xbox-deploy)
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
@@ -771,9 +775,30 @@ What the stores and HLTB say about a game, collected but not shown yet
     labels move only what they clearly disagree with. The script prints
     held-out accuracy before and after and the weights that moved, writes them
     as JSON, and changes nothing: `WEIGHTS` is edited by hand once the fit is
-    judged better. **Disputed
-    pairs are the operator's** (owner, 2026-10-09; Haiku may advise one day, not
-    decide).
+    judged better. **A label weighs by who gave it**: the operator's 1.0, the
+    advisers' `match_fit.ADVISER_WEIGHT` (0.6); the script prints the count
+    per source.
+  - **Doubtful pairs go to two advisers first** (owner, 2026-10-12;
+    `services/advice.py`, `scripts/advise_pairs.py`). Where the model is
+    sure it decides alone; the pairs it is not sure of — the review list
+    (game ↔ game, version ↔ game), an HLTB match in the grey zone (score
+    under `ACCEPT_SCORE` + half `CLEAR_MARGIN`, 0.92), an HLTB DLC left
+    unlinked as ambiguous — and a seeded 5% audit of the sure ones (a hash
+    of the pair, so a pair picked stays picked; two versions of one list
+    are left out) are asked of Claude and Gemini, each on its own, without
+    the model's guess. All three agree: a label `model+claude+gemini` (still
+    a training example); Claude and Gemini agree against the model:
+    `claude+gemini`; they disagree, or either is unsure or of low
+    confidence: nothing is written, the pair is the operator's (`conflicts`
+    → the viewer's `/proposals`). "Another of the series", "not related"
+    and "not a game" agree (Claude's word kept); a directed relation agrees
+    only in one direction. **An operator's label is never overwritten**
+    (anything not an adviser's `decided_by`). Labels are written as the
+    viewer writes them (`save_decision`, then the linker); an HLTB match
+    agreed on becomes a `manual` link. Questions and answers are JSON in
+    `data/advice/` beside the database (`pair_state(pair_id, dir)` for the
+    viewer), never in the database. Not writable yet, kept there:
+    rejecting an HLTB match, linking an HLTB DLC.
 - **A fixed parser is applied to what is kept, not by asking again**:
   `scripts/reparse_store_payloads.py` (`StoreCollector.reparse_stored`, no
   request) reads every kept answer through today's parsers, writes it as a

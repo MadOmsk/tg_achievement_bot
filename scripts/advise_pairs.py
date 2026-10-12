@@ -15,7 +15,8 @@ Steps:
     import      an adviser's replies (JSON) → `claude.json` / `gemini.json`
     status      where every pair stands (read-only)
     apply       the agreed answers → labels, through the viewer's own path
-                (`repo.save_decision`, then `GameLinker.link_versions`)
+                (`repo.save_decision`, then `GameLinker.link_versions`); with
+                the viewer stopped: the linker's lock holds in one process
     conflicts   the disputed pairs for the operator, as the viewer's
                 `--proposals` file (and its `--gemini` folder)
 
