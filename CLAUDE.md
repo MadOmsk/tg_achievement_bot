@@ -589,7 +589,11 @@ What the stores and HLTB say about a game, collected but not shown yet
   new store being one line): the Microsoft Store's "xbox pc", Steam's
   "steam", later "egs pc", "gog pc"; a PC of no known store (an Xbox `Win32`
   list of a game bought elsewhere, HLTB's plain "PC") "pc (store unknown)".
-  The stored value and the matcher's maps stay `pc`.
+  The stored value and the matcher's maps stay `pc`. **"pc (store unknown)"
+  is a fallback** (owner, 2026-10-12): it only says "the game is on PC", so
+  once the game has a PC version in a known store (xbox pc, Steam, later EGS,
+  GOG) it takes the role `covered` — kept in its game (it still draws its
+  namesake in) and shown nowhere but the game page's full table.
   A version points at its achievement list (`platform`, `title_id`) once that is
   proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).

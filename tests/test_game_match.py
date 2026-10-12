@@ -898,6 +898,20 @@ async def test_a_win32_list_joins_its_namesakes_game(repo: Repo) -> None:
     game = await repo.linked_game_of(steam)
     assert await repo.linked_game_of(seen) == game
     assert await repo.linked_game_of(ps4) == game
+    # A known-store PC version (Steam) covers it (owner, 2026-10-12).
+    cur = await repo._conn.execute("SELECT role FROM game_versions WHERE version_id = ?", (seen,))
+    assert (await cur.fetchone())[0] == "covered"
+
+
+async def test_a_lone_unknown_store_pc_version_is_shown(repo: Repo) -> None:
+    """With no PC version of a known store, "pc (store unknown)" is the game's PC."""
+    from bot.services.stores import UNKNOWN_STORE
+
+    ps4 = await _version(repo, "HR4", "HEAVY RAIN™", "2016", store="psn", console="ps4")
+    seen = await _version(repo, "1743969133", "Heavy Rain", "", store=UNKNOWN_STORE, console="pc")
+    await GameLinker(repo).link_versions([ps4, seen])
+    cur = await repo._conn.execute("SELECT role FROM game_versions WHERE version_id = ?", (seen,))
+    assert (await cur.fetchone())[0] == "version"
 
 
 def _migration(name: str) -> str:

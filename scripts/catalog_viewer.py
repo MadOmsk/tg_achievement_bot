@@ -1138,7 +1138,7 @@ async def games(request: web.Request) -> web.Response:
             "   WHERE r.game_id = g.game_id) AS relates,"
             f"  (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM game_versions gv"
             "   JOIN versions v ON v.version_id = gv.version_id"
-            "   WHERE gv.game_id = g.game_id) AS consoles"
+            "   WHERE gv.game_id = g.game_id AND gv.role <> 'covered') AS consoles"
             " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name LIKE ?)"
             " ORDER BY versions DESC, g.game_id DESC LIMIT ?",
             (q, f"%{q}%", PAGE_SIZE * 3),
@@ -1544,7 +1544,8 @@ def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
     """A game in one cell: its covers, name and identity, consoles."""
     row = conn.execute(
         f"SELECT (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM game_versions gv"
-        "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?) AS consoles,"
+        "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?"
+        "  AND gv.role <> 'covered') AS consoles,"
         " (SELECT " + COVER.replace(" AS cover", "") + " FROM game_versions gv"
         "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?"
         "  AND gv.role IN ('version', 'edition') LIMIT 1) AS cover",
@@ -1724,7 +1725,7 @@ def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
         " (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = v.platform"
         "  AND a.title_id = v.title_id) AS achievements"
         " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
-        " WHERE gv.game_id = ? ORDER BY v.release_date, v.console",
+        " WHERE gv.game_id = ? AND gv.role <> 'covered' ORDER BY v.release_date, v.console",
         (game_id,),
     ).fetchall()
     covers = list(dict.fromkeys(v["cover"] for v in versions if v["cover"]))[:3]

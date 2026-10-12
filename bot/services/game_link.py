@@ -361,7 +361,21 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
             # store sells around the same version (`editions`), and a product
             # of its own is the game, or a remaster.
             roles[c.version_id] = ("version", None)
+    # A PC version of no known store only says "it is on PC" (owner,
+    # 2026-10-12): once the game has a PC version in a known store (xbox pc,
+    # Steam; later EGS, GOG) it is covered — kept in its game, so it still
+    # draws its namesake in, but shown nowhere.
+    if any(_known_pc(c) for c in cluster):
+        for c in cluster:
+            if c.store == "unknown" and roles[c.version_id] == ("version", None):
+                roles[c.version_id] = ("covered", None)
     return roles
+
+
+def _known_pc(c: Candidate) -> bool:
+    """A PC version in a store we know: Steam's own, or a PC product of a
+    store other than "unknown"."""
+    return c.console == "steam" or (c.console == "pc" and c.store not in ("unknown", "list"))
 
 
 def _relations(
