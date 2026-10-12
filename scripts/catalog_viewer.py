@@ -1383,6 +1383,40 @@ def _proposal_decision(answer: str, model: str) -> str | None:
     return None
 
 
+def load_gemini(directory: Path | None) -> dict[int, dict[str, str]]:
+    """Gemini's answers about the proposals (owner, 2026-10-12): `*.txt` files,
+    one line per pair, `pair|relation|direction|confidence|why`, the pair being
+    the proposal's number. Each becomes the decision the game picker posts:
+    `not_related` is "other", a `second` direction the other way round."""
+    found: dict[int, dict[str, str]] = {}
+    if directory is None or not directory.is_dir():
+        return found
+    for path in sorted(directory.glob("*.txt")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            parts = line.strip().split("|", 4)
+            if len(parts) < 4 or not parts[0].strip().isdigit():
+                continue
+            pair, relation, direction, confidence = (p.strip() for p in parts[:4])
+            relation = "other" if relation == "not_related" else relation
+            if not relation:
+                continue
+            flip = direction == "second" and relation not in ("same", "series", "other")
+            found[int(pair)] = {
+                "decision": f"{relation}:flip" if flip else relation,
+                "confidence": confidence,
+                "why": parts[4].strip() if len(parts) > 4 else "",
+            }
+    return found
+
+
+def _agreeing(decision: str, opinions: list[tuple[str, str | None]]) -> str:
+    """Who gave this decision, as a button says it: "Claude, Gemini and the
+    model", "Claude and Gemini", "Model"."""
+    who = [name for name, said in opinions if said == decision]
+    text = who[0] if len(who) == 1 else ", ".join(who[:-1]) + " and " + who[-1]
+    return "Model" if text == "the model" else text[:1].upper() + text[1:]
+
+
 def _current_game(conn: sqlite3.Connection, game_id: int) -> int:
     """The game a game id stands for now: a game merged into another is an
     empty row pointing at it (merged_into), followed to its end."""
@@ -1489,18 +1523,22 @@ async def proposals(request: web.Request) -> web.Response:
             # it unclear whose answer a button records).
             this, that = _game_name(conn, i["game_a"]), _game_name(conn, i["game_b"])
             model, claude = i["model"], _proposal_decision(i["answer"], i["model"])
+            gemini_item = request.app["gemini"].get(i["n"])
+            gemini = gemini_item["decision"] if gemini_item else None
             model_says = escape(_relation_sentence(model, this, that))
             claude_says = escape(_relation_sentence(claude, this, that)) if claude else ""
+            # One button per answer, naming everybody who gave it.
+            opinions = [("Claude", claude), ("Gemini", gemini), ("the model", model)]
             quick: list[tuple[str, str]] = []
-            if claude == model:
+            for decision in dict.fromkeys(d for _who, d in opinions if d):
                 quick.append(
-                    (model, f"✓ Claude and the model: {_relation_sentence(model, this, that)}")
+                    (
+                        decision,
+                        f"✓ {_agreeing(decision, opinions)}: "
+                        f"{_relation_sentence(decision, this, that)}",
+                    )
                 )
-            else:
-                if claude:
-                    quick.append((claude, f"✓ Claude: {_relation_sentence(claude, this, that)}"))
-                quick.append((model, f"✓ Model: {_relation_sentence(model, this, that)}"))
-            if "series" not in (claude, model):
+            if "series" not in (claude, gemini, model):
                 quick.append(("series", "another game of the series"))
             quick.append(("skip", "ask later"))
             more = tuple((key, _relation_sentence(key, this, that)) for key, _ in _GAME_DECISIONS)
@@ -1524,8 +1562,15 @@ async def proposals(request: web.Request) -> web.Response:
                     if claude
                     else "Claude: <b>not sure</b>"
                 )
-                + f"<br><small>{escape(i['why'])}</small></p>"
-                f"{buttons}</div>"
+                + f"<br><small>{escape(i['why'])}</small>"
+                + (
+                    f"<br>Gemini ({escape(gemini_item['confidence'])}): "
+                    f"<b>{escape(_relation_sentence(gemini, this, that))}</b>"
+                    f"<br><small>{escape(gemini_item['why'])}</small>"
+                    if gemini_item and gemini
+                    else ""
+                )
+                + f"</p>{buttons}</div>"
             )
     filters = " · ".join(
         (
@@ -1783,7 +1828,9 @@ def _pictures(row: sqlite3.Row | None) -> str:
     )
 
 
-def build(db_path: Path, proposals_path: Path | None = None) -> web.Application:
+def build(
+    db_path: Path, proposals_path: Path | None = None, gemini_dir: Path | None = None
+) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
     app["skipped"] = set()  # pairs answered "skip": asked again, after the rest
@@ -1794,6 +1841,8 @@ def build(db_path: Path, proposals_path: Path | None = None) -> web.Application:
         if proposals_path and proposals_path.exists()
         else []
     )
+    # Gemini's answers about the same pairs, read once at start (`--gemini`).
+    app["gemini"] = load_gemini(gemini_dir)
     covers = db_path.resolve().parent / "covers"
     if covers.is_dir():
         # The covers the bot downloaded (#55), beside its database.
@@ -1845,6 +1894,11 @@ def main() -> None:
     parser.add_argument(
         "--proposals", help="an adviser's proposals for the game pairs (JSON), shown at /proposals"
     )
+    parser.add_argument(
+        "--gemini",
+        help="a folder of Gemini's answers about the proposals (*.txt, pair|relation|"
+        "direction|confidence|why), shown on the /proposals cards",
+    )
     args = parser.parse_args()
     if args.db:
         db_path = Path(args.db)
@@ -1854,7 +1908,8 @@ def main() -> None:
         db_path = Path(get_settings().db_path)
     print(f"{db_path} — http://127.0.0.1:{args.port}/ (no authentication)")
     proposals = Path(args.proposals) if args.proposals else None
-    web.run_app(build(db_path, proposals), host="127.0.0.1", port=args.port, print=None)
+    gemini = Path(args.gemini) if args.gemini else None
+    web.run_app(build(db_path, proposals, gemini), host="127.0.0.1", port=args.port, print=None)
 
 
 if __name__ == "__main__":
