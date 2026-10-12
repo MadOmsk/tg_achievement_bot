@@ -1316,6 +1316,10 @@ def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: st
     )
 
 
+# Who besides the operator may give an answer (`decided_by`): the advisers
+# agreeing (owner, 2026-10-12).
+ADVISERS = {"claude+gemini"}
+
 _PROPOSAL_WORDS = {
     "same": "one game",
     "series": "another of the series",
@@ -1592,7 +1596,10 @@ async def decide_games(request: web.Request) -> web.Response:
     a, b = await _game_anchors(repo, game_id, other_game)
     if flip:
         a, b = b, a
-    await _label(repo, a, b, relation)
+    # An answer the advisers agreed on (owner, 2026-10-12: Claude's proposal
+    # confirmed by Gemini) is written as theirs, never as the operator's.
+    by = str(form.get("by") or "")
+    await _label(repo, a, b, relation, by=by if by in ADVISERS else "viewer")
     raise _back(back, f"game {game_id} / game {other_game}: {decision}")
 
 
