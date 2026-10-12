@@ -22,6 +22,8 @@ class StoreDlc:
     release_date: str | None = None
     description_en: str | None = None
     image_url: str | None = None
+    # Whether its store offers it now (see `StoreVersion.on_sale`).
+    on_sale: bool | None = None
 
 
 @dataclass(slots=True)
@@ -46,7 +48,11 @@ class StoreVersion:
     live_service: bool = False
     # Made from our own list when no store described it (the store is the platform's).
     stand_in: bool = False
-    # Whether its store still sells it; None when not known.
+    # Whether its store offers the full product now, to buy or to download
+    # free (owner, 2026-10-12): True available, False off sale (the store
+    # knows it and offers nothing but a trial, or nothing), None unknown (not
+    # asked, no store page: a stand-in). Pre-orders count as available. Each
+    # store module's own rule; prices take no part.
     on_sale: bool | None = None
     # Every id that names this version: (kind, id), e.g. ("psn_title", "CUSA00527_00").
     store_ids: list[tuple[str, str]] = field(default_factory=list)

@@ -1080,6 +1080,7 @@ CREATE TABLE IF NOT EXISTS dlcs (
     description_en TEXT,
     image_url    TEXT,
     updated_at   TEXT NOT NULL,
+    on_sale      INTEGER,          -- 103: 1 available, 0 off sale, NULL unknown
     CHECK (store_id IS NOT NULL OR trophy_group_id IS NOT NULL)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dlcs_store ON dlcs(version_id, store_id)

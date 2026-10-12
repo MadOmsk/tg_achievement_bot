@@ -126,9 +126,34 @@ def parse_concept(concept: dict) -> list[StoreVersion]:
             media=_media(concept),
             store_ids=[("psn_concept", concept_id)] + [("psn_title", t) for t in title_ids],
             dlc_ids=addons,
+            on_sale=available(concept),
         )
         for console, title_ids in sorted(by_console.items())
     ]
+
+
+# A free game's own SKU: Sony files a free-to-play game (Brawlhalla) and free
+# access with a paid upgrade (Rainbow Six Siege) as a "TRIAL" of these
+# application types — the whole game, not a try.
+_FREE_APPS = {"FREEMIUM_APP", "UPGRADABLE"}
+
+
+def available(concept: dict) -> bool:
+    """The store offers the game now: its product has a SKU granting the full
+    game, a free-to-play app, or a pre-order — not only a time-limited trial
+    (`PLAY_FIRST_TRIAL`, a game trial). A concept the store still shows with
+    no such SKU (or no product at all: Yakuza 0's leftover themes) is off
+    sale."""
+    product = concept.get("defaultProduct") or {}
+    for sku in product.get("skus") or []:
+        if sku.get("type") == "PREORDER":
+            return True
+        for entitlement in sku.get("entitlements") or []:
+            if entitlement.get("featureType") == "FULL_GAME" or (
+                entitlement.get("applicationType") in _FREE_APPS
+            ):
+                return True
+    return False
 
 
 def _media(concept: dict) -> dict[str, object]:

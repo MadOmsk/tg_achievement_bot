@@ -572,3 +572,58 @@ async def test_a_price_change_is_not_a_change_of_the_game(repo: Repo) -> None:
         "id": "1",
         "defaultProduct": {"skus": [{"id": "S"}]},
     }
+
+
+# ------------------------------------------------------------ availability (2026-10-12)
+
+
+def _sku(*, trial: bool, actions: list[str], end: str = "9998-12-30T00:00:00Z") -> dict:
+    return {
+        "Sku": {"Properties": {"IsTrial": trial}},
+        "Availabilities": [
+            {
+                "Actions": actions,
+                "Conditions": {"StartDate": "2015-01-01T00:00:00Z", "EndDate": end},
+            }
+        ],
+    }
+
+
+def test_a_delisted_xbox_game_with_a_free_trial_is_off_sale() -> None:
+    """The Crew: the trial SKU still offers "Purchase", the game's do not."""
+    crew = {
+        "DisplaySkuAvailabilities": [
+            _sku(trial=True, actions=["Details", "Fulfill", "Purchase"]),
+            _sku(trial=False, actions=["License", "Details"]),
+        ]
+    }
+    assert not xbox_catalog.sold(crew)
+    sold = {"DisplaySkuAvailabilities": [_sku(trial=False, actions=["Purchase"])]}
+    assert xbox_catalog.sold(sold)
+    ended = {
+        "DisplaySkuAvailabilities": [
+            _sku(trial=False, actions=["Purchase"], end="2020-01-01T00:00:00Z")
+        ]
+    }
+    assert not xbox_catalog.sold(ended)
+
+
+def test_psn_availability_is_a_full_game_sku_or_a_free_game() -> None:
+    def concept(*skus: dict) -> dict:
+        return {"defaultProduct": {"skus": list(skus)}}
+
+    full = {"entitlements": [{"featureType": "FULL_GAME"}]}
+    free = {"entitlements": [{"featureType": "TRIAL", "applicationType": "FREEMIUM_APP"}]}
+    trial = {"entitlements": [{"featureType": "PLAY_FIRST_TRIAL"}], "fullPlayTimeTrial": 3600}
+    assert psn_store.available(concept(full))
+    assert psn_store.available(concept(free))
+    assert psn_store.available(concept({"type": "PREORDER", "entitlements": []}))
+    assert not psn_store.available(concept(trial))
+    assert not psn_store.available({"categorizedProducts": [{"topCategory": "THEME"}]})
+
+
+def test_a_steam_dlc_says_whether_it_is_sold() -> None:
+    dlc = {"type": "dlc", "name": "Blood and Wine", "steam_appid": 378648, "is_free": False}
+    assert steam_store.parse_dlc(dlc).on_sale is False
+    sold = {**dlc, "package_groups": [{"subs": [{"packageid": 1}]}]}
+    assert steam_store.parse_dlc(sold).on_sale is True

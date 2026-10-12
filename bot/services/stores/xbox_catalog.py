@@ -23,6 +23,7 @@ import httpx
 
 from bot.services.rate_limiter import RateLimiter
 from bot.services.stores import StoreDlc, StoreVersion, without_keys
+from bot.util import utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -162,14 +163,26 @@ def parse_product(product: dict) -> list[StoreVersion]:
     ]
 
 
-def sold(product: dict) -> bool:
-    """Whether the store still sells the product: some availability offers to
-    buy it (a product off sale keeps only Browse, License, Redeem…)."""
-    return any(
-        "Purchase" in (availability.get("Actions") or [])
-        for sku in product.get("DisplaySkuAvailabilities") or []
-        for availability in sku.get("Availabilities") or []
-    )
+def sold(product: dict, now: str | None = None) -> bool:
+    """Whether the store offers the product now (`versions.on_sale`; owner,
+    2026-10-12): a SKU that is not a trial has an availability that offers to
+    buy it (`Purchase` — free games and pre-orders too) and is current. A
+    trial's "Purchase" is the trial (The Crew, Destiny: delisted, their free
+    trial still "for sale"); a product off sale keeps only Browse, License,
+    Redeem. Prices take no part (they are not kept)."""
+    today = now or utcnow_iso()
+    for sku in product.get("DisplaySkuAvailabilities") or []:
+        if ((sku.get("Sku") or {}).get("Properties") or {}).get("IsTrial"):
+            continue
+        for availability in sku.get("Availabilities") or []:
+            if "Purchase" not in (availability.get("Actions") or []):
+                continue
+            conditions = availability.get("Conditions") or {}
+            start = str(conditions.get("StartDate") or "")
+            end = str(conditions.get("EndDate") or "")
+            if (not start or start[:19] <= today[:19]) and (not end or end[:19] > today[:19]):
+                return True
+    return False
 
 
 def bundle_items(product: dict) -> list[tuple[str, bool]]:
@@ -262,6 +275,7 @@ def parse_addon(product: dict) -> StoreDlc | None:
         description_en=_text(local.get("ShortDescription"))
         or _text(local.get("ProductDescription")),
         image_url=str(images.get("cover")) if images.get("cover") else None,
+        on_sale=sold(product),
     )
 
 

@@ -123,9 +123,15 @@ def parse_app(data: dict, data_ru: dict | None = None) -> StoreVersion:
         live_service=live,
         store_ids=[("steam_app", appid)],
         dlc_ids=[str(d) for d in data.get("dlc") or []],
-        on_sale=bool(data.get("is_free")) or bool(sold_package_ids(data)),
+        on_sale=available(data),
     )
     return version
+
+
+def available(data: dict) -> bool:
+    """Steam offers the app now: free, or sold as some package on its page
+    (a pre-order included). Known to Steam with neither is off sale."""
+    return bool(data.get("is_free")) or bool(sold_package_ids(data))
 
 
 def parse_dlc(data: dict) -> StoreDlc:
@@ -142,6 +148,7 @@ def parse_dlc(data: dict) -> StoreDlc:
         release_date=release_day((data.get("release_date") or {}).get("date")),
         description_en=_text(data.get("short_description")),
         image_url=_text(data.get("header_image")),
+        on_sale=available(data),
     )
 
 

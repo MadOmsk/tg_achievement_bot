@@ -290,14 +290,15 @@ class _StoresRepo:
     async def save_dlc(self, version_id: int, dlc: StoreDlc) -> None:
         await self._conn.execute(
             "INSERT INTO dlcs (version_id, store_id, name, kind, release_date, description_en,"
-            "  image_url, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "  image_url, updated_at, on_sale) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(version_id, store_id) WHERE store_id IS NOT NULL DO UPDATE SET"
             "  name = COALESCE(excluded.name, dlcs.name),"
             "  kind = COALESCE(excluded.kind, dlcs.kind),"
             "  release_date = COALESCE(excluded.release_date, dlcs.release_date),"
             "  description_en = COALESCE(excluded.description_en, dlcs.description_en),"
             "  image_url = COALESCE(excluded.image_url, dlcs.image_url),"
-            "  updated_at = excluded.updated_at",
+            "  updated_at = excluded.updated_at,"
+            "  on_sale = COALESCE(excluded.on_sale, dlcs.on_sale)",
             (
                 version_id,
                 dlc.store_id,
@@ -307,6 +308,7 @@ class _StoresRepo:
                 dlc.description_en,
                 dlc.image_url,
                 utcnow_iso(),
+                None if dlc.on_sale is None else int(dlc.on_sale),
             ),
         )
         await self._conn.commit()

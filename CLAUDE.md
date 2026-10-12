@@ -631,6 +631,19 @@ What the stores and HLTB say about a game, collected but not shown yet
     names are **not** versions (2026-10-11, 098: HLTB is matched by name, and a
     version nobody sells is no version); the game page shows them as "also
     released on" (#194).
+- **On sale, off sale, unknown** (owner, 2026-10-12; `versions.on_sale`,
+  `editions.on_sale`, `dlcs.on_sale` since migration 103: 1 / 0 / NULL).
+  **Available** when the store offers the full product now, to buy or to
+  download free — a pre-order counts; a trial, a demo SKU or a time-limited
+  try does not. **Off sale** when the store still knows it and offers
+  nothing more. **Unknown** when not asked, or there is no store page (a
+  stand-in, a PSN DLC that is only a trophy group). Per store, from what is
+  offered, never from prices: Xbox — a SKU that is not `IsTrial` with a
+  current `Purchase` availability (The Crew's trial still "sells"); Steam —
+  free, or some package on the app's page; PSN — a SKU granting
+  `FULL_GAME`, a free-to-play app (`FREEMIUM_APP`, `UPGRADABLE`: Sony files
+  those as trials) or a pre-order. The viewer says «в продаже» / «снято с
+  продажи» / «неизвестно».
 - **When**: `StoreCollector.ensure` — after a game's first new achievement is
   published (beside the HLTB match) and when its page is opened — in the
   background, and only what is due (`fetch_state`), so many people in one game
