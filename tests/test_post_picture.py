@@ -47,6 +47,52 @@ def test_a_high_res_picture_is_left_as_it_is() -> None:
         )
 
 
+def _white_trophy(size: int = 512) -> bytes:
+    """A PSN trophy drawn as Aniimo's are: a white shape on nothing (LA)."""
+    picture = Image.new("LA", (size, size), (0, 0))
+    third = size // 3
+    picture.paste((255, 255), (third, third, 2 * third, 2 * third))
+    out = io.BytesIO()
+    picture.save(out, "PNG")
+    return out.getvalue()
+
+
+def test_a_see_through_high_res_icon_is_set_on_the_card_at_its_own_size() -> None:
+    # Telegram flattens a photo's transparency onto a plain ground: a white
+    # trophy sent as it is came out as an empty square (2026-10-12).
+    data = post_picture.compose(_white_trophy(), _look(post_picture.STYLE_COLOR, scale=4))
+    assert data is not None
+    picture = _picture(data)
+    assert picture.size == (1024, 1024)
+    assert min(picture.getpixel((512, 512))) > 240  # the trophy, white
+    # Inside the icon's own square but see-through: the ground, not white.
+    assert max(picture.getpixel((512 - 200, 512))) < 200
+    # Never enlarged: 512 px stays 512, so 300 px out from the centre is
+    # outside it.
+    assert max(picture.getpixel((512 + 230, 512))) < 200
+
+
+def test_an_opaque_high_res_icon_and_rounded_corners_are_left_as_they_are() -> None:
+    rounded = Image.new("RGBA", (512, 512), (200, 30, 30, 255))
+    for x in range(12):
+        for y in range(12 - x):
+            rounded.putpixel((x, y), (0, 0, 0, 0))
+    out = io.BytesIO()
+    rounded.save(out, "PNG")
+    assert post_picture.compose(out.getvalue(), _look(post_picture.STYLE_COLOR)) is None
+
+
+async def test_build_draws_a_see_through_high_res_icon(tmp_path) -> None:
+    icon = tmp_path / "trophy.png"
+    icon.write_bytes(_white_trophy())
+    look = _look(post_picture.STYLE_COLOR)
+    data = await post_picture.build([str(icon)], [], look)
+    assert data is not None and _picture(data).size == (1024, 1024)
+    opaque = tmp_path / "art.png"
+    opaque.write_bytes(_png((512, 512)))
+    assert await post_picture.build([str(opaque)], [], look) is None
+
+
 def test_the_cover_style_puts_the_cover_round_the_icon() -> None:
     cover = _png((300, 400), (20, 200, 20, 255))
     data = post_picture.compose(_png((64, 64)), _look(post_picture.STYLE_COVER), cover)
