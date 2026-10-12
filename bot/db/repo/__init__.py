@@ -55,6 +55,8 @@ Layout:
                     entries, each source's last answer and when to ask again (091).
     _games.py       games over versions: which game each version is, how, and
                     who decided it (092).
+    _series.py      game series: which games are in each, proposed by the
+                    linker or said by the operator and the advisers (105).
 
 Each mixin above is a plain class relying on `self._conn` — provided by
 `Repo` itself below, not by a shared base class: this project runs no
@@ -130,6 +132,7 @@ from bot.db.repo._notifications import NotificationRow, PushSubscription, _Notif
 from bot.db.repo._passkeys import PasskeyRow, _PasskeysRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
+from bot.db.repo._series import _SeriesRepo
 from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
 from bot.db.repo._steam import GameNewsRow, StoredPatch, TitleSteam, _SteamRepo
@@ -227,6 +230,7 @@ class Repo(
     _GuidesRepo,
     _StoresRepo,
     _GamesRepo,
+    _SeriesRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

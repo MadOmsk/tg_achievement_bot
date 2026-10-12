@@ -926,7 +926,8 @@ def release_tail(name: str) -> tuple[str, ...]:
 
 _PLATFORM_TAIL = re.compile(
     r"[\s:\-–—]*\b(?:for\s+)?(?:windows(?:\s*10|\s*11)?|pc"
-    r"|xbox(?:\s+one|\s+series(?:\s+x\s*\|?\s*s)?)?|ps[345]|playstation\s*[345]?)"
+    r"|xbox(?:\s+one|\s+series(?:\s+x\s*\|?\s*s)?)?|ps[345](?:\s*(?:&|and|/)\s*ps[345])?"
+    r"|playstation\s*[345]?)"
     # "Minecraft: Windows 10 Edition", "… Xbox One Edition": a platform's
     # edition is the platform, not a release.
     r"(?:\s+edition)?\s*$",

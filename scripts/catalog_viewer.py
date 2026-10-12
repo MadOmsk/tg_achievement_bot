@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 from bot.db.repo import Database, Repo
+from bot.services.game_series import SURE_P
 from bot.services.stores import PC_LABELS, PC_UNKNOWN, console_label
 
 PAGE_SIZE = 100
@@ -77,6 +78,7 @@ def _page(title: str, body: str) -> web.Response:
         ' · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
         ' · <a href="/payloads">payloads</a> · <a href="/proposals">proposals</a>'
+        ' · <a href="/series">series</a>'
     )
     html = (
         "<!doctype html><meta charset=utf-8>"
@@ -1260,6 +1262,7 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         identity = _identity(conn, game_id)
         cards = _pair_rows(conn, pairs, here)
+        series_part = _game_series_section(conn, game_id)
     body = (
         _flash(request)
         + f"<p><b>{escape(identity)}</b></p>"
@@ -1283,6 +1286,7 @@ async def game(request: web.Request) -> web.Response:
             + "</p>"
             for r in relations
         )
+        + series_part
         + ("<h2>To review</h2>" + cards if pairs else "")
         + "<h2>The operator's labels on these versions</h2>"
         + _table(
@@ -1986,6 +1990,200 @@ async def game_detach(request: web.Request) -> web.Response:
     raise _back(f"/version/{version_id}", f"version {version_id} is not game {game_id}")
 
 
+# ---------------------------------------------------------------- series
+
+
+def _series_href(row: sqlite3.Row) -> str:
+    return f"/series/{row['series_id']}"
+
+
+def _series_members(conn: sqlite3.Connection, series_id: int) -> list[sqlite3.Row]:
+    """A series' games by year, with how each got there; the ones said not
+    to be in it last."""
+    return conn.execute(
+        "SELECT gs.game_id, g.name, g.year, g.developer, gs.member, gs.source,"
+        " ROUND(gs.p, 2) AS p, gs.reason, gs.decided_by FROM game_series gs"
+        " JOIN games g ON g.game_id = gs.game_id WHERE gs.series_id = ?"
+        " ORDER BY gs.member DESC, COALESCE(g.year, 9999), g.game_id",
+        (series_id,),
+    ).fetchall()
+
+
+def _member_toggle(series_id: int, game_id: int, name: str, member: bool, back: str) -> str:
+    """The operator's "not in this series" / "in it after all"."""
+    label = f"not in «{name}»" if member else f"in «{name}» after all"
+    return _button(
+        f"/series/{series_id}/member",
+        label,
+        {"game_id": game_id, "member": 0 if member else 1, "back": back},
+    )
+
+
+def _game_series_section(conn: sqlite3.Connection, game_id: int) -> str:
+    """The series a game is in (a crossover in several), how it got into
+    each, and the operator's add / remove."""
+    rows = conn.execute(
+        "SELECT gs.series_id, s.name, gs.member, gs.source, ROUND(gs.p, 2) AS p, gs.reason,"
+        " (SELECT COUNT(*) FROM game_series o WHERE o.series_id = gs.series_id"
+        "  AND o.member = 1) AS games FROM game_series gs"
+        " JOIN series s ON s.series_id = gs.series_id"
+        " WHERE gs.game_id = ? AND s.merged_into IS NULL ORDER BY gs.member DESC, s.name",
+        (game_id,),
+    ).fetchall()
+    here = f"/game/{game_id}"
+    toggles = "".join(
+        "<p>" + _member_toggle(r["series_id"], game_id, r["name"], bool(r["member"]), here) + "</p>"
+        for r in rows
+    )
+    add = (
+        f'<form method=post action="{here}/series">add to series id: '
+        "<input name=series_id size=8> or a new series named: <input name=name size=30> "
+        "<button>add</button></form>"
+    )
+    return (
+        "<h2>Series</h2>"
+        + _table(
+            [{**dict(r), "member": "yes" if r["member"] else "no (said so)"} for r in rows],  # type: ignore[arg-type]
+            {"series_id": _series_href, "name": _series_href},
+        )
+        + toggles
+        + add
+    )
+
+
+async def series_list(request: web.Request) -> web.Response:
+    q = request.query.get("q", "")
+    with _db(request) as conn:
+        rows = conn.execute(
+            "SELECT s.series_id, s.name, s.name_source,"
+            " (SELECT COUNT(*) FROM game_series gs WHERE gs.series_id = s.series_id"
+            "  AND gs.member = 1) AS games,"
+            " (SELECT COUNT(*) FROM game_series gs WHERE gs.series_id = s.series_id"
+            "  AND gs.member = 1 AND gs.source = 'auto' AND COALESCE(gs.p, 0) < ?) AS unsure,"
+            " (SELECT COUNT(*) FROM game_series gs WHERE gs.series_id = s.series_id"
+            "  AND gs.source <> 'auto') AS answered,"
+            " (SELECT MIN(g.year) FROM game_series gs JOIN games g ON g.game_id = gs.game_id"
+            "  WHERE gs.series_id = s.series_id AND gs.member = 1) AS since"
+            " FROM series s WHERE s.merged_into IS NULL AND (? = '' OR s.name LIKE ?"
+            "  OR EXISTS (SELECT 1 FROM game_series gs JOIN games g ON g.game_id = gs.game_id"
+            "   WHERE gs.series_id = s.series_id AND g.name LIKE ?))"
+            " ORDER BY games DESC, s.name LIMIT ?",
+            (SURE_P, q, f"%{q}%", f"%{q}%", PAGE_SIZE * 3),
+        ).fetchall()
+        total = conn.execute(
+            "SELECT COUNT(*), (SELECT COUNT(*) FROM game_series WHERE member = 1)"
+            " FROM series WHERE merged_into IS NULL"
+        ).fetchone()
+    body = (
+        _flash(request)
+        + f"<p>{total[0]} series, {total[1]} memberships. A game may be in several (a"
+        " crossover). <i>auto</i> rows are the linker's proposals, made again after every"
+        " linking; the operator's (<i>manual</i>) and the advisers' rows stand."
+        f" <i>unsure</i>: proposals under {SURE_P:.0%}.</p>"
+        + _button("/series/rebuild", "propose the series again")
+        + _search_form("/series", q)
+        + _table(rows, {"series_id": _series_href, "name": _series_href})
+    )
+    return _page("Series", body)
+
+
+async def series_page(request: web.Request) -> web.Response:
+    series_id = int(request.match_info["series_id"])
+    with _db(request) as conn:
+        row = conn.execute("SELECT * FROM series WHERE series_id = ?", (series_id,)).fetchone()
+        if row is not None and row["merged_into"]:
+            raise web.HTTPFound(f"/series/{row['merged_into']}")
+        members = _series_members(conn, series_id)
+    if row is None:
+        return _page(f"Series {series_id}", "<p>(not found)</p>")
+    here = f"/series/{series_id}"
+    controls = (
+        f'<form method=post action="{here}/rename">name: '
+        f'<input name=name value="{escape(row["name"])}" size=40> '
+        f'ru: <input name=name_ru value="{escape(row["name_ru"] or "")}" size=30> '
+        f"<button>rename</button> <small>({escape(row['name_source'])})</small></form>"
+        f'<form method=post action="{here}/merge">merge this series into series id: '
+        "<input name=into size=8> <button>merge</button></form>"
+        f'<form method=post action="{here}/member"><input type=hidden name=member value=1>'
+        f'<input type=hidden name=back value="{here}">add game id: '
+        "<input name=game_id size=8> <button>add</button></form>"
+    )
+    toggles = "".join(
+        "<p>" + _member_toggle(series_id, m["game_id"], m["name"], bool(m["member"]), here) + "</p>"
+        for m in members
+    )
+    body = (
+        _flash(request)
+        + controls
+        + "<h2>Games, by year</h2>"
+        + _table(
+            [{**dict(m), "member": "yes" if m["member"] else "no (said so)"} for m in members],  # type: ignore[arg-type]
+            {"game_id": _game_href, "name": _game_href},
+        )
+        + toggles
+    )
+    return _page(f"Series: {row['name']}", body)
+
+
+async def series_rebuild(request: web.Request) -> web.Response:
+    from bot.services.game_series import SeriesBuilder
+
+    count = await SeriesBuilder(_repo(request)).rebuild()
+    raise _back("/series", f"{count} series proposed")
+
+
+async def series_rename(request: web.Request) -> web.Response:
+    series_id = int(request.match_info["series_id"])
+    form = await request.post()
+    name = str(form.get("name") or "").strip()
+    if name:
+        await _repo(request).rename_series(
+            series_id, name, str(form.get("name_ru") or "").strip() or None
+        )
+    raise _back(f"/series/{series_id}", "renamed")
+
+
+async def series_merge(request: web.Request) -> web.Response:
+    series_id = int(request.match_info["series_id"])
+    form = await request.post()
+    into = str(form.get("into") or "").strip()
+    if not into.isdigit():
+        raise _back(f"/series/{series_id}", "a series id, please")
+    await _repo(request).merge_series(series_id, int(into))
+    raise _back(f"/series/{into}", f"series {series_id} merged into this one")
+
+
+async def series_member(request: web.Request) -> web.Response:
+    """The operator says a game is in a series, or is not: a `manual` row,
+    which no rebuild overwrites."""
+    series_id = int(request.match_info["series_id"])
+    form = await request.post()
+    game = str(form.get("game_id") or "").strip()
+    back = str(form.get("back") or f"/series/{series_id}")
+    if not game.isdigit():
+        raise _back(back, "a game id, please")
+    member = str(form.get("member") or "1") == "1"
+    await _repo(request).set_series_member(int(game), series_id, member)
+    raise _back(back, "in the series" if member else "not in the series")
+
+
+async def game_series_add(request: web.Request) -> web.Response:
+    """A game put in a series by hand: one by its id, or a new one by name."""
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    repo = _repo(request)
+    series = str(form.get("series_id") or "").strip()
+    name = str(form.get("name") or "").strip()
+    if series.isdigit():
+        series_id = int(series)
+    elif name:
+        series_id = await repo.create_series(name)
+    else:
+        raise _back(f"/game/{game_id}", "a series id or a name, please")
+    await repo.set_series_member(game_id, series_id, True)
+    raise _back(f"/game/{game_id}", f"added to series {series_id}")
+
+
 async def relink(request: web.Request) -> web.Response:
     from bot.services.game_link import GameLinker
 
@@ -2078,6 +2276,13 @@ def build(
     app.router.add_post("/title/{platform}/{title_id}/collect", collect)
     app.router.add_post("/fetch/due", fetch_due)
     app.router.add_get("/games", games)
+    app.router.add_get("/series", series_list)
+    app.router.add_get("/series/{series_id:\\d+}", series_page)
+    app.router.add_post("/series/rebuild", series_rebuild)
+    app.router.add_post("/series/{series_id:\\d+}/rename", series_rename)
+    app.router.add_post("/series/{series_id:\\d+}/merge", series_merge)
+    app.router.add_post("/series/{series_id:\\d+}/member", series_member)
+    app.router.add_post("/game/{game_id:\\d+}/series", game_series_add)
     app.router.add_get("/rules", rules)
     app.router.add_get("/list/{platform}/{title_id}", achievement_list)
     app.router.add_get("/steam-schema/{appid}", steam_schema)

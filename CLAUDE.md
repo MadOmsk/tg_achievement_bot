@@ -182,6 +182,7 @@ name, or when the tree goes stale.
 │   │   ├── store_collect.py      collecting one game from them: versions, DLC, HLTB, when due
 │   │   ├── advice.py             the advisers' review of the games matcher: questions, answers,
 │   │   │                         the agreement rule, `data/advice/` (#147, no DB access)
+│   │   ├── game_series.py        game series proposed from relations, labels, franchise names
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -821,6 +822,34 @@ What the stores and HLTB say about a game, collected but not shown yet
     `data/advice/` beside the database (`pair_state(pair_id, dir)` for the
     viewer), never in the database. Not writable yet, kept there:
     rejecting an HLTB match, linking an HLTB DLC.
+  - **Series** (owner, 2026-10-12; migration 105, `services/game_series.py`,
+    `db/repo/_series.py`): a series is an entity of its own (`series`), and a
+    game may be in several (`game_series`) — a crossover (Street Fighter X
+    Tekken) is in both and **never merges the two**. A membership's `source`
+    is `auto` (the linker's proposal, with `p` and the `reason` it got there),
+    `advisers` or `manual`; the last two are never overwritten, and `member =
+    0` keeps a game out for good. Evidence: a remaster, remake or VR version
+    is in its original's series and a compilation in its parts' (0.95 / 0.9);
+    the labels "another game of the series" (the operator's 0.97, the
+    advisers' 0.9); a shared **franchise** — the name before ":", " - ", a
+    number or a platform (`franchise_key`: "Halo 3", "Halo: Reach" → halo) —
+    only by the same studio or publisher, a weak 0.5. Grouping: a game and its
+    remasters are one unit; units join along evidence whose franchises agree
+    (one the other's word prefix); otherwise a game already of a series whose
+    name holds the other's franchise is a crossover — one more member of the
+    other; a lone game joins the one series its evidence leads to (Crisis Core
+    into Final Fantasy); a compilation reaching several series is a member of
+    each; other strong evidence joins, weak does nothing. A name is the
+    franchise more than half its games share ("Gears of War"), else the
+    prefix common to all ("Sonic"), lengthened to the words all go on with
+    ("Cities: Skylines"), as most of them write it. Proposed again after
+    every linking (`SeriesBuilder`, whole: cheap); a series keeps its id by
+    its anchor game, an operator's merge stands (`merged_into`).
+    `game_series.series_questions` lists the unsure memberships (under
+    `SURE_P`, nobody answered) for the advisers, `answer_series_question`
+    keeps their answer; the viewer has `/series`, a series' page (games by
+    year, how each got there; rename, merge, add, "not in this series") and
+    a game's series.
 - **A fixed parser is applied to what is kept, not by asking again**:
   `scripts/reparse_store_payloads.py` (`StoreCollector.reparse_stored`, no
   request) reads every kept answer through today's parsers, writes it as a

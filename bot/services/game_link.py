@@ -39,6 +39,7 @@ from bot.services.game_match import (
     is_extra,
     kind_of,
 )
+from bot.services.game_series import SeriesBuilder
 from bot.services.hltb_match import normalize
 
 if TYPE_CHECKING:
@@ -185,6 +186,13 @@ class GameLinker:
             report.review = [(v.subject, v.other, v.relation, v.p) for v in review]
         await self._repo.drop_empty_games()
         await self._repo.refresh_game_facts(sorted(set(game_of.values())))
+        try:
+            # Series follow the games: a rebuild may merge, split or relate
+            # them. Proposed again whole (a few thousand games: cheap); a
+            # failure leaves the last proposals and never fails the linking.
+            await SeriesBuilder(self._repo).rebuild()
+        except Exception:
+            log.exception("proposing the series failed")
         return report
 
     async def _load_achievements(self, members: list[Candidate], rows: list[dict]) -> None:

@@ -1238,6 +1238,36 @@ CREATE TABLE IF NOT EXISTS game_relations (
     CHECK (game_id <> related_id)
 );
 
+-- Game series (105): an entity of its own; a game may be in several (a
+-- crossover). `game_series.source`: auto (the linker's proposal, with p and
+-- how the game got there) / advisers / manual — the last two are never
+-- overwritten; `member = 0` says a game is not in it and keeps it out. A
+-- series keeps its id through rebuilds by its anchor game.
+CREATE TABLE IF NOT EXISTS series (
+    series_id      INTEGER PRIMARY KEY,
+    name           TEXT NOT NULL,
+    name_ru        TEXT,
+    name_source    TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
+    anchor_game_id INTEGER UNIQUE REFERENCES games(game_id) ON DELETE SET NULL,
+    merged_into    INTEGER REFERENCES series(series_id),  -- an old id keeps resolving
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS game_series (
+    game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    series_id  INTEGER NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,              -- auto / advisers / manual
+    member     INTEGER NOT NULL DEFAULT 1, -- 0: said not to be in it
+    p          REAL,
+    reason     TEXT,                       -- how the game got there
+    decided_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (game_id, series_id)
+);
+CREATE INDEX IF NOT EXISTS idx_game_series_series ON game_series(series_id);
+
 -- Editions as a store sells them: a pack of a game and its add-ons, not a
 -- re-release (094).
 CREATE TABLE IF NOT EXISTS editions (
