@@ -736,7 +736,12 @@ What the stores and HLTB say about a game, collected but not shown yet
   saw them — what the weights will be fitted to); which game a version is in
   (`game_versions`, **one game per version**, its role version / demo / tool / mode and the version a demo, tool or mode is of) and how games relate
   (`game_relations`) are rebuilt from the labels and the model by
-  `services/game_link.py`, so a decision outlives every rebuild. A game keeps
+  `services/game_link.py`, so a decision outlives every rebuild. **A label
+  outlives its versions too** (migration 106, 2026-10-12): `match_decisions`
+  has no foreign keys, so a store re-parse deleting a version keeps every
+  answer about it, with which product each side was (`subject_key`,
+  `other_key`: store:product_id:console); the linker reads only labels between
+  versions that exist, the fit reads a gone pair from its feature snapshot. A game keeps
   its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
   first plain version); a list's stand-in that becomes a store product keeps
   its row and id.

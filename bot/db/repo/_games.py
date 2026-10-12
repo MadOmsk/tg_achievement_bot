@@ -105,10 +105,15 @@ class _GamesRepo:
             )
             await self._conn.execute(
                 "INSERT INTO match_decisions (version_id, other_id, relation, features, model,"
-                " decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " decided_by, decided_at, subject_key, other_key) VALUES (?, ?, ?, ?, ?, ?, ?,"
+                " (SELECT store || ':' || product_id || ':' || console FROM versions"
+                "  WHERE version_id = ?),"
+                " (SELECT store || ':' || product_id || ':' || console FROM versions"
+                "  WHERE version_id = ?))"
                 " ON CONFLICT(version_id, other_id) DO UPDATE SET relation = excluded.relation,"
                 "  features = excluded.features, model = excluded.model,"
-                "  decided_by = excluded.decided_by, decided_at = excluded.decided_at",
+                "  decided_by = excluded.decided_by, decided_at = excluded.decided_at,"
+                "  subject_key = excluded.subject_key, other_key = excluded.other_key",
                 (
                     version_id,
                     other_id,
@@ -117,6 +122,8 @@ class _GamesRepo:
                     model,
                     decided_by,
                     utcnow_iso(),
+                    version_id,
+                    other_id,
                 ),
             )
             await self._conn.execute(

@@ -1198,15 +1198,19 @@ CREATE INDEX IF NOT EXISTS idx_game_versions_game ON game_versions(game_id, role
 
 -- The operator's decisions (099): labels on pairs of versions, the input the
 -- games are rebuilt from, with the pair's signs for fitting the weights.
+-- No foreign keys (106): a label outlives its versions — a store re-parse
+-- deleting a version must not delete the operator's answers about it.
 CREATE TABLE IF NOT EXISTS match_decisions (
-    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    other_id   INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    version_id INTEGER NOT NULL,
+    other_id   INTEGER NOT NULL,
     relation   TEXT NOT NULL,   -- same / edition / demo_of / tool_of / mode_of / remaster_of /
                                 -- remake_of / contains / vr_of / other
     features   TEXT,            -- JSON: the pair's signs when it was decided
     model      TEXT,            -- which weights saw them
     decided_by TEXT NOT NULL,
     decided_at TEXT NOT NULL,
+    subject_key TEXT,           -- store:product_id:console of each side when decided,
+    other_key   TEXT,           -- to find a gone version's product again
     PRIMARY KEY (version_id, other_id),
     CHECK (version_id <> other_id)
 );

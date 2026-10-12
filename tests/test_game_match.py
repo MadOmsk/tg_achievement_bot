@@ -922,3 +922,22 @@ async def test_migration_104_moves_win32_stand_ins_to_the_unknown_store(repo: Re
     await conn.execute(_migration("104_pc_unknown_store.sql"))  # one statement
     cur = await conn.execute("SELECT product_id, store FROM versions ORDER BY product_id")
     assert [tuple(r) for r in await cur.fetchall()] == [("1", "unknown"), ("2", "xbox")]
+
+
+async def test_a_label_outlives_its_version(repo: Repo) -> None:
+    """A store re-parse deleting a version must not delete the operator's
+    answer about it (migration 106): the label stays, with which product each
+    side was."""
+    xbox = await _version(repo, "BR765873CQJD", "The Witcher 3: Wild Hunt", "2015")
+    steam = await _version(
+        repo, "292030", "The Witcher 3: Wild Hunt", "2015", store="steam", console="steam"
+    )
+    await repo.save_decision(steam, xbox, "other", features=None, model=None, decided_by="t")
+    await repo.delete_version(steam)
+    cur = await repo._conn.execute(
+        "SELECT version_id, other_id, relation, subject_key, other_key FROM match_decisions"
+    )
+    assert [tuple(r) for r in await cur.fetchall()] == [
+        (steam, xbox, "other", "steam:292030:steam", "xbox:BR765873CQJD:one")
+    ]
+    await GameLinker(repo).link_all()  # a label whose version is gone is simply not read
