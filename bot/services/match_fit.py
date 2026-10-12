@@ -7,11 +7,6 @@ reference at 0, a softmax gives probabilities. Fitting is plain gradient
 descent on the log-loss, **pulled towards the current weights** (an L2 term
 around them, not around zero): with a few dozen labels the weights should
 move only where the operator's answers clearly disagree with them.
-
-**An operator errs too** (owner, 2026-10-12), so no label is taken as
-certain: each is trusted at `1 - smoothing` (label smoothing), and the
-labels the fitted weights still find unlikely are listed for a second look
-(`disputed`) instead of being bent to.
 """
 
 from __future__ import annotations
@@ -34,7 +29,6 @@ LABEL_CLASS = {
     "vr_of": "vr_of",
     "other": "other",
     "series": "other",  # another game of the series: not related
-    # "defer" (not sure yet) has no class: it teaches nothing.
 }
 
 Weights = dict[str, dict[str, float]]
@@ -44,7 +38,6 @@ Weights = dict[str, dict[str, float]]
 class Example:
     features: dict[str, float]
     label: str  # a class: one of CLASSES or "other"
-    pair: tuple[int, int] = (0, 0)  # the label's two versions, to point back at it
 
 
 @dataclass(slots=True)
@@ -75,11 +68,9 @@ def fit(
     strength: float = 0.05,
     rate: float = 0.05,
     epochs: int = 400,
-    smoothing: float = 0.05,
 ) -> Weights:
     """Weights fitted to the examples, starting from and pulled towards
-    `start` (`strength` per unit of squared distance); each label trusted at
-    `1 - smoothing`, the rest spread over every class."""
+    `start` (`strength` per unit of squared distance)."""
     signs = sorted(
         {k for e in examples for k in e.features} | {k for c in CLASSES for k in start[c]}
     )
@@ -87,14 +78,12 @@ def fit(
     if not examples:
         return w
     n = len(examples)
-    spread = smoothing / (len(CLASSES) + 1)  # the classes and "other"
     for _ in range(epochs):
         grad = {c: dict.fromkeys(signs, 0.0) for c in CLASSES}
         for e in examples:
             probs = probabilities(e.features, w)
             for c in CLASSES:
-                target = (1.0 - smoothing if e.label == c else 0.0) + spread
-                error = probs[c] - target
+                error = probs[c] - (1.0 if e.label == c else 0.0)
                 if error:
                     for k, x in e.features.items():
                         grad[c][k] += error * x / n
@@ -131,16 +120,6 @@ def cross_validate(
     )
     after = Score(right / len(held), loss / len(held), len(held)) if held else Score(0, 0, 0)
     return before, after
-
-
-def disputed(
-    examples: list[Example], weights: Weights, *, below: float = 0.2
-) -> list[tuple[Example, float]]:
-    """The labels these weights still find unlikely (their class under
-    `below`), least likely first: an operator's slip, or a sign the model
-    lacks — either way worth a second look."""
-    found = [(e, probabilities(e.features, weights).get(e.label, 0.0)) for e in examples]
-    return sorted(((e, p) for e, p in found if p < below), key=lambda t: t[1])
 
 
 def changes(

@@ -380,15 +380,6 @@ class _GamesRepo:
             )
         await self._conn.commit()
 
-    async def delete_decision(self, version_id: int, other_id: int) -> None:
-        """The operator takes an answer back: the pair is the model's again."""
-        await self._conn.execute(
-            "DELETE FROM match_decisions WHERE (version_id = ? AND other_id = ?)"
-            " OR (version_id = ? AND other_id = ?)",
-            (version_id, other_id, other_id, version_id),
-        )
-        await self._conn.commit()
-
     async def all_decisions(self) -> list[dict[str, Any]]:
         """Every label, for fitting the weights."""
         cursor = await self._conn.execute("SELECT * FROM match_decisions ORDER BY decided_at")

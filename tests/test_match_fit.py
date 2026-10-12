@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bot.services.game_match import WEIGHTS
-from bot.services.match_fit import Example, changes, cross_validate, disputed, fit, score
+from bot.services.match_fit import Example, changes, cross_validate, fit, score
 
 
 def _examples() -> list[Example]:
@@ -33,12 +33,3 @@ def test_a_strong_pull_keeps_the_weights_where_they_are() -> None:
 def test_held_out_labels_tell_whether_fitting_helps() -> None:
     before, after = cross_validate(_examples(), WEIGHTS, strength=0.01, rate=0.2, epochs=400)
     assert after.accuracy >= before.accuracy
-
-
-def test_a_lone_wrong_label_is_not_bent_to_but_pointed_at() -> None:
-    """An operator errs too (owner, 2026-10-12): one answer against a dozen
-    like it stays unlikely after fitting, and is listed for a second look."""
-    examples = _examples()
-    slip = Example(dict(examples[-1].features), "same", (7, 8))
-    fitted = fit([*examples, slip], WEIGHTS, strength=0.01, rate=0.2, epochs=600)
-    assert [e.pair for e, _ in disputed([*examples, slip], fitted)] == [(7, 8)]
