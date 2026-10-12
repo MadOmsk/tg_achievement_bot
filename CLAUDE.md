@@ -626,7 +626,16 @@ What the stores and HLTB say about a game, collected but not shown yet
     migration 101): a DLC's page lists its game among its relations — that
     one is its parent (`game_parent`), never its child — and another page's
     row of an entry (averages only) fills one whose own page was never read,
-    and overwrites nothing. `hltb_cache`
+    and overwrites nothing. **An entry stays linked to a version only while
+    the evidence agrees** (`hltb_match.entry_fits_version`, checked whenever
+    the entry is looked at): no DLC's or mod's entry on a base game, no entry
+    naming another Steam app (either of the two its page names), no version
+    out a year or more before the entry. **HLTB's DLC are put on our DLC only
+    inside their game** (`match_dlc_entries`, `dlc_hltb`, owner, 2026-10-12):
+    the entry's children against the DLC of the versions that entry stands
+    for — by the Steam app a child's page names, else by the name with the
+    game's taken off the front; a name two entries share, or one entry on two
+    products of one store, stays unlinked. Never a store search. `hltb_cache`
     stays for `/hltb`'s search until it is switched off. The consoles HLTB
     names are **not** versions (2026-10-11, 098: HLTB is matched by name, and a
     version nobody sells is no version); the game page shows them as "also

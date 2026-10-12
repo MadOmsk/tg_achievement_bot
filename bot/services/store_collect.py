@@ -23,7 +23,13 @@ from typing import TYPE_CHECKING
 from bot.services.game_link import GameLinker
 from bot.services.game_match import name_key
 from bot.services.hltb import ensure_title_match
-from bot.services.hltb_match import core, normalize, similarity
+from bot.services.hltb_match import (
+    core,
+    entry_fits_version,
+    match_dlc_entries,
+    normalize,
+    similarity,
+)
 from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
 from bot.services.stores import (
@@ -743,6 +749,7 @@ class StoreCollector:
         subject, source = f"hltb:{hltb_id}", "hltb_page"
         if not force and not await self._repo.fetch_due(subject, source):
             report.skipped.append(source)
+            await self.check_hltb_links(hltb_id)
             return
         report.asked.append(source)
         try:
@@ -758,7 +765,16 @@ class StoreCollector:
         changed = await self._repo.save_payload(subject, source, data)
         await self._repo.save_hltb_game(entry)
         await self._from_hltb(entry, report)
+        await self.check_hltb_links(hltb_id)
         await self._repo.record_fetch(subject, source, status="ok", changed=changed)
+
+    async def check_hltb_links(self, hltb_id: int) -> None:
+        """An HLTB entry's links, checked against what is stored (owner,
+        2026-10-12), no request: a version keeps its automatic link only
+        while the evidence agrees (`hltb_match.entry_fits_version`), and the
+        entry's DLC are put on our DLC of those versions — only there
+        (`match_dlc_entries`). Also run by `scripts/reparse_store_payloads.py`."""
+        await link_hltb_entry(self._repo, hltb_id)
 
     async def _title_steam_appid(self, platform: str, title_id: str) -> int | None:
         steam = await self._repo.title_steam(platform, title_id)
@@ -794,3 +810,48 @@ def _console_of(platform: str, platforms: str) -> str:
     if found == {"pc"}:
         return "pc"
     return ONE
+
+
+async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:
+    """See `StoreCollector.check_hltb_links`."""
+    from bot.services.game_match import candidate_year
+
+    entry = await repo.hltb_game_row(hltb_id)
+    if entry is None:
+        return
+    # Both Steam apps its page names (a game's re-release has another id:
+    # Skyrim's 2011 app beside Special Edition's), read from the kept page.
+    appids = {int(a) for a in (entry.get("steam_appid"),) if a}
+    page = await repo.payload(f"hltb:{hltb_id}", "hltb_page")
+    parsed = hltb_page.parse_page(page) if page else None
+    if parsed is not None and parsed.hltb_id == hltb_id:
+        appids |= {a for a in (parsed.steam_appid, parsed.steam_alt) if a}
+    names = [str(entry["name"])]
+    for version in await repo.versions_of_hltb(hltb_id):
+        fits = entry_fits_version(
+            game_type=entry.get("game_type"),
+            steam_appids=appids,
+            entry_year=entry.get("release_year"),
+            version_store=str(version["store"]),
+            version_product=str(version["product_id"]),
+            version_kind=version.get("kind"),
+            version_year=candidate_year(version),
+        )
+        if not fits:
+            await repo.unlink_version_hltb(int(version["version_id"]), hltb_id, only_auto=True)
+        elif version.get("name"):
+            names.append(str(version["name"]))
+    dlcs = await repo.dlcs_under_hltb(hltb_id)
+    if not dlcs:
+        return
+    children = [
+        (int(c["hltb_id"]), str(c["name"] or ""), c.get("steam_appid"))
+        for c in await repo.hltb_children(hltb_id)
+        if (c.get("game_type") or "dlc") in ("dlc", "expansion")
+    ]
+    links = match_dlc_entries(
+        children,
+        [(int(d["dlc_id"]), str(d["store"]), d["store_id"], d["name"]) for d in dlcs],
+        names,
+    )
+    await repo.replace_dlc_hltb([int(d["dlc_id"]) for d in dlcs], links)

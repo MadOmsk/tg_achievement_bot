@@ -28,6 +28,7 @@ import logging
 import math
 import re
 import unicodedata
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -380,3 +381,87 @@ async def _check_steam(
         if ids:
             ruled_out.add(scored.result.hltb_id)
     return [s for s in ranked if s.result.hltb_id not in ruled_out], None
+
+
+# ---------------------------------------------------------------- the store side (#147)
+
+# HLTB's types that are not a game of their own.
+NOT_A_GAME = frozenset({"dlc", "expansion", "mod", "hack"})
+
+
+def entry_fits_version(
+    *,
+    game_type: str | None,
+    steam_appids: set[int],
+    entry_year: int | None,
+    version_store: str,
+    version_product: str,
+    version_kind: str | None,
+    version_year: int | None,
+) -> bool:
+    """Whether an HLTB entry may stand for this version (owner, 2026-10-12):
+    the evidence agrees. A DLC's or a mod's entry is no base game's; a Steam
+    app the entry names that is not this one says it is another game; a
+    version out a year or more before the entry's release is not it (HLTB's
+    entry is the remake). The match itself (`rank` / `decide`) chose the entry
+    by name, platforms and years already; this is the check a stored link
+    passes again whenever the entry's page is read."""
+    if (game_type or "") in NOT_A_GAME and (version_kind or "game") not in NOT_A_GAME:
+        return False
+    if version_store == "steam" and steam_appids and version_product.isdigit():
+        if int(version_product) not in steam_appids:
+            return False
+    if entry_year and version_year and version_year < entry_year - 1:
+        return False
+    return True
+
+
+def match_dlc_entries(
+    children: Sequence[tuple[int, str, int | None]],
+    dlcs: Sequence[tuple[int, str, str | None, str | None]],
+    game_names: Sequence[str],
+) -> dict[int, int]:
+    """`{dlc_id: hltb_id}` — an HLTB game's DLC entries (`(hltb_id, name,
+    steam_appid)`) put on our DLC of that very game (`(dlc_id, store,
+    store_id, name)`), never searched for anywhere else (owner, 2026-10-12):
+    by the Steam app the entry's page names when it names one, else by the
+    name, the game's own name taken off the front of both. A name two
+    entries share, or that names two different products of one store, is
+    left unlinked."""
+    heads = sorted(
+        {normalize(n) for n in game_names if n} | {normalize(core(n)) for n in game_names if n},
+        key=len,
+        reverse=True,
+    )
+
+    def key(name: str) -> str:
+        text = normalize(name)
+        for head in heads:
+            if head and text.startswith(head + " "):
+                return text[len(head) + 1 :]
+        return text
+
+    found: dict[int, int] = {}
+    named: dict[str, list[int]] = defaultdict(list)
+    for hltb_id, name, steam_appid in children:
+        if steam_appid:
+            for dlc_id, store, store_id, _name in dlcs:
+                if store == "steam" and store_id == str(steam_appid):
+                    found[dlc_id] = hltb_id
+        if name and key(name):
+            named[key(name)].append(hltb_id)
+    for dlc_id, _store, _store_id, name in dlcs:
+        if dlc_id in found or not name:
+            continue
+        hits = named.get(key(name), [])
+        if len(hits) == 1:
+            found[dlc_id] = hits[0]
+    # One entry on two different products of one store: not sure which.
+    products: dict[tuple[int, str], set[str]] = defaultdict(set)
+    for dlc_id, store, store_id, _name in dlcs:
+        if dlc_id in found:
+            products[(found[dlc_id], store)].add(store_id or str(dlc_id))
+    for dlc_id, store, _store_id, _name in dlcs:
+        if dlc_id in found and len(products[(found[dlc_id], store)]) > 1:
+            del found[dlc_id]
+    return found

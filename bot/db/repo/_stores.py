@@ -438,6 +438,55 @@ class _StoresRepo:
         )
         await self._conn.commit()
 
+    async def hltb_game_row(self, hltb_id: int) -> dict | None:
+        cursor = await self._conn.execute("SELECT * FROM hltb_games WHERE hltb_id = ?", (hltb_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def hltb_children(self, hltb_id: int) -> list[dict[str, Any]]:
+        """An HLTB game's DLC and expansions as stored (its page's relations,
+        their own pages where read)."""
+        cursor = await self._conn.execute(
+            "SELECT hltb_id, name, steam_appid, game_type FROM hltb_games"
+            " WHERE parent_hltb_id = ? ORDER BY hltb_id",
+            (hltb_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def dlcs_under_hltb(self, hltb_id: int) -> list[dict[str, Any]]:
+        """Our DLC of every version this HLTB entry stands for, with their
+        version's store and name."""
+        cursor = await self._conn.execute(
+            "SELECT d.dlc_id, v.store, d.store_id, d.name, v.name AS version_name"
+            " FROM version_hltb vh JOIN versions v ON v.version_id = vh.version_id"
+            " JOIN dlcs d ON d.version_id = v.version_id WHERE vh.hltb_id = ?"
+            " ORDER BY d.dlc_id",
+            (hltb_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def replace_dlc_hltb(self, dlc_ids: list[int], links: dict[int, int]) -> None:
+        """These DLC's automatic HLTB links, rewritten; the operator's stay."""
+        async with self.transaction():
+            for start in range(0, len(dlc_ids), 400):
+                batch = dlc_ids[start : start + 400]
+                marks = ",".join("?" * len(batch))
+                await self._conn.execute(
+                    f"DELETE FROM dlc_hltb WHERE source = 'auto' AND dlc_id IN ({marks})", batch
+                )
+            await self._conn.executemany(
+                "INSERT OR IGNORE INTO dlc_hltb (dlc_id, hltb_id, source) VALUES (?, ?, 'auto')",
+                sorted(links.items()),
+            )
+
+    async def versions_of_hltb(self, hltb_id: int) -> list[dict[str, Any]]:
+        cursor = await self._conn.execute(
+            "SELECT v.*, vh.source AS link_source FROM version_hltb vh"
+            " JOIN versions v ON v.version_id = vh.version_id WHERE vh.hltb_id = ?",
+            (hltb_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
     async def link_version_hltb(self, version_id: int, hltb_id: int, source: str = "auto") -> None:
         await self._conn.execute(
             "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source) VALUES (?, ?, ?)",
@@ -469,7 +518,16 @@ class _StoresRepo:
         )
         await self._conn.commit()
 
-    async def unlink_version_hltb(self, version_id: int, hltb_id: int) -> None:
+    async def unlink_version_hltb(
+        self, version_id: int, hltb_id: int, *, only_auto: bool = False
+    ) -> None:
+        if only_auto:
+            await self._conn.execute(
+                "DELETE FROM version_hltb WHERE version_id = ? AND hltb_id = ? AND source = 'auto'",
+                (version_id, hltb_id),
+            )
+            await self._conn.commit()
+            return
         await self._conn.execute(
             "DELETE FROM version_hltb WHERE version_id = ? AND hltb_id = ?", (version_id, hltb_id)
         )
