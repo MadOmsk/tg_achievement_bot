@@ -668,6 +668,25 @@ What the stores and HLTB say about a game, collected but not shown yet
   offers) from an answer before it is parsed or hashed, so a price change is
   never "the game changed" and never sets the schedule back. No price
   columns, no currency.
+- **An Xbox 360 game's store page is its backward-compatible product, proved
+  by its own mark** (owner, 2026-10-12): such a product's group is
+  `[Fission] <name> (<hex 360 title id>)`, read only in exactly that form
+  (`xbox_catalog.fission_title_id`; the hex found anywhere else matched
+  picture numbers). A product seen in passing (an edition's, a bundle's
+  contents) is kept as `x360:<title id>`, and the 360 list's stand-in becomes
+  the selling one (a `Purchase` ever offered, not its content twin) as its
+  360 version — no release day, the product's being its comeback's
+  (`link_x360_product`). `resolve_title` also asks titlehub for the
+  `productId` decoration and reads `modernTitleId`; those products count
+  only when their mark names that very 360 title id
+  (`StoreCollector.remember_title`). **Derived from the documentation, not
+  yet seen live**: the operator checks it on two or three games (Kameo,
+  Banjo-Tooie, one never made compatible). No old-marketplace page: that
+  store closed in 2024; a 360 game never made compatible has no store page.
+  `resolve_title` reads titlehub's JSON itself (xbox-webapi's model lost a
+  whole answer to `developerName: null`) and keeps its `detail`: kept as
+  `titlehub:<title id>`, it gives a stand-in its studio, publisher, day and
+  genres.
 - **Every achievement list is at least one version**: when no store describes it
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
   stand-in (`store = 'list'`) is made from `titles`, and goes once a store

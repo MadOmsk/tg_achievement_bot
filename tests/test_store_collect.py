@@ -627,3 +627,93 @@ def test_a_steam_dlc_says_whether_it_is_sold() -> None:
     assert steam_store.parse_dlc(dlc).on_sale is False
     sold = {**dlc, "package_groups": [{"subs": [{"packageid": 1}]}]}
     assert steam_store.parse_dlc(sold).on_sale is True
+
+
+# ------------------------------------------------------------ Xbox 360 store pages (2026-10-12)
+
+
+def _fission(big_id: str, hex_id: str, *, sells: bool, kind: str = "Game") -> dict:
+    return {
+        "ProductId": big_id,
+        "ProductType": kind,
+        "Properties": {"ProductGroupName": f"[Fission] Kameo ({hex_id})"},
+        "LocalizedProperties": [{"ProductTitle": "Kameo", "PublisherName": "Xbox Game Studios"}],
+        "DisplaySkuAvailabilities": [
+            {
+                "Sku": {"Properties": {"IsTrial": False}},
+                "Availabilities": [{"Actions": ["Purchase"] if sells else ["License"]}],
+            }
+        ],
+    }
+
+
+def test_only_the_exact_fission_mark_names_a_360_game() -> None:
+    assert xbox_catalog.fission_title_id(_fission("A", "4D5307D2", sells=True)) == "1297287122"
+    assert (
+        xbox_catalog.fission_title_id(_fission("A", "4D5307D2", sells=True, kind="Durable")) is None
+    )
+    loose = _fission("A", "4D5307D2", sells=True)
+    loose["Properties"]["ProductGroupName"] = "Kameo 4D5307D2 pictures"
+    assert xbox_catalog.fission_title_id(loose) is None
+
+
+async def test_a_360_list_takes_its_compatible_product_as_its_store_page(repo: Repo) -> None:
+    await repo.upsert_title("1297287122", "Kameo", "xbox_360")
+    report = store_collect.CollectReport("xbox_360", "1297287122")
+    collector = StoreCollector(repo)
+    await collector._list_version("xbox_360", "1297287122", report)
+    [stand_in] = report.versions
+    # Seen in passing, in an edition's contents: the content twin and the seller.
+    await collector._remember_x360(
+        [
+            _fission("BPVP56VRVLZ7", "4D5307D2", sells=False),
+            _fission("BV83SM3191S5", "4D5307D2", sells=True),
+        ]
+    )
+    row = await repo.version_row(stand_in)
+    assert row is not None
+    assert (row["store"], row["product_id"], row["console"], row["stand_in"]) == (
+        "xbox",
+        "BV83SM3191S5",
+        "360",
+        0,
+    )
+    assert row["release_date"] is None  # the product's day is its comeback's
+
+
+async def test_a_titlehub_product_counts_only_when_its_mark_names_the_game(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bot.services.xbox.client import entry_from_json
+
+    await repo.upsert_title("1297287122", "Kameo", "xbox_360")
+    catalog = {
+        "BV83SM3191S5": _fission("BV83SM3191S5", "4D5307D2", sells=True),
+        "OTHER": _fission("OTHER", "58410955", sells=True),
+    }
+
+    async def products(big_ids: list[str]) -> list[dict]:
+        return [catalog[i] for i in big_ids if i in catalog]
+
+    monkeypatch.setattr(store_collect.xbox_catalog, "products", products)
+    entry = entry_from_json(
+        {
+            "titleId": "1297287122",
+            "name": "Kameo",
+            "devices": ["Xbox360"],
+            "productId": "OTHER",
+            "detail": {"developerName": "Rare", "publisherName": "Microsoft"},
+        }
+    )
+    collector = StoreCollector(repo)
+    await collector.remember_title(entry)
+    assert await repo.versions_of_title("xbox_360", "1297287122") == []
+    # The stand-in takes titlehub's studio.
+    report = store_collect.CollectReport("xbox_360", "1297287122")
+    await collector._list_version("xbox_360", "1297287122", report)
+    assert (await repo.version_row(report.versions[0]))["developer"] == "Rare"  # type: ignore[index]
+    entry.product_ids = ["BV83SM3191S5"]
+    await repo.make_fetch_due("x360:1297287122", "titlehub_product")
+    await collector.remember_title(entry)
+    [version] = await repo.versions_of_title("xbox_360", "1297287122")
+    assert version["product_id"] == "BV83SM3191S5"

@@ -89,6 +89,7 @@ class StoreCollector:
         self._steam_auth = steam_auth
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._running: dict[tuple[str, str], asyncio.Task[CollectReport]] = {}
+        self._background: set[asyncio.Task[None]] = set()
 
     def ensure(self, platform: str, title_id: str) -> None:
         """Collect the game in the background if anything about it is due —
@@ -265,6 +266,7 @@ class StoreCollector:
             await self._repo.record_fetch(subject, source, status="not_found")
             return
         changed = await self._repo.save_payload(subject, source, found)
+        await self._remember_x360(found)
         # Every product carrying this title id is this game's: an add-on
         # naming any of them as its own is the game's (a cross-gen game's).
         owners = {str(p.get("ProductId")) for p in found if p.get("ProductId")}
@@ -318,6 +320,7 @@ class StoreCollector:
         changed = await self._repo.save_payload(
             f"xbox_addons:{product_id}", "xbox_catalog", {"editions": editions, "addons": found}
         )
+        await self._remember_x360(editions + found)
         await self._xbox_editions(editions, found, report)
         mine = (owners or set()) | {product_id}
         foreign = [
@@ -352,8 +355,10 @@ class StoreCollector:
         ]
         if missing:
             try:
-                for product in await xbox_catalog.products(list(dict.fromkeys(missing))):
+                fetched = await xbox_catalog.products(list(dict.fromkeys(missing)))
+                for product in fetched:
                     by_id[str(product.get("ProductId"))] = product
+                await self._remember_x360(fetched)
             except Exception as exc:
                 report.errors.append(f"xbox edition items: {exc!r}")
         for edition in editions:
@@ -480,6 +485,7 @@ class StoreCollector:
         if not hits:
             return
         products = await xbox_catalog.products([str(p["ProductId"]) for p in hits])
+        await self._remember_x360(products)
         editions = [p for p in products if xbox_catalog.bundle_items(p)]
         title_ids_of = {
             str(p.get("ProductId")): {
@@ -622,13 +628,82 @@ class StoreCollector:
             if len(seen) >= SIBLING_CONCEPTS:
                 break
 
+    # ------------------------------------------------------------ Xbox 360 (owner, 2026-10-12)
+
+    async def _remember_x360(self, products: list[dict]) -> None:
+        """A 360 game's backward-compatible product seen in passing (an
+        edition's, a bundle's) is kept under its 360 title id
+        (`x360:<title id>`), and the 360 list, when somebody here has it,
+        takes it as its store page. The product's own `[Fission] … (hex)`
+        mark is the proof; nothing is searched for by name."""
+        by_title: dict[str, list[dict]] = {}
+        for product in products:
+            if (title_id := xbox_catalog.fission_title_id(product)) is not None:
+                by_title.setdefault(title_id, []).append(product)
+        for title_id, found in by_title.items():
+            subject = f"x360:{title_id}"
+            kept = {
+                str(p.get("ProductId")): p
+                for p in await self._repo.payload(subject, "xbox_catalog") or []
+            }
+            kept.update({str(p.get("ProductId")): p for p in found})
+            await self._repo.save_payload(subject, "xbox_catalog", [kept[k] for k in sorted(kept)])
+            await link_x360_product(self._repo, title_id)
+
+    async def remember_title(self, entry: object) -> None:
+        """What a titlehub answer said about a game (`XboxClient.resolve_title`),
+        kept as an answer (`titlehub:<title id>`): a stand-in takes its studio,
+        publisher, day and genres from it. For a 360 game, the Store products
+        it names (`productId`, the product of its `modernTitleId`) are read
+        from the catalog — public, no login — and one becomes its store page
+        only when its own `[Fission]` mark names this very 360 title id.
+        Derived from the documentation: to be checked live on two or three
+        games (Kameo, Banjo-Tooie, one never made compatible)."""
+        from dataclasses import asdict
+
+        data = asdict(entry)  # type: ignore[call-overload]
+        title_id = str(data.get("title_id") or "")
+        if not title_id:
+            return
+        await self._repo.save_payload(f"titlehub:{title_id}", "titlehub", data)
+        if str(data.get("platform")) != "xbox_360":
+            return
+        subject, source = f"x360:{title_id}", "titlehub_product"
+        if not await self._repo.fetch_due(subject, source):
+            return
+        try:
+            products = await xbox_catalog.products(list(data.get("product_ids") or []))
+            if data.get("modern_title_id"):
+                products += await xbox_catalog.products_for_title(str(data["modern_title_id"]))
+        except Exception as exc:
+            await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
+            return
+        await self._remember_x360(products)
+        proved = any(xbox_catalog.fission_title_id(p) == title_id for p in products)
+        await self._repo.record_fetch(subject, source, status="ok" if proved else "not_found")
+
+    def remember_title_soon(self, entry: object) -> None:
+        """`remember_title` in the background, never on the caller's path."""
+        task = asyncio.create_task(self._remember_logged(entry))
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _remember_logged(self, entry: object) -> None:
+        try:
+            await self.remember_title(entry)
+        except Exception:
+            log.exception("keeping a titlehub answer failed")
+
     async def _list_version(self, platform: str, title_id: str, report: CollectReport) -> None:
         """Every achievement list is at least one version, so it can be put
         into a game: a store product when a store found one, otherwise the
         list itself as `titles` describes it — a stand-in (`stand_in`, under
         the platform's store): a 360 game, an Xbox card the catalog no longer
         carries, a PSN list not proved.
-        Once a store product is found, the stand-in goes."""
+        Once a store product is found, the stand-in goes. A stand-in takes
+        what titlehub said of the game (its studio, publisher, day, genres)."""
+        if platform == "xbox_360":
+            await link_x360_product(self._repo, title_id)
         versions = await self._repo.versions_of_title(platform, title_id)
         real = [v for v in versions if not v["stand_in"]]
         stand_ins = [v for v in versions if v["stand_in"]]
@@ -657,6 +732,12 @@ class StoreCollector:
             kind="game",
             stand_in=True,
         )
+        said = await self._repo.payload(f"titlehub:{title_id}", "titlehub")
+        if isinstance(said, dict):
+            version.developer = said.get("developer")
+            version.publisher = said.get("publisher")
+            version.release_date = said.get("release_date")
+            version.genres = list(said.get("genres") or [])
         version_id = await self._repo.save_version(version, platform=platform, title_id=title_id)
         report.versions.append(version_id)
 
@@ -855,3 +936,25 @@ async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:
         names,
     )
     await repo.replace_dlc_hltb([int(d["dlc_id"]) for d in dlcs], links)
+
+
+async def link_x360_product(repo: Repo, title_id: str) -> int | None:
+    """The 360 list's store page, from the backward-compatible product kept
+    under its title id (`x360:<title id>`, proved by its `[Fission]` mark):
+    the selling one (a `Purchase` ever offered), not its content twin. The
+    list's stand-in becomes that product, as the 360 version — its id and
+    labels kept (`save_version`). None when there is none, or nobody here has
+    the list. No request."""
+    products = await repo.payload(f"x360:{title_id}", "xbox_catalog") or []
+    selling = [
+        p
+        for p in products
+        if xbox_catalog.fission_title_id(p) == title_id and xbox_catalog.offers_purchase(p)
+    ]
+    if not selling or await repo.title_record("xbox_360", title_id) is None:
+        return None
+    # Two selling products would be a mystery: the one sold now, else the first.
+    product = sorted(selling, key=lambda p: (not xbox_catalog.sold(p), str(p.get("ProductId"))))[0]
+    return await repo.save_version(
+        xbox_catalog.parse_x360(product), platform="xbox_360", title_id=title_id
+    )

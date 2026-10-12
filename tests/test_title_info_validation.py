@@ -1,67 +1,96 @@
-"""A titlehub reply xbox-webapi refuses to parse (2026-09-19).
+"""A titlehub reply read whole (2026-09-19, 2026-10-12).
 
-Some games come back with `detail.developerName: null`, and the library's
-model demands a string — so a perfectly good answer arrives as a pydantic
-`ValidationError`. It is not an `XboxApiError`, which is the only thing
-`Fetcher.ensure_title_name` catches, and `poll_title` calls that *after*
-storing the new rows and *before* publishing them. So the achievements were
-stored and never announced: #82's shape, arriving by another road.
-
-Found by a one-off backfill that died on its first title; 76 Xbox games on
-production had been unnameable this way all along.
+Some games come back with `detail.developerName: null`. xbox-webapi's model
+demanded a string, so a good answer arrived as a `ValidationError` and the
+whole of it — name, devices, picture — was lost (76 Xbox games on production
+were unnameable this way). `resolve_title` reads titlehub's JSON itself now:
+whatever came is kept, a missing field is None, and the `detail` it asked for
+(studio, publisher, release day, genres) and the Store product it names are
+no longer thrown away.
 """
 
 from __future__ import annotations
 
+import httpx
 import pytest
-from pydantic import BaseModel, ValidationError
 
-from bot.services.xbox import client as client_module
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 
-class _Model(BaseModel):
-    name: str
+class _Token:
+    xuid = "123"
+    authorization_header_value = "XBL3.0 x=1;token"
 
 
-def _a_real_validation_error() -> ValidationError:
-    try:
-        _Model(name=None)  # type: ignore[arg-type]
-    except ValidationError as exc:
-        return exc
-    raise AssertionError("pydantic accepted None")  # pragma: no cover
+class _Session:
+    def __init__(self, answer: object) -> None:
+        self.answer = answer
+        self.urls: list[str] = []
+
+    async def get(self, url: str, **_kw: object) -> httpx.Response:
+        self.urls.append(url)
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return httpx.Response(200, json=self.answer, request=httpx.Request("GET", url))
+
+
+class _Manager:
+    def __init__(self, session: _Session) -> None:
+        self.xsts_token = _Token()
+        self.session = session
 
 
 class _FakeAuth:
-    async def authenticated_manager(self, tg_id: int):
-        return object()
+    def __init__(self, session: _Session) -> None:
+        self._manager = _Manager(session)
+
+    async def authenticated_manager(self, person_id: int) -> _Manager:
+        return self._manager
 
 
-def _xbox_client_raising(monkeypatch, error: Exception) -> XboxClient:
-    class _Titlehub:
-        async def get_title_info(self, title_id: str, *args, **kwargs):
-            raise error
-
-    class _Live:
-        def __init__(self, manager) -> None:
-            self.titlehub = _Titlehub()
-
-    monkeypatch.setattr(client_module, "XboxLiveClient", _Live)
-    return XboxClient(_FakeAuth())  # type: ignore[arg-type]
+def _client(answer: object) -> tuple[XboxClient, _Session]:
+    session = _Session(answer)
+    return XboxClient(_FakeAuth(session)), session  # type: ignore[arg-type]
 
 
-async def test_a_reply_the_library_cannot_parse_is_an_ordinary_miss(monkeypatch) -> None:
-    client = _xbox_client_raising(monkeypatch, _a_real_validation_error())
+async def test_a_null_developer_keeps_the_rest_of_the_answer() -> None:
+    client, session = _client(
+        {
+            "titles": [
+                {
+                    "titleId": "1297287122",
+                    "name": "Kameo",
+                    "devices": ["Xbox360"],
+                    "displayImage": "https://store-images/kameo",
+                    "productId": "BV83SM3191S5",
+                    "modernTitleId": "992058215",
+                    "detail": {
+                        "developerName": None,
+                        "publisherName": "Microsoft Studios",
+                        "releaseDate": "2005-11-16T00:00:00Z",
+                        "genres": ["Action & adventure"],
+                    },
+                }
+            ]
+        }
+    )
+    entry = await client.resolve_title(1, "1297287122")
+    assert entry is not None
+    assert (entry.name, entry.developer, entry.publisher) == ("Kameo", None, "Microsoft Studios")
+    assert entry.release_date == "2005-11-16" and entry.genres == ["Action & adventure"]
+    assert entry.product_ids == ["BV83SM3191S5"] and entry.modern_title_id == "992058215"
+    assert entry.platform == "xbox_360"
+    assert session.urls[0].endswith(
+        "/decoration/achievement,alternateTitleId,detail,image,scid,productId"
+    )
 
-    assert await client.resolve_title(1, "title-with-null-developer") is None
+
+async def test_an_empty_answer_is_an_ordinary_miss() -> None:
+    client, _ = _client({"titles": []})
+    assert await client.resolve_title(1, "title") is None
 
 
-async def test_a_real_api_failure_still_raises(monkeypatch) -> None:
-    """The point is to stop swallowing one specific shape, not every shape:
-    a genuine request failure must still reach the caller."""
-    import httpx
-
-    client = _xbox_client_raising(monkeypatch, httpx.RequestError("connection reset"))
-
+async def test_a_real_api_failure_still_raises() -> None:
+    client, _ = _client(httpx.RequestError("connection reset"))
     with pytest.raises(XboxApiError):
         await client.resolve_title(1, "title")

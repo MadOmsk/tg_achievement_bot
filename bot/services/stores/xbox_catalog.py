@@ -222,6 +222,57 @@ def bundled(products: list[dict], game_id: str) -> list[str]:
     return found
 
 
+# A backward-compatible Xbox 360 game's product names the 360 game in its
+# group: "[Fission] Kameo (4D5307D2)", the hex being our 360 title id. Only
+# this exact form is read (2026-10-12: the hex searched for anywhere in an
+# answer matched file and picture numbers — Peggle, Left 4 Dead).
+_FISSION = re.compile(r"^\[Fission\] .* \(([0-9A-F]{8})\)$")
+
+
+def fission_title_id(product: dict) -> str | None:
+    """The Xbox 360 title id (decimal, as `titles` keeps it) a backward-
+    compatible game product is the store page of, or None. Its add-ons carry
+    the mark too: only a Game counts."""
+    if str(product.get("ProductType") or "") != "Game":
+        return None
+    group = str((product.get("Properties") or {}).get("ProductGroupName") or "").strip()
+    match = _FISSION.match(group)
+    return str(int(match.group(1), 16)) if match else None
+
+
+def offers_purchase(product: dict) -> bool:
+    """Some SKU that is not a trial ever offered to buy it: a product with a
+    page of its own (a 360 game's selling product, not its content one)."""
+    return any(
+        "Purchase" in (availability.get("Actions") or [])
+        for sku in product.get("DisplaySkuAvailabilities") or []
+        if not ((sku.get("Sku") or {}).get("Properties") or {}).get("IsTrial")
+        for availability in sku.get("Availabilities") or []
+    )
+
+
+def parse_x360(product: dict) -> StoreVersion:
+    """A 360 game as its backward-compatible product describes it: the 360
+    version (a 360 game is 360 even played on One, #114), its store page
+    that product. No release day: the product's is when it came back."""
+    local = (product.get("LocalizedProperties") or [{}])[0]
+    big_id = str(product.get("ProductId") or "")
+    return StoreVersion(
+        store="xbox",
+        product_id=big_id,
+        console="360",
+        name=_text(local.get("ProductTitle")),
+        kind="game",
+        developer=_text(local.get("DeveloperName")),
+        publisher=_text(local.get("PublisherName")),
+        description_en=_text(local.get("ShortDescription"))
+        or _text(local.get("ProductDescription")),
+        media=_media(local),
+        on_sale=sold(product),
+        store_ids=[("xbox_product", big_id)],
+    )
+
+
 def addon_parents(product: dict) -> list[str]:
     """The games an add-on names as its own (`addOnParent`): a cross-gen game
     may be named by each of its products."""

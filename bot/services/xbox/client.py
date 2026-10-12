@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import httpx
-from pydantic import ValidationError
 from xbox.webapi.api.client import XboxLiveClient
 
 from bot.constants import (
@@ -104,6 +103,18 @@ class TitleHistoryEntry:
     # response has nothing image-shaped besides that number).
     icon_url: str | None = None
     devices: list[str] = field(default_factory=list)
+    # What `resolve_title`'s titlehub answer says beside (2026-10-12: its
+    # `detail` was asked for and thrown away): the game's studio, publisher,
+    # release day and genres, and the Store product it names (`productId`;
+    # for a 360 game, its backward-compatible product — taken as the game's
+    # store page only once that product's own mark proves it,
+    # `store_collect.offer_x360_product`).
+    developer: str | None = None
+    publisher: str | None = None
+    release_date: str | None = None
+    genres: list[str] = field(default_factory=list)
+    product_ids: list[str] = field(default_factory=list)
+    modern_title_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -483,34 +494,38 @@ class XboxClient:
         one extra request per new game — the answer is cached in `titles`.
         """
         manager = await self._auth.authenticated_manager(person_id)
-        client = XboxLiveClient(manager)
+        assert manager.xsts_token is not None
+        # Read as plain JSON (2026-10-12): xbox-webapi's model refused a reply
+        # with `detail.developerName: null` (a ValidationError, the whole
+        # answer lost — 76 games once) and keeps no `productId`. Whatever
+        # came is kept; a missing field is None.
+        url = (
+            f"{TITLEHUB_URL}/users/xuid({manager.xsts_token.xuid})/titles/titleid({title_id})"
+            f"/decoration/{TITLE_DECORATIONS}"
+        )
+        headers = {
+            **TITLEHUB_HEADERS,
+            "Authorization": manager.xsts_token.authorization_header_value,
+        }
         await self._limiter.acquire()
         try:
-            response = await client.titlehub.get_title_info(title_id)
+            response = await manager.session.get(url, headers=headers)
+            response.raise_for_status()
+            payload = response.json()
         except httpx.HTTPStatusError as exc:
             raise _translate(exc) from None
         except httpx.RequestError as exc:
             raise XboxApiError(f"title info request failed: {exc!r}") from None
-        except ValidationError as exc:
-            # titlehub answers for some games with `detail.developerName:
-            # null`, and xbox-webapi's own model demands a string — so a
-            # perfectly good reply arrives as a validation error. Not an API
-            # failure, not something to retry, and not ours to fix upstream:
-            # the honest reading is "titlehub cannot describe this game",
-            # which is what `None` already means here.
-            #
-            # Worth catching precisely because of where this is called from.
-            # `Fetcher.ensure_title_name` catches XboxApiError and nothing
-            # else, and `poll_title` calls it *after* storing the new rows
-            # and *before* publishing them — so an escaping exception stored
-            # somebody's achievements and silently never announced them,
-            # which is the whole shape of #82 arriving by another road.
-            # Found on 2026-09-19 by a backfill that died on its first title.
-            log.info("titlehub could not describe title %s: %s", title_id, exc.error_count())
+        except ValueError as exc:
+            # Not JSON: titlehub cannot describe this game, which is what
+            # `None` means here. Not raised: `Fetcher.ensure_title_name`
+            # catches XboxApiError only, and `poll_title` calls it after
+            # storing new rows and before publishing them (#82's shape).
+            log.info("titlehub answered title %s with no JSON: %r", title_id, exc)
             return None
-
-        for title in response.titles or []:
-            return _as_entry(title)
+        for title in (payload or {}).get("titles") or []:
+            if isinstance(title, dict):
+                return entry_from_json(title)
         return None
 
     # -------------------------------------------------------- title history
@@ -564,6 +579,61 @@ def _total_in(payload: dict[str, object]) -> int:
     """How many achievements the response listed, earned or not."""
     achievements = payload.get("achievements")
     return len(achievements) if isinstance(achievements, list) else 0
+
+
+TITLEHUB_URL = "https://titlehub.xboxlive.com"
+# What xbox-webapi asks for one title, and the Store product it names.
+TITLE_DECORATIONS = "achievement,alternateTitleId,detail,image,scid,productId"
+TITLEHUB_HEADERS = {
+    "x-xbl-contract-version": "2",
+    "x-xbl-client-name": "XboxApp",
+    "x-xbl-client-type": "UWA",
+    "x-xbl-client-version": "39.39.22001.0",
+    "Accept-Language": "en-US",
+    "Accept": "application/json",
+}
+
+
+def entry_from_json(title: dict) -> TitleHistoryEntry:
+    """One titlehub title as it came, every field optional."""
+    achievement = title.get("achievement") or {}
+    history = title.get("titleHistory") or {}
+    detail = title.get("detail") or {}
+    devices = [str(d) for d in title.get("devices") or [] if d]
+    product_ids = [
+        str(p)
+        for p in (title.get("productId"), *(title.get("productIds") or []))
+        if isinstance(p, str) and p
+    ]
+
+    def text(value: object) -> str | None:
+        return value.strip() or None if isinstance(value, str) else None
+
+    def number(value: object) -> int | None:
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    released = text(detail.get("releaseDate"))
+    return TitleHistoryEntry(
+        title_id=str(title.get("titleId") or ""),
+        name=str(title.get("name") or ""),
+        platform=Platform.XBOX_360
+        if any(d in X360_DEVICES for d in devices)
+        else Platform.XBOX_MODERN,
+        current_gamerscore=number(achievement.get("currentGamerscore")),
+        max_gamerscore=number(achievement.get("totalGamerscore")),
+        achievements_unlocked=number(achievement.get("currentAchievements")),
+        achievements_total=number(achievement.get("totalAchievements")),
+        last_played_at=text(history.get("lastTimePlayed")),
+        icon_url=text(title.get("displayImage")),
+        devices=devices,
+        developer=text(detail.get("developerName")),
+        publisher=text(detail.get("publisherName")),
+        # Titlehub's "unknown" is year 1 or 1753, as the catalog's.
+        release_date=released[:10] if released and released[:4] not in ("0001", "1753") else None,
+        genres=[str(g) for g in detail.get("genres") or [] if g],
+        product_ids=list(dict.fromkeys(product_ids)),
+        modern_title_id=text(title.get("modernTitleId")),
+    )
 
 
 def _as_entry(title: object) -> TitleHistoryEntry:

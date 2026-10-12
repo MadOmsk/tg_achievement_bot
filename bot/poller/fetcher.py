@@ -153,6 +153,7 @@ class Fetcher:
             return None
         if entry is None or not entry.name:
             return None
+        self._remember_title(entry)
         platforms_json = game_platforms_json(
             entry.devices, is_x360=entry.platform == Platform.XBOX_360
         )
@@ -185,6 +186,14 @@ class Fetcher:
             else None
         )
         await self._repo.record_platforms_lookup(title_id, found)
+        if entry is not None:
+            self._remember_title(entry)
+
+    def _remember_title(self, entry: TitleHistoryEntry) -> None:
+        """What titlehub said beside the name — the studio, the day, a 360
+        game's Store product — kept by the store side, in the background."""
+        if self._store_collector is not None:
+            self._store_collector.remember_title_soon(entry)
 
     async def _ensure_hltb_match(self, title_id: str, platform: str) -> None:
         """Which HowLongToBeat entry this game is (#131) — after publishing,
