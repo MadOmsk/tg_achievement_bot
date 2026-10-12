@@ -594,9 +594,19 @@ What the stores and HLTB say about a game, collected but not shown yet
   - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
     `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour);
   - Xbox `displaycatalog`, public, found by our title id (`lookup?alternateId=
-    XboxTitleId`) — no login is spent. A game does not list its add-ons: its
-    editions do (`BundledSkus`); only Durables are kept. An add-on sold only
-    on its own is not found this way. `9998-12-30` is "not on sale", no date.
+    XboxTitleId`) — no login is spent. **A product is a version on the
+    consoles the store calls it optimized for** (`XboxConsoleGenOptimized`;
+    owner, 2026-10-12): a One game Series runs only by backward
+    compatibility is a One version with `series` in `also_on`, and a version
+    stored before on a console the product is not made for goes into the kept
+    one, its labels and anchor moving with it (`retire_other_consoles`). A
+    game does not list its add-ons: its editions do (`BundledSkus`); only
+    Durables are kept, and **only those naming this game's products as their
+    `addOnParent`** — an edition of several games bundles the others' too, and
+    one an earlier collection stored goes. An add-on sold only on its own is
+    not found this way. `9998-12-30` is "not on sale", no date. Trailers are
+    `CMSVideos`' https HLS/DASH links with their poster (the old `Videos` are
+    http Smooth Streaming, unplayable); links only, nothing downloaded.
     Its cross-gen set (`versions.cross_gen_set`, 098) is one game on One and
     Series; its product group (`store_group`) can hold a whole series;
   - PSN: the store is searched by name and a concept is accepted **only when

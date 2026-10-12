@@ -323,3 +323,137 @@ def test_a_steam_apps_own_type_is_its_kind() -> None:
     type, so the matcher reads it as a mode of its game (2026-10-12)."""
     data = {**STEAM_APP, "type": "advertising", "name": "Call of Duty: Black Ops II - Zombies"}
     assert steam_store.parse_app(data).kind == "advertising"
+
+
+# ------------------------------------------------------------ data fixes (2026-10-12)
+
+
+def test_a_one_game_on_series_by_backward_compatibility_is_a_one_version() -> None:
+    """879 "Series versions" were One games the store calls only compatible
+    with Series; made for Series is what it calls optimized."""
+    bc = _xbox_product(XboxConsoleGenOptimized=["ConsoleGen8"])
+    [one] = xbox_catalog.parse_product(bc)
+    assert (one.console, one.also_on) == ("one", ["series"])
+    both = _xbox_product(XboxConsoleGenOptimized=["ConsoleGen8", "ConsoleGen9"])
+    assert [v.console for v in xbox_catalog.parse_product(both)] == ["one", "series"]
+    series = _xbox_product(
+        XboxConsoleGenCompatible=["ConsoleGen9"], XboxConsoleGenOptimized=["ConsoleGen9"]
+    )
+    assert [v.console for v in xbox_catalog.parse_product(series)] == ["series"]
+
+
+def test_xbox_trailers_are_the_playable_streams() -> None:
+    product = _xbox_product()
+    product["LocalizedProperties"][0]["Videos"] = [
+        {"Caption": "Old", "Uri": "http://xbox-mbr.xboxlive.com/a.ism/manifest"}
+    ]
+    product["LocalizedProperties"][0]["CMSVideos"] = [
+        {
+            "Caption": "Trailer",
+            "HLS": "https://cdn/a.m3u8",
+            "DASH": "https://cdn/a.mpd",
+            "PreviewImage": {"Uri": "//store-images/p.png"},
+        }
+    ]
+    [video] = xbox_catalog.parse_product(product)[0].media["videos"]  # type: ignore[misc]
+    assert video == {
+        "name": "Trailer",
+        "url": "https://cdn/a.m3u8",
+        "hls": "https://cdn/a.m3u8",
+        "dash": "https://cdn/a.mpd",
+        "poster": "https://store-images/p.png",
+    }
+    del product["LocalizedProperties"][0]["CMSVideos"]
+    assert "videos" not in xbox_catalog.parse_product(product)[0].media
+
+
+def _addon(big_id: str, parent: str) -> dict:
+    return {
+        "ProductId": big_id,
+        "ProductType": "Durable",
+        "LocalizedProperties": [{"ProductTitle": f"Add-on {big_id}"}],
+        "MarketProperties": [
+            {"RelatedProducts": [{"RelationshipType": "addOnParent", "RelatedProductId": parent}]}
+        ],
+    }
+
+
+async def test_an_editions_add_on_of_another_game_is_not_this_games(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A collection of several games bundles each one's add-ons: only those
+    naming this game as their parent are its DLC; one stored before goes."""
+    game = _xbox_product(XboxConsoleGenOptimized=["ConsoleGen8", "ConsoleGen9"])
+    edition = {
+        "ProductId": "EDITION1",
+        "ProductType": "Game",
+        "DisplaySkuAvailabilities": [
+            {
+                "Sku": {
+                    "Properties": {
+                        "BundledSkus": [
+                            {"BigId": "BR765873CQJD", "IsPrimary": True},
+                            {"BigId": "MINE", "IsPrimary": False},
+                            {"BigId": "THEIRS", "IsPrimary": False},
+                        ]
+                    }
+                }
+            }
+        ],
+    }
+    catalog = {
+        "EDITION1": edition,
+        "MINE": _addon("MINE", "BR765873CQJD"),
+        "THEIRS": _addon("THEIRS", "OTHERGAME"),
+    }
+
+    async def products_for_title(title_id: str) -> list[dict]:
+        return [game]
+
+    async def products(big_ids: list[str]) -> list[dict]:
+        return [catalog[i] for i in big_ids if i in catalog]
+
+    monkeypatch.setattr(store_collect.xbox_catalog, "products_for_title", products_for_title)
+    monkeypatch.setattr(store_collect.xbox_catalog, "products", products)
+    monkeypatch.setattr(StoreCollector, "_siblings", _nothing)
+    await repo.upsert_title("1799887933", "The Witcher 3", "xbox_modern")
+    # An earlier collection put the other game's add-on here.
+    [one, _series] = xbox_catalog.parse_product(game)
+    earlier = await repo.save_version(one, platform="xbox_modern", title_id="1799887933")
+    await repo.save_dlc(earlier, xbox_catalog.parse_addon(catalog["THEIRS"]))  # type: ignore[arg-type]
+
+    await StoreCollector(repo).collect("xbox_modern", "1799887933")
+    cursor = await repo._conn.execute("SELECT DISTINCT store_id FROM dlcs ORDER BY store_id")
+    assert [r[0] for r in await cursor.fetchall()] == ["MINE"]
+
+
+async def _nothing(*_args: object, **_kw: object) -> None:
+    return None
+
+
+async def test_a_phantom_series_version_goes_into_the_one_version(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stored before the fix as One and Series, a One game now reads as One
+    only: the Series row goes, what was decided about it kept on the One."""
+    old = _xbox_product()  # compatible with both, no "optimized": two versions
+    [one_v, series_v] = xbox_catalog.parse_product(old)
+    one = await repo.save_version(one_v, platform="xbox_modern", title_id="1799887933")
+    series = await repo.save_version(series_v, platform="xbox_modern", title_id="1799887933")
+    other = await repo.save_version(
+        steam_store.parse_app(STEAM_APP), platform=None, title_id=None, origin="store"
+    )
+    await repo.save_decision(series, other, "same", features=None, model=None, decided_by="t")
+    fixed = _xbox_product(XboxConsoleGenOptimized=["ConsoleGen8"])
+
+    async def products_for_title(title_id: str) -> list[dict]:
+        return [fixed]
+
+    monkeypatch.setattr(store_collect.xbox_catalog, "products_for_title", products_for_title)
+    monkeypatch.setattr(StoreCollector, "_siblings", _nothing)
+    await repo.upsert_title("1799887933", "The Witcher 3", "xbox_modern")
+    report = await StoreCollector(repo).collect("xbox_modern", "1799887933")
+    assert report.versions[:1] == [one]
+    assert await repo.version_row(series) is None
+    cursor = await repo._conn.execute("SELECT version_id, other_id FROM match_decisions")
+    assert [tuple(r) for r in await cursor.fetchall()] == [(one, other)]

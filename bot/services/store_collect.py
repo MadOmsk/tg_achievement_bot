@@ -259,29 +259,47 @@ class StoreCollector:
             await self._repo.record_fetch(subject, source, status="not_found")
             return
         changed = await self._repo.save_payload(subject, source, found)
+        # Every product carrying this title id is this game's: an add-on
+        # naming any of them as its own is the game's (a cross-gen game's).
+        owners = {str(p.get("ProductId")) for p in found if p.get("ProductId")}
         for product in games:
             versions = xbox_catalog.parse_product(product)
-            ids = []
-            for version in versions:
-                ids.append(
-                    await self._repo.save_version(
-                        version, platform="xbox_modern", title_id=title_id
-                    )
-                )
+            ids = await self._save_xbox_versions(versions, "xbox_modern", title_id, "played")
             report.versions += ids
             if versions:
                 changed |= await self._xbox_addons(
-                    versions[0].product_id, versions[0].dlc_ids, ids, report
+                    versions[0].product_id, versions[0].dlc_ids, ids, report, owners
                 )
         steam_appid = await self._title_steam_appid("xbox_modern", title_id)
         patched = await self._recently_patched(steam_appid)
         await self._repo.record_fetch(subject, source, status="ok", changed=changed or patched)
 
+    async def _save_xbox_versions(
+        self, versions: list[StoreVersion], platform: str | None, title_id: str | None, origin: str
+    ) -> list[int]:
+        """A product's versions, one per console it is made for; a version
+        stored before on a console it is not made for (a One game's phantom
+        "Series" version) goes into the kept one."""
+        ids = [
+            await self._repo.save_version(v, platform=platform, title_id=title_id, origin=origin)
+            for v in versions
+        ]
+        if versions:
+            await self._repo.retire_other_consoles("xbox", versions[0].product_id, ids)
+        return ids
+
     async def _xbox_addons(
-        self, product_id: str, related: list[str], version_ids: list[int], report: CollectReport
+        self,
+        product_id: str,
+        related: list[str],
+        version_ids: list[int],
+        report: CollectReport,
+        owners: set[str] | None = None,
     ) -> bool:
         """The product's add-ons, for every console version of it (Smart
-        Delivery add-ons work on both)."""
+        Delivery add-ons work on both) — those that name this game as their
+        own (`owners`: its products), not the other games' an edition of
+        several bundles."""
         if not related or not version_ids:
             return False
         try:
@@ -295,9 +313,18 @@ class StoreCollector:
             f"xbox_addons:{product_id}", "xbox_catalog", {"editions": editions, "addons": found}
         )
         await self._xbox_editions(editions, found, report)
+        mine = (owners or set()) | {product_id}
+        foreign = [
+            str(p.get("ProductId"))
+            for p in found
+            if p.get("ProductId") and not xbox_catalog.belongs_to(p, mine)
+        ]
+        for version_id in version_ids:
+            # Another game's add-on an earlier collection put here goes.
+            await self._repo.delete_dlcs(version_id, foreign)
         for product in found:
             addon = xbox_catalog.parse_addon(product)
-            if addon is None:
+            if addon is None or not xbox_catalog.belongs_to(product, mine):
                 continue
             for version_id in version_ids:
                 await self._repo.save_dlc(version_id, addon)
@@ -448,6 +475,14 @@ class StoreCollector:
             return
         products = await xbox_catalog.products([str(p["ProductId"]) for p in hits])
         editions = [p for p in products if xbox_catalog.bundle_items(p)]
+        title_ids_of = {
+            str(p.get("ProductId")): {
+                str(a.get("Value"))
+                for a in p.get("AlternateIds") or []
+                if a.get("IdType") == "XboxTitleId"
+            }
+            for p in products
+        }
         for product in products:
             if xbox_catalog.bundle_items(product):
                 continue
@@ -462,18 +497,16 @@ class StoreCollector:
                     held = title_id
                     break
             versions = xbox_catalog.parse_product(product)
-            ids = [
-                await self._repo.save_version(
-                    v,
-                    platform="xbox_modern" if held else None,
-                    title_id=held,
-                    origin="played" if held else "store",
-                )
-                for v in versions
-            ]
+            ids = await self._save_xbox_versions(
+                versions, "xbox_modern" if held else None, held, "played" if held else "store"
+            )
             report.versions += ids
             if versions:
-                await self._xbox_addons(versions[0].product_id, versions[0].dlc_ids, ids, report)
+                own = set(title_ids)
+                owners = {pid for pid, tids in title_ids_of.items() if tids & own}
+                await self._xbox_addons(
+                    versions[0].product_id, versions[0].dlc_ids, ids, report, owners
+                )
         await self._xbox_editions(editions, [], report)
 
     # ------------------------------------------------------------ other stores (stage 4)

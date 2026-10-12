@@ -311,6 +311,23 @@ class _StoresRepo:
         )
         await self._conn.commit()
 
+    async def delete_dlcs(self, version_id: int, store_ids: list[str]) -> None:
+        """These add-ons are not this version's (another game's, an edition
+        of several bundled): their rows here go, with their HLTB links."""
+        if not store_ids:
+            return
+        marks = ",".join("?" * len(store_ids))
+        async with self.transaction():
+            await self._conn.execute(
+                "DELETE FROM dlc_hltb WHERE dlc_id IN (SELECT dlc_id FROM dlcs"
+                f" WHERE version_id = ? AND store_id IN ({marks}))",
+                (version_id, *store_ids),
+            )
+            await self._conn.execute(
+                f"DELETE FROM dlcs WHERE version_id = ? AND store_id IN ({marks})",
+                (version_id, *store_ids),
+            )
+
     async def save_trophy_group_dlcs(self, version_id: int, np_communication_id: str) -> int:
         """A PSN version's DLC with trophies of their own: its trophy groups
         past the base game (`title_groups`, already stored)."""
@@ -446,6 +463,54 @@ class _StoresRepo:
                         f"DELETE FROM {table} WHERE version_id = ?",
                         (version_id,),
                     )
+
+    async def retire_other_consoles(
+        self, store: str, product_id: str, keep: list[int]
+    ) -> list[int]:
+        """A product's versions on consoles its store no longer makes it a
+        version on (a One game's phantom "Series" version, 2026-10-12): each
+        goes into the first kept one — what was decided about it (labels, a
+        game's anchor), its store ids, HLTB links and edition places move
+        there, as it was the same product all along — and is deleted."""
+        if not keep:
+            return []
+        into = keep[0]
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE store = ? AND product_id = ? AND stand_in = 0",
+            (store, product_id),
+        )
+        stale = [int(r[0]) for r in await cursor.fetchall() if int(r[0]) not in keep]
+        for old in stale:
+            async with self.transaction():
+                # A label about the old one is about the product: kept, unless
+                # the kept version already has one with that other version.
+                for column, other in (("version_id", "other_id"), ("other_id", "version_id")):
+                    await self._conn.execute(
+                        f"UPDATE OR IGNORE match_decisions SET {column} = ?"
+                        f" WHERE {column} = ? AND {other} <> ?",
+                        (into, old, into),
+                    )
+                await self._conn.execute(
+                    "UPDATE games SET anchor_version_id = ? WHERE anchor_version_id = ?"
+                    " AND NOT EXISTS (SELECT 1 FROM games WHERE anchor_version_id = ?)",
+                    (into, old, into),
+                )
+                await self._conn.execute(
+                    "INSERT OR IGNORE INTO version_store_ids (store, store_id, version_id, source)"
+                    " SELECT store, store_id, ?, source FROM version_store_ids"
+                    " WHERE version_id = ?",
+                    (into, old),
+                )
+                await self._conn.execute(
+                    "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source)"
+                    " SELECT ?, hltb_id, source FROM version_hltb WHERE version_id = ?",
+                    (into, old),
+                )
+                await self._conn.execute(
+                    "UPDATE edition_items SET version_id = ? WHERE version_id = ?", (into, old)
+                )
+                await self.delete_version(old)
+        return stale
 
     # ------------------------------------------------------------ editions (094)
 

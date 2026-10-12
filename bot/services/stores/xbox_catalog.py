@@ -2,12 +2,17 @@
 public, no token. Found by our own title id (`lookup?alternateId=XboxTitleId`),
 so no person's login is spent and no refresh token is touched.
 
-One product is one version per console it runs on (Smart Delivery: One and
-Series); Play Anywhere's PC (a SKU's `XboxXPA`) is `also_on`, never a version
-of its own. A game does not list its add-ons: its related products are its
+One product is one version per console it is made for — the generations the
+store calls it optimized for (Smart Delivery: One and Series); a One game
+that runs on Series only by backward compatibility is a One version, Series
+in its `also_on` (2026-10-12: 879 such "Series versions" were phantoms).
+Play Anywhere's PC (a SKU's `XboxXPA`) is `also_on` too, never a version of
+its own. A game does not list its add-ons: its related products are its
 editions (Deluxe, Ultimate — "Bundle"), and what an edition bundles beside
-the game is the add-ons. Of those a Durable is kept; a Consumable (currency,
-packs) is left out. An add-on sold only on its own is not found this way."""
+the game is the add-ons. Of those a Durable is kept, and only when it names
+this game as its own (`addOnParent`): an edition of several games bundles
+other games' add-ons too. A Consumable (currency, packs) is left out. An
+add-on sold only on its own is not found this way."""
 
 from __future__ import annotations
 
@@ -77,17 +82,34 @@ async def products(big_ids: list[str]) -> list[dict]:
     return found
 
 
+def consoles_of(product: dict) -> tuple[list[str], list[str]]:
+    """(the consoles it is a version on, the ones it also runs on). Made for
+    a console is what the store calls it optimized for; one it is only
+    compatible with (a One game on Series) runs it by backward compatibility,
+    which makes no version (owner, 2026-10-08: a One-only game on a Series is
+    One). A product naming no optimized generation goes by its compatible
+    ones, as before; one naming none at all is a PC (Windows) game."""
+    props = product.get("Properties") or {}
+    compatible = [
+        _CONSOLES[g] for g in props.get("XboxConsoleGenCompatible") or [] if g in _CONSOLES
+    ]
+    optimized = [_CONSOLES[g] for g in props.get("XboxConsoleGenOptimized") or [] if g in _CONSOLES]
+    consoles = [c for c in compatible if c in optimized] or optimized or compatible
+    also_on = [c for c in compatible if c not in consoles]
+    if props.get("XboxXPA") or _sku_flag(product, "XboxXPA"):
+        also_on.append("pc")
+    if not consoles:
+        return ["pc"], []
+    return consoles, also_on
+
+
 def parse_product(product: dict) -> list[StoreVersion]:
-    """One version per console the product runs on; a product with no
-    console generation is a PC (Windows) game."""
+    """One version per console the product is made for (`consoles_of`)."""
     props = product.get("Properties") or {}
     local = (product.get("LocalizedProperties") or [{}])[0]
     market = (product.get("MarketProperties") or [{}])[0]
     big_id = str(product.get("ProductId") or "")
-    consoles = [_CONSOLES[g] for g in props.get("XboxConsoleGenCompatible") or [] if g in _CONSOLES]
-    also_on = ["pc"] if props.get("XboxXPA") or _sku_flag(product, "XboxXPA") else []
-    if not consoles:
-        consoles, also_on = ["pc"], []
+    consoles, also_on = consoles_of(product)
     title_ids = [
         str(alt.get("Value"))
         for alt in product.get("AlternateIds") or []
@@ -177,6 +199,25 @@ def bundled(products: list[dict], game_id: str) -> list[str]:
     return found
 
 
+def addon_parents(product: dict) -> list[str]:
+    """The games an add-on names as its own (`addOnParent`): a cross-gen game
+    may be named by each of its products."""
+    market = (product.get("MarketProperties") or [{}])[0]
+    return [
+        str(r["RelatedProductId"])
+        for r in market.get("RelatedProducts") or []
+        if r.get("RelationshipType") == "addOnParent" and r.get("RelatedProductId")
+    ]
+
+
+def belongs_to(addon: dict, owners: set[str]) -> bool:
+    """Whether an add-on is one of these products' (a game's products): it
+    names one of them as its parent. An edition of several games bundles
+    the others' add-ons too ("Life is Strange: True Colors" outfits in the
+    Remastered Collection's bundle), and one naming no parent is nobody's."""
+    return any(parent in owners for parent in addon_parents(addon))
+
+
 def _sku_flag(product: dict, name: str) -> bool:
     return any(
         ((availability.get("Sku") or {}).get("Properties") or {}).get(name)
@@ -244,14 +285,43 @@ def _media(local: dict) -> dict[str, object]:
             media[role] = url
     if shots:
         media["screenshots"] = shots
-    videos = [
-        {"name": v.get("Caption"), "url": v.get("Uri")}
-        for v in local.get("Videos") or []
-        if v.get("Uri")
-    ]
-    if videos:
+    if videos := _videos(local):
         media["videos"] = videos
     return media
+
+
+def _videos(local: dict) -> list[dict[str, object]]:
+    """The trailers a browser can play: `CMSVideos`' HLS and DASH streams,
+    over https, with their preview picture. The old `Videos` are Smooth
+    Streaming manifests over plain http (`….ism/manifest`) that nothing plays
+    — kept only were one ever https. Links only: nothing is downloaded."""
+    found: list[dict[str, object]] = []
+    for video in local.get("CMSVideos") or []:
+        hls, dash = _https(video.get("HLS")), _https(video.get("DASH"))
+        if not (hls or dash):
+            continue
+        item: dict[str, object] = {"name": video.get("Caption"), "url": hls or dash}
+        if hls:
+            item["hls"] = hls
+        if dash:
+            item["dash"] = dash
+        if poster := _https((video.get("PreviewImage") or {}).get("Uri")):
+            item["poster"] = poster
+        found.append(item)
+    if not found:
+        found = [
+            {"name": v.get("Caption"), "url": url}
+            for v in local.get("Videos") or []
+            if (url := _https(v.get("Uri")))
+        ]
+    return found
+
+
+def _https(raw: object) -> str | None:
+    url = str(raw or "")
+    if url.startswith("//"):
+        url = "https:" + url
+    return url if url.startswith("https://") else None
 
 
 def _day(raw: object) -> str | None:
