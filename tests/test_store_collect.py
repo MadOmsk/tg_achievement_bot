@@ -457,3 +457,49 @@ async def test_a_phantom_series_version_goes_into_the_one_version(
     assert await repo.version_row(series) is None
     cursor = await repo._conn.execute("SELECT version_id, other_id FROM match_decisions")
     assert [tuple(r) for r in await cursor.fetchall()] == [(one, other)]
+
+
+def test_a_psn_concepts_background_is_its_layer_art() -> None:
+    concept = {
+        "id": "1",
+        "titleIds": ["CUSA00001_00"],
+        "media": {
+            "images": [
+                {"type": "BACKGROUND_LAYER_ART", "url": "https://img/bg.png"},
+                {"type": "MASTER", "url": "https://img/cover.png"},
+            ],
+            "videos": [
+                {"url": "https://v/a.mp4", "hlsUrl": "https://v/a.m3u8", "posters": ["https://p"]}
+            ],
+        },
+    }
+    [version] = psn_store.parse_concept(concept)
+    assert version.media["background"] == "https://img/bg.png"
+    assert version.media["videos"] == [
+        {"url": "https://v/a.mp4", "hls": "https://v/a.m3u8", "poster": "https://p"}
+    ]
+
+
+async def test_a_steam_store_name_waits_under_the_storefront_limiter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-10-12: the localization walker asked the storefront outside the
+    stores' limiter; it reads through `steam_store.app_details` now."""
+    from bot.services.steam import client as steam_client
+
+    asked: list[tuple[str, str]] = []
+
+    async def app_details(appid: str, language: str = "english") -> dict | None:
+        asked.append((appid, language))
+        return {"name": "Ведьмак 3"}
+
+    monkeypatch.setattr(steam_client.steam_store, "app_details", app_details)
+    assert await steam_client.store_name("292030", "russian") == "Ведьмак 3"
+    assert asked == [("292030", "russian")]
+
+
+def test_a_steam_post_keeps_its_full_text() -> None:
+    from bot.services import steam_news
+
+    long_text = "word " * 2000
+    assert steam_news.shorten(long_text) == long_text

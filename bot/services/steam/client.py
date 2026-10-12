@@ -25,6 +25,7 @@ import httpx
 
 from bot.constants import SteamCommunityVisibility
 from bot.services.rate_limiter import RateLimiter
+from bot.services.stores import steam_store
 
 BASE_URL = "https://api.steampowered.com"
 # The storefront, not the Web API — a different host, no key, and the only
@@ -145,22 +146,16 @@ async def store_name(appid: str, language: str) -> str | None:
 
     Best-effort by design: the one call here that talks to the storefront
     rather than the Web API, it needs no key, and a failure costs nothing but
-    a name that stays in whatever language the API already gave.
+    a name that stays in whatever language the API already gave. It is the
+    stores' own `appdetails` read (2026-10-12), so it waits its turn under
+    the one storefront limiter instead of going around it.
     """
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.get(
-                f"{STORE_URL}/api/appdetails",
-                params={"appids": appid, "l": language, "filters": "basic"},
-            )
-            response.raise_for_status()
-            body = response.json().get(appid) or {}
+        data = await steam_store.app_details(appid, language)
     except Exception:
         log.info("steam store name for appid=%s unavailable", appid, exc_info=True)
         return None
-    if not body.get("success"):
-        return None
-    name = (body.get("data") or {}).get("name")
+    name = (data or {}).get("name")
     return str(name) if name else None
 
 

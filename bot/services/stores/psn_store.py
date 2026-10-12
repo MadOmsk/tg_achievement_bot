@@ -22,6 +22,8 @@ _CONSOLE = {"CUSA": "ps4", "PPSA": "ps5"}
 _IMAGE_ROLES = {
     "GAMEHUB_COVER_ART": "cover",
     "MASTER": "cover",
+    # The store's own name for it (2026-10-12: "BACKGROUND" is never sent).
+    "BACKGROUND_LAYER_ART": "background",
     "BACKGROUND": "background",
     "PORTRAIT_BANNER": "poster",
 }
@@ -134,7 +136,16 @@ def _media(concept: dict) -> dict[str, object]:
             media[role] = str(url)
     if shots:
         media["screenshots"] = shots
-    videos = [{"url": v.get("url")} for v in raw.get("videos") or [] if v.get("url")]
+    videos = []
+    for video in raw.get("videos") or []:
+        if not video.get("url"):
+            continue
+        item: dict[str, object] = {"url": video["url"]}
+        if video.get("hlsUrl"):
+            item["hls"] = video["hlsUrl"]
+        if posters := video.get("posters"):
+            item["poster"] = posters[0]
+        videos.append(item)
     if videos:
         media["videos"] = videos
     rating = concept.get("starRating") or {}

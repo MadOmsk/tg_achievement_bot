@@ -592,7 +592,11 @@ What the stores and HLTB say about a game, collected but not shown yet
   alias table).
 - **Sources**, one module each in `services/stores/`, network only:
   - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
-    `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour);
+    `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour).
+    **Every storefront request waits under one limiter**
+    (`steam_store.LIMITER`): the stores' reads, the localization walker's
+    names (`steam/client.store_name` reads through `app_details`) and the
+    appid search alike;
   - Xbox `displaycatalog`, public, found by our title id (`lookup?alternateId=
     XboxTitleId`) — no login is spent. **A product is a version on the
     consoles the store calls it optimized for** (`XboxConsoleGenOptimized`;
@@ -1924,7 +1928,8 @@ sent to a chat.
 - **Patches and news**: every post of the developer's own (`GetNewsForApp`, `feeds=
   steam_community_announcements` — on a busy day the default feed is other sites'
   articles only), the last thirty, kept in `game_patches` with its `kind` and first
-  picture (migration 084): a patch is a post tagged `patchnotes` or titled like one
+  picture (migration 084), its whole text (`steam_news.TEXT_CHARS` is only a
+  net against a runaway post, 2026-10-12): a patch is a post tagged `patchnotes` or titled like one
   (update, patch, hotfix, a version number; not a demo or playtest), anything else
   is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page's «Обновления» shows both, with a filter at the tab's right (all / news / patches); **«Новости»** (owner,
   2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)

@@ -21,6 +21,7 @@ import httpx
 
 from bot.services.hltb import steam_appid_of
 from bot.services.hltb_match import ACCEPT_SCORE, CLEAR_MARGIN, core, normalize, similarity
+from bot.services.stores import steam_store
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +39,9 @@ _NEWS_URL = "https://api.steampowered.com/ISteamNews/GetNewsForApp/v0002/"
 _OFFICIAL_FEED = "steam_community_announcements"
 # The last thirty of the developer's posts, patches and news alike.
 _NEWS_FETCHED = 30
-TEXT_CHARS = 4000
+# A net against a runaway post, not a length: a post's page shows its full
+# text (2026-10-12: 53 of 492 posts were cut at 4000 characters).
+TEXT_CHARS = 100_000
 
 # A title that is a patch: the word for it, or a version number. A bare
 # "9.18" is not one — it is as likely a date.
@@ -227,6 +230,9 @@ def parse_patches(payload: dict) -> list[Patch]:
 async def _search_appid(client: httpx.AsyncClient, names: list[str]) -> int | None:
     for name in dict.fromkeys(n for n in names if n):
         term = " ".join(_SEARCH_NOISE.sub(" ", name).split())
+        # The storefront's one limiter (`stores.steam_store`): every request to
+        # it waits its turn, wherever it comes from.
+        await steam_store.LIMITER.acquire()
         response = await client.get(_SEARCH_URL, params={"term": term, "cc": "us", "l": "en"})
         response.raise_for_status()
         appid = pick_appid(response.json().get("items", []), names)
