@@ -51,6 +51,10 @@ JOINING = {"same", "edition", "demo_of", "tool_of"}
 # series" (owner, 2026-10-11) — the same for building games, kept apart for
 # what it tells about the model's mistakes.
 NOT_RELATED = {"other", "series"}
+# "Not sure yet" (owner, 2026-10-12): the operator put the question off — too
+# little known, or not theirs to judge yet. It says nothing about the pair:
+# the linker and the fit read it as no answer at all.
+PENDING = {"defer"}
 # A word in more versions' names than this tells nothing ("war", "star").
 COMMON_WORD = 60
 # One linker at a time in a process: two collections of one game's lists at
@@ -109,7 +113,9 @@ class GameLinker:
         labels = [
             lab
             for lab in await self._repo.decisions_among(list(around))
-            if lab["version_id"] in around and lab["other_id"] in around
+            if lab["version_id"] in around
+            and lab["other_id"] in around
+            and lab["relation"] not in PENDING
         ]
 
         pairs = index.pairs(members)

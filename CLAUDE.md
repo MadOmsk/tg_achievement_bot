@@ -690,8 +690,19 @@ What the stores and HLTB say about a game, collected but not shown yet
   like `other`, but tells the fit the model mixed up a series), "other: ask
   later" (nothing written, the pair comes back after the rest); two versions —
   same game, a different game, a remaster of it, a remake of it (one tap moves
-  the version out and relates the games). The rest is under "more…". **No authentication
-  yet** (#186).
+  the version out and relates the games). The rest is under "more…". **"⏸ Not
+  sure yet"** (owner, 2026-10-12: too little known, or not the operator's to
+  judge yet) is a label `defer` (`game_link.PENDING`): the linker and the fit
+  read it as no answer, the pair leaves the queue for the review's «not sure
+  yet» tab and is answered there later. **An operator errs too** (owner,
+  2026-10-12): every answer can be taken back (`/decisions`, `delete_decision`:
+  the pair is the model's again); `/doubts` lists answers that contradict the
+  games the others built, that the model gives under `DOUBT_P` (0.1), or that
+  the adviser's proposals answered otherwise — kept ("checked", then only a
+  contradiction brings it back), changed or taken back; the fit trusts a label
+  at `1 - smoothing` and prints the labels it still disputes (`disputed`)
+  instead of bending to them. Labels still bind the linker: the operator's word
+  is changed by the operator. **No authentication yet** (#186).
 
 ### Secrets
 

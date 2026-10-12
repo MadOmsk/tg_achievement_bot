@@ -26,7 +26,15 @@ from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services.game_link import load_candidates
 from bot.services.game_match import WEIGHTS, features
-from bot.services.match_fit import LABEL_CLASS, Example, changes, cross_validate, fit, score
+from bot.services.match_fit import (
+    LABEL_CLASS,
+    Example,
+    changes,
+    cross_validate,
+    disputed,
+    fit,
+    score,
+)
 
 logging.basicConfig(level="WARNING")
 
@@ -47,7 +55,7 @@ async def examples_from(repo: Repo) -> list[Example]:
             f = json.loads(lab["features"])  # the versions are gone: what was seen then
         else:
             continue
-        found.append(Example(f, label))
+        found.append(Example(f, label, (lab["version_id"], lab["other_id"])))
     return found
 
 
@@ -79,6 +87,11 @@ def main() -> None:
     print(f"all labels — fitted: {score(examples, fitted).accuracy:.0%} right")
     for cls, sign, was, now in changes(WEIGHTS, fitted):
         print(f"  {cls:12} {sign:26} {was:+6.2f} → {now:+6.2f}")
+    doubtful = disputed(examples, fitted)
+    if doubtful:
+        print(f"labels the fitted weights still dispute ({len(doubtful)}; see /doubts):")
+        for e, p in doubtful[:30]:
+            print(f"  versions {e.pair[0]} / {e.pair[1]}: {e.label} at {p:.0%}")
     rounded = {c: {k: round(v, 2) for k, v in w.items() if round(v, 2)} for c, w in fitted.items()}
     Path(args.out).write_text(json.dumps(rounded, indent=1), encoding="utf-8")
     print(f"written to {args.out}")

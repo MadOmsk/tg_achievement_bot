@@ -72,6 +72,7 @@ def _page(title: str, body: str) -> web.Response:
         ' · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
         ' · <a href="/payloads">payloads</a> · <a href="/proposals">proposals</a>'
+        ' · <a href="/decisions">answers</a> · <a href="/doubts">doubts</a>'
     )
     html = (
         "<!doctype html><meta charset=utf-8>"
@@ -717,6 +718,7 @@ _DECISIONS_QUICK = (
     ("other", "a different game"),
     ("remaster_of", "a remaster of it"),
     ("remake_of", "a remake of it"),
+    ("defer", "⏸ not sure yet"),
 )
 _DECISIONS_MORE = (
     ("remaster_of:flip", "⇄ it is a remaster of this"),
@@ -725,6 +727,10 @@ _DECISIONS_MORE = (
     ("demo_of:flip", "⇄ it is a demo of this"),
     ("tool_of", "a tool for it"),
     ("tool_of:flip", "⇄ it is a tool for this"),
+    ("contains", "a compilation that holds it"),
+    ("contains:flip", "⇄ it is a compilation holding this"),
+    ("vr_of", "the VR version of it"),
+    ("vr_of:flip", "⇄ it is the VR version of this"),
     ("series", "another game of its series"),
     ("skip", "skip: ask again later"),
 )
@@ -786,7 +792,11 @@ def _game_picker(game_id: int, other_game: int, back: str, guess: str = "") -> s
     quick = []
     if guess in _GUESS_WORDS:
         quick.append((guess, f"✓ {_GUESS_WORDS[guess]}"))
-    quick += [("series", "another of the series"), ("skip", "other: ask later")]
+    quick += [
+        ("series", "another of the series"),
+        ("skip", "other: ask later"),
+        ("defer", "⏸ not sure yet"),
+    ]
     return _answer_forms(
         "/decide-games",
         {"game_id": game_id, "other_game": other_game},
@@ -1209,6 +1219,21 @@ def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
 # Which review pairs ask about one game, and which about two related games.
 _GAME_RELATIONS = ("remaster_of", "remake_of", "contains", "vr_of")
 
+# A pair the operator put off ("not sure yet", owner, 2026-10-12): that pair of
+# versions, or — when they are in two games — any pair between those games
+# (a game answer is given between the games' anchors).
+_GAME_OF = "(SELECT game_id FROM game_versions WHERE version_id = {})"
+DEFERRED = (
+    "EXISTS (SELECT 1 FROM match_decisions d WHERE d.relation = 'defer' AND ("
+    " (d.version_id = mp.version_id AND d.other_id = mp.other_id)"
+    " OR (d.version_id = mp.other_id AND d.other_id = mp.version_id)"
+    f" OR ({_GAME_OF.format('mp.version_id')} IS NOT {_GAME_OF.format('mp.other_id')} AND ("
+    f"  ({_GAME_OF.format('d.version_id')} = {_GAME_OF.format('mp.version_id')}"
+    f"   AND {_GAME_OF.format('d.other_id')} = {_GAME_OF.format('mp.other_id')})"
+    f"  OR ({_GAME_OF.format('d.version_id')} = {_GAME_OF.format('mp.other_id')}"
+    f"   AND {_GAME_OF.format('d.other_id')} = {_GAME_OF.format('mp.version_id')})))))"
+)
+
 
 async def review(request: web.Request) -> web.Response:
     """Two questions, two tabs (owner, 2026-10-11): is this version that game
@@ -1223,15 +1248,23 @@ async def review(request: web.Request) -> web.Response:
         "(SELECT game_id FROM game_versions WHERE version_id = mp.version_id) IS NOT"
         " (SELECT game_id FROM game_versions WHERE version_id = mp.other_id)"
     )
-    games_where = f"mp.relation IN ({marks}) AND {two_games}"
-    versions_where = f"NOT ({games_where})"
+    games_kind = f"mp.relation IN ({marks}) AND {two_games}"
+    games_where = f"{games_kind} AND NOT {DEFERRED}"
+    versions_where = f"NOT ({games_kind}) AND NOT {DEFERRED}"
+    if tab == "deferred":
+        return await _deferred(request, games_kind)
     where = games_where if games_tab else versions_where
     with _db(request) as conn:
         counts = {
             name: conn.execute(
-                f"SELECT COUNT(*) FROM match_pairs mp WHERE {clause}", _GAME_RELATIONS
+                f"SELECT COUNT(*) FROM match_pairs mp WHERE {clause}",
+                _GAME_RELATIONS if "?" in clause else (),
             ).fetchone()[0]
-            for name, clause in (("versions", versions_where), ("games", games_where))
+            for name, clause in (
+                ("versions", versions_where),
+                ("games", games_where),
+                ("deferred", DEFERRED),
+            )
         }
         everything = conn.execute(
             "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
@@ -1253,7 +1286,11 @@ async def review(request: web.Request) -> web.Response:
             if name == tab
             else f'<a href="/review?tab={name}">{label} ({counts[name]})</a>'
         )
-        for name, label in (("versions", "version ↔ game"), ("games", "game ↔ game"))
+        for name, label in (
+            ("versions", "version ↔ game"),
+            ("games", "game ↔ game"),
+            ("deferred", "⏸ not sure yet"),
+        )
     )
     note = (
         "<p>How two games relate: a remaster, a remake, a compilation, a VR version — or"
@@ -1262,6 +1299,29 @@ async def review(request: web.Request) -> web.Response:
         else "<p>Is this version that game (or its edition, demo, tool) — or another game?</p>"
     )
     return _page("To review", _flash(request) + f"<p>{tabs}</p>" + note + cards)
+
+
+async def _deferred(request: web.Request, games_kind: str) -> web.Response:
+    """The pairs put off: both kinds, answered as usual once it is clear."""
+    back = "/review?tab=deferred"
+    with _db(request) as conn:
+        query = (
+            "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
+            " mp.features FROM match_pairs mp WHERE {} AND " + DEFERRED + " ORDER BY mp.p DESC"
+        )
+        about_games = conn.execute(query.format(games_kind), _GAME_RELATIONS).fetchall()
+        about_versions = conn.execute(
+            query.format(f"NOT ({games_kind})"), _GAME_RELATIONS
+        ).fetchall()
+        body = (
+            "<p>Put off: too little known, or not clear yet. They wait here, out of the"
+            " queue and out of the model's lessons, until answered.</p>"
+            "<h2>game ↔ game</h2>"
+            + _game_pair_rows(conn, about_games, back)
+            + "<h2>version ↔ game</h2>"
+            + _pair_rows(conn, about_versions, back)
+        )
+    return _page("Not sure yet", _flash(request) + '<p><a href="/review">← review</a></p>' + body)
 
 
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
@@ -1390,7 +1450,8 @@ async def proposals(request: web.Request) -> web.Response:
                     "SELECT 1 FROM match_decisions d"
                     " JOIN game_versions x ON x.version_id = d.version_id"
                     " JOIN game_versions y ON y.version_id = d.other_id"
-                    " WHERE (x.game_id = ? AND y.game_id = ?) OR (x.game_id = ? AND y.game_id = ?)"
+                    " WHERE d.relation <> 'defer' AND"
+                    " ((x.game_id = ? AND y.game_id = ?) OR (x.game_id = ? AND y.game_id = ?))"
                     " LIMIT 1",
                     (a, b, b, a),
                 ).fetchone()
@@ -1461,22 +1522,166 @@ async def proposals(request: web.Request) -> web.Response:
 
 
 async def decisions(request: web.Request) -> web.Response:
-    """Every label the operator gave, newest first."""
+    """Every answer the operator gave, newest first, each one can be taken
+    back (an operator errs too)."""
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT d.version_id, a.name AS this, d.relation, d.other_id, b.name AS that,"
-            " d.model, d.decided_at FROM match_decisions d"
+            "SELECT d.version_id, a.name AS this, a.console AS this_console, d.relation,"
+            " d.other_id, b.name AS that, b.console AS that_console, d.decided_by, d.decided_at"
+            " FROM match_decisions d"
             " JOIN versions a ON a.version_id = d.version_id"
             " JOIN versions b ON b.version_id = d.other_id ORDER BY d.decided_at DESC LIMIT ?",
             (PAGE_SIZE * 3,),
         ).fetchall()
-    links = {
-        "version_id": lambda r: f"/version/{r['version_id']}",
-        "this": lambda r: f"/version/{r['version_id']}",
-        "other_id": lambda r: f"/version/{r['other_id']}",
-        "that": lambda r: f"/version/{r['other_id']}",
-    }
-    return _page("The operator's labels", _table(rows, links))
+    lines = "".join(
+        f'<tr><td><a href="/version/{r["version_id"]}">{escape(r["this"] or "")}</a>'
+        f" <small>{escape(r['this_console'])}</small></td>"
+        f"<td><b>{escape(r['relation'])}</b></td>"
+        f'<td><a href="/version/{r["other_id"]}">{escape(r["that"] or "")}</a>'
+        f" <small>{escape(r['that_console'])}</small></td>"
+        f"<td><small>{escape(r['decided_by'])} · {escape(r['decided_at'][:16])}</small></td>"
+        f"<td>{_undo_form(r['version_id'], r['other_id'], '/decisions')}</td></tr>"
+        for r in rows
+    )
+    return _page(
+        "The operator's answers",
+        _flash(request)
+        + '<p><a href="/doubts">answers worth a second look →</a></p>'
+        + "<div class=scroll><table class=versions><tr><th>this</th><th>answer</th>"
+        "<th>that</th><th>by, when</th><th></th></tr>" + lines + "</table></div>",
+    )
+
+
+def _undo_form(version_id: int, other_id: int, back: str) -> str:
+    return (
+        '<form method=post action="/decision/undo" style="display:inline;margin:0">'
+        f'<input type=hidden name=version_id value="{version_id}">'
+        f'<input type=hidden name=other_id value="{other_id}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        "<button>✕ take back</button></form>"
+    )
+
+
+# The model gives an answer less than this: worth a second look.
+DOUBT_P = 0.1
+
+
+async def doubts(request: web.Request) -> web.Response:
+    """Answers worth a second look (owner, 2026-10-12: an operator errs too):
+    one that contradicts the games the other answers built, one the model
+    finds very unlikely, one the adviser answered otherwise. Each is kept,
+    changed or taken back; one kept stops being doubted by the model or the
+    adviser ("checked"), a contradiction never does."""
+    from bot.services.game_link import JOINING, PENDING, load_candidates
+    from bot.services.game_match import features, probabilities
+    from bot.services.match_fit import LABEL_CLASS
+
+    repo = _repo(request)
+    labels = [lab for lab in await repo.all_decisions() if lab["relation"] not in PENDING]
+    ids = sorted({lab["version_id"] for lab in labels} | {lab["other_id"] for lab in labels})
+    candidates = await load_candidates(repo, ids)
+    with _db(request) as conn:
+        game_of = {
+            r[0]: r[1] for r in conn.execute("SELECT version_id, game_id FROM game_versions")
+        }
+        advised: dict[frozenset[int], tuple[str, int, int]] = {}
+        for item in request.app["proposals"]:
+            decision = _proposal_decision(item["answer"], item["model"])
+            if decision:
+                rel, _, flip = decision.partition(":")
+                a, b = item["game_a"], item["game_b"]
+                advised[frozenset((a, b))] = (rel, *((b, a) if flip else (a, b)))
+        cards = []
+        for lab in labels:
+            a, b, rel = lab["version_id"], lab["other_id"], lab["relation"]
+            ga, gb = game_of.get(a), game_of.get(b)
+            checked = str(lab["decided_by"]).endswith(":checked")
+            why = []
+            if rel in JOINING and ga is not None and gb is not None and ga != gb:
+                why.append("answered as one game, but they are in two games")
+            if rel not in JOINING and ga is not None and ga == gb:
+                why.append("answered as two games, but other answers put them in one game")
+            cls = LABEL_CLASS.get(rel)
+            if not checked and cls and a in candidates and b in candidates:
+                ordered = cls not in ("same", "other")
+                probs = probabilities(features(candidates[a], candidates[b], ordered=ordered))
+                if probs[cls] < DOUBT_P:
+                    best = max(probs, key=probs.__getitem__)
+                    why.append(
+                        f"the model gives this answer {probs[cls]:.0%}; it thinks"
+                        f" {best} ({probs[best]:.0%})"
+                    )
+            if not checked and ga != gb and frozenset((ga, gb)) in advised:
+                arel, first, _ = advised[frozenset((ga, gb))]
+                mine = "other" if rel == "series" else rel
+                theirs = "other" if arel == "series" else arel
+                directed = arel not in ("same", "other", "series")
+                if mine != theirs or (directed and first != ga):
+                    why.append(f"the adviser answered {arel} (game {first} first)")
+            if not why:
+                continue
+            back = "/doubts"
+            sides = (
+                f"<div style='flex:1 1 300px'>{_game_detail(conn, ga)}</div>"
+                f"<div style='flex:1 1 300px'>{_game_detail(conn, gb)}</div>"
+                if ga is not None and gb is not None and ga != gb
+                else "<div>"
+                + _version_line(_version_row(conn, a))
+                + "<br>"
+                + _version_line(_version_row(conn, b))
+                + "</div>"
+            )
+            keep = (
+                '<form method=post action="/decision/keep" style="display:inline;margin:0">'
+                f'<input type=hidden name=version_id value="{a}">'
+                f'<input type=hidden name=other_id value="{b}">'
+                f'<input type=hidden name=relation value="{escape(rel)}">'
+                "<button style='font-weight:bold'>✓ the answer is right</button></form> "
+            )
+            cards.append(
+                "<div style='border:1px solid #ccc;border-radius:8px;padding:8px;margin:10px 0'>"
+                f"<p>the answer: version <a href='/version/{a}'>{a}</a> <b>{escape(rel)}</b>"
+                f" version <a href='/version/{b}'>{b}</a>"
+                f" <small>({escape(lab['decided_by'])},"
+                f" {escape(lab['decided_at'][:16])})</small></p>"
+                f"<div style='display:flex;flex-wrap:wrap;gap:12px'>{sides}</div>"
+                "<ul>" + "".join(f"<li>{escape(w)}</li>" for w in why) + "</ul>"
+                f"<p>{keep}{_undo_form(a, b, back)}</p>"
+                f"<p><small>or answer anew:</small></p>{_decision_picker(a, b, back)}</div>"
+            )
+    head = (
+        f"<p>{len(cards)} of {len(labels)} answers. Contradictions stay until changed;"
+        " a doubt of the model's or the adviser's goes once the answer is kept.</p>"
+    )
+    return _page("Answers worth a second look", _flash(request) + head + "".join(cards))
+
+
+def _version_row(conn: sqlite3.Connection, version_id: int) -> sqlite3.Row:
+    return conn.execute(
+        "SELECT version_id, name, console, release_date, store, product_id, stand_in, on_sale"
+        " FROM versions WHERE version_id = ?",
+        (version_id,),
+    ).fetchone()
+
+
+async def decision_keep(request: web.Request) -> web.Response:
+    """The answer is right: kept, marked checked."""
+    form = await request.post()
+    a, b = int(str(form["version_id"])), int(str(form["other_id"]))
+    await _label(_repo(request), a, b, str(form["relation"]), by="viewer:checked")
+    raise _back("/doubts", f"versions {a} / {b}: kept")
+
+
+async def decision_undo(request: web.Request) -> web.Response:
+    """The answer taken back: the pair is the model's again."""
+    from bot.services.game_link import GameLinker
+
+    form = await request.post()
+    a, b = int(str(form["version_id"])), int(str(form["other_id"]))
+    repo = _repo(request)
+    await repo.delete_decision(a, b)
+    await GameLinker(repo).link_versions([a, b])
+    raise _back(str(form.get("back") or "/decisions"), f"versions {a} / {b}: answer taken back")
 
 
 def _version_line(v: sqlite3.Row) -> str:
@@ -1718,6 +1923,9 @@ def build(db_path: Path, proposals_path: Path | None = None) -> web.Application:
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
     app.router.add_get("/proposals", proposals)
+    app.router.add_get("/doubts", doubts)
+    app.router.add_post("/decision/keep", decision_keep)
+    app.router.add_post("/decision/undo", decision_undo)
     app.router.add_post("/decide-games", decide_games)
     app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
     app.router.add_post("/decide", decide)

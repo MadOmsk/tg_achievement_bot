@@ -636,3 +636,23 @@ def test_a_game_name_keeps_the_games_own_words() -> None:
     se = _c(1, "The Elder Scrolls V: Skyrim Special Edition", store="steam", console="steam")
     assert game_name([se]) == "The Elder Scrolls V: Skyrim Special Edition"
     assert game_name([_c(2, "Gears of War 4")]) == "Gears of War 4"
+
+
+async def test_a_deferred_answer_says_nothing(repo: Repo) -> None:
+    """ "Not sure yet" (owner, 2026-10-12) neither joins nor parts two versions."""
+    xbox = await _version(repo, "BR765873CQJD", "The Witcher 3: Wild Hunt", "2015")
+    steam = await _version(
+        repo, "292030", "The Witcher 3: Wild Hunt", "2015", store="steam", console="steam"
+    )
+    linker = GameLinker(repo)
+    await repo.save_decision(steam, xbox, "defer", features=None, model=None, decided_by="t")
+    await linker.link_versions([xbox, steam])
+    assert await repo.linked_game_of(xbox) == await repo.linked_game_of(steam)
+
+    # Taken back, an answer leaves the pair to the model again.
+    await repo.save_decision(steam, xbox, "other", features=None, model=None, decided_by="t")
+    await linker.link_versions([xbox, steam])
+    assert await repo.linked_game_of(xbox) != await repo.linked_game_of(steam)
+    await repo.delete_decision(xbox, steam)
+    await linker.link_versions([xbox, steam])
+    assert await repo.linked_game_of(xbox) == await repo.linked_game_of(steam)
