@@ -613,6 +613,16 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   constructor copy, so a change in the admin panel applies on the next call (#17).
 - People connect by profile URL, vanity URL or bare SteamID64. Their profile and game
   stats must be public — only they can change that.
+- **Hidden achievements are not a dead key** (2026-10-12): Steam answers a
+  profile whose game details are hidden with 403 and a JSON
+  `playerstats.error`, a bad key with 403 and an HTML page;
+  `client._get` raises `SteamGameDetailsPrivateError` for the first. A
+  backfill that meets it on every game tells the person (as for a hidden
+  library) and leaves `achievements_visible = 0` — "the history waits".
+  The first achievement read again (any poll), or a library that answers
+  the catch-up while the flag is 0, starts `fill_library_gaps` in the
+  background: every game with nothing stored, as history, never published;
+  still hidden, it stops at its first game.
 - Presence comes in batches of up to 100 SteamIDs (`GetPlayerSummaries`).
 - **Every stored achievement carries its game's name** (#70): `fetch_unlocked`
   takes `title_name` so the `titles` upsert has something to write — without it a
