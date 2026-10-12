@@ -11,7 +11,29 @@ canonical names, plus `steam` for a Steam app.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+
+# A PC version is told apart by its store (owner, 2026-10-12): Microsoft's
+# (`xbox` on console `pc`), Steam's, later the Epic Games Store's (`egs`) or
+# GOG's (`gog`) — each one more value of `versions.store`, no schema change.
+# A source that says only "PC" gives a PC version whose store is unknown:
+# an Xbox list played on `Win32` alone is the Xbox app seeing a PC game
+# launched from another store (Steam, Epic) — never a Microsoft product.
+UNKNOWN_STORE = "unknown"
+WIN32 = "Win32"
+
+
+def pc_of_unknown_store(platform: str | None, platforms_raw: str | None) -> bool:
+    """An Xbox achievement list whose platforms are `Win32` alone: the PC
+    game seen by the Xbox app, from a store it does not name."""
+    if platform != "xbox_modern" or not platforms_raw:
+        return False
+    try:
+        platforms = json.loads(platforms_raw)
+    except ValueError:
+        return False
+    return platforms == [WIN32]
 
 
 @dataclass(slots=True)
@@ -28,7 +50,7 @@ class StoreDlc:
 
 @dataclass(slots=True)
 class StoreVersion:
-    store: str  # steam / xbox / psn
+    store: str  # steam / xbox / psn / unknown (a PC game's store not known)
     product_id: str
     console: str
     name: str | None = None

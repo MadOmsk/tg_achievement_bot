@@ -592,6 +592,18 @@ What the stores and HLTB say about a game, collected but not shown yet
   A version points at its achievement list (`platform`, `title_id`) once that is
   proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).
+- **A PC version's store is `versions.store`** (owner, 2026-10-12): `xbox`
+  (Microsoft's, console `pc`), `steam`, later `egs`, `gog` — one more value
+  each, no schema change; a store not known is `unknown`
+  (`stores.UNKNOWN_STORE`, migration 104) rather than a flag on a stand-in,
+  so a known store slots in by value. An `xbox_modern` list whose platforms
+  are `Win32` alone and that has no Microsoft Store product is the Xbox app
+  seeing a PC game launched from another store (Heavy Rain on Steam, never on
+  Xbox): its stand-in is such a PC version, never "xbox pc"
+  (`stores.pc_of_unknown_store`). It sits in the game of its namesake
+  (`unknown_pc_namesake`, a strong "same" sign: the very same release name,
+  any store) and stands alone only when nothing here has that name. HLTB's
+  "PC" is no version (it names no product, see below).
 - **Kinds of link**: see Games below — a remaster, a remake, a compilation, a
   VR version are games of their own (2026-10-11); a demo, a tool (a
   Creation Kit, an editor — owner, 2026-10-10) and a mode (owner, 2026-10-12:

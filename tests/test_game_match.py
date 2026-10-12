@@ -862,3 +862,63 @@ async def test_a_remaster_is_named_by_its_own_release(repo: Repo) -> None:
         "Dark Souls: Prepare to Die Edition",
         "Dark Souls: Remastered",
     ]
+
+
+# ------------------------------------------------------------------ PC stores (2026-10-12)
+
+
+def test_a_win32_list_is_a_pc_version_of_an_unknown_store() -> None:
+    from bot.services.stores import UNKNOWN_STORE, pc_of_unknown_store
+
+    assert pc_of_unknown_store("xbox_modern", '["Win32"]')
+    assert not pc_of_unknown_store("xbox_modern", '["PC"]')  # Microsoft's own PC
+    assert not pc_of_unknown_store("xbox_modern", '["Win32", "XboxOne"]')
+    assert not pc_of_unknown_store("steam", '["Win32"]')
+    seen = _c(1, "Heavy Rain", store=UNKNOWN_STORE, console="pc", stand_in=True, year=2019)
+    steam = _c(2, "Heavy Rain", store="steam", console="steam", year=2019)
+    ps4 = _c(3, "HEAVY RAIN™", store="psn", console="ps4", year=2010)
+    for other in (steam, ps4):
+        v = compare(seen, other)
+        assert "unknown_pc_namesake" in v.features
+        assert _linked(seen, other, "same"), v.reasons
+    # Another name is no namesake: the sign needs the very same release.
+    assert "unknown_pc_namesake" not in features(seen, _c(4, "Heavy Rain 2", store="steam"))
+
+
+async def test_a_win32_list_joins_its_namesakes_game(repo: Repo) -> None:
+    from bot.services.store_collect import _store_of
+    from bot.services.stores import UNKNOWN_STORE
+
+    assert _store_of("xbox_modern", '["Win32"]') == UNKNOWN_STORE
+    assert _store_of("xbox_modern", '["PC", "XboxOne"]') == "xbox"
+    ps4 = await _version(repo, "HR4", "HEAVY RAIN™", "2016", store="psn", console="ps4")
+    steam = await _version(repo, "960910", "Heavy Rain", "2019", store="steam", console="steam")
+    seen = await _version(repo, "1743969133", "Heavy Rain", "", store=UNKNOWN_STORE, console="pc")
+    await GameLinker(repo).link_versions([ps4, steam, seen])
+    game = await repo.linked_game_of(steam)
+    assert await repo.linked_game_of(seen) == game
+    assert await repo.linked_game_of(ps4) == game
+
+
+def _migration(name: str) -> str:
+    from bot.db.repo import MIGRATIONS_DIR
+
+    return (MIGRATIONS_DIR / name).read_text(encoding="utf-8")
+
+
+async def test_migration_104_moves_win32_stand_ins_to_the_unknown_store(repo: Repo) -> None:
+    conn = repo._conn
+    for title_id, platforms in (("1", '["Win32"]'), ("2", '["PC"]')):
+        await conn.execute(
+            "INSERT INTO titles (platform, title_id, name, platforms, updated_at)"
+            " VALUES (?, ?, ?, ?, 'now')",
+            ("xbox_modern", title_id, f"Game {title_id}", platforms),
+        )
+        await conn.execute(
+            "INSERT INTO versions (store, product_id, console, platform, title_id, name,"
+            " updated_at, stand_in) VALUES ('xbox', ?, 'pc', 'xbox_modern', ?, ?, 'now', 1)",
+            (title_id, title_id, f"Game {title_id}"),
+        )
+    await conn.execute(_migration("104_pc_unknown_store.sql"))  # one statement
+    cur = await conn.execute("SELECT product_id, store FROM versions ORDER BY product_id")
+    assert [tuple(r) for r in await cur.fetchall()] == [("1", "unknown"), ("2", "xbox")]

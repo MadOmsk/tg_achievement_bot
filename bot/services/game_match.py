@@ -19,6 +19,7 @@ import re
 from dataclasses import dataclass, field
 
 from bot.services.hltb_match import core, normalize, similarity
+from bot.services.stores import UNKNOWN_STORE
 
 # A name tail that says which release of the game this is.
 _REMASTER = re.compile(
@@ -170,6 +171,9 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "same": {
         "bias": -3.0,
         "one_list": 12.0,  # the same achievement list (Smart Delivery, Play Anywhere)
+        # A PC version of an unknown store (an Xbox list on Win32 alone) and
+        # a version of the very same name: that game, seen by the Xbox app.
+        "unknown_pc_namesake": 12.0,
         "cross_gen_set": 6.0,  # Xbox: one game on One and Series
         "cross_gen_pair": 4.0,  # PS4/PS5, One/Series released together: one game
         "later_list_same_family": -4.0,  # a list of its own on a newer console, later
@@ -213,6 +217,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "remaster_of": {
         "bias": -5.0,
         "one_list": -6.0,
+        "unknown_pc_namesake": -6.0,
         "cross_gen_set": -2.0,
         "cross_gen_pair": -1.0,
         "later_list_same_family": 3.0,  # Ghost of Tsushima DC on PS5 (owner, 2026-10-11)
@@ -249,6 +254,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "remake_of": {
         "bias": -6.0,
         "one_list": -6.0,
+        "unknown_pc_namesake": -6.0,
         "cross_gen_set": -2.0,
         "cross_gen_pair": -2.0,
         "later_list_same_family": 1.0,
@@ -287,6 +293,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "contains": {
         "bias": -6.0,
         "one_list": -6.0,
+        "unknown_pc_namesake": -6.0,
         "cross_gen_set": -2.0,
         "cross_gen_pair": -2.0,
         "steam_parent": -2.0,
@@ -309,6 +316,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
     "vr_of": {  # owner, 2026-10-11: a VR version is its own relation
         "bias": -6.0,
         "one_list": -6.0,
+        "unknown_pc_namesake": -6.0,
         "vr_word": 8.0,
         "name": 8.0,
         "numbers_differ": -9.0,
@@ -372,6 +380,8 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["one_list"] = 1.0
     if s.cross_gen_set and s.store == o.store and s.cross_gen_set == o.cross_gen_set:
         f["cross_gen_set"] = 1.0
+    if _unknown_pc_namesake(s, o):
+        f["unknown_pc_namesake"] = 1.0
     gap = abs(s.year - o.year) if s.year and o.year else None
     # Released together (the same year): one game even with two lists; a
     # year later on the newer console it is a remaster (owner, 2026-10-11).
@@ -528,7 +538,11 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
     ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
     (relation, p), (_second, p2) = ranked[0], ranked[1]
     best_link = max(((c, probs[c]) for c in CLASSES), key=lambda kv: kv[1])
-    namesake = "same_name_far" in f or "same_name_other_studio" in f
+    # The same name years apart or by another studio is the operator's —
+    # unless one is the PC game the Xbox app saw (its year is a guess).
+    namesake = (
+        "same_name_far" in f or "same_name_other_studio" in f
+    ) and "unknown_pc_namesake" not in f
     if relation != "other" and p >= LINK_P and p - p2 >= CLOSE_CALL and not namesake:
         state = "linked"
     elif best_link[1] >= REVIEW_P or namesake:
@@ -544,6 +558,24 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
         if k != "bias" and w.get(k, 0.0)
     ]
     return Verdict(s.version_id, o.version_id, relation, p, probs, state, f, reasons)
+
+
+def is_unknown_pc(candidate: Candidate) -> bool:
+    """A PC version whose store is not known (see `stores.UNKNOWN_STORE`)."""
+    return candidate.store == UNKNOWN_STORE
+
+
+def _unknown_pc_namesake(a: Candidate, b: Candidate) -> bool:
+    """One is a PC version of an unknown store, the other a known version of
+    the very same release name (owner, 2026-10-12): the Xbox app saw that
+    game played on PC — Heavy Rain's Steam app, never an Xbox game."""
+    if is_unknown_pc(a) == is_unknown_pc(b):
+        return False
+
+    def names(c: Candidate) -> set[str]:
+        return {normalize(release_name(_aliased(n))) for n in c.names if normalize(n)}
+
+    return bool(names(a) & names(b))
 
 
 def _demo_pair(a: Candidate, b: Candidate) -> bool:

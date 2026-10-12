@@ -1025,6 +1025,8 @@ CREATE INDEX IF NOT EXISTS idx_guide_marks_label ON guide_marks (label);
 CREATE TABLE IF NOT EXISTS versions (
     version_id   INTEGER PRIMARY KEY,
     store        TEXT NOT NULL,    -- steam / xbox / psn / x360 (no store: the 360 list itself)
+                                   -- / unknown (104: a PC game from a store not named, an
+                                   -- Xbox list on Win32 alone); later egs / gog
     product_id   TEXT NOT NULL,    -- Steam appid, Xbox bigId, PSN concept id, 360 title id
     console      TEXT NOT NULL,    -- series / one / pc / 360 / ps5 / ps4 / ps3 / vita / steam
     platform     TEXT,             -- its achievement list: titles(platform, title_id)

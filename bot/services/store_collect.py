@@ -33,9 +33,11 @@ from bot.services.hltb_match import (
 from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
 from bot.services.stores import (
+    UNKNOWN_STORE,
     StoreVersion,
     edition_kind,
     hltb_page,
+    pc_of_unknown_store,
     psn_store,
     steam_store,
     xbox_catalog,
@@ -840,7 +842,7 @@ class StoreCollector:
         if not record:
             return
         version = StoreVersion(
-            store=_store_of(platform),
+            store=_store_of(platform, str(record.get("platforms") or "")),
             product_id=title_id,
             console=_console_of(platform, str(record.get("platforms") or "")),
             # A list whose name was lost ("?" on production's PSN lists)
@@ -995,7 +997,11 @@ def _close(ours: str, hit: str) -> bool:
     return len(short) >= 2 and long_[: len(short)] == short
 
 
-def _store_of(platform: str) -> str:
+def _store_of(platform: str, platforms: str | None = None) -> str:
+    """The store a stand-in stands under: its platform's, but a PC list of
+    an unknown store (Win32 alone) is no Microsoft product."""
+    if pc_of_unknown_store(platform, platforms):
+        return UNKNOWN_STORE
     return "xbox" if platform in ("xbox_modern", "xbox_360") else platform
 
 
