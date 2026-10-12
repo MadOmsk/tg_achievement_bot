@@ -799,19 +799,32 @@ def game_facts(versions: list[dict]) -> GameFacts:
     )
 
 
-def game_name(members: list[Candidate]) -> str:
-    """A game is named by its plainest version: not an edition, a remaster or
-    a demo where there is one, the earliest, by its cut name."""
-    plain = (
-        [m for m in members if kind_of(m) == "version"]
-        or [m for m in members if kind_of(m) not in ("demo", "tool", "mode")]
-        or members
-    )
+def _first_name(candidate: Candidate) -> str | None:
+    """The name a version is called by: its first that says something."""
+    return next((n for n in candidate.names if normalize(n)), None)
+
+
+def game_name(members: list[Candidate], *, release: bool = False) -> str:
+    """A game's name. It keeps the words that tell it apart (owner,
+    2026-10-12): **the full release name** (platform tails cut) when every
+    version of it carries the same release tail ("CONTROL Ultimate Edition"
+    and "Control Ultimate Edition - Xbox Series X|S" are "CONTROL Ultimate
+    Edition", not "Control"), when it is a compilation, or when it is a
+    remaster, remake, VR version or compilation of another game (`release`,
+    the linker knows that). Only a game whose versions differ in their tails
+    (Control and its Ultimate Edition) is called by their common core — the
+    plainest version's, the earliest. Its parts (demos, tools, modes) say
+    nothing about its name."""
+    games = [m for m in members if kind_of(m) not in ("demo", "tool", "mode")] or members
+    plain = [m for m in games if kind_of(m) == "version"] or games
     plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]
     if not first.names:
         return first.product_id
-    name = _aliased(next((n for n in first.names if normalize(n)), first.names[0]))
+    name = _aliased(_first_name(first) or first.names[0])
+    tails = {release_tail(n) for n in (_first_name(m) for m in games) if n}
+    if release or (len(tails) == 1 and tails != {()}):
+        return release_name(name)
     if any(_COMPILATION.search(n) for n in first.names):
         # A compilation's own words are its name ("Mass Effect Legendary
         # Edition" is not "Mass Effect").
@@ -824,9 +837,67 @@ def game_name(members: list[Candidate]) -> str:
     return cut
 
 
+# Words of a release tail that tell no release from another: "Standard
+# Edition" is the game, "Early Access" a state of it, "The Game" no
+# release, and a demo or a beta is a part of the game, not a release of it
+# (a game known only by its demo is that game).
+_QUIET_TAIL = {
+    "edition",
+    "standard",
+    "digital",
+    "the",
+    "and",
+    "for",
+    "early",
+    "access",
+    "game",
+    "video",
+    "demo",
+    "trial",
+    "beta",
+    "open",
+    "closed",
+    "tech",
+    "technical",
+    "test",
+    "playtest",
+}
+_PLATFORM_TAIL_WORDS = {
+    "windows",
+    "10",
+    "11",
+    "pc",
+    "xbox",
+    "one",
+    "series",
+    "x",
+    "s",
+    "ps3",
+    "ps4",
+    "ps5",
+    "playstation",
+    "steam",
+}
+
+
+def release_tail(name: str) -> tuple[str, ...]:
+    """The words a version's name adds to its game's core to say which
+    release it is ("ultimate", "remastered", "goty", "directors cut"), as a
+    key two names compare by; () when it names the game alone."""
+    full = normalize(release_name(_aliased(name))).split()
+    kept = game_core(name).split()
+    if full[: len(kept)] != kept:
+        return ()
+    rest = " ".join(full[len(kept) :]).replace("game of the year", "goty")
+    return tuple(w for w in rest.split() if w not in _QUIET_TAIL | _PLATFORM_TAIL_WORDS)
+
+
 _PLATFORM_TAIL = re.compile(
     r"[\s:\-–—]*\b(?:for\s+)?(?:windows(?:\s*10|\s*11)?|pc"
-    r"|xbox(?:\s+one|\s+series(?:\s+x\s*\|?\s*s)?)?|ps[345]|playstation\s*[345]?)\s*$",
+    r"|xbox(?:\s+one|\s+series(?:\s+x\s*\|?\s*s)?)?|ps[345]|playstation\s*[345]?)"
+    # "Minecraft: Windows 10 Edition", "… Xbox One Edition": a platform's
+    # edition is the platform, not a release.
+    r"(?:\s+edition)?\s*$",
     re.IGNORECASE,
 )
 

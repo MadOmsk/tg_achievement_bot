@@ -740,6 +740,16 @@ What the stores and HLTB say about a game, collected but not shown yet
     console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
     Witcher 3's next-gen products are a remaster, its Steam app the original.
     Such a game is named by its own release ("Gears of War: Ultimate Edition").
+  - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;
+    `game_match.game_name`): the full release name, platform tails cut ("-
+    Xbox Series X|S", "(PC)", "for Windows 10", "Windows 10 Edition"), when
+    every version of it carries the same release tail
+    (`game_match.release_tail`: Ultimate, Remastered, Definitive, Director's
+    Cut, GOTY …; "Standard Edition", "The Game", a demo's or a beta's words
+    are no tail), when it is a compilation, and when it is a remaster, remake,
+    VR version or compilation of another game. Only a game whose versions
+    differ in their tails (Control and CONTROL Ultimate Edition) gets their
+    common core. Named once a rebuild knows its relations.
   - **A game's kind** (`games.kind`, migration 102; owner, 2026-10-12):
     `game`, `compilation` (holds more than one game: its name — Collection,
     Trilogy, Anthology, "X + Y" —, its HLTB entry filed `compil`, or two

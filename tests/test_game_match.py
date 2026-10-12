@@ -811,3 +811,54 @@ async def test_games_get_their_kind_and_the_operators_stands(repo: Repo) -> None
     await repo.set_game_kind_manual(await repo.linked_game_of(coll), "game")  # type: ignore[arg-type]
     await linker.link_all()
     assert await kind(coll) == ("game", "manual")
+
+
+# ------------------------------------------------------------------ names (2026-10-12)
+
+
+def test_a_game_keeps_the_release_words_all_its_versions_share() -> None:
+    """Every version "… Ultimate Edition": the game is the Ultimate Edition,
+    the platform tail cut — not "Control"."""
+    from bot.services.game_match import game_name, release_tail
+
+    xbox = _c(1, "CONTROL Ultimate Edition", console="one", year=2020)
+    series = _c(2, "Control Ultimate Edition - Xbox Series X|S", console="series", year=2021)
+    assert release_tail("CONTROL Ultimate Edition") == ("ultimate",)
+    assert game_name([xbox, series]) == "CONTROL Ultimate Edition"
+    assert game_name([_c(3, "Dark Souls: Remastered (PC)", store="steam")]) == (
+        "Dark Souls: Remastered"
+    )
+    goty = _c(4, "Batman: Arkham City - Game of the Year Edition", store="steam")
+    goty2 = _c(5, "Batman: Arkham City GOTY", console="360")
+    # GOTY and "Game of the Year Edition" are one tail; the earliest names it.
+    assert game_name([goty, goty2]) == "Batman: Arkham City GOTY"
+
+
+def test_versions_that_differ_in_their_tails_give_the_common_core() -> None:
+    from bot.services.game_match import game_name, release_name
+
+    base = _c(1, "Control", store="steam", console="steam", year=2019)
+    ultimate = _c(2, "CONTROL Ultimate Edition", console="one", year=2020)
+    assert game_name([ultimate, base]) == "Control"
+    # A standard edition or a platform's edition is no release of its own.
+    assert game_name([_c(3, "Forza Horizon 4 Standard Edition")]) == "Forza Horizon 4"
+    assert release_name("Minecraft: Windows 10 Edition") == "Minecraft"
+    # A demo says nothing about the name.
+    demo = _c(4, "Control Demo", store="steam", console="steam", kind="demo", year=2019)
+    assert game_name([base, demo]) == "Control"
+
+
+async def test_a_remaster_is_named_by_its_own_release(repo: Repo) -> None:
+    """A remaster whose versions differ in their tails still keeps its own
+    words: it is told apart from its original."""
+    old = await _version(repo, "DS1", "Dark Souls: Prepare to Die Edition", "2012")
+    new = await _version(repo, "DSR", "Dark Souls: Remastered", "2018", console="series")
+    await repo.save_decision(new, old, "remaster_of", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([old, new])
+    names = await repo.game_names(
+        [await repo.linked_game_of(old), await repo.linked_game_of(new)]  # type: ignore[list-item]
+    )
+    assert sorted(n for n, _ in names.values()) == [
+        "Dark Souls: Prepare to Die Edition",
+        "Dark Souls: Remastered",
+    ]

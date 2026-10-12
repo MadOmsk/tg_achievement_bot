@@ -38,7 +38,6 @@ from bot.services.game_match import (
     is_compilation,
     is_extra,
     kind_of,
-    release_name,
 )
 from bot.services.hltb_match import normalize
 
@@ -146,7 +145,6 @@ class GameLinker:
                     target = await self._repo.create_game(
                         game_name(cluster), anchor.year, anchor.version_id
                     )
-                await self._repo.rename_game(target, game_name(cluster), None, "auto")
                 for version_id, (role, of) in _roles(cluster, labels).items():
                     assignment[version_id] = (target, role, of, surest.get(version_id))
                     game_of[version_id] = target
@@ -154,7 +152,15 @@ class GameLinker:
             await self._repo.write_members(assignment)
 
             relations = _relations(groups, game_of, verdicts, labels, candidates)
-            await self._name_releases(relations, groups, game_of, candidates)
+            # Named once the relations are known: a remaster, a remake, a VR
+            # version or a compilation is called by its own release.
+            subjects = {g for g, _r, kind in relations if kind in RELATIONS}
+            for group in groups:
+                target = game_of[next(iter(group))]
+                cluster = [candidates[v] for v in group]
+                await self._repo.rename_game(
+                    target, game_name(cluster, release=target in subjects), None, "auto"
+                )
             touched = sorted(set(game_of.values()) | old_games)
             await self._repo.write_relations(
                 touched,
@@ -180,31 +186,6 @@ class GameLinker:
         await self._repo.drop_empty_games()
         await self._repo.refresh_game_facts(sorted(set(game_of.values())))
         return report
-
-    async def _name_releases(
-        self,
-        relations: Relations,
-        groups: list[set[int]],
-        game_of: dict[int, int],
-        candidates: dict[int, Candidate],
-    ) -> None:
-        """A remaster, remake or VR version cut down to its original's name
-        ("Gears of War") is called by its own release name ("Gears of War:
-        Ultimate Edition")."""
-        clusters = {game_of[next(iter(g))]: [candidates[v] for v in g] for g in groups}
-        names = await self._repo.game_names(
-            list({g for g, _, _ in relations} | {r for _, r, _ in relations})
-        )
-        for g, r, kind in relations:
-            if kind == "contains" or g not in clusters:
-                continue
-            mine, theirs = names.get(g), names.get(r)
-            if not mine or not theirs or mine[1] != "auto":
-                continue
-            if normalize(mine[0]) == normalize(theirs[0]):
-                anchor = _anchor(clusters[g])
-                if anchor.names:
-                    await self._repo.rename_game(g, release_name(anchor.names[0]), None, "auto")
 
     async def _load_achievements(self, members: list[Candidate], rows: list[dict]) -> None:
         by_id = {int(r["version_id"]): r for r in rows}
