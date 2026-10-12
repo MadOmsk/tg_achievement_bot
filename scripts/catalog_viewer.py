@@ -42,7 +42,11 @@ def _repo(request: web.Request) -> Repo:
 
 
 def _back(to: str, message: str) -> web.HTTPFound:
-    return web.HTTPFound(to + ("&" if "?" in to else "?") + urlencode({"msg": message}))
+    """Back where an answer came from, the message in the query (before any
+    #anchor, or the browser would take it for part of the anchor)."""
+    path, mark, anchor = to.partition("#")
+    query = ("&" if "?" in path else "?") + urlencode({"msg": message})
+    return web.HTTPFound(path + query + mark + anchor)
 
 
 def _flash(request: web.Request) -> str:
@@ -1430,7 +1434,15 @@ async def proposals(request: web.Request) -> web.Response:
             key = i["answer"].split(":")[0]
             counts[key] = counts.get(key, 0) + 1
         chosen = [i for i in open_items if not show or i["answer"].split(":")[0] == show]
-        chosen.sort(key=lambda i: (order.get(i["confidence"], 3), -i["p"]))
+        # A pair answered "ask later" goes after the rest (this run of the viewer).
+        skipped = request.app["skipped_games"]
+        chosen.sort(
+            key=lambda i: (
+                frozenset((i["game_a"], i["game_b"])) in skipped,
+                order.get(i["confidence"], 3),
+                -i["p"],
+            )
+        )
         page = chosen[:40]
         cards = []
         for i in page:
@@ -1572,7 +1584,9 @@ async def decide_games(request: web.Request) -> web.Response:
                 (game_id, other_game, other_game, game_id),
             ):
                 request.app["skipped"].add(frozenset((row[0], row[1])))
-        raise _back(back, f"games {game_id} / {other_game}: asked again later")
+        request.app["skipped_games"].add(frozenset((game_id, other_game)))
+        # Not back to its card: it has gone to the end of the list.
+        raise _back(back.split("#")[0], f"games {game_id} / {other_game}: asked again later")
     if game_id == other_game:
         raise _back(back, f"game {game_id} is one game: answer its versions on the other tab")
     a, b = await _game_anchors(repo, game_id, other_game)
@@ -1721,6 +1735,7 @@ def build(db_path: Path, proposals_path: Path | None = None) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
     app["skipped"] = set()  # pairs answered "skip": asked again, after the rest
+    app["skipped_games"] = set()  # the same, as pairs of games (the proposals)
     # An adviser's proposals, read once at start (`--proposals`).
     app["proposals"] = (
         json.loads(proposals_path.read_text(encoding="utf-8"))
