@@ -766,14 +766,17 @@ def _answer_forms(
     more: tuple[tuple[str, str], ...],
     back: str,
 ) -> str:
-    """Quick answers as buttons, the rest a step further under "more…"."""
+    """Quick answers as buttons, one a line (owner, 2026-10-12), the rest a
+    step further under "more…". A quick label is HTML (its parts in bold);
+    the "more…" ones are plain text, as an <option> shows no markup."""
     fields = "".join(
         f'<input type=hidden name={k} value="{escape(str(v))}">'
         for k, v in {**hidden, "back": back}.items()
     )
     buttons = "".join(
-        f'<form method=post action="{action}" style="display:inline;margin:0">{fields}'
-        f'<input type=hidden name=decision value="{key}"><button>{escape(label)}</button></form> '
+        f'<form method=post action="{action}" style="display:block;margin:0 0 4px">{fields}'
+        f'<input type=hidden name=decision value="{key}">'
+        f'<button style="width:100%;text-align:left">{label}</button></form>'
         for key, label in quick
     )
     options = "".join(f'<option value="{k}">{escape(lbl)}</option>' for k, lbl in more)
@@ -783,23 +786,31 @@ def _answer_forms(
         "<select name=decision required><option value='' selected disabled>answer…</option>"
         f"{options}</select> <button>ok</button></form></details>"
     )
-    return f'<div style="white-space:nowrap">{buttons}</div>{rest}'
+    return f"<div>{buttons}</div>{rest}"
 
 
-def _relation_sentence(decision: str, this: str, that: str) -> str:
+def _relation_sentence(decision: str, this: str, that: str, *, html: bool = True) -> str:
     """A decision about two games ("this … that", ":flip" the other way round)
-    as a sentence naming both (owner, 2026-10-12: "first/second" was unclear)."""
+    as a sentence naming both (owner, 2026-10-12: "first/second" was unclear).
+    As HTML the names are escaped and only the relation is bold (owner,
+    2026-10-12); `html=False` is the plain text an <option> takes."""
     relation, _, flip = decision.partition(":")
     a, b = (f"«{that}»", f"«{this}»") if flip else (f"«{this}»", f"«{that}»")
+    if html:
+        a, b = escape(a), escape(b)
+
+    def bold(words: str) -> str:
+        return f"<b>{escape(words)}</b>" if html else words
+
     return {
-        "same": f"{a} and {b} are one game",
-        "series": f"{a} and {b} are different games of one series",
-        "other": f"{a} and {b} are not related",
-        "remaster_of": f"{a} is a remaster of {b}",
-        "remake_of": f"{a} is a remake of {b}",
-        "contains": f"{a} is a compilation that holds {b}",
-        "vr_of": f"{a} is the VR version of {b}",
-    }.get(relation, f"{a} {relation} {b}")
+        "same": f"{a} and {b} are {bold('one game')}",
+        "series": f"{a} and {b} are {bold('different games of one series')}",
+        "other": f"{a} and {b} are {bold('not related')}",
+        "remaster_of": f"{a} is a {bold('remaster')} of {b}",
+        "remake_of": f"{a} is a {bold('remake')} of {b}",
+        "contains": f"{a} is a {bold('compilation that holds')} {b}",
+        "vr_of": f"{a} is the {bold('VR version')} of {b}",
+    }.get(relation, f"{a} {bold(relation)} {b}")
 
 
 def _game_name(conn: sqlite3.Connection, game_id: int) -> str:
@@ -820,14 +831,14 @@ def _game_picker(
     this, that = names or ("this game", "that game")
     quick = []
     if guess in _GUESS_WORDS:
-        quick.append((guess, f"✓ Model: {_relation_sentence(guess, this, that)}"))
+        quick.append((guess, f"✓ <b>Model</b>: {_relation_sentence(guess, this, that)}"))
     quick += [("series", "another game of the series"), ("skip", "ask later")]
     return _answer_forms(
         "/decide-games",
         {"game_id": game_id, "other_game": other_game},
         quick,
         tuple(
-            (key, _relation_sentence(key, this, that) if names else label)
+            (key, _relation_sentence(key, this, that, html=False) if names else label)
             for key, label in _GAME_DECISIONS
         ),
         back,
@@ -840,7 +851,7 @@ def _decision_picker(version_id: int, other_id: int, back: str) -> str:
     return _answer_forms(
         "/decide",
         {"version_id": version_id, "other_id": other_id},
-        list(_DECISIONS_QUICK),
+        [(key, escape(label)) for key, label in _DECISIONS_QUICK],
         _DECISIONS_MORE,
         back,
     )
@@ -1527,8 +1538,8 @@ async def proposals(request: web.Request) -> web.Response:
             model, claude = i["model"], _proposal_decision(i["answer"], i["model"])
             gemini_item = request.app["gemini"].get(i["n"])
             gemini = gemini_item["decision"] if gemini_item else None
-            model_says = escape(_relation_sentence(model, this, that))
-            claude_says = escape(_relation_sentence(claude, this, that)) if claude else ""
+            model_says = _relation_sentence(model, this, that)
+            claude_says = _relation_sentence(claude, this, that) if claude else ""
             # One button per answer, naming everybody who gave it.
             opinions = [("Claude", claude), ("Gemini", gemini), ("the model", model)]
             quick: list[tuple[str, str]] = []
@@ -1536,21 +1547,23 @@ async def proposals(request: web.Request) -> web.Response:
                 quick.append(
                     (
                         decision,
-                        f"✓ {_agreeing(decision, opinions)}: "
+                        f"✓ <b>{_agreeing(decision, opinions)}</b>: "
                         f"{_relation_sentence(decision, this, that)}",
                     )
                 )
             if "series" not in (claude, gemini, model):
                 quick.append(("series", "another game of the series"))
             quick.append(("skip", "ask later"))
-            more = tuple((key, _relation_sentence(key, this, that)) for key, _ in _GAME_DECISIONS)
+            more = tuple(
+                (key, _relation_sentence(key, this, that, html=False)) for key, _ in _GAME_DECISIONS
+            )
             buttons = _answer_forms(
                 "/decide-games",
                 {"game_id": i["game_a"], "other_game": i["game_b"]},
                 quick,
                 more,
                 back,
-            ).replace('<div style="white-space:nowrap">', "<div>")
+            )
             cards.append(
                 f"<div id=p{i['n']} style='border:1px solid #ccc;border-radius:8px;"
                 "padding:8px;margin:10px 0'>"
@@ -1558,16 +1571,16 @@ async def proposals(request: web.Request) -> web.Response:
                 "<div style='display:flex;flex-wrap:wrap;gap:12px'>"
                 f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_a'])}</div>"
                 f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_b'])}</div></div>"
-                f"<p>Model ({i['p']:.0%}): <b>{model_says}</b><br>"
+                f"<p><b>Model</b> ({i['p']:.0%}): {model_says}<br>"
                 + (
-                    f"Claude ({escape(i['confidence'])}): <b>{claude_says}</b>"
+                    f"<b>Claude</b> ({escape(i['confidence'])}): {claude_says}"
                     if claude
-                    else "Claude: <b>not sure</b>"
+                    else "<b>Claude</b>: not sure"
                 )
                 + f"<br><small>{escape(i['why'])}</small>"
                 + (
-                    f"<br>Gemini ({escape(gemini_item['confidence'])}): "
-                    f"<b>{escape(_relation_sentence(gemini, this, that))}</b>"
+                    f"<br><b>Gemini</b> ({escape(gemini_item['confidence'])}): "
+                    f"{_relation_sentence(gemini, this, that)}"
                     f"<br><small>{escape(gemini_item['why'])}</small>"
                     if gemini_item and gemini
                     else ""

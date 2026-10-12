@@ -36,3 +36,12 @@ def test_a_button_names_everybody_who_gave_its_answer() -> None:
     assert _agreeing("series", opinions) == "Model"
     opinions = [("Claude", None), ("Gemini", "other"), ("the model", "other")]
     assert _agreeing("other", opinions) == "Gemini and the model"
+
+
+def test_a_relation_sentence_bolds_the_relation_and_escapes_the_names() -> None:
+    from scripts.catalog_viewer import _relation_sentence
+
+    html = _relation_sentence("remake_of:flip", "A<1>", "B & C")
+    assert html == "«B &amp; C» is a <b>remake</b> of «A&lt;1&gt;»"
+    plain = _relation_sentence("same", "A<1>", "B", html=False)
+    assert plain == "«A<1>» and «B» are one game"
