@@ -687,6 +687,20 @@ What the stores and HLTB say about a game, collected but not shown yet
     console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
     Witcher 3's next-gen products are a remaster, its Steam app the original.
     Such a game is named by its own release ("Gears of War: Ultimate Edition").
+  - **A game's kind** (`games.kind`, migration 102; owner, 2026-10-12):
+    `game`, `compilation` (holds more than one game: its name — Collection,
+    Trilogy, Anthology, "X + Y" —, its HLTB entry filed `compil`, or two
+    `contains` relations or more) or `extra`, **not a game** — a soundtrack,
+    an artbook, an app, an Insider build: the store's type first (Xbox
+    `Application`, Steam `music` / `video`), else its name
+    (`game_match.is_extra`). An extra stays an entry of its own: the model
+    never puts it in one game with a non-extra nor relates it to anything
+    (`extra_pair`, `extra_both`) — only "another of the series" is left. A
+    compilation is never one game with a single game (`compilation_word`).
+    The linker sets the kind on every rebuild; the operator's choice on the
+    game's viewer page (`kind_source = 'manual'`) stands. The viewer marks
+    them «📦 compilation», «🎵 not a game», and a compilation's page lists
+    its parts, warning below two.
   - **The model** (`services/game_match.py`, no DB access): every pair that
     could be one game (a telling word of the name — none in more than
     `COMMON_WORD` versions —, a store's group or cross-gen set, an HLTB entry,

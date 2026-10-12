@@ -24,7 +24,9 @@ class _GamesRepo:
             "  (SELECT GROUP_CONCAT(vh.hltb_id) FROM version_hltb vh"
             "   WHERE vh.version_id = v.version_id) AS hltb_ids,"
             "  (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_games h"
-            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_year"
+            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_year,"
+            "  (SELECT GROUP_CONCAT(h.game_type) FROM version_hltb vh JOIN hltb_games h"
+            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_types"
             " FROM versions v LEFT JOIN titles t ON t.platform = v.platform"
             "  AND t.title_id = v.title_id"
         )
@@ -218,6 +220,25 @@ class _GamesRepo:
         )
         await self._conn.execute(
             "UPDATE games SET merged_into = ? WHERE merged_into = ?", (into, game_id)
+        )
+        await self._conn.commit()
+
+    async def set_game_kinds(self, kinds: dict[int, str]) -> None:
+        """The linker's word on what each game is; the operator's stands."""
+        await self._conn.executemany(
+            "UPDATE games SET kind = ?, updated_at = ? WHERE game_id = ?"
+            " AND kind_source = 'auto' AND kind IS NOT ?",
+            [(kind, utcnow_iso(), game_id, kind) for game_id, kind in kinds.items()],
+        )
+        await self._conn.commit()
+
+    async def set_game_kind_manual(self, game_id: int, kind: str | None) -> None:
+        """The operator says what a game is (game / compilation / extra);
+        None gives the choice back to the linker."""
+        await self._conn.execute(
+            "UPDATE games SET kind = COALESCE(?, kind), kind_source = ?, updated_at = ?"
+            " WHERE game_id = ?",
+            (kind, "manual" if kind else "auto", utcnow_iso(), game_id),
         )
         await self._conn.commit()
 

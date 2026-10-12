@@ -50,6 +50,18 @@ _COD = re.compile(r"^\s*COD(?=\s*:|\s)")
 # Black Ops II - Zombies"): a part of that game, not a game.
 MODE_KIND = "advertising"
 
+# Not a game at all (owner, 2026-10-12): an extra — a soundtrack, an artbook,
+# an app, an Insider build. The store's own type says it first (Xbox's
+# Application, Steam's music and video); a name says it where the store files
+# it as a game ("DOOM: The Dark Ages Digital Artbook and Soundtrack", "Sea of
+# Thieves Insider" — an Insider program's build is named so on every game).
+EXTRA_KINDS = frozenset({"app", "music", "video"})
+_EXTRA = re.compile(
+    r"\b(soundtrack|o\.?s\.?t|original score|art ?book|digital comic|making of)\b"
+    r"|\binsider[\s™®]*$",
+    re.IGNORECASE,
+)
+
 NAME_FLOOR = 0.8  # below this, two versions are not compared further
 CONTAINED_NAME = 0.85
 FAR_YEARS = 5
@@ -82,6 +94,8 @@ class Candidate:
     # Play Anywhere PC, are one list — and so one game.
     list_key: tuple[str, str] | None = None
     stand_in: bool = False
+    # Its HLTB entries' types ("compil": HLTB files it as a compilation).
+    hltb_types: frozenset[str] = frozenset()
 
     @property
     def cores(self) -> tuple[str, ...]:
@@ -113,6 +127,17 @@ class Verdict:
     @property
     def p_same(self) -> float:
         return self.probs.get("same", 0.0)
+
+
+def is_extra(candidate: Candidate) -> bool:
+    """Not a game: kept an entry of its own, joined to nothing."""
+    return (candidate.kind or "") in EXTRA_KINDS or any(_EXTRA.search(n) for n in candidate.names)
+
+
+def is_compilation(candidate: Candidate) -> bool:
+    """A release that holds several games: its name says so, or its HLTB
+    entry is filed as a compilation."""
+    return "compil" in candidate.hltb_types or any(_COMPILATION.search(n) for n in candidate.names)
 
 
 def kind_of(candidate: Candidate) -> str:
@@ -166,9 +191,13 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "remaster_word": -1.0,
         "remake_word": -2.0,
         "edition_word_near": 1.5,  # GOTY / Complete, close in years
-        "compilation_word": -1.0,
+        # A compilation is never one game with a single game (owner, 2026-10-12).
+        "compilation_word": -6.0,
         "vr_word": -4.0,
         "list_subset": -2.0,
+        # An extra (a soundtrack, an app) and a game are never one game; two
+        # extras may be (one soundtrack on two consoles).
+        "extra_pair": -20.0,
         "overlap_high": 5.0,  # ≥ 60% of the achievements' names shared
         "overlap_partial": 1.0,
         "overlap_low": -2.0,
@@ -214,6 +243,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
+        "extra_both": -20.0,
     },
     "remake_of": {
         "bias": -6.0,
@@ -250,6 +281,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
+        "extra_both": -20.0,
     },
     "contains": {
         "bias": -6.0,
@@ -270,6 +303,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
+        "extra_both": -20.0,
     },
     "vr_of": {  # owner, 2026-10-11: a VR version is its own relation
         "bias": -6.0,
@@ -284,6 +319,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
+        "extra_both": -20.0,
     },
 }
 MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
@@ -315,7 +352,7 @@ def subject_of(a: Candidate, b: Candidate) -> tuple[Candidate, Candidate]:
     else the one with the larger list — the side a relation points from."""
     for test in (
         lambda c: any(_VR.search(n) for n in c.names),
-        lambda c: any(_COMPILATION.search(n) for n in c.names),
+        is_compilation,
     ):
         if test(a) != test(b):
             return (a, b) if test(a) else (b, a)
@@ -415,8 +452,12 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["remake_word"] = 1.0
     if says(_EDITION, s) and gap is not None and gap <= NEAR_YEARS:
         f["edition_word_near"] = 1.0
-    if says(_COMPILATION, s) and not says(_COMPILATION, o):
+    if is_compilation(s) and not is_compilation(o):
         f["compilation_word"] = 1.0
+    if is_extra(s) != is_extra(o):
+        f["extra_pair"] = 1.0
+    elif is_extra(s):
+        f["extra_both"] = 1.0
     if says(_VR, s) and not says(_VR, o):
         f["vr_word"] = 1.0
 

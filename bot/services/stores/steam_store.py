@@ -162,7 +162,8 @@ def release_day(raw: str | None) -> str | None:
 
 def _kind(data: dict) -> str:
     kind = str(data.get("type") or "game")
-    return {"game": "game", "demo": "demo", "dlc": "dlc", "music": "dlc"}.get(kind, kind)
+    # A soundtrack or a video app keeps its own type: not a game (an extra).
+    return {"game": "game", "demo": "demo", "dlc": "dlc"}.get(kind, kind)
 
 
 def _media(data: dict) -> dict[str, object]:

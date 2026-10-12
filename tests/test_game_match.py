@@ -756,3 +756,58 @@ async def test_a_mode_is_recorded_as_a_mode_of_its_game(repo: Repo) -> None:
         "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (zombies,)
     )
     assert tuple(await cur.fetchone()) == ("mode", game)
+
+
+# ------------------------------------------------------------------ kinds (2026-10-12)
+
+
+def test_an_extra_is_never_one_game_with_its_game_nor_related() -> None:
+    from bot.services.game_match import is_extra
+
+    doom = _c(1, "DOOM: The Dark Ages", console="series", year=2025)
+    book = _c(2, "DOOM: The Dark Ages Digital Artbook and Soundtrack", console="series", year=2025)
+    ost = _c(3, "The Alters: Original Soundtrack", console="pc", kind="app")
+    insider = _c(4, "Sea of Thieves Insider", console="one", year=2018)
+    assert all(is_extra(c) for c in (book, ost, insider))
+    assert not is_extra(doom) and not is_extra(_c(5, "Comic Jumper"))
+    v = compare(doom, book)
+    assert v.state == "apart" and "extra_pair" in v.features
+    assert compare(_c(6, "Sea of Thieves", console="one", year=2018), insider).state == "apart"
+    # One extra on two consoles is still one extra.
+    insider_series = _c(7, "Sea of Thieves Insider", console="series", year=2018)
+    assert _linked(insider, insider_series, "same")
+
+
+def test_a_compilation_is_never_one_game_with_one_of_its_games() -> None:
+    mcc = _c(1, "Halo: The Master Chief Collection", year=2014, developer="343 Industries")
+    halo = _c(2, "Halo: Combat Evolved", year=2014, developer="343 Industries")
+    assert compare(mcc, halo).relation != "same"
+    # HLTB filing it as a compilation says so too.
+    hltb = _c(3, "Uncharted: Legacy of Thieves", hltb_types=frozenset({"compil"}), year=2022)
+    plain = _c(4, "Uncharted 4: A Thief's End", year=2016)
+    assert "compilation_word" in features(hltb, plain)
+
+
+async def test_games_get_their_kind_and_the_operators_stands(repo: Repo) -> None:
+    game = await _version(repo, "DOOM", "DOOM: The Dark Ages", "2025")
+    book = await _version(
+        repo, "BOOK", "DOOM: The Dark Ages Digital Artbook and Soundtrack", "2025"
+    )
+    coll = await _version(repo, "COLL", "BioShock: The Collection", "2016")
+    linker = GameLinker(repo)
+    await linker.link_versions([game, book, coll])
+
+    async def kind(version: int) -> tuple[str, str]:
+        cur = await repo._conn.execute(
+            "SELECT kind, kind_source FROM games WHERE game_id = ?",
+            (await repo.linked_game_of(version),),
+        )
+        return tuple(await cur.fetchone())  # type: ignore[return-value]
+
+    assert await repo.linked_game_of(book) != await repo.linked_game_of(game)
+    assert await kind(game) == ("game", "auto")
+    assert await kind(book) == ("extra", "auto")
+    assert await kind(coll) == ("compilation", "auto")
+    await repo.set_game_kind_manual(await repo.linked_game_of(coll), "game")  # type: ignore[arg-type]
+    await linker.link_all()
+    assert await kind(coll) == ("game", "manual")

@@ -35,6 +35,8 @@ from bot.services.game_match import (
     compare,
     era,
     game_name,
+    is_compilation,
+    is_extra,
     kind_of,
     release_name,
 )
@@ -159,6 +161,7 @@ class GameLinker:
                 [(g, r, kind, source, p) for (g, r, kind), (source, p) in relations.items()],
             )
             report.relations = list(relations)
+            await self._repo.set_game_kinds(_game_kinds(groups, game_of, candidates, relations))
 
             labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
             # Two games the operator already said something about are not
@@ -465,6 +468,36 @@ def _relations(
     return {key: result[key] for key in best.values()}
 
 
+def _game_kinds(
+    groups: list[set[int]],
+    game_of: dict[int, int],
+    candidates: dict[int, Candidate],
+    relations: Relations,
+) -> dict[int, str]:
+    """What each game is (owner, 2026-10-12): an extra when every version of
+    it that is the game itself is one (a soundtrack, an app); a compilation
+    when one of them says so (its name, its HLTB entry) or it holds two games
+    or more; else a game."""
+    holds: dict[int, int] = defaultdict(int)
+    for g, _r, kind in relations:
+        if kind == "contains":
+            holds[g] += 1
+    kinds: dict[int, str] = {}
+    for group in groups:
+        game = game_of.get(next(iter(group)))
+        if game is None:
+            continue
+        cluster = [candidates[v] for v in group]
+        plain = [c for c in cluster if kind_of(c) not in PARTS] or cluster
+        if all(is_extra(c) for c in plain):
+            kinds[game] = "extra"
+        elif holds[game] >= 2 or any(is_compilation(c) for c in plain):
+            kinds[game] = "compilation"
+        else:
+            kinds[game] = "game"
+    return kinds
+
+
 def _review(
     verdicts: dict[tuple[int, int], Verdict],
     game_of: dict[int, int],
@@ -522,4 +555,7 @@ def _candidate(row: dict) -> Candidate:
         if row["platform"] and row["title_id"]
         else None,
         stand_in=bool(row["stand_in"]),
+        hltb_types=frozenset(
+            t.strip() for t in str(row.get("hltb_types") or "").split(",") if t.strip()
+        ),
     )

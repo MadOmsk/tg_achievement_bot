@@ -1174,7 +1174,10 @@ CREATE TABLE IF NOT EXISTS games (
     updated_at  TEXT NOT NULL,
     -- 099: the version that keeps the game's id through every rebuild (its
     -- first linked one that is no demo); one anchor anchors one game.
-    anchor_version_id INTEGER UNIQUE REFERENCES versions(version_id) ON DELETE SET NULL
+    anchor_version_id INTEGER UNIQUE REFERENCES versions(version_id) ON DELETE SET NULL,
+    -- 102: game / compilation / extra (not a game); `manual` is the operator's
+    kind        TEXT NOT NULL DEFAULT 'game',
+    kind_source TEXT NOT NULL DEFAULT 'auto'
 );
 
 -- A game's versions (099): the matcher's output, rebuilt from the operator's

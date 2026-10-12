@@ -949,7 +949,7 @@ async def games(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT g.game_id, g.name, g.year, g.developer, g.name_source,"
+            "SELECT g.game_id, g.name, g.kind, g.year, g.developer, g.name_source,"
             "  (SELECT COUNT(*) FROM game_versions gv WHERE gv.game_id = g.game_id) AS versions,"
             "  (SELECT COUNT(*) FROM match_pairs mp JOIN game_versions gv"
             "   ON gv.version_id IN (mp.version_id, mp.other_id)"
@@ -967,7 +967,10 @@ async def games(request: web.Request) -> web.Response:
         "Games",
         _flash(request)
         + _search_form("/games", q)
-        + _table(rows, {"game_id": _game_href, "name": _game_href}),
+        + _table(
+            [{**dict(r), "kind": _KIND_BADGES.get(r["kind"], "")} for r in rows],
+            {"game_id": _game_href, "name": _game_href},
+        ),
     )
 
 
@@ -1045,6 +1048,15 @@ async def game(request: web.Request) -> web.Response:
             "<button>rename</button></form>"
             f'<form method=post action="{here}/merge">merge this game into game id: '
             "<input name=into size=8> <button>merge</button></form>"
+            f'<form method=post action="{here}/kind">this is '
+            + "".join(
+                f'<label><input type=radio name=kind value="{k}"'
+                + (" checked" if row["kind"] == k else "")
+                + f"> {escape(w)}</label> "
+                for k, w in _KIND_WORDS.items()
+            )
+            + "<label><input type=radio name=kind value=''> the linker decides</label> "
+            + f"<button>set</button> <small>({escape(row['kind_source'])})</small></form>"
             f'<form method=post action="{here}/relate">this game is a '
             "<select name=kind><option>remaster_of</option><option>remake_of</option>"
             "<option>vr_of</option><option>contains</option></select> game id: "
@@ -1060,6 +1072,18 @@ async def game(request: web.Request) -> web.Response:
         + "</p>"
         for m in members
     )
+    parts = ""
+    if row is not None and row["kind"] == "compilation":
+        held = [r for r in relations if r["relation"] == "this contains"]
+        parts = (
+            "<h2>Parts</h2>"
+            + f"<p>parts found: {len(held)}"
+            + (" — <b>⚠ a compilation holds two games or more</b>" if len(held) < 2 else "")
+            + "</p>"
+            + "".join(
+                f'<li><a href="/game/{r["game_id"]}">{escape(r["name"])}</a></li>' for r in held
+            )
+        )
     with _db(request) as conn:
         identity = _identity(conn, game_id)
         cards = _pair_rows(conn, pairs, here)
@@ -1073,6 +1097,7 @@ async def game(request: web.Request) -> web.Response:
         + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
         + "<h2>Versions</h2>"
         + _version_cards(members)
+        + parts
         + "<h2>Family: related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})
         + "".join(
@@ -1111,7 +1136,7 @@ def _identity(conn: sqlite3.Connection, game_id: int) -> str:
     publisher as the game keeps them (`game_match.game_facts`)."""
     row = conn.execute(
         "SELECT name, year, last_year, developer, publisher, more_developers,"
-        " more_publishers FROM games WHERE game_id = ?",
+        " more_publishers, kind FROM games WHERE game_id = ?",
         (game_id,),
     ).fetchone()
     if row is None:
@@ -1124,7 +1149,13 @@ def _identity(conn: sqlite3.Connection, game_id: int) -> str:
     for field in ("developer", "publisher"):
         if row[field]:
             parts.append(str(row[field]) + (" и другие" if row[f"more_{field}s"] else ""))
-    return f"{' · '.join(parts)} (game {game_id})"
+    badge = _KIND_BADGES.get(row["kind"], "")
+    return f"{' · '.join(parts)} (game {game_id})" + (f" {badge}" if badge else "")
+
+
+# What a game is (owner, 2026-10-12), as a badge beside its name.
+_KIND_BADGES = {"compilation": "📦 compilation", "extra": "🎵 not a game"}
+_KIND_WORDS = {"game": "a game", "compilation": "a compilation", "extra": "not a game"}
 
 
 def _version_cards(rows: list[sqlite3.Row]) -> str:
@@ -1675,6 +1706,15 @@ async def game_rename(request: web.Request) -> web.Response:
     raise _back(f"/game/{game_id}", "renamed")
 
 
+async def game_kind(request: web.Request) -> web.Response:
+    """The operator says what a game is; a rebuild never overwrites it."""
+    game_id = int(request.match_info["game_id"])
+    form = await request.post()
+    kind = str(form.get("kind") or "")
+    await _repo(request).set_game_kind_manual(game_id, kind if kind in _KIND_WORDS else None)
+    raise _back(f"/game/{game_id}", f"kind: {kind or 'the linker decides'}")
+
+
 async def decide_games(request: web.Request) -> web.Response:
     """An answer about two games: a label between their anchors."""
     form = await request.post()
@@ -1878,6 +1918,7 @@ def build(
     app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
     app.router.add_post("/decide", decide)
     app.router.add_post("/game/{game_id:\\d+}/rename", game_rename)
+    app.router.add_post("/game/{game_id:\\d+}/kind", game_kind)
     app.router.add_post("/game/{game_id:\\d+}/merge", game_merge)
     app.router.add_post("/game/{game_id:\\d+}/relate", game_relate)
     app.router.add_post("/game/{game_id:\\d+}/detach", game_detach)
