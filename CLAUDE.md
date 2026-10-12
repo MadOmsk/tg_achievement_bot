@@ -180,6 +180,7 @@ name, or when the tree goes stale.
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
+│   │   ├── api_usage.py          every outside API's requests (and the model's tokens), last 24h
 │   │   ├── description_backfill.py  one Xbox title's descriptions in both locales (#48)
 │   │   ├── xbox/                 auth.py (token storage, refresh), client.py (requests, retry,
 │   │   │                         backoff), models.py (pydantic responses)
@@ -1357,7 +1358,16 @@ keyboard.
     the Mini App names a city beside an offset where one is known («Москва ·
     UTC+3», `value_label(place=True)`), the bot shows the offset alone.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
-    sign-in emails against their caps, every credential's state).
+    sign-in emails against their caps, every credential's state). **The API
+    load** (owner, 2026-10-12; `services/api_usage.py`, noted as each request
+    is made, in memory for 24 hours — a restart starts it over): XBOX, Steam,
+    PSN over 5 minutes, an hour and a day — Xbox per account, as «median /
+    busiest» over the Xbox accounts polled, a quiet one counting as nought
+    (Microsoft's budget is each person's, so a total says nothing); Steam's 100 000 a
+    day beside its day; PSN with no limit claimed; Anthropic's requests and
+    tokens over an hour and a day; the sign-in emails with their mail server.
+    `views/admin_home.py::usage_rows` words them once: the bot's home prints
+    them, the Mini App's «Ключи» lists them as the server sends them.
   - `services/admin_credentials.py` — the shared credentials (`set` raising
     `CredentialInvalid` / `CredentialSetupError`, `clear`).
   - `services/admin_actions.py` — **every action**, one class each: what it
