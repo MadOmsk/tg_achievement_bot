@@ -8,7 +8,7 @@ import pytest
 
 from bot.db.repo import Repo
 from bot.services.game_link import GameLinker
-from bot.services.game_match import Candidate, compare, kind_of
+from bot.services.game_match import Candidate, compare, features, kind_of
 from bot.services.stores import StoreVersion
 
 WITCHER = frozenset(f"witcher {i}" for i in range(50))
@@ -636,3 +636,41 @@ def test_a_game_name_keeps_the_games_own_words() -> None:
     se = _c(1, "The Elder Scrolls V: Skyrim Special Edition", store="steam", console="steam")
     assert game_name([se]) == "The Elder Scrolls V: Skyrim Special Edition"
     assert game_name([_c(2, "Gears of War 4")]) == "Gears of War 4"
+
+
+def test_two_games_of_one_pack_released_together_are_two_games() -> None:
+    """Return to Arkham (owner, 2026-10-12): its Asylum on One and its City on
+    Series came out the same year in one bundle — still two games."""
+    common = {"store": "xbox", "year": 2016, "developer": "Rocksteady", "store_group": "RTA"}
+    asylum = _c(
+        1,
+        "Batman: Return to Arkham - Arkham Asylum",
+        console="one",
+        list_key=("xbox_modern", "A"),
+        achievements=_list("asylum", 47),
+        **common,
+    )
+    city = _c(
+        2,
+        "Batman: Return to Arkham - Arkham City",
+        console="series",
+        list_key=("xbox_modern", "C"),
+        achievements=_list("city", 70),
+        **common,
+    )
+    assert "cross_gen_pair" not in features(asylum, city)
+    assert not _linked(asylum, city, "same"), compare(asylum, city).reasons
+
+
+async def test_a_beta_stays_with_its_game_ported_years_later(repo: Repo) -> None:
+    """Battlefield V: its beta and the One version in 2018, Steam in 2020 — the
+    beta is far from the Steam release, and that keeps it out of nothing."""
+    one = await _version(repo, "BFV1", "Battlefield V", "2018", developer="DICE")
+    steam = await _version(
+        repo, "1238810", "Battlefield V", "2020", store="steam", console="steam", developer="DICE"
+    )
+    beta = await _version(repo, "BFVB", "Battlefield V Open Beta", "2018", developer="DICE")
+    await GameLinker(repo).link_versions([one, steam, beta])
+    game = await repo.linked_game_of(one)
+    assert await repo.linked_game_of(steam) == game
+    assert await repo.linked_game_of(beta) == game

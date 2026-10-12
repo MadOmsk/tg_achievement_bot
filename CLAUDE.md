@@ -647,7 +647,8 @@ What the stores and HLTB say about a game, collected but not shown yet
     related to the original: `remaster_of` / `remake_of` / `vr_of` point at the
     **earliest** original (no chains), `contains` from a compilation to each
     part. Inside a game: the same product across platforms (PS4 and PS5, One and
-    Series released together are one game, even with two lists), demos and
+    Series released together under one name are one game, even with two lists —
+    not two games of one pack, Return to Arkham), demos (betas and tech tests too) and
     tools. No "edition" role (owner, 2026-10-11): GOTY / Deluxe are packs the
     stores sell around the same version (`editions`), not versions. A later product on a newer
     console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
@@ -663,7 +664,8 @@ What the stores and HLTB say about a game, collected but not shown yet
     ahead is taken; from `REVIEW_P` (0.15) the pair goes to the **review list**
     (`match_pairs`, one per pair of games). Versions join a game from the surest
     pair down, **never across a veto** (a pair under `VETO_P` "same" or a label
-    saying no): A~B and B~C no longer drag A and C together. The operator's
+    saying no; a demo or a tool vetoes nothing — a beta is far from its game's port
+    years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):

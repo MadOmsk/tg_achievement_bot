@@ -288,7 +288,13 @@ def _cluster(
         if lab["relation"] not in JOINING:
             forbidden[lab["version_id"]].add(lab["other_id"])
             forbidden[lab["other_id"]].add(lab["version_id"])
+    kinds = {m.version_id: kind_of(m) for m in members}
     for (a, b), v in verdicts.items():
+        # A demo or a tool vetoes nothing: it is far from a port of its game
+        # years later (Battlefield V's beta and its Steam release), and that
+        # must not keep it out of the game its own pair joins it to.
+        if kinds.get(a) in ("demo", "tool") or kinds.get(b) in ("demo", "tool"):
+            continue
         if v.p_same < VETO_P and "one_list" not in v.features:
             forbidden[a].add(b)
             forbidden[b].add(a)

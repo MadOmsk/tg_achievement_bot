@@ -30,7 +30,9 @@ _EDITION = re.compile(
     r"|special edition)\b",
     re.IGNORECASE,
 )
-_DEMO = re.compile(r"\b(demo|trial|prologue|beta)\b", re.IGNORECASE)
+_DEMO = re.compile(
+    r"\b(demo|trial|prologue|beta|tech(?:nical)? test|playtest|stress test)\b", re.IGNORECASE
+)
 # A tool made for a game, not a game (owner, 2026-10-10: "Fallout 4: Creation
 # Kit" belongs to Fallout 4). Steam files it as a game.
 _TOOL = re.compile(
@@ -319,7 +321,13 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     gap = abs(s.year - o.year) if s.year and o.year else None
     # Released together (the same year): one game even with two lists; a
     # year later on the newer console it is a remaster (owner, 2026-10-11).
-    if {s.console, o.console} in _CROSS_GEN and gap == 0:
+    # Only under one name: two games of one pack (Return to Arkham's Asylum
+    # on One, its City on Series) are released together too.
+    if (
+        {s.console, o.console} in _CROSS_GEN
+        and gap == 0
+        and any(x == y for x in s.cores for y in o.cores)
+    ):
         f["cross_gen_pair"] = 1.0
     if (
         s.list_key
