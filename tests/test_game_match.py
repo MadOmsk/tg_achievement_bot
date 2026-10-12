@@ -395,9 +395,9 @@ async def _version(repo: Repo, product: str, name: str, year: str, **kw: object)
         product_id=product,
         console=str(kw.pop("console", "one")),
         name=name,
-        kind="game",
+        kind=str(kw.pop("kind", "game")),
         developer=str(kw.pop("developer", "CD PROJEKT RED")),
-        release_date=f"{year}-05-19",
+        release_date=f"{year}-05-19" if year else None,
     )
     return await repo.save_version(version, platform=None, title_id=None)
 
@@ -695,3 +695,64 @@ async def test_a_remaster_of_a_remake_points_at_the_remake(repo: Repo) -> None:
     assert sorted(tuple(r) for r in await cur.fetchall()) == sorted(
         [(g_ue, g_gow, "remake_of"), (g_rl, g_ue, "remaster_of")]
     )
+
+
+# ------------------------------------------------------------------ modes (2026-10-12)
+
+BO2 = frozenset(f"bo2 {i}" for i in range(90))
+
+
+def test_a_steam_mode_launcher_is_a_part_of_its_game() -> None:
+    """Black Ops II on Steam: campaign (202970) and a Zombies launcher (212910,
+    type "advertising") whose 50 achievements are part of the 360 list's 90."""
+    zombies = _c(
+        3,
+        "Call of Duty: Black Ops II - Zombies",
+        store="steam",
+        console="steam",
+        kind="advertising",
+        achievements=frozenset(list(BO2)[:50]),
+    )
+    campaign = _c(4, "Call of Duty: Black Ops II", store="steam", console="steam", year=2012)
+    x360 = _c(5, "COD: Black Ops II", console="360", achievements=BO2, list_key=("x", "1"))
+    assert kind_of(zombies) == "mode"
+    for game in (campaign, x360):
+        f = compare(game, zombies).features
+        assert "mode_of" in f and "list_subset" not in f
+        assert _linked(game, zombies, "same"), compare(game, zombies).reasons
+    # Another series' game is not its game, whatever its type.
+    assert "mode_of" not in features(_c(6, "Call of Duty: Ghosts", year=2013), zombies)
+
+
+def test_cod_reads_as_call_of_duty() -> None:
+    """Microsoft names the 360 list "COD: Black Ops II"."""
+    x360 = _c(1, "COD: Black Ops II", console="360", year=2012)
+    steam = _c(2, "Call of Duty: Black Ops II", store="steam", console="steam", year=2012)
+    assert "full_name" in features(x360, steam)
+    assert _linked(x360, steam, "same"), compare(x360, steam).reasons
+    from bot.services.game_match import game_name, name_key
+
+    assert name_key("COD: MW Bundle") == name_key("Call of Duty: MW Bundle")
+    assert name_key("Cod Fishing") == "cod fishing"  # only Microsoft's capitals
+    assert game_name([x360]) == "Call of Duty: Black Ops II"
+
+
+async def test_a_mode_is_recorded_as_a_mode_of_its_game(repo: Repo) -> None:
+    game = await _version(
+        repo, "202970", "Call of Duty: Black Ops II", "2012", store="steam", console="steam"
+    )
+    zombies = await _version(
+        repo,
+        "212910",
+        "Call of Duty: Black Ops II - Zombies",
+        "",
+        store="steam",
+        console="steam",
+        kind="advertising",
+    )
+    await GameLinker(repo).link_versions([game, zombies])
+    assert await repo.linked_game_of(zombies) == await repo.linked_game_of(game)
+    cur = await repo._conn.execute(
+        "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (zombies,)
+    )
+    assert tuple(await cur.fetchone()) == ("mode", game)

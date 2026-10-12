@@ -316,3 +316,10 @@ async def test_a_second_list_never_takes_the_first_ones_place(repo) -> None:
         (first,),
     )
     assert [r[0] for r in await cur.fetchall()] == ["psn:NPWR00001_00", "psn:NPWR00002_00"]
+
+
+def test_a_steam_apps_own_type_is_its_kind() -> None:
+    """A launcher of one mode of another app (type "advertising") keeps that
+    type, so the matcher reads it as a mode of its game (2026-10-12)."""
+    data = {**STEAM_APP, "type": "advertising", "name": "Call of Duty: Black Ops II - Zombies"}
+    assert steam_store.parse_app(data).kind == "advertising"

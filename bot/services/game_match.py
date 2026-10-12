@@ -41,6 +41,15 @@ _TOOL = re.compile(
     re.IGNORECASE,
 )
 
+# Microsoft's abbreviation of one series (owner, 2026-10-12): its 360 lists
+# are "COD: Black Ops II", "COD: MW Bundle". Read as the full name, so they
+# meet "Call of Duty: Black Ops II" — one rule, not an alias table.
+_COD = re.compile(r"^\s*COD(?=\s*:|\s)")
+
+# Steam's app type for a launcher of one mode of another app ("Call of Duty:
+# Black Ops II - Zombies"): a part of that game, not a game.
+MODE_KIND = "advertising"
+
 NAME_FLOOR = 0.8  # below this, two versions are not compared further
 CONTAINED_NAME = 0.85
 FAR_YEARS = 5
@@ -83,7 +92,7 @@ class Candidate:
 
     @property
     def fulls(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(f for f in (normalize(n) for n in self.names if n) if f))
+        return tuple(dict.fromkeys(f for f in (_normal(n) for n in self.names if n) if f))
 
 
 @dataclass(slots=True)
@@ -108,8 +117,11 @@ class Verdict:
 
 def kind_of(candidate: Candidate) -> str:
     """A version's role inside its game, from the store's own kind first and
-    the name second: a demo, a tool, an edition, or the game itself. (A
-    remaster is no role: it is a game of its own, 2026-10-11.)"""
+    the name second: a mode (a Steam launcher of one mode of another app), a
+    demo, a tool, an edition, or the game itself. (A remaster is no role: it
+    is a game of its own, 2026-10-11.)"""
+    if (candidate.kind or "") == MODE_KIND:
+        return "mode"
     if any(_TOOL.search(n) for n in candidate.names):
         return "tool"
     if (candidate.kind or "") == "demo" or any(_DEMO.search(n) for n in candidate.names):
@@ -167,6 +179,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "publisher_same": 0.3,
         "demo_of": 7.0,
         "tool_of": 7.0,
+        "mode_of": 7.0,  # a mode's launcher, its game's name opening its own
     },
     "remaster_of": {
         "bias": -5.0,
@@ -200,6 +213,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "publisher_same": 0.8,
         "demo_of": -5.0,
         "tool_of": -5.0,
+        "mode_of": -5.0,
     },
     "remake_of": {
         "bias": -6.0,
@@ -235,6 +249,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "publisher_same": 1.2,
         "demo_of": -5.0,
         "tool_of": -5.0,
+        "mode_of": -5.0,
     },
     "contains": {
         "bias": -6.0,
@@ -254,6 +269,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "publisher_same": 1.0,
         "demo_of": -5.0,
         "tool_of": -5.0,
+        "mode_of": -5.0,
     },
     "vr_of": {  # owner, 2026-10-11: a VR version is its own relation
         "bias": -6.0,
@@ -267,6 +283,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "publisher_same": 0.5,
         "demo_of": -5.0,
         "tool_of": -5.0,
+        "mode_of": -5.0,
     },
 }
 MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
@@ -377,7 +394,10 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     ):
         f["later_list_same_store"] = 1.0
 
-    if _demo_pair(s, o):
+    if _mode_pair(s, o):
+        f["mode_of"] = 1.0
+        f.pop("subtitle", None)
+    elif _demo_pair(s, o):
         f["demo_of"] = 1.0
         f.pop("subtitle", None)
     elif _tool_pair(s, o):
@@ -433,12 +453,16 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["years_near"] = 1.0
     else:
         f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
-    if "demo_of" in f or "tool_of" in f:
+    if "demo_of" in f or "tool_of" in f or "mode_of" in f:
         # Its game's name opens it (that is what made it one): the rest of
-        # its name says nothing more, nor, for a tool, its years.
+        # its name says nothing more, nor, for a tool or a mode, its years.
         f["name"] = 0.0
-        if "tool_of" in f:
+        if "tool_of" in f or "mode_of" in f:
             f.pop("years_gap", None)
+        if "mode_of" in f:
+            # A mode's list is a part of its game's one list (Zombies' 50 of
+            # Black Ops II's 90 on 360): a part, not a compilation's.
+            f.pop("list_subset", None)
     return f
 
 
@@ -493,6 +517,21 @@ def _demo_pair(a: Candidate, b: Candidate) -> bool:
             and demo.year
             and game.year
             and abs(demo.year - game.year) <= NEAR_YEARS
+        ):
+            return True
+    return False
+
+
+def _mode_pair(a: Candidate, b: Candidate) -> bool:
+    """A mode's launcher whose game's name opens it ("Call of Duty: Black
+    Ops II" → "… - Zombies"), not filed by one store under another game.
+    Years say nothing: Steam gives such an app no date of its own."""
+    for mode, game in ((a, b), (b, a)):
+        if (
+            kind_of(mode) == "mode"
+            and kind_of(game) not in ("mode", "tool", "demo")
+            and not _groups_differ(mode, game)
+            and _starts(game, mode)
         ):
             return True
     return False
@@ -593,7 +632,7 @@ def _starts(game: Candidate, demo: Candidate) -> bool:
         if not head:
             continue
         numbered = any(w.isdigit() for w in head)
-        for d in (normalize(n) for n in demo.names):
+        for d in (_normal(n) for n in demo.names):
             words = _words(d)
             if words[: len(head)] != head:
                 continue
@@ -693,7 +732,9 @@ def game_facts(versions: list[dict]) -> GameFacts:
     a remaster's studio is not the game's). Demos and compilations say
     nothing about the game (Halo: MCC is not when Halo 2 came out). Each
     version: name, release_date, hltb_year, developer, publisher, kind."""
-    own = [v for v in versions if v.get("kind") not in ("demo", "compilation", "tool")] or versions
+    own = [
+        v for v in versions if v.get("kind") not in ("demo", "compilation", "tool", "mode")
+    ] or versions
     dated = sorted(
         ((candidate_year(v) or 9999, i, v) for i, v in enumerate(own)),
         key=lambda t: (t[0], t[1]),
@@ -722,14 +763,14 @@ def game_name(members: list[Candidate]) -> str:
     a demo where there is one, the earliest, by its cut name."""
     plain = (
         [m for m in members if kind_of(m) == "version"]
-        or [m for m in members if kind_of(m) not in ("demo", "tool")]
+        or [m for m in members if kind_of(m) not in ("demo", "tool", "mode")]
         or members
     )
     plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]
     if not first.names:
         return first.product_id
-    name = next((n for n in first.names if normalize(n)), first.names[0])
+    name = _aliased(next((n for n in first.names if normalize(n)), first.names[0]))
     if any(_COMPILATION.search(n) for n in first.names):
         # A compilation's own words are its name ("Mass Effect Legendary
         # Edition" is not "Mass Effect").
@@ -861,6 +902,7 @@ def game_core(name: str) -> str:
     """The name without its edition and platform tail (as `hltb_match.core`
     cuts it), normalized — but a cut that would take a word of the game's
     own takes only the edition's words at the end."""
+    name = _aliased(name)
     # A parenthesis at the end qualifies the release ("(Classic, 2005)", "(PC)").
     name = _PARENTHESIS.sub("", name).strip() or name
     full = normalize(name)
@@ -883,6 +925,15 @@ def name_key(name: str) -> str:
     words = _unmarked(game_core(name)).split()
     kept = [w for w in words if w not in _PLATFORM_WORDS] or words
     return " ".join(kept)
+
+
+def _aliased(name: str) -> str:
+    """ "COD: Black Ops II" as "Call of Duty: Black Ops II" (see `_COD`)."""
+    return _COD.sub("Call of Duty", name, count=1)
+
+
+def _normal(name: str) -> str:
+    return normalize(_aliased(name))
 
 
 def _unmarked(name: str) -> str:

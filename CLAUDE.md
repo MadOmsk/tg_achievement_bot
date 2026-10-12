@@ -581,9 +581,15 @@ What the stores and HLTB say about a game, collected but not shown yet
   proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).
 - **Kinds of link**: see Games below — a remaster, a remake, a compilation, a
-  VR version are games of their own (2026-10-11); a demo and a tool (a
-  Creation Kit, an editor — owner, 2026-10-10) belong to one version of their
-  game (`game_versions.of_version_id`).
+  VR version are games of their own (2026-10-11); a demo, a tool (a
+  Creation Kit, an editor — owner, 2026-10-10) and a mode (owner, 2026-10-12:
+  a Steam app of type `advertising` launching one mode of another app, "Call
+  of Duty: Black Ops II - Zombies") belong to one version of their game
+  (`game_versions.of_version_id`, role `mode` since migration 100), joined to
+  the game whose name opens theirs (`mode_of`, like `demo_of`; a mode's list
+  being a part of its game's is no compilation's sign). Names: a leading
+  Microsoft "COD" reads as "Call of Duty" (`game_match._COD`, one rule, no
+  alias table).
 - **Sources**, one module each in `services/stores/`, network only:
   - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
     `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour);
@@ -634,10 +640,10 @@ What the stores and HLTB say about a game, collected but not shown yet
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions
-  (`match_decisions`: same / demo_of / tool_of / remaster_of /
+  (`match_decisions`: same / demo_of / tool_of / mode_of / remaster_of /
   remake_of / contains / vr_of / other, with the pair's signs and the model that
   saw them — what the weights will be fitted to); which game a version is in
-  (`game_versions`, **one game per version**, its role version / demo / tool and the version a demo or tool is of) and how games relate
+  (`game_versions`, **one game per version**, its role version / demo / tool / mode and the version a demo, tool or mode is of) and how games relate
   (`game_relations`) are rebuilt from the labels and the model by
   `services/game_link.py`, so a decision outlives every rebuild. A game keeps
   its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
@@ -650,8 +656,8 @@ What the stores and HLTB say about a game, collected but not shown yet
     2026-10-12): a remaster of a remake points at the remake — Gears of War:
     Reloaded is a remaster of Ultimate Edition, a remake of Gears of War. Inside a game: the same product across platforms (PS4 and PS5, One and
     Series released together under one name are one game, even with two lists —
-    not two games of one pack, Return to Arkham), demos (betas and tech tests too) and
-    tools. No "edition" role (owner, 2026-10-11): GOTY / Deluxe are packs the
+    not two games of one pack, Return to Arkham), demos (betas and tech tests too),
+    tools and modes. No "edition" role (owner, 2026-10-11): GOTY / Deluxe are packs the
     stores sell around the same version (`editions`), not versions. A later product on a newer
     console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
     Witcher 3's next-gen products are a remaster, its Steam app the original.
@@ -666,7 +672,7 @@ What the stores and HLTB say about a game, collected but not shown yet
     ahead is taken; from `REVIEW_P` (0.15) the pair goes to the **review list**
     (`match_pairs`, one per pair of games). Versions join a game from the surest
     pair down, **never across a veto** (a pair under `VETO_P` "same" or a label
-    saying no; a demo or a tool vetoes nothing — a beta is far from its game's port
+    saying no; a demo, a tool or a mode vetoes nothing — a beta is far from its game's port
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.

@@ -23,6 +23,7 @@ LABEL_CLASS = {
     "edition": "same",
     "demo_of": "same",
     "tool_of": "same",
+    "mode_of": "same",
     "remaster_of": "remaster_of",
     "remake_of": "remake_of",
     "contains": "contains",

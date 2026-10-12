@@ -729,6 +729,8 @@ _DECISIONS_MORE = (
     ("demo_of:flip", "⇄ it is a demo of this"),
     ("tool_of", "a tool for it"),
     ("tool_of:flip", "⇄ it is a tool for this"),
+    ("mode_of", "a mode of it (a launcher of one of its modes)"),
+    ("mode_of:flip", "⇄ it is a mode of this"),
     ("series", "another game of its series"),
     ("skip", "skip: ask again later"),
 )

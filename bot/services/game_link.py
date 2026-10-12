@@ -46,7 +46,10 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Labels that put two versions in one game; every other label keeps them apart.
-JOINING = {"same", "edition", "demo_of", "tool_of"}
+JOINING = {"same", "edition", "demo_of", "tool_of", "mode_of"}
+# The roles that are a part of a game rather than the game: each names the
+# version it is of, and vetoes nothing.
+PARTS = ("demo", "tool", "mode")
 # Labels that relate two games in no way: "other", and "another game of its
 # series" (owner, 2026-10-11) — the same for building games, kept apart for
 # what it tells about the model's mistakes.
@@ -290,10 +293,10 @@ def _cluster(
             forbidden[lab["other_id"]].add(lab["version_id"])
     kinds = {m.version_id: kind_of(m) for m in members}
     for (a, b), v in verdicts.items():
-        # A demo or a tool vetoes nothing: it is far from a port of its game
-        # years later (Battlefield V's beta and its Steam release), and that
-        # must not keep it out of the game its own pair joins it to.
-        if kinds.get(a) in ("demo", "tool") or kinds.get(b) in ("demo", "tool"):
+        # A demo, a tool or a mode vetoes nothing: it is far from a port of
+        # its game years later (Battlefield V's beta and its Steam release),
+        # and that must not keep it out of the game its own pair joins it to.
+        if kinds.get(a) in PARTS or kinds.get(b) in PARTS:
             continue
         if v.p_same < VETO_P and "one_list" not in v.features:
             forbidden[a].add(b)
@@ -326,14 +329,14 @@ def _cluster(
 
 def _anchor(cluster: list[Candidate]) -> Candidate:
     """The version a game is anchored on: its earliest that is the game
-    itself (no demo, no tool), the first one known on a tie."""
-    plain = [c for c in cluster if kind_of(c) not in ("demo", "tool")] or cluster
+    itself (no demo, no tool, no mode), the first one known on a tie."""
+    plain = [c for c in cluster if kind_of(c) not in PARTS] or cluster
     return min(plain, key=lambda c: (era(c) or 9999, c.version_id))
 
 
 def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str, int | None]]:
-    """Each version's role in its game, and for a demo or a tool the version
-    it is of (owner, 2026-10-09): the one on the same console, else the same
+    """Each version's role in its game, and for a demo, a tool or a mode the
+    version it is of (owner, 2026-10-09): the one on the same console, else the same
     store, else any — the one whose name opens it first."""
     ids = {c.version_id for c in cluster}
     told = {
@@ -341,16 +344,16 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
         for lab in labels
         if lab["version_id"] in ids and lab["other_id"] in ids
     }
-    games = [c for c in cluster if kind_of(c) not in ("demo", "tool")]
+    games = [c for c in cluster if kind_of(c) not in PARTS]
     roles: dict[int, tuple[str, int | None]] = {}
     for c in cluster:
         relation, of = told.get(c.version_id, (None, None))
-        if relation in ("demo_of", "tool_of"):
+        if relation in ("demo_of", "tool_of", "mode_of"):
             roles[c.version_id] = (str(relation)[: -len("_of")], of)
             continue
         kind = kind_of(c)
         parents = [g for g in games if g.version_id != c.version_id]
-        if kind in ("demo", "tool") and parents:
+        if kind in PARTS and parents:
 
             def fit(v: Candidate, d: Candidate = c) -> tuple[int, int, int, int]:
                 return (

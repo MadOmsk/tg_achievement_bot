@@ -1181,11 +1181,11 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE TABLE IF NOT EXISTS game_versions (
     version_id    INTEGER PRIMARY KEY REFERENCES versions(version_id) ON DELETE CASCADE,
     game_id       INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    role          TEXT NOT NULL,   -- version / demo / tool
+    role          TEXT NOT NULL,   -- version / demo / tool / mode (100)
     of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
     p             REAL,
     linked_at     TEXT NOT NULL,
-    CHECK (of_version_id IS NULL OR role IN ('demo', 'tool'))
+    CHECK (of_version_id IS NULL OR role IN ('demo', 'tool', 'mode'))
 );
 CREATE INDEX IF NOT EXISTS idx_game_versions_game ON game_versions(game_id, role);
 
@@ -1194,7 +1194,7 @@ CREATE INDEX IF NOT EXISTS idx_game_versions_game ON game_versions(game_id, role
 CREATE TABLE IF NOT EXISTS match_decisions (
     version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
     other_id   INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    relation   TEXT NOT NULL,   -- same / edition / demo_of / tool_of / remaster_of /
+    relation   TEXT NOT NULL,   -- same / edition / demo_of / tool_of / mode_of / remaster_of /
                                 -- remake_of / contains / vr_of / other
     features   TEXT,            -- JSON: the pair's signs when it was decided
     model      TEXT,            -- which weights saw them
