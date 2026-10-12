@@ -1,0 +1,4 @@
+• White trophies on a transparent ground show in posts again, not an empty square
+• A Steam history loads by itself once the player opens their game details
+• With Steam game details hidden, the bot now says so instead of staying silent
+• The admin home shows API load in detail: Xbox per account, Steam, PSN, Anthropic

@@ -2016,7 +2016,10 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `prerelease`: `changelog/<v>.ru.md`, `.en.md`, `.contributors.md`, and
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
-  links never 404. Under each note's title, a line links its other language
+  links never 404. **A release without a new minor is a hotfix** (owner,
+  2026-10-12): its notes say so in the title (`# 1.8.5 — хотфикс — …`) and
+  the first line, and the announcement's header says so by itself
+  (`release_notify.is_hotfix`: C above 0). Under each note's title, a line links its other language
   (owner, 2026-10-10): `**Русский** · [English](<v>.en.md)` in the Russian one,
   `[Русский](<v>.ru.md) · **English**` in the English one.
 - **A release is: notes, a short review, then `prerelease` → `main`** (owner,
