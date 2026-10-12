@@ -154,17 +154,11 @@ export function AdminKeys({
         ))}
       </Group>
       <Group title={t(locale, "groupApi")}>
-        <InfoRow label={t(locale, "xboxUsage")} value={usage?.xbox_usage ?? "…"} />
-        <InfoRow label={t(locale, "steamUsage")} value={usage?.steam_usage ?? "…"} />
-        <InfoRow label={t(locale, "psnToday")} value={usage?.psn_requests ?? "…"} />
-        <InfoRow
-          label={t(locale, "mailHour")}
-          value={usage ? `${usage.mail.hour}/${usage.mail.hour_limit}` : "…"}
-        />
-        <InfoRow
-          label={t(locale, "mailDay")}
-          value={usage ? `${usage.mail.day}/${usage.mail.day_limit}` : "…"}
-        />
+        {/* The server words every line (the bot's /admin home shows the same):
+            a new counter needs no change here. */}
+        {usage
+          ? usage.usage.map((row) => <InfoRow key={row.label} label={row.label} value={row.value} />)
+          : <InfoRow label="…" value="…" />}
       </Group>
     </>
   );

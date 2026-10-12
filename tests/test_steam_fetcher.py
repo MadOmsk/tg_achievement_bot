@@ -308,3 +308,120 @@ def _row_for(appid: str, achievement_id: str) -> AchievementRow:
         rarity_percent=None,
         platform="steam",
     )
+
+
+async def _visible(repo: Repo) -> bool | None:
+    link = await repo.get_platform_link(await repo.person_id(TG_ID), "steam")
+    return link.achievements_visible if link else None
+
+
+async def test_a_backfill_that_meets_hidden_achievements_says_so(
+    repo: Repo, steam_auth, monkeypatch
+) -> None:
+    """The library shows and every game answers 403 "Profile is not public"
+    (2026-10-12): the person is told as for a hidden library, and the
+    account is marked as waiting for its history."""
+    import pytest
+
+    from bot.services.steam.client import SteamGameDetailsPrivateError
+
+    await _linked_user(repo)
+
+    async def fake_get_owned_games(api_key, steam_id):
+        return [
+            OwnedGame(appid="550", name="L4D2", playtime_forever=100),
+            OwnedGame(appid="620", name="Portal 2", playtime_forever=100),
+        ]
+
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
+        raise SteamGameDetailsPrivateError("hidden")
+
+    monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
+    monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    with pytest.raises(SteamGameDetailsPrivateError):
+        await fetcher.backfill(await repo.person_id(TG_ID), STEAM_ID)
+    assert await _visible(repo) is False
+
+
+async def test_the_first_achievement_read_again_fills_the_history_in(
+    repo: Repo, steam_auth, monkeypatch
+) -> None:
+    """Hidden at the link, opened later: the first poll that reads an
+    achievement fills every game with nothing stored, as history."""
+    from bot.services.steam.client import SteamGameDetailsPrivateError
+
+    await _linked_user(repo)
+    person = await repo.person_id(TG_ID)
+    hidden = True
+    asked: list[str] = []
+
+    async def fake_get_owned_games(api_key, steam_id):
+        return [
+            OwnedGame(appid="550", name="L4D2", playtime_forever=100),
+            OwnedGame(appid="620", name="Portal 2", playtime_forever=100),
+        ]
+
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
+        asked.append(appid)
+        if hidden:
+            raise SteamGameDetailsPrivateError("hidden")
+        return [parsed(f"{appid}-1", appid)]
+
+    monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
+    monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    publisher = FakePublisher()
+    fetcher = SteamFetcher(repo, steam_auth, publisher, anthropic_auth=object())  # type: ignore[arg-type]
+
+    # While hidden, a poll is no error: nothing comes, the account waits.
+    assert await fetcher.poll_title(person, STEAM_ID, "Mad Omsk", "550", "L4D2") == 0
+    assert await _visible(repo) is False
+
+    hidden = False
+    asked.clear()
+    assert await fetcher.poll_title(person, STEAM_ID, "Mad Omsk", "550", "L4D2") == 1
+    assert await _visible(repo) is True
+    while STEAM_ID in fetcher._filling:
+        await fetcher._filling[STEAM_ID]
+
+    # The poll published its game; the rest came in as history, unpublished.
+    assert [[row.title_id for row in batch] for batch in publisher.published] == [["550"]]
+    assert asked == ["550", "620"]
+    assert await repo.steam_titles_with_achievements(STEAM_ID) == {"550", "620"}
+
+    # Readable from now on: the next poll starts no top-up.
+    await fetcher.poll_title(person, STEAM_ID, "Mad Omsk", "550", "L4D2")
+    assert STEAM_ID not in fetcher._filling
+
+
+async def test_a_top_up_stops_at_the_first_hidden_game(repo: Repo, steam_auth, monkeypatch) -> None:
+    """Still hidden: one request says so, not one per game."""
+    import pytest
+
+    from bot.services.steam.client import SteamGameDetailsPrivateError
+
+    await _linked_user(repo)
+    asked: list[str] = []
+
+    async def fake_get_owned_games(api_key, steam_id):
+        return [OwnedGame(appid=str(n), name=str(n), playtime_forever=1) for n in range(5)]
+
+    async def fake_fetch_unlocked(
+        repo_, anthropic_auth_, api_key, steam_id, appid, *, title_name=None
+    ):
+        asked.append(appid)
+        raise SteamGameDetailsPrivateError("hidden")
+
+    monkeypatch.setattr(steam_fetcher_module, "get_owned_games", fake_get_owned_games)
+    monkeypatch.setattr(steam_fetcher_module, "fetch_unlocked", fake_fetch_unlocked)
+    fetcher = SteamFetcher(repo, steam_auth, FakePublisher(), anthropic_auth=object())  # type: ignore[arg-type]
+
+    with pytest.raises(SteamGameDetailsPrivateError):
+        await fetcher.fill_library_gaps(await repo.person_id(TG_ID), STEAM_ID)
+    assert asked == ["0"]
+    assert await _visible(repo) is False

@@ -180,6 +180,7 @@ name, or when the tree goes stale.
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
+│   │   ├── api_usage.py          every outside API's requests (and the model's tokens), last 24h
 │   │   ├── description_backfill.py  one Xbox title's descriptions in both locales (#48)
 │   │   ├── xbox/                 auth.py (token storage, refresh), client.py (requests, retry,
 │   │   │                         backoff), models.py (pydantic responses)
@@ -612,6 +613,16 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   constructor copy, so a change in the admin panel applies on the next call (#17).
 - People connect by profile URL, vanity URL or bare SteamID64. Their profile and game
   stats must be public — only they can change that.
+- **Hidden achievements are not a dead key** (2026-10-12): Steam answers a
+  profile whose game details are hidden with 403 and a JSON
+  `playerstats.error`, a bad key with 403 and an HTML page;
+  `client._get` raises `SteamGameDetailsPrivateError` for the first. A
+  backfill that meets it on every game tells the person (as for a hidden
+  library) and leaves `achievements_visible = 0` — "the history waits".
+  The first achievement read again (any poll), or a library that answers
+  the catch-up while the flag is 0, starts `fill_library_gaps` in the
+  background: every game with nothing stored, as history, never published;
+  still hidden, it stops at its first game.
 - Presence comes in batches of up to 100 SteamIDs (`GetPlayerSummaries`).
 - **Every stored achievement carries its game's name** (#70): `fetch_unlocked`
   takes `title_name` so the `titles` upsert has something to write — without it a
@@ -788,7 +799,10 @@ isn't muted there; it wasn't already published there.
   2026-10-10; `services/post_picture.py`). **The original is what is
   stored** (icon cache, cover, URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
-  as it is.** A low-resolution one (smaller on its longer side than
+  as it is** — unless more than a tenth of it is see-through (2026-10-12:
+  Aniimo's white PSN trophies on nothing reached the chat as an empty
+  square, Telegram flattening the transparency): that one is set on the
+  card at its own size, never enlarged. A low-resolution one (smaller on its longer side than
   `post_picture_low_res`: 128, 200 — the default —, 256 or 512 px; Steam's
   and Xbox 360's icons are 64 px, PS4's trophies 240) is enlarged by a cheap
   filter (bicubic) and set in the middle of a card, rounded, with a shadow.
@@ -1357,7 +1371,16 @@ keyboard.
     the Mini App names a city beside an offset where one is known («Москва ·
     UTC+3», `value_label(place=True)`), the bot shows the offset alone.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
-    sign-in emails against their caps, every credential's state).
+    sign-in emails against their caps, every credential's state). **The API
+    load** (owner, 2026-10-12; `services/api_usage.py`, noted as each request
+    is made, in memory for 24 hours — a restart starts it over): XBOX, Steam,
+    PSN over 5 minutes, an hour and a day — Xbox per account, as «median /
+    busiest» over the Xbox accounts polled, a quiet one counting as nought
+    (Microsoft's budget is each person's, so a total says nothing); Steam's 100 000 a
+    day beside its day; PSN with no limit claimed; Anthropic's requests and
+    tokens over an hour and a day; the sign-in emails with their mail server.
+    `views/admin_home.py::usage_rows` words them once: the bot's home prints
+    them, the Mini App's «Ключи» lists them as the server sends them.
   - `services/admin_credentials.py` — the shared credentials (`set` raising
     `CredentialInvalid` / `CredentialSetupError`, `clear`).
   - `services/admin_actions.py` — **every action**, one class each: what it
@@ -1993,7 +2016,10 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `prerelease`: `changelog/<v>.ru.md`, `.en.md`, `.contributors.md`, and
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
-  links never 404. Under each note's title, a line links its other language
+  links never 404. **A release without a new minor is a hotfix** (owner,
+  2026-10-12): its notes say so in the title (`# 1.8.5 — хотфикс — …`) and
+  the first line, and the announcement's header says so by itself
+  (`release_notify.is_hotfix`: C above 0). Under each note's title, a line links its other language
   (owner, 2026-10-10): `**Русский** · [English](<v>.en.md)` in the Russian one,
   `[Русский](<v>.ru.md) · **English**` in the English one.
 - **A release is: notes, a short review, then `prerelease` → `main`** (owner,

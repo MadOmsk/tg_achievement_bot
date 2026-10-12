@@ -36,6 +36,7 @@ from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRari
 from pyrate_limiter import Duration, Rate
 
 from bot.constants import PresenceState
+from bot.services import api_usage
 from bot.services.rate_limiter import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -213,6 +214,7 @@ class AccountTrophyOverview:
 
 async def _call[T](fn: Callable[..., T], *args: object, **kwargs: object) -> T:
     await _limiter.acquire()
+    api_usage.record(api_usage.PSN)
     return await asyncio.to_thread(fn, *args, **kwargs)
 
 

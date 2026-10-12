@@ -211,7 +211,7 @@ async def test_the_bot_and_the_mini_app_show_the_same_home(
     await repo.set_app_setting(EMAIL_PROVIDER_DAILY_KEY, "250")
     await repo.ensure_user(1, "someone")
 
-    text, _markup = await render_admin_home(repo, _NoUsage(), _NoUsage(), credentials, locale="ru")  # type: ignore[arg-type]
+    text, _markup = await render_admin_home(repo, credentials, locale="ru")
     client = await _client(repo, settings, credentials)
     try:
         home = await (await client.get("/api/mini/admin")).json()
@@ -219,8 +219,22 @@ async def test_the_bot_and_the_mini_app_show_the_same_home(
         await client.close()
 
     assert "за сутки 0/250" in text
-    assert home["mail"] == {"hour": 0, "hour_limit": 100, "day": 0, "day_limit": 250}
-    assert home["xbox_usage"] in text
+    assert home["mail"] == {
+        "hour": 0,
+        "hour_limit": 100,
+        "day": 0,
+        "day_limit": 250,
+        "server": None,
+    }
+    # Every usage line the Mini App gets is a line of the bot's own home.
+    assert [row["label"] for row in home["usage"]][:4] == [
+        "API XBOX (медиана/макс. на аккаунт)",
+        "API Steam",
+        "API PSN",
+        "API Anthropic",
+    ]
+    for row in home["usage"]:
+        assert f"{row['label']}: {row['value']}" in text
     assert [c["name"] for c in home["credentials"]] == credentials.names
     assert home["steam_key"] == home["psn_key"] == "not_configured"
 

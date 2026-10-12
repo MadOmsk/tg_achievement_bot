@@ -461,3 +461,39 @@ async def test_a_folded_game_is_listed_beside_its_host(monkeypatch: pytest.Monke
         ("380", 900, 7),
         ("420", 900, 7),
     ]
+
+
+def _steam_answering(monkeypatch: pytest.MonkeyPatch, status: int, body: str, kind: str) -> None:
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, text=body, headers={"content-type": kind})
+
+    real = httpx.AsyncClient
+
+    def client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(steam_client.httpx, "AsyncClient", client)
+
+
+async def test_a_403_about_a_hidden_profile_is_not_a_dead_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # What Steam answers a profile whose game details are hidden (2026-10-12):
+    # read as a dead key, a new link's whole backfill was skipped in silence.
+    _steam_answering(
+        monkeypatch,
+        403,
+        '{"playerstats":{"error":"Profile is not public","success":false}}',
+        "application/json",
+    )
+    with pytest.raises(SteamGameDetailsPrivateError):
+        await get_player_achievements("key", STEAM_ID, "220240")
+
+
+async def test_a_403_page_is_a_dead_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _steam_answering(monkeypatch, 403, "<html><body><h1>Forbidden</h1></body></html>", "text/html")
+    with pytest.raises(steam_client.SteamKeyDeadError):
+        await get_player_achievements("key", STEAM_ID, "220240")

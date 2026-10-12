@@ -208,3 +208,17 @@ async def test_production_announces_with_brief_summary(repo: Repo) -> None:
     assert "Кратко о главных изменениях:" in sent["text"]
     assert "• Полный каталог всех достижений игр" in sent["text"]
     assert "Посмотрите подробный список изменений" in sent["text"]
+
+
+@pytest.mark.asyncio
+async def test_a_release_without_a_new_minor_is_announced_as_a_hotfix(repo: Repo) -> None:
+    chat = -1001003
+    await repo.upsert_chat(chat, "RU Chat", None)
+    await repo.update_chat_settings(chat, locale="ru")
+    bot = FakeBot()
+
+    await announce_release_if_needed(bot, repo, "1.8.5.089", is_test=False, sleep_delay=0)
+
+    text = bot.sent[0]["text"]
+    assert "Хотфикс: бот обновлён до версии 1.8.5.089" in text
+    assert bot.sent[0]["reply_markup"].inline_keyboard[0][0].url.endswith("/1.8.5.ru.md")
