@@ -27,6 +27,12 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 from bot.db.repo import Database, Repo
+from bot.services.advice import (
+    ADVISER_SOURCES,
+    AdviceStore,
+    games_pair_id,
+    versions_pair_id,
+)
 from bot.services.game_series import SURE_P
 from bot.services.stores import PC_LABELS, PC_UNKNOWN, console_label
 
@@ -1379,7 +1385,12 @@ def _version_cards(rows: list[sqlite3.Row]) -> str:
     )
 
 
-def _pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) -> str:
+def _pair_rows(
+    conn: sqlite3.Connection,
+    pairs: list[sqlite3.Row],
+    back: str,
+    advice: AdviceStore | None = None,
+) -> str:
     """Doubtful pairs as one table: the subject and its game, what the model
     thinks and how sure, the other and its game, and the answer."""
     if not pairs:
@@ -1428,7 +1439,16 @@ def _pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) ->
             f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
             f"<br><small>{escape(signs)}</small></td>"
             f"<td>{side(r['other'])}</td>"
-            f"<td>{_decision_picker(r['subject'], r['other'], back)}</td></tr>"
+            f"<td>{_decision_picker(r['subject'], r['other'], back)}"
+            + _advice_badge(
+                advice,
+                *(
+                    versions_pair_id(a, g)
+                    for a, b in ((r["subject"], r["other"]), (r["other"], r["subject"]))
+                    if (g := (info.get(b) or {"game_id": None})["game_id"]) is not None
+                ),
+            )
+            + "</td></tr>"
         )
     return (
         "<div class=scroll><table class=versions><tr><th>this version</th><th>the model"
@@ -1497,7 +1517,12 @@ async def review(request: web.Request) -> web.Response:
             key=lambda r: frozenset((r["subject"], r["other"])) in skipped,
         )[:PAGE_SIZE]
         back = f"/review?tab={tab}"
-        cards = _game_pair_rows(conn, pairs, back) if games_tab else _pair_rows(conn, pairs, back)
+        advice = AdviceStore.for_db(Path(request.app["db_path"]))
+        cards = (
+            _game_pair_rows(conn, pairs, back, advice)
+            if games_tab
+            else _pair_rows(conn, pairs, back, advice)
+        )
     tabs = " · ".join(
         (
             f"<b>{label} ({counts[name]})</b>"
@@ -1532,7 +1557,12 @@ def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
     )
 
 
-def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) -> str:
+def _game_pair_rows(
+    conn: sqlite3.Connection,
+    pairs: list[sqlite3.Row],
+    back: str,
+    advice: AdviceStore | None = None,
+) -> str:
     """Doubtful relations between games, game against game."""
     if not pairs:
         return "<p>(nothing to review)</p>"
@@ -1556,7 +1586,9 @@ def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: st
             f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
             f"<br><small>{escape(signs)}</small></td>"
             f"<td>{_game_card(conn, gb[0])}</td>"
-            f"<td>{_game_picker(ga[0], gb[0], back, str(r['relation']), names)}</td></tr>"
+            f"<td>{_game_picker(ga[0], gb[0], back, str(r['relation']), names)}"
+            f"{_advice_badge(advice, games_pair_id(ga[0], gb[0]), games_pair_id(gb[0], ga[0]))}"
+            "</td></tr>"
         )
     return (
         "<div class=scroll><table class=versions><tr><th>this game</th><th>the model"
@@ -1565,8 +1597,35 @@ def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: st
 
 
 # Who besides the operator may give an answer (`decided_by`): the advisers
-# agreeing (owner, 2026-10-12).
-ADVISERS = {"claude+gemini"}
+# agreeing, with or without the model (owner, 2026-10-12).
+ADVISERS = set(ADVISER_SOURCES)
+
+# Where a pair stands with the advisers, worded for the review tabs.
+_ADVICE_WORDS = {
+    "unknown": "not asked yet",
+    "waiting_both": "waits for Claude and Gemini",
+    "waiting_claude": "waits for Claude",
+    "waiting_gemini": "waits for Gemini",
+    "conflict": "Claude and Gemini disagree — yours",
+    "agreed": "advisers agree — not written yet",
+    "applied": "answered by the advisers",
+    "operator": "answered by you",
+    "recorded": "advisers agree — kept aside (no way to write it yet)",
+}
+
+
+def _advice_badge(advice: AdviceStore | None, *pair_ids: str) -> str:
+    """The advisers' state of a pair (either way round), a small line under
+    its answer buttons; nothing when the pair was never exported."""
+    if advice is None:
+        return ""
+    for pair_id in pair_ids:
+        state = advice.state(pair_id)
+        if state.state != "unknown":
+            word = _ADVICE_WORDS.get(state.state, state.state)
+            return f"<br><small>advisers: <b>{escape(word)}</b></small>"
+    return "<br><small>advisers: not asked yet</small>"
+
 
 _PROPOSAL_WORDS = {
     "same": "one game",
