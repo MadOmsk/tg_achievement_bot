@@ -551,11 +551,29 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
                 return result if isinstance(result, dict) else {}
 
             if response.status_code in (401, 403):
+                if _private_profile(response):
+                    raise SteamGameDetailsPrivateError(
+                        "Game details privacy is not public (403: profile is not public)"
+                    )
                 raise SteamKeyDeadError("Steam rejected the API key")
             if attempt == MAX_ATTEMPTS:
                 raise SteamApiError(f"Steam returned {response.status_code}")
 
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
+
+
+def _private_profile(response: httpx.Response) -> bool:
+    """A 403 about the person, not the key (2026-10-12): GetPlayerAchievements
+    answers a profile whose game details are hidden with 403 and a JSON body,
+    `{"playerstats": {"error": "Profile is not public", "success": false}}`;
+    a bad key gets 403 with an HTML page. Read as a dead key, a new link's
+    whole backfill was skipped in silence and never asked again."""
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    stats = body.get("playerstats") if isinstance(body, dict) else None
+    return isinstance(stats, dict) and not stats.get("success")
 
 
 _STEAM_APP_CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps"
