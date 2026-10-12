@@ -577,10 +577,13 @@ What the stores and HLTB say about a game, collected but not shown yet
   `versions (store, product_id, console)` — PS4 and PS5, One and Series are two
   versions even when they share one achievement list; Xbox Play Anywhere's PC is
   `also_on`, never a version. Consoles are `platform_format`'s names (+ `steam`).
-  **The Microsoft Store's `pc` reads "xbox pc" wherever a version's console
-  is shown** (owner, 2026-10-12; `stores.console_label`, one helper for the
-  viewer and `collect_game.py`), never to be taken for Steam; the stored
-  value and the matcher's maps stay `pc`.
+  **A PC version is named by its store wherever a version's platform is
+  shown** (owner, 2026-10-12; `stores.console_label(store, console)`, one
+  helper — and its SQL twin in the viewer — from one table, `PC_LABELS`, a
+  new store being one line): the Microsoft Store's "xbox pc", Steam's
+  "steam", later "egs pc", "gog pc"; a PC of no known store (an Xbox `Win32`
+  list of a game bought elsewhere, HLTB's plain "PC") "pc (store unknown)".
+  The stored value and the matcher's maps stay `pc`.
   A version points at its achievement list (`platform`, `title_id`) once that is
   proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).

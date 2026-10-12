@@ -72,7 +72,8 @@ async def main() -> int:
     for version in await repo.versions_of_title(args.platform, args.title_id):
         print(
             f"version {version['version_id']}: {version['store']} {version['product_id']}"
-            f" [{console_label(version['console'])}] {version['name']} · {version['developer']} /"
+            f" [{console_label(version['store'], version['console'])}] {version['name']}"
+            f" · {version['developer']} /"
             f" {version['publisher']} · {version['release_date']}"
             f" · also on {json.loads(version['also_on'] or '[]')}"
         )

@@ -51,9 +51,12 @@ def test_the_microsoft_stores_pc_reads_xbox_pc() -> None:
     from bot.services.stores import console_label
     from scripts.catalog_viewer import _console_sql
 
-    assert console_label("pc") == "xbox pc"
-    assert console_label("steam") == "steam" and console_label("series") == "series"
-    assert "'xbox pc'" in _console_sql()
+    assert console_label("xbox", "pc") == "xbox pc"
+    assert console_label("gog", "pc") == "gog pc"
+    assert console_label("list", "pc") == "pc (store unknown)"
+    assert console_label("steam", "steam") == "steam"
+    assert console_label("xbox", "series") == "series"
+    assert "'xbox pc'" in _console_sql() and "'pc (store unknown)'" in _console_sql()
 
 
 def test_a_store_link_says_whether_it_is_sold() -> None:

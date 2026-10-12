@@ -27,7 +27,7 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 from bot.db.repo import Database, Repo
-from bot.services.stores import CONSOLE_LABELS, console_label
+from bot.services.stores import PC_LABELS, PC_UNKNOWN, console_label
 
 PAGE_SIZE = 100
 
@@ -183,10 +183,14 @@ def _sale_word(on_sale: object) -> str:
     return "в продаже" if on_sale else "снято с продажи"
 
 
-def _console_sql(column: str = "v.console") -> str:
-    """A console as shown (`stores.console_label`), for a query's own lists."""
-    cases = " ".join(f"WHEN '{k}' THEN '{v}'" for k, v in CONSOLE_LABELS.items())
-    return f"CASE {column} {cases} ELSE {column} END"
+def _console_sql(store: str = "v.store", console: str = "v.console") -> str:
+    """A version's platform as shown (`stores.console_label`, the same
+    table), for a query's own lists."""
+    cases = " ".join(f"WHEN '{k}' THEN '{v}'" for k, v in PC_LABELS.items())
+    return (
+        f"CASE WHEN {console} = 'pc' THEN CASE {store} {cases} ELSE '{PC_UNKNOWN}' END"
+        f" ELSE {console} END"
+    )
 
 
 def _hours(times: object) -> str:
@@ -354,7 +358,7 @@ async def title(request: web.Request) -> web.Response:
         ).fetchone()
         versions = conn.execute(
             "SELECT version_id, name, store, product_id, stand_in, on_sale,"
-            f" {_console_sql('console')} AS console, kind, developer, publisher,"
+            f" {_console_sql('store', 'console')} AS console, kind, developer, publisher,"
             " release_date, also_on, store_group, origin FROM versions"
             " WHERE platform = ? AND title_id = ? ORDER BY console",
             (platform, title_id),
@@ -449,8 +453,9 @@ async def version(request: web.Request) -> web.Response:
         ).fetchall()
         siblings = (
             conn.execute(
-                f"SELECT version_id, store, {_console_sql('console')} AS console, name, platform,"
-                " title_id FROM versions WHERE store_group = ? AND version_id <> ?",
+                "SELECT version_id, store, " + _console_sql("store", "console") + " AS console,"
+                " name, platform, title_id FROM versions"
+                " WHERE store_group = ? AND version_id <> ?",
                 (row["store_group"], version_id),
             ).fetchall()
             if row is not None and row["store_group"]
@@ -543,7 +548,7 @@ async def version(request: web.Request) -> web.Response:
             else ""
         )
         + _record(
-            {**dict(row), "console": console_label(row["console"])} if row else row,  # type: ignore[arg-type]
+            {**dict(row), "console": console_label(row["store"], row["console"])} if row else row,  # type: ignore[arg-type]
             {"title_id": _title_href},
         )
         + "<h2>Game</h2>"
@@ -1827,7 +1832,7 @@ def _version_line(v: sqlite3.Row) -> str:
 
     return (
         f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>'
-        f" [{escape(console_label(v['console']))}, {escape(v['release_date'] or '?')}]"
+        f" [{escape(console_label(v['store'], v['console']))}, {escape(v['release_date'] or '?')}]"
         f" {_store_link(v, str(v['store']) + ' ' + str(v['product_id']))}"
     )
 

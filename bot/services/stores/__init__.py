@@ -61,17 +61,25 @@ class StoreVersion:
     dlcs: list[StoreDlc] = field(default_factory=list)
 
 
-# How a console is said wherever a version is shown (owner, 2026-10-12): the
-# Microsoft Store's PC is "xbox pc", never to be taken for Steam. The stored
-# value (`versions.console = 'pc'`) and the matcher's maps keep "pc".
-CONSOLE_LABELS = {"pc": "xbox pc"}
+# How a PC version is said, by its store (owner, 2026-10-12): PC versions are
+# told apart by where they are sold — the Microsoft Store's "xbox pc", Steam's
+# "steam" (its console is `steam`), later the Epic Games Store's, GOG's. A new
+# store is one line here. A PC version of no known store (an Xbox `Win32`
+# list of a game bought elsewhere, HLTB's plain "PC") is "pc (store
+# unknown)". The stored value (`versions.console = 'pc'`) and the matcher's
+# maps keep "pc".
+PC_LABELS = {"xbox": "xbox pc", "egs": "egs pc", "gog": "gog pc"}
+PC_UNKNOWN = "pc (store unknown)"
 
 
-def console_label(console: str | None) -> str:
-    """A version's console as shown: `pc` (only ever the Microsoft Store's —
-    a Steam app's console is `steam`) reads "xbox pc"."""
+def console_label(store: str | None, console: str | None) -> str:
+    """A version's platform as shown, from its store and its console: a
+    console is its own name ("series", "ps5", "steam"); a PC is its store's
+    (`PC_LABELS`), or `PC_UNKNOWN`."""
     text = str(console or "")
-    return CONSOLE_LABELS.get(text, text)
+    if text != "pc":
+        return text
+    return PC_LABELS.get(str(store or ""), PC_UNKNOWN)
 
 
 _EDITION_KINDS = (
