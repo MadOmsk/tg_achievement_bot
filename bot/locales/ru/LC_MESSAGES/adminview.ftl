@@ -6,10 +6,6 @@ adminview-key-alive-checked = ✅ жив, проверен { $ago }
 adminview-key-alive = ✅ жив
 adminview-key-stale-checked = ⚠️ протух, проверен { $ago }
 adminview-key-stale = ⚠️ протух
-adminview-usage-min = { $span } мин
-adminview-usage-sec = { $span }с
-adminview-usage-part = { $used }/{ $limit } за { $label }
-adminview-usage-none = нет данных
 adminview-psn-not-configured = ⚠️ не настроен — задай в «🔑 Ключи платформ»
 adminview-steam-not-configured = ⚠️ не настроен — задай в «🔑 Ключи платформ»
 
@@ -22,13 +18,21 @@ adminview-home =
       PSN:   { $psn_linked }
       Steam: { $steam_linked }
     Чатов:          { $chats }
-    API XBOX (достижения):  { $xbox_usage }
-    API Steam (достижения): { $steam_usage }
+    { $api_lines }
     Ключ PSN:   { $psn_key_line }
     Ключ Steam: { $steam_key_line }
-    Запросов к PSN за сутки: { $psn_requests }
-    Писем с кодами: { $mail_usage }
+    { $mail_line }
 adminview-mail-usage = за час { $hour }/{ $hour_limit } · за сутки { $day }/{ $day_limit }
+adminview-api-xbox = API XBOX (мой/ср./макс./лимит)
+adminview-api-steam = API Steam
+adminview-api-psn = API PSN
+adminview-api-anthropic = API Anthropic
+adminview-api-tokens = { $requests } запр. · { $tokens } ток.
+adminview-span-300 = 5 мин
+adminview-span-3600 = час
+adminview-span-86400 = сутки
+adminview-mail-label = Писем с кодами ({ $server })
+adminview-mail-label-none = Писем с кодами
 adminview-btn-users = Пользователи ▸
 adminview-btn-chats = Чаты ▸
 adminview-btn-keys = 🔑 Ключи платформ ▸

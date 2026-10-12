@@ -39,22 +39,18 @@ from bot.services.logins import logins_of
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.views.admin import login_value
-from bot.views.admin_home import format_api_usage
+from bot.views.admin_home import usage_rows
 
 log = logging.getLogger(__name__)
 
 
 async def build_admin_home(
-    repo: Repo, credentials: AdminCredentials, *, xbox: Any, steam: Any, locale: str
+    repo: Repo, credentials: AdminCredentials, *, locale: str, viewer: int | None = None
 ) -> dict[str, Any]:
     """`services/admin_status.py`'s AdminStatus as JSON — what the bot's
-    /admin home words as text (#176)."""
-    status = await admin_status(
-        repo,
-        credentials=credentials,
-        xbox_usage=xbox.api_usage() if xbox is not None else [],
-        steam_usage=steam.api_usage() if steam is not None else [],
-    )
+    /admin home words as text (#176). `usage` is the bot's own lines,
+    label and value: a new one shows in the Mini App with no change there."""
+    status = await admin_status(repo, credentials=credentials, viewer=viewer)
     return {
         "users": status.users,
         "excluded": status.excluded,
@@ -64,16 +60,17 @@ async def build_admin_home(
         "steam_linked": status.steam_linked,
         "psn_linked": status.psn_linked,
         "chats": status.chats,
-        "xbox_usage": format_api_usage(status.xbox_usage, locale=locale),
-        "steam_usage": format_api_usage(status.steam_usage, locale=locale),
+        "usage": [
+            {"label": label, "value": value} for label, value in usage_rows(status, locale=locale)
+        ],
         "steam_key": _key_word(status.credential("steam")),
         "psn_key": _key_word(status.credential("psn")),
-        "psn_requests": status.psn_requests,
         "mail": {
             "hour": status.mail.hour,
             "hour_limit": status.mail.hour_limit,
             "day": status.mail.day,
             "day_limit": status.mail.day_limit,
+            "server": status.mail.server,
         },
         "credentials": _credentials_json(status.credentials, locale=locale),
     }
@@ -292,9 +289,8 @@ async def handle_admin_home(request: web.Request) -> web.Response:
     payload = await build_admin_home(
         repo,
         request.app["mini_admin_credentials"],
-        xbox=request.app.get("mini_xbox_fetcher"),
-        steam=request.app.get("mini_steam_fetcher"),
         locale=await repo.user_locale(admin.person_id),
+        viewer=admin.person_id,
     )
     return web.json_response(payload)
 

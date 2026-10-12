@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 import httpx
 
 from bot.constants import SteamCommunityVisibility
+from bot.services import api_usage
 from bot.services.rate_limiter import RateLimiter
 
 BASE_URL = "https://api.steampowered.com"
@@ -51,6 +52,11 @@ REQUEST_TIMEOUT = 10.0
 # goes through this one module-level function.
 RATE_WINDOWS: tuple[tuple[int, float], ...] = ((100_000, 86400.0),)
 _limiter = RateLimiter(RATE_WINDOWS)
+
+
+async def _acquire() -> None:
+    await _limiter.acquire()
+    api_usage.record(api_usage.STEAM)
 
 
 def rate_limit_usage() -> list[tuple[int, int, float]]:
@@ -448,7 +454,7 @@ async def community_descriptions(
     achievement keeps no description, as before.
     """
     try:
-        await _limiter.acquire()
+        await _acquire()
         # The language rides on Steam's own cookie: `?l=` is dropped by the
         # redirect to a vanity URL (`/id/<name>/…`), and the page then comes
         # back in English whatever was asked.
@@ -526,7 +532,7 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
     query = {"format": "json", **params}
     if api_key:
         query["key"] = api_key
-    await _limiter.acquire()
+    await _acquire()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:

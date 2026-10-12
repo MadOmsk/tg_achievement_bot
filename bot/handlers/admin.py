@@ -104,7 +104,7 @@ async def _replace_admin_home(
     # itself rather than making every caller carry it (#48).
     locale = await repo.user_locale(await repo.person_id(admin_id))
     text, markup = await render_admin_home(
-        repo, fetcher, steam_fetcher, admin_credentials, locale=locale
+        repo, admin_credentials, locale=locale, viewer=await repo.person_id(admin_id)
     )
     if prefix:
         text = f"{prefix}\n\n{text}"
@@ -152,7 +152,10 @@ async def admin_home(
     await _redraw(
         callback,
         *await render_admin_home(
-            repo, fetcher, steam_fetcher, admin_credentials, locale=i18n.locale
+            repo,
+            admin_credentials,
+            locale=i18n.locale,
+            viewer=await repo.person_id(callback.from_user.id),
         ),
     )
 
@@ -231,7 +234,10 @@ async def admin_text_input_cancel(
     await _redraw(
         callback,
         *await render_admin_home(
-            repo, fetcher, steam_fetcher, admin_credentials, locale=i18n.locale
+            repo,
+            admin_credentials,
+            locale=i18n.locale,
+            viewer=await repo.person_id(callback.from_user.id),
         ),
     )
 
