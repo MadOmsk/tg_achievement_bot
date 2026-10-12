@@ -22,7 +22,7 @@ import re
 import httpx
 
 from bot.services.rate_limiter import RateLimiter
-from bot.services.stores import StoreDlc, StoreVersion
+from bot.services.stores import StoreDlc, StoreVersion, without_keys
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,16 @@ LIMITER = RateLimiter(((1, 1.0), (100, 300.0)))
 BATCH = 20
 
 _CONSOLES = {"ConsoleGen8": "one", "ConsoleGen9": "series"}
+
+# Prices, their history and the price offers on them: not kept
+# (`stores.without_keys`); whether a product is sold is its actions.
+PRICE_KEYS = frozenset(
+    {"Price", "HistoricalBestAvailabilities", "BIBlob", "HasXPriceStorewideOffer", "OfferProvider"}
+)
+
+
+def without_prices(products: list[dict]) -> list[dict]:
+    return without_keys(products, PRICE_KEYS)  # type: ignore[return-value]
 
 
 async def products_for_title(title_id: str) -> list[dict]:
@@ -50,7 +60,7 @@ async def products_for_title(title_id: str) -> list[dict]:
             },
         )
     response.raise_for_status()
-    return list((response.json() or {}).get("Products") or [])
+    return without_prices(list((response.json() or {}).get("Products") or []))
 
 
 async def search(name: str) -> list[dict]:
@@ -79,7 +89,7 @@ async def products(big_ids: list[str]) -> list[dict]:
             response = await client.get(CATALOG, params={"bigIds": ",".join(batch), **_PARAMS})
         response.raise_for_status()
         found += list((response.json() or {}).get("Products") or [])
-    return found
+    return without_prices(found)
 
 
 def consoles_of(product: dict) -> tuple[list[str], list[str]]:

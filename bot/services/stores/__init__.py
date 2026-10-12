@@ -73,6 +73,21 @@ _EDITION_KINDS = (
 )
 
 
+def without_keys(payload: object, keys: frozenset[str]) -> object:
+    """The payload with these keys dropped wherever they are, a copy.
+
+    Prices are not ours to keep (owner, 2026-10-12): they change daily and by
+    region, and kept in a raw answer a price change reads as "the game
+    changed", which sets its source's schedule back to a week. Each store
+    module drops its own price fields before an answer is parsed or stored,
+    so a collection and a re-reading of what is stored see the same thing."""
+    if isinstance(payload, dict):
+        return {k: without_keys(v, keys) for k, v in payload.items() if k not in keys}
+    if isinstance(payload, list):
+        return [without_keys(v, keys) for v in payload]
+    return payload
+
+
 def edition_kind(name: str | None) -> str:
     """What kind of edition a store's name says it is (`standard` when it says
     none); a pre-order says so first, as it is the one that vanishes."""

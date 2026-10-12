@@ -640,6 +640,12 @@ What the stores and HLTB say about a game, collected but not shown yet
   up on for 30 days after three. **No whole-library walk** (owner, 2026-10-09).
 - **Raw answers** are kept in `source_payloads`, zlib JSON, the latest only, not
   rewritten when the hash is the same — never as columns on `titles`.
+  **Prices are not kept** (owner, 2026-10-12): each store module drops its
+  price fields (`PRICE_KEYS`: Steam's `price_overview` and package prices,
+  Xbox's `Price`, price history and price offers, PSN's SKU prices and
+  offers) from an answer before it is parsed or hashed, so a price change is
+  never "the game changed" and never sets the schedule back. No price
+  columns, no currency.
 - **Every achievement list is at least one version**: when no store describes it
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
   stand-in (`store = 'list'`) is made from `titles`, and goes once a store

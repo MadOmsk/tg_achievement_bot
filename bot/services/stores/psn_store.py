@@ -15,7 +15,7 @@ import re
 
 import httpx
 
-from bot.services.stores import StoreVersion
+from bot.services.stores import StoreVersion, without_keys
 
 _TITLE_ID = re.compile(r"\b((?:CUSA|PPSA)\d{5}_\d{2})\b")
 _CONSOLE = {"CUSA": "ps4", "PPSA": "ps5"}
@@ -27,6 +27,17 @@ _IMAGE_ROLES = {
     "BACKGROUND": "background",
     "PORTRAIT_BANNER": "poster",
 }
+
+
+# A SKU's price, the concept's first price and the offers on it: not kept
+# (`stores.without_keys`); whether a game is sold is its SKUs.
+PRICE_KEYS = frozenset(
+    {"price", "displayPrice", "lowestRecentPrice", "firstPrice", "offers", "originalPrice"}
+)
+
+
+def without_prices(concept: dict | None) -> dict | None:
+    return without_keys(concept, PRICE_KEYS) if concept else concept  # type: ignore[return-value]
 
 
 _PAGE_TITLE_ID = re.compile(r"\b((?:CUSA|PPSA)\d{5})(?:_\d{2})?\b")

@@ -11,7 +11,7 @@ from datetime import datetime
 import httpx
 
 from bot.services.rate_limiter import RateLimiter
-from bot.services.stores import StoreDlc, StoreVersion
+from bot.services.stores import StoreDlc, StoreVersion, without_keys
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +19,20 @@ APPDETAILS_URL = "https://store.steampowered.com/api/appdetails"
 _TIMEOUT = httpx.Timeout(20.0, connect=10.0)
 # One request every 1.6 s at most, 150 in five minutes.
 LIMITER = RateLimiter(((1, 1.6), (150, 300.0)))
+
+# A price and what is said about it (a package's option text is its name and
+# price, "Skyrim - $39.99"): not kept (`stores.without_keys`).
+PRICE_KEYS = frozenset(
+    {
+        "price_overview",
+        "price",
+        "price_in_cents_with_discount",
+        "percent_savings",
+        "percent_savings_text",
+        "option_text",
+        "save_text",
+    }
+)
 
 # Steam's category ids that say a game keeps selling and changing.
 _IN_APP_PURCHASES = 35
@@ -34,7 +48,11 @@ async def app_details(appid: str, language: str = "english") -> dict | None:
         response = await client.get(APPDETAILS_URL, params={"appids": appid, "l": language})
     response.raise_for_status()
     entry = (response.json() or {}).get(str(appid)) or {}
-    return entry.get("data") if entry.get("success") else None
+    return without_prices(entry.get("data")) if entry.get("success") else None
+
+
+def without_prices(data: dict | None) -> dict | None:
+    return without_keys(data, PRICE_KEYS) if data else data  # type: ignore[return-value]
 
 
 SEARCH_URL = "https://store.steampowered.com/api/storesearch/"
@@ -57,7 +75,7 @@ async def package(package_id: str) -> dict | None:
         response = await client.get(PACKAGES_URL, params={"packageids": package_id, "cc": "us"})
     response.raise_for_status()
     entry = (response.json() or {}).get(str(package_id)) or {}
-    return entry.get("data") if entry.get("success") else None
+    return without_prices(entry.get("data")) if entry.get("success") else None
 
 
 def sold_package_ids(data: dict) -> list[str]:

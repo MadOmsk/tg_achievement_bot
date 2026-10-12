@@ -599,7 +599,7 @@ class StoreCollector:
         except Exception as exc:
             log.info("playstation.com page for %r: %r", names[0], exc)
         for title_id in dict.fromkeys(title_ids):
-            concept = await psn.store_concept(client, title_id)
+            concept = psn_store.without_prices(await psn.store_concept(client, title_id))
             if concept is None or str(concept.get("id")) in seen:
                 continue
             if not _close(ours, name_key(str(concept.get("nameEn") or concept.get("name") or ""))):
@@ -718,7 +718,9 @@ class StoreCollector:
         proved = [title_id for title_id, found in lists.items() if npwr in found]
         if not proved:
             return None
-        concept = await psn.store_concept(client, proved[0])  # type: ignore[arg-type]
+        concept = psn_store.without_prices(
+            await psn.store_concept(client, proved[0])  # type: ignore[arg-type]
+        )
         if concept is None:
             return None
         # Every id of the concept Sony also ties to our list (a regional twin).

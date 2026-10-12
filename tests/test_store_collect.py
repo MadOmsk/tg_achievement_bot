@@ -503,3 +503,72 @@ def test_a_steam_post_keeps_its_full_text() -> None:
 
     long_text = "word " * 2000
     assert steam_news.shorten(long_text) == long_text
+
+
+async def test_a_price_change_is_not_a_change_of_the_game(repo: Repo) -> None:
+    """Prices are dropped before an answer is kept (owner, 2026-10-12): a
+    sale must not set the source's schedule back to a week."""
+
+    def steam(price: int) -> dict:
+        return {
+            **STEAM_APP,
+            "price_overview": {"currency": "USD", "final": price, "discount_percent": 10},
+            "package_groups": [
+                {
+                    "save_text": "Save 10%",
+                    "subs": [
+                        {
+                            "packageid": 1,
+                            "option_text": f"Game - ${price / 100}",
+                            "price_in_cents_with_discount": price,
+                            "percent_savings": 10,
+                        }
+                    ],
+                }
+            ],
+        }
+
+    first = steam_store.without_prices(steam(3999))
+    assert first is not None and "price_overview" not in first
+    assert first["package_groups"][0]["subs"] == [{"packageid": 1}]
+    assert await repo.save_payload("steam:1", "steam_store", first) is False
+    assert (
+        await repo.save_payload("steam:1", "steam_store", steam_store.without_prices(steam(1999)))
+        is False
+    )
+
+    def xbox(price: float) -> list[dict]:
+        product = _xbox_product()
+        product["DisplaySkuAvailabilities"] = [
+            {
+                "Availabilities": [
+                    {
+                        "Actions": ["Purchase"],
+                        "OrderManagementData": {"Price": {"ListPrice": price}},
+                    }
+                ],
+                "HistoricalBestAvailabilities": [{"OrderManagementData": {"Price": {}}}],
+            }
+        ]
+        return [product]
+
+    assert xbox_catalog.without_prices(xbox(59.99)) == xbox_catalog.without_prices(xbox(19.99))
+    [kept] = xbox_catalog.without_prices(xbox(59.99))
+    assert kept["DisplaySkuAvailabilities"] == [
+        {"Availabilities": [{"Actions": ["Purchase"], "OrderManagementData": {}}]}
+    ]
+
+    def psn(price: int) -> dict:
+        return {
+            "id": "1",
+            "defaultProduct": {
+                "firstPrice": {"price": price},
+                "offers": {"skuRelevancy": []},
+                "skus": [{"id": "S", "price": price, "displayPrice": f"${price}"}],
+            },
+        }
+
+    assert psn_store.without_prices(psn(1999)) == {
+        "id": "1",
+        "defaultProduct": {"skus": [{"id": "S"}]},
+    }
