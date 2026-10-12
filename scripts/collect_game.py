@@ -29,6 +29,7 @@ from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.store_collect import StoreCollector
+from bot.services.stores import console_label
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)-7s %(message)s")
 
@@ -71,7 +72,7 @@ async def main() -> int:
     for version in await repo.versions_of_title(args.platform, args.title_id):
         print(
             f"version {version['version_id']}: {version['store']} {version['product_id']}"
-            f" [{version['console']}] {version['name']} · {version['developer']} /"
+            f" [{console_label(version['console'])}] {version['name']} · {version['developer']} /"
             f" {version['publisher']} · {version['release_date']}"
             f" · also on {json.loads(version['also_on'] or '[]')}"
         )

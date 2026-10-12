@@ -45,3 +45,22 @@ def test_a_relation_sentence_bolds_the_relation_and_escapes_the_names() -> None:
     assert html == "«B &amp; C» is a <b>remake</b> of «A&lt;1&gt;»"
     plain = _relation_sentence("same", "A<1>", "B", html=False)
     assert plain == "«A<1>» and «B» are one game"
+
+
+def test_the_microsoft_stores_pc_reads_xbox_pc() -> None:
+    from bot.services.stores import console_label
+    from scripts.catalog_viewer import _console_sql
+
+    assert console_label("pc") == "xbox pc"
+    assert console_label("steam") == "steam" and console_label("series") == "series"
+    assert "'xbox pc'" in _console_sql()
+
+
+def test_a_store_link_says_whether_it_is_sold() -> None:
+    from scripts.catalog_viewer import _store_link
+
+    row = {"store": "xbox", "product_id": "BV83SM3191S5", "stand_in": 0, "on_sale": 0}
+    link = _store_link(row)  # type: ignore[arg-type]
+    assert "xbox.com" in link and "↗" in link and "снято с продажи" in link
+    stand_in = {"store": "xbox", "product_id": "1", "stand_in": 1, "on_sale": None}
+    assert "no store page" in _store_link(stand_in) and "неизвестно" in _store_link(stand_in)  # type: ignore[arg-type]

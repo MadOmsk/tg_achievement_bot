@@ -577,6 +577,10 @@ What the stores and HLTB say about a game, collected but not shown yet
   `versions (store, product_id, console)` — PS4 and PS5, One and Series are two
   versions even when they share one achievement list; Xbox Play Anywhere's PC is
   `also_on`, never a version. Consoles are `platform_format`'s names (+ `steam`).
+  **The Microsoft Store's `pc` reads "xbox pc" wherever a version's console
+  is shown** (owner, 2026-10-12; `stores.console_label`, one helper for the
+  viewer and `collect_game.py`), never to be taken for Steam; the stored
+  value and the matcher's maps stay `pc`.
   A version points at its achievement list (`platform`, `title_id`) once that is
   proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).
@@ -769,7 +773,12 @@ What the stores and HLTB say about a game, collected but not shown yet
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,
-  collect, re-link). **The review list has two questions** (owner,
+  collect, re-link). **Every name opens our own page** (owner, 2026-10-12) —
+  a game, a version, a DLC (`/dlc/<id>`: its version and game, its store,
+  whether it is sold, its HLTB entry and times), an HLTB entry, an
+  achievement list; a store page is always a separate small "↗" beside it,
+  with «в продаже» / «снято с продажи» / «неизвестно», and never a search.
+  **The review list has two questions** (owner,
   2026-10-11): version ↔ game (one game, an edition, a demo, a tool — or
   another game) and game ↔ game (a remaster, a remake, a compilation, a VR
   version — or not related), the latter answered game against game, as a

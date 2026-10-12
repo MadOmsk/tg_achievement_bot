@@ -61,6 +61,19 @@ class StoreVersion:
     dlcs: list[StoreDlc] = field(default_factory=list)
 
 
+# How a console is said wherever a version is shown (owner, 2026-10-12): the
+# Microsoft Store's PC is "xbox pc", never to be taken for Steam. The stored
+# value (`versions.console = 'pc'`) and the matcher's maps keep "pc".
+CONSOLE_LABELS = {"pc": "xbox pc"}
+
+
+def console_label(console: str | None) -> str:
+    """A version's console as shown: `pc` (only ever the Microsoft Store's —
+    a Steam app's console is `steam`) reads "xbox pc"."""
+    text = str(console or "")
+    return CONSOLE_LABELS.get(text, text)
+
+
 _EDITION_KINDS = (
     ("preorder", ("pre-order", "preorder", "pre order")),
     ("goty", ("game of the year", "goty", "g.o.t.y")),

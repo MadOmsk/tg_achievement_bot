@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 from bot.db.repo import Database, Repo
+from bot.services.stores import CONSOLE_LABELS, console_label
 
 PAGE_SIZE = 100
 
@@ -95,6 +96,8 @@ def _page(title: str, body: str) -> web.Response:
 def _cell(value: object) -> str:
     if value is None:
         return ""
+    if isinstance(value, _Html):
+        return str(value)
     text = str(value)
     return escape(text if len(text) <= 300 else text[:300] + "…")
 
@@ -161,19 +164,45 @@ def _store_href(row: sqlite3.Row) -> str:
     return ""
 
 
-def _store_link(row: sqlite3.Row, label: str | None = None) -> str:
-    """The store, linked to the version's page, said to be off sale when it
-    is; no page known: said so, with no link."""
+def _store_link(row: sqlite3.Row, label: str | None = None, href: str | None = None) -> str:
+    """The store page, always its own small "↗" link beside a name that
+    opens our page (owner, 2026-10-12), with whether it is on sale; no page
+    known: said so, with no link. Never a search."""
     label = label if label is not None else str(row["store"])
-    href = _store_href(row)
-    if not href:
-        return f"{escape(label)} <small>(no store page)</small>"
-    off = (
-        " <small>(off sale)</small>"
-        if "on_sale" in row.keys() and row["on_sale"] is not None and not row["on_sale"]
-        else ""
-    )
-    return f'<a href="{escape(href)}" target=_blank>{escape(label)} ↗</a>{off}'
+    href = _store_href(row) if href is None else href
+    sale = f" <small>{_sale_word(row['on_sale'])}</small>" if "on_sale" in row.keys() else ""
+    if not href or href == "#":
+        return f"{escape(label)} <small>(no store page)</small>{sale}"
+    return f'<a href="{escape(href)}" target=_blank>{escape(label)} ↗</a>{sale}'
+
+
+def _sale_word(on_sale: object) -> str:
+    """Whether the store offers it now (`versions.on_sale`; owner, 2026-10-12)."""
+    if on_sale is None:
+        return "неизвестно"
+    return "в продаже" if on_sale else "снято с продажи"
+
+
+def _console_sql(column: str = "v.console") -> str:
+    """A console as shown (`stores.console_label`), for a query's own lists."""
+    cases = " ".join(f"WHEN '{k}' THEN '{v}'" for k, v in CONSOLE_LABELS.items())
+    return f"CASE {column} {cases} ELSE {column} END"
+
+
+def _hours(times: object) -> str:
+    """HLTB's times in one line: main, main + extra, completionist."""
+    try:
+        data = json.loads(str(times)) if times else {}
+    except ValueError:
+        return ""
+    parts = []
+    for key, word in (("main", "main"), ("extra", "+extra"), ("completionist", "100%")):
+        bucket = data.get(key) or (data.get("complete") if key == "completionist" else None)
+        if isinstance(bucket, dict):
+            hours = bucket.get("average") or bucket.get("median")
+            if hours:
+                parts.append(f"{word} {hours}h")
+    return " · ".join(parts)
 
 
 # A version's picture: its store's cover, else its achievement list's, else
@@ -324,7 +353,8 @@ async def title(request: web.Request) -> web.Response:
             "SELECT * FROM titles WHERE platform = ? AND title_id = ?", (platform, title_id)
         ).fetchone()
         versions = conn.execute(
-            "SELECT version_id, store, product_id, console, name, kind, developer, publisher,"
+            "SELECT version_id, name, store, product_id, stand_in, on_sale,"
+            f" {_console_sql('console')} AS console, kind, developer, publisher,"
             " release_date, also_on, store_group, origin FROM versions"
             " WHERE platform = ? AND title_id = ? ORDER BY console",
             (platform, title_id),
@@ -368,7 +398,7 @@ async def title(request: web.Request) -> web.Response:
         + controls
         + _record(row, {"hltb_id": _hltb_href})
         + "<h2>Versions (store products on one console)</h2>"
-        + _table(versions, {"version_id": _version_href, "name": _version_href})
+        + _table(_with_store(versions), {"version_id": _version_href, "name": _version_href})
         + "<h2>PSN trophy groups</h2>"
         + _table(groups)
         + "<h2>Fetch state</h2>"
@@ -382,16 +412,16 @@ async def versions(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT v.version_id, v.store, v.product_id, v.stand_in,"
-            " v.console, v.name, v.platform, v.title_id, v.kind, v.release_date, v.origin"
-            " FROM versions v"
+            "SELECT v.version_id, v.name, v.store, v.product_id, v.stand_in, v.on_sale,"
+            f" {_console_sql()} AS console, v.platform, v.title_id, v.kind, v.release_date,"
+            " v.origin FROM versions v"
             " WHERE ? = '' OR name LIKE ? OR product_id = ? OR store_group = ?"
             " ORDER BY updated_at DESC LIMIT ?",
             (q, f"%{q}%", q, q, PAGE_SIZE),
         ).fetchall()
     return _page(
         "Versions",
-        _search_form("/versions", q) + _table(rows, _VERSION_LINKS),
+        _search_form("/versions", q) + _table(_with_store(rows), _VERSION_LINKS),
     )
 
 
@@ -406,8 +436,10 @@ async def version(request: web.Request) -> web.Response:
             (version_id,),
         ).fetchall()
         dlcs = conn.execute(
-            "SELECT dlc_id, store_id, trophy_group_id, name, kind, release_date FROM dlcs"
-            " WHERE version_id = ? ORDER BY release_date, name",
+            "SELECT d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
+            " d.on_sale, v.store, " + _DLC_HLTB + " FROM dlcs d"
+            " JOIN versions v ON v.version_id = d.version_id"
+            " WHERE d.version_id = ? ORDER BY d.release_date, d.name",
             (version_id,),
         ).fetchall()
         hltb = conn.execute(
@@ -417,8 +449,8 @@ async def version(request: web.Request) -> web.Response:
         ).fetchall()
         siblings = (
             conn.execute(
-                "SELECT version_id, store, console, name, platform, title_id FROM versions"
-                " WHERE store_group = ? AND version_id <> ?",
+                f"SELECT version_id, store, {_console_sql('console')} AS console, name, platform,"
+                " title_id FROM versions WHERE store_group = ? AND version_id <> ?",
                 (row["store_group"], version_id),
             ).fetchall()
             if row is not None and row["store_group"]
@@ -510,7 +542,10 @@ async def version(request: web.Request) -> web.Response:
             if row is not None
             else ""
         )
-        + _record(row, {"title_id": _title_href})
+        + _record(
+            {**dict(row), "console": console_label(row["console"])} if row else row,  # type: ignore[arg-type]
+            {"title_id": _title_href},
+        )
         + "<h2>Game</h2>"
         + _table(games, {"game_id": _game_href, "name": _game_href})
         + "<h2>The operator's labels</h2>"
@@ -528,7 +563,7 @@ async def version(request: web.Request) -> web.Response:
             siblings, {"version_id": _version_href, "name": _version_href, "title_id": _title_href}
         )
         + "<h2>DLC</h2>"
-        + _table(dlcs)
+        + _dlc_table(dlcs)
         + "<h2>HLTB</h2>"
         + _table(hltb, {"hltb_id": _hltb_href, "name": _hltb_href})
         + unlinks
@@ -542,17 +577,120 @@ async def dlcs(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT d.dlc_id, d.version_id, v.name AS game, v.console, d.name, d.kind,"
-            " d.release_date, d.store_id, d.trophy_group_id FROM dlcs d"
+            "SELECT d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
+            " d.on_sale, v.store, d.version_id, v.name AS version,"
+            f" {_console_sql()} AS console, " + _DLC_HLTB + " FROM dlcs d"
             " JOIN versions v ON v.version_id = d.version_id"
             " WHERE ? = '' OR d.name LIKE ? OR v.name LIKE ? ORDER BY d.updated_at DESC LIMIT ?",
             (q, f"%{q}%", f"%{q}%", PAGE_SIZE),
         ).fetchall()
-    return _page(
-        "DLC",
-        _search_form("/dlcs", q)
-        + _table(rows, {"version_id": _version_href, "game": _version_href}),
+    return _page("DLC", _search_form("/dlcs", q) + _dlc_table(rows))
+
+
+# A DLC's HLTB entry (`dlc_hltb`): its id, name and times, the first if several.
+_DLC_HLTB = (
+    "(SELECT h.hltb_id FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id"
+    " WHERE dh.dlc_id = d.dlc_id ORDER BY h.hltb_id LIMIT 1) AS hltb_id,"
+    " (SELECT h.times FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id"
+    " WHERE dh.dlc_id = d.dlc_id ORDER BY h.hltb_id LIMIT 1) AS hltb_times"
+)
+
+
+def _dlc_table(rows: list[sqlite3.Row]) -> str:
+    """DLC rows: the name opens our page, the store is its own "↗" with
+    whether it is sold, HLTB's entry and times where one is linked."""
+    shown = []
+    for r in rows:
+        item: dict[str, object] = {
+            "dlc_id": r["dlc_id"],
+            "name": r["name"],
+            "kind": r["kind"],
+            "release_date": r["release_date"],
+        }
+        if "version" in r.keys():
+            item["version"] = r["version"]
+            item["console"] = r["console"]
+        item["store page"] = _Html(_store_link(r, str(r["store"]), _dlc_href(r)))
+        item["hltb"] = _Html(
+            f'<a href="/hltb/{r["hltb_id"]}">{r["hltb_id"]}</a>'
+            f" <small>{escape(_hours(r['hltb_times']))}</small>"
+            if r["hltb_id"]
+            else ""
+        )
+        if "version_id" in r.keys():
+            item["version_id"] = r["version_id"]
+        shown.append(item)
+    return _table(
+        shown,  # type: ignore[arg-type]
+        {
+            "dlc_id": lambda r: f"/dlc/{r['dlc_id']}",
+            "name": lambda r: f"/dlc/{r['dlc_id']}",
+            "version": lambda r: f"/version/{r['version_id']}",
+            "version_id": lambda r: f"/version/{r['version_id']}",
+        },
     )
+
+
+async def dlc(request: web.Request) -> web.Response:
+    """A DLC's own page (owner, 2026-10-12): its version and game, its store
+    page, whether it is sold, its HLTB entry and times."""
+    dlc_id = int(request.match_info["dlc_id"])
+    with _db(request) as conn:
+        row = conn.execute(
+            "SELECT d.*, v.store, v.name AS version, " + _console_sql() + " AS console,"
+            " gv.game_id, g.name AS game FROM dlcs d"
+            " JOIN versions v ON v.version_id = d.version_id"
+            " LEFT JOIN game_versions gv ON gv.version_id = d.version_id"
+            " LEFT JOIN games g ON g.game_id = gv.game_id WHERE d.dlc_id = ?",
+            (dlc_id,),
+        ).fetchone()
+        hltb = conn.execute(
+            "SELECT h.hltb_id, h.name, h.game_type, h.parent_hltb_id, h.times, dh.source"
+            " FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id WHERE dh.dlc_id = ?",
+            (dlc_id,),
+        ).fetchall()
+        twins = (
+            conn.execute(
+                "SELECT d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
+                " d.on_sale, v.store, d.version_id, v.name AS version,"
+                f" {_console_sql()} AS console, " + _DLC_HLTB + " FROM dlcs d"
+                " JOIN versions v ON v.version_id = d.version_id"
+                " WHERE d.store_id = ? AND v.store = ? AND d.dlc_id <> ?",
+                (row["store_id"], row["store"], dlc_id),
+            ).fetchall()
+            if row is not None and row["store_id"]
+            else []
+        )
+    if row is None:
+        return _page(f"DLC {dlc_id}", "<p>(no such DLC)</p>")
+    head = (
+        f"<p>{_img(row['image_url'], 80)}</p>"
+        f'<p>of <a href="/version/{row["version_id"]}">{escape(row["version"] or "")}</a>'
+        f" [{escape(row['console'])}]"
+        + (
+            f' · in <a href="/game/{row["game_id"]}">{escape(row["game"] or "")}</a>'
+            if row["game_id"]
+            else ""
+        )
+        + f" · {_store_link(row, 'on the store', _dlc_href(row))}</p>"
+    )
+    body = (
+        head
+        + _record(row)
+        + "<h2>HLTB</h2>"
+        + (
+            "".join(
+                f'<p><a href="/hltb/{h["hltb_id"]}">{escape(h["name"])}</a>'
+                f" <small>({escape(h['game_type'] or '?')}, {escape(h['source'])})</small>"
+                f" — {escape(_hours(h['times']) or 'no times')}</p>"
+                for h in hltb
+            )
+            or "<p>(no HLTB entry linked)</p>"
+        )
+        + "<h2>The same add-on on the store's other versions</h2>"
+        + _dlc_table(twins)
+    )
+    return _page(f"DLC: {row['name'] or dlc_id}", body)
 
 
 async def hltb_list(request: web.Request) -> web.Response:
@@ -574,9 +712,18 @@ async def hltb_entry(request: web.Request) -> web.Response:
             (hltb_id,),
         ).fetchall()
         linked = conn.execute(
-            "SELECT v.version_id, v.store, v.console, v.name, v.platform, v.title_id, vh.source"
+            "SELECT v.version_id, v.name, v.store, v.product_id, v.stand_in, v.on_sale,"
+            f" {_console_sql()} AS console, v.platform, v.title_id, vh.source"
             " FROM version_hltb vh JOIN versions v ON v.version_id = vh.version_id"
             " WHERE vh.hltb_id = ?",
+            (hltb_id,),
+        ).fetchall()
+        dlcs_ = conn.execute(
+            "SELECT d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
+            " d.on_sale, v.store, d.version_id, v.name AS version,"
+            f" {_console_sql()} AS console, " + _DLC_HLTB + " FROM dlc_hltb dh"
+            " JOIN dlcs d ON d.dlc_id = dh.dlc_id JOIN versions v ON v.version_id = d.version_id"
+            " WHERE dh.hltb_id = ?",
             (hltb_id,),
         ).fetchall()
         titles_ = conn.execute(
@@ -584,12 +731,19 @@ async def hltb_entry(request: web.Request) -> web.Response:
         ).fetchall()
     body = (
         _record(row, {"parent_hltb_id": lambda r: f"/hltb/{r['parent_hltb_id']}"})
+        + (f"<p>times: {escape(_hours(row['times']))}</p>" if row is not None else "")
         + "<h2>DLC and expansions</h2>"
-        + _table(children, {"hltb_id": _hltb_href, "name": _hltb_href})
+        + _table(
+            [{**dict(c), "times": _hours(c["times"])} for c in children],  # type: ignore[misc]
+            {"hltb_id": _hltb_href, "name": _hltb_href},
+        )
         + "<h2>Versions linked</h2>"
         + _table(
-            linked, {"version_id": _version_href, "name": _version_href, "title_id": _title_href}
+            _with_store(linked),
+            {"version_id": _version_href, "name": _version_href, "title_id": _title_href},
         )
+        + "<h2>Our DLC it is (its game's DLC, matched)</h2>"
+        + _dlc_table(dlcs_)
         + "<h2>Achievement lists matched to it (titles.hltb_id)</h2>"
         + _table(titles_, {"title_id": _title_href, "name": _title_href})
         + f'<p><a href="/payload?subject=hltb:{hltb_id}&source=hltb_page">raw page</a></p>'
@@ -699,6 +853,21 @@ async def version_delete(request: web.Request) -> web.Response:
     raise _back("/versions", f"version {version_id} deleted")
 
 
+def _with_store(rows: list[sqlite3.Row]) -> list[dict]:
+    """Version rows with their store page as a column of its own ("↗" and
+    whether it is sold) — the name beside it opens our page."""
+    shown = []
+    for row in rows:
+        item = {k: row[k] for k in row.keys() if k not in ("stand_in", "on_sale")}
+        item["store page"] = _Html(_store_link(row, str(row["store"])))
+        shown.append(item)
+    return shown
+
+
+class _Html(str):
+    """A cell already written as HTML (`_cell` leaves it as it is)."""
+
+
 def _game_href(row: sqlite3.Row) -> str:
     return f"/game/{row['game_id']}"
 
@@ -706,8 +875,6 @@ def _game_href(row: sqlite3.Row) -> str:
 _VERSION_LINKS = {
     "version_id": _version_href,
     "name": _version_href,
-    "store": _store_href,
-    "product_id": _store_href,
     "title_id": _title_href,
     "achievements": _list_href,
     "demo_of": lambda r: f"/version/{r['demo_of']}",
@@ -956,7 +1123,7 @@ async def games(request: web.Request) -> web.Response:
             "   WHERE gv.game_id = g.game_id) AS review,"
             "  (SELECT GROUP_CONCAT(r.kind || ' ' || r.related_id) FROM game_relations r"
             "   WHERE r.game_id = g.game_id) AS relates,"
-            "  (SELECT GROUP_CONCAT(DISTINCT v.console) FROM game_versions gv"
+            f"  (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM game_versions gv"
             "   JOIN versions v ON v.version_id = gv.version_id"
             "   WHERE gv.game_id = g.game_id) AS consoles"
             " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name LIKE ?)"
@@ -980,8 +1147,8 @@ async def game(request: web.Request) -> web.Response:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
             "SELECT gv.version_id, v.store, v.product_id, v.stand_in, v.on_sale,"
-            " v.console, v.name, v.release_date, v.developer, v.platform, v.title_id,"
-            " " + COVER + ", gv.role, gv.of_version_id, gv.p"
+            f" {_console_sql()} AS console, v.name, v.release_date, v.developer, v.platform,"
+            " v.title_id, " + COVER + ", gv.role, gv.of_version_id, gv.p"
             " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
             " WHERE gv.game_id = ? ORDER BY v.release_date, v.console",
             (game_id,),
@@ -1010,9 +1177,10 @@ async def game(request: web.Request) -> web.Response:
             (*mine, *mine),
         ).fetchall()
         dlcs = conn.execute(
-            "SELECT d.version_id, v.store, v.console, v.name AS version, v.product_id,"
-            " v.stand_in, d.dlc_id, d.name, d.kind, d.release_date, d.store_id,"
-            " d.trophy_group_id FROM dlcs d"
+            "SELECT d.version_id, v.store, " + _console_sql() + " AS console,"
+            " v.name AS version, v.product_id, v.stand_in, v.on_sale AS version_on_sale,"
+            " d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
+            " d.on_sale, " + _DLC_HLTB + " FROM dlcs d"
             " JOIN game_versions gv ON gv.version_id = d.version_id"
             " JOIN versions v ON v.version_id = d.version_id WHERE gv.game_id = ?"
             " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
@@ -1120,7 +1288,15 @@ async def game(request: web.Request) -> web.Response:
             },
         )
         + "<h2>Editions (packs the stores sell)</h2>"
-        + _table(editions, {"name": _edition_href, "store_id": _edition_href})
+        + _table(
+            [
+                {
+                    **{k: e[k] for k in e.keys() if k != "on_sale"},
+                    "store page": _Html(_store_link(e, str(e["store"]), _edition_href(e))),
+                }
+                for e in editions
+            ]  # type: ignore[arg-type]
+        )
         + "<h2>DLC, by version</h2>"
         + _dlcs_by_version(dlcs)
         + "<h2>HLTB</h2>"
@@ -1204,7 +1380,8 @@ def _pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: str) ->
     info = {
         r["version_id"]: r
         for r in conn.execute(
-            "SELECT v.version_id, v.name, v.console, v.release_date, v.store, v.product_id,"
+            "SELECT v.version_id, v.name, " + _console_sql() + " AS console, v.release_date,"
+            " v.store, v.product_id,"
             " v.stand_in, v.on_sale, v.developer, " + COVER + ", gv.game_id, g.name AS game,"
             " g.year"
             " FROM versions v LEFT JOIN game_versions gv ON gv.version_id = v.version_id"
@@ -1261,27 +1438,12 @@ def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
     parts = []
     for version_id, items in blocks.items():
         head = items[0]
+        version_row = {**dict(head), "on_sale": head["version_on_sale"]}
         parts.append(
             f'<h3><a href="/version/{version_id}">{escape(head["version"] or "")}</a>'
             f" · {escape(head['store'])} {escape(head['console'])}"
-            f" · {_store_link(head, 'store')} · {len(items)} DLC</h3>"
-            + _table(
-                [
-                    {
-                        k: r[k]
-                        for k in (
-                            "name",
-                            "kind",
-                            "release_date",
-                            "store_id",
-                            "trophy_group_id",
-                            "store",
-                        )
-                    }
-                    for r in items
-                ],
-                {"name": _dlc_href, "store_id": _dlc_href},
-            )
+            f" · {_store_link(version_row, 'store page')} · {len(items)} DLC</h3>"
+            + _dlc_table(items)  # type: ignore[arg-type]
         )
     return "".join(parts)
 
@@ -1347,7 +1509,7 @@ async def review(request: web.Request) -> web.Response:
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
     """A game in one cell: its covers, name and identity, consoles."""
     row = conn.execute(
-        "SELECT (SELECT GROUP_CONCAT(DISTINCT v.console) FROM game_versions gv"
+        f"SELECT (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM game_versions gv"
         "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?) AS consoles,"
         " (SELECT " + COVER.replace(" AS cover", "") + " FROM game_versions gv"
         "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?"
@@ -1486,7 +1648,11 @@ def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
         )
     versions = conn.execute(
         "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.on_sale, v.name,"
-        " v.console, v.release_date, v.platform, v.title_id, gv.role, " + COVER + ","
+        " "
+        + _console_sql()
+        + " AS console, v.release_date, v.platform, v.title_id, gv.role, "
+        + COVER
+        + ","
         " (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = v.platform"
         "  AND a.title_id = v.title_id) AS achievements"
         " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
@@ -1661,7 +1827,7 @@ def _version_line(v: sqlite3.Row) -> str:
 
     return (
         f'<a href="/version/{v["version_id"]}">{escape(v["name"] or "")}</a>'
-        f" [{escape(v['console'])}, {escape(v['release_date'] or '?')}]"
+        f" [{escape(console_label(v['console']))}, {escape(v['release_date'] or '?')}]"
         f" {_store_link(v, str(v['store']) + ' ' + str(v['product_id']))}"
     )
 
@@ -1935,6 +2101,7 @@ def build(
     app.router.add_get("/versions", versions)
     app.router.add_get("/version/{version_id:\\d+}", version)
     app.router.add_get("/dlcs", dlcs)
+    app.router.add_get("/dlc/{dlc_id:\\d+}", dlc)
     app.router.add_get("/hltb", hltb_list)
     app.router.add_get("/hltb/{hltb_id:\\d+}", hltb_entry)
     app.router.add_get("/fetch", fetch)
