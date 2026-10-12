@@ -33,16 +33,18 @@ def _status(api, server: str | None = "smtp.example.com") -> AdminStatus:
     )
 
 
-def test_xbox_is_counted_per_account_mine_average_busiest_limit() -> None:
+def test_xbox_is_counted_per_account_median_and_busiest() -> None:
+    """Owner, 2026-10-12: the median account and the busiest; a quiet
+    account counts as nought."""
     for _ in range(19):
         api_usage.record(api_usage.XBOX, 2)
-    api_usage.record(api_usage.XBOX, 3)
-    load = api_load(viewer=1, accounts=20)
-    five = load.xbox[0]
-    assert (five.mine, five.average, five.most, five.limit) == (0, 1.0, 19, 300)
-    # The hour and the day have no limit of Microsoft's.
-    assert [w.limit for w in load.xbox[1:]] == [None, None]
-    assert api_load(viewer=2, accounts=20).xbox[2].mine == 19
+    for _ in range(3):
+        api_usage.record(api_usage.XBOX, 3)
+    api_usage.record(api_usage.XBOX, 4)
+    five = api_load(accounts=5).xbox[0]
+    assert (five.median, five.most) == (1, 19)  # 0, 0, 1, 3, 19
+    assert api_load(accounts=3).xbox[0].median == 3  # 1, 3, 19
+    assert api_load(accounts=0).xbox[2].most == 19
 
 
 def test_the_lines_come_in_order_with_their_windows() -> None:
@@ -50,16 +52,16 @@ def test_the_lines_come_in_order_with_their_windows() -> None:
         api_usage.record(api_usage.STEAM)
     api_usage.record(api_usage.PSN)
     api_usage.record(api_usage.ANTHROPIC, tokens=1500)
-    rows = usage_rows(_status(api_load(viewer=None, accounts=0)), locale="ru")
+    rows = usage_rows(_status(api_load(accounts=0)), locale="ru")
     assert [label for label, _ in rows] == [
-        "API XBOX (мой/ср./макс./лимит)",
+        "API XBOX (медиана/макс. на аккаунт)",
         "API Steam",
         "API PSN",
         "API Anthropic",
         "Писем с кодами (smtp.example.com)",
     ]
     values = dict(rows)
-    assert values["API XBOX (мой/ср./макс./лимит)"] == ("5 мин 0/0/0/300 · час 0/0/0 · сутки 0/0/0")
+    assert values["API XBOX (медиана/макс. на аккаунт)"] == "5 мин 0/0 · час 0/0 · сутки 0/0"
     assert values["API Steam"] == "5 мин 3 · час 3 · сутки 3/100 000"
     assert values["API PSN"] == "5 мин 1 · час 1 · сутки 1"
     assert values["API Anthropic"] == "час 1 запр. · 1 500 ток. · сутки 1 запр. · 1 500 ток."
@@ -67,14 +69,14 @@ def test_the_lines_come_in_order_with_their_windows() -> None:
 
 
 def test_no_mail_server_names_none() -> None:
-    rows = usage_rows(_status(api_load(None, 0), server=None), locale="en")
+    rows = usage_rows(_status(api_load(0), server=None), locale="en")
     assert rows[-1][0] == "Sign-in emails"
 
 
-def test_an_average_keeps_one_decimal() -> None:
+def test_a_median_between_two_keeps_one_decimal() -> None:
     api_usage.record(api_usage.XBOX, 1)
-    rows = usage_rows(_status(api_load(viewer=1, accounts=4)), locale="ru")
-    assert dict(rows)["API XBOX (мой/ср./макс./лимит)"].startswith("5 мин 1/0,2/1/300")
+    rows = usage_rows(_status(api_load(accounts=2)), locale="ru")
+    assert dict(rows)["API XBOX (медиана/макс. на аккаунт)"].startswith("5 мин 0,5/1")
 
 
 def test_a_request_older_than_a_window_leaves_it(monkeypatch) -> None:

@@ -69,7 +69,7 @@ def _span(span: float, _) -> str:
 def usage_rows(status: AdminStatus, *, locale: str) -> list[tuple[str, str]]:
     """Each outside API's load and the sign-in emails, as (label, value) —
     the one wording both admin panels show (owner, 2026-10-12): Xbox per
-    account (mine / average / busiest / limit), Steam and PSN over 5 minutes,
+    account (the median account / the busiest), Steam and PSN over 5 minutes,
     an hour and a day, the model's tokens over an hour and a day."""
     _ = translator("adminview", locale)
 
@@ -83,11 +83,7 @@ def usage_rows(status: AdminStatus, *, locale: str) -> list[tuple[str, str]]:
         )
 
     api = status.api
-    xbox = " · ".join(
-        f"{_span(w.span, _)} {n(w.mine)}/{n(w.average)}/{n(w.most)}"
-        + (f"/{n(w.limit)}" if w.limit else "")
-        for w in api.xbox
-    )
+    xbox = " · ".join(f"{_span(w.span, _)} {n(w.median)}/{n(w.most)}" for w in api.xbox)
     anthropic = " · ".join(
         f"{_span(w.span, _)} "
         + _("adminview-api-tokens", requests=n(w.requests), tokens=n(w.tokens))
@@ -119,11 +115,9 @@ async def render_admin_home(
     credentials: AdminCredentials,
     *,
     locale: str,
-    viewer: int | None = None,
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """`viewer`: the super-admin looking, by person id (their own Xbox count)."""
     _ = translator("adminview", locale)
-    status = await admin_status(repo, credentials=credentials, viewer=viewer)
+    status = await admin_status(repo, credentials=credentials)
 
     async def key_line(name: str, not_configured: str) -> str:
         # Steam's key is admin-settable and can be genuinely "not configured"

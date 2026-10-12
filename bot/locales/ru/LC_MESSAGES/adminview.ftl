@@ -23,7 +23,7 @@ adminview-home =
     Ключ Steam: { $steam_key_line }
     { $mail_line }
 adminview-mail-usage = за час { $hour }/{ $hour_limit } · за сутки { $day }/{ $day_limit }
-adminview-api-xbox = API XBOX (мой/ср./макс./лимит)
+adminview-api-xbox = API XBOX (медиана/макс. на аккаунт)
 adminview-api-steam = API Steam
 adminview-api-psn = API PSN
 adminview-api-anthropic = API Anthropic

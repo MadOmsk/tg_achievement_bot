@@ -228,7 +228,7 @@ async def test_the_bot_and_the_mini_app_show_the_same_home(
     }
     # Every usage line the Mini App gets is a line of the bot's own home.
     assert [row["label"] for row in home["usage"]][:4] == [
-        "API XBOX (мой/ср./макс./лимит)",
+        "API XBOX (медиана/макс. на аккаунт)",
         "API Steam",
         "API PSN",
         "API Anthropic",

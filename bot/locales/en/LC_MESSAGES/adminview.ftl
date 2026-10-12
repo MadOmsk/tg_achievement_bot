@@ -23,7 +23,7 @@ adminview-home =
     Steam key: { $steam_key_line }
     { $mail_line }
 adminview-mail-usage = an hour { $hour }/{ $hour_limit } · a day { $day }/{ $day_limit }
-adminview-api-xbox = XBOX API (mine/avg/max/limit)
+adminview-api-xbox = XBOX API (median/max per account)
 adminview-api-steam = Steam API
 adminview-api-psn = PSN API
 adminview-api-anthropic = Anthropic API

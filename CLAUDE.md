@@ -1361,9 +1361,9 @@ keyboard.
     sign-in emails against their caps, every credential's state). **The API
     load** (owner, 2026-10-12; `services/api_usage.py`, noted as each request
     is made, in memory for 24 hours — a restart starts it over): XBOX, Steam,
-    PSN over 5 minutes, an hour and a day — Xbox per account, as «mine /
-    average / busiest / limit» (Microsoft's 300 per 5 minutes is each
-    person's), the average over the Xbox accounts polled; Steam's 100 000 a
+    PSN over 5 minutes, an hour and a day — Xbox per account, as «median /
+    busiest» over the Xbox accounts polled, a quiet one counting as nought
+    (Microsoft's budget is each person's, so a total says nothing); Steam's 100 000 a
     day beside its day; PSN with no limit claimed; Anthropic's requests and
     tokens over an hour and a day; the sign-in emails with their mail server.
     `views/admin_home.py::usage_rows` words them once: the bot's home prints

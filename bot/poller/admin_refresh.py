@@ -64,12 +64,10 @@ class AdminPanelRefresh:
     async def _refresh_one(self, row: AdminPanelRefreshRow) -> None:
         # One row per super-admin, so the panel being redrawn always belongs
         # to exactly one known person — rendered in their own language (#48).
-        viewer = await self._repo.person_id(row.admin_id)
         text, markup = await render_admin_home(
             self._repo,
             self._credentials,
-            locale=await self._repo.user_locale(viewer),
-            viewer=viewer,
+            locale=await self._repo.user_locale(await self._repo.person_id(row.admin_id)),
         )
         try:
             await self._bot.edit_message_text(

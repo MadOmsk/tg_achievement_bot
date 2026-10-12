@@ -7,6 +7,7 @@ and the Mini App's `GET /api/mini/admin` serializes the same object as JSON
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -21,26 +22,21 @@ from bot.services.admin_settings import (
     EMAIL_SENDS_TOTAL_KEY,
 )
 from bot.services.steam.client import RATE_WINDOWS as STEAM_WINDOWS
-from bot.services.xbox.client import RATE_WINDOWS as XBOX_WINDOWS
 from bot.util import utcnow
 
-# Microsoft's budget is each person's own: so many requests in 5 minutes.
-XBOX_LIMIT_5MIN = next(limit for limit, span in XBOX_WINDOWS if span == api_usage.FIVE_MINUTES)
 # Steam's key has one: so many requests a day.
 STEAM_LIMIT_DAY = next(limit for limit, span in STEAM_WINDOWS if span == api_usage.DAY)
 
 
 @dataclass(frozen=True, slots=True)
 class XboxWindow:
-    """Xbox requests in one window, per account (owner, 2026-10-12): the
-    viewer's own, the average and the busiest of the accounts polled, and
-    Microsoft's per-account limit where the window has one."""
+    """Xbox requests in one window, per account polled (owner, 2026-10-12):
+    the median account and the busiest — Microsoft's budget is each
+    person's, so a total would say nothing."""
 
     span: float
-    mine: int
-    average: float
+    median: float
     most: int
-    limit: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,20 +68,18 @@ class ApiUsage:
     anthropic: list[TokenWindow]
 
 
-def api_load(viewer: int | None, accounts: int) -> ApiUsage:
-    """`viewer` is the person looking (their own Xbox count); `accounts` the
-    Xbox accounts polled, which the average is over."""
+def api_load(accounts: int) -> ApiUsage:
+    """`accounts`: the Xbox accounts polled — the median is over all of them,
+    a quiet one counting as nought."""
     xbox: list[XboxWindow] = []
     for span in api_usage.WINDOWS:
-        per = api_usage.per_key(api_usage.XBOX, span)
-        total = sum(per.values())
+        counts = sorted(api_usage.per_key(api_usage.XBOX, span).values())
+        counts = [0] * max(0, accounts - len(counts)) + counts
         xbox.append(
             XboxWindow(
                 span=span,
-                mine=per.get(viewer, 0) if viewer is not None else 0,
-                average=total / accounts if accounts else 0.0,
-                most=max(per.values(), default=0),
-                limit=XBOX_LIMIT_5MIN if span == api_usage.FIVE_MINUTES else None,
+                median=statistics.median(counts) if counts else 0.0,
+                most=counts[-1] if counts else 0,
             )
         )
     return ApiUsage(
@@ -166,10 +160,7 @@ async def admin_status(
     repo: Repo,
     *,
     credentials: AdminCredentials,
-    viewer: int | None = None,
 ) -> AdminStatus:
-    """`viewer` is the super-admin looking, by person id: the Xbox line's
-    first number is theirs."""
     users = await repo.admin_users()
     chats = await repo.admin_chats()
     # Split by platform: a Steam-only person has no token row at all, and
@@ -187,7 +178,7 @@ async def admin_status(
         steam_linked=sum(1 for u in users if u.steam_id),
         psn_linked=sum(1 for u in users if u.psn_account_id),
         chats=sum(1 for c in chats if c.is_active),
-        api=api_load(viewer, xbox_active),
+        api=api_load(xbox_active),
         mail=await mail_usage(repo, credentials.smtp.host if credentials.smtp else None),
         credentials=await credentials.states(),
     )

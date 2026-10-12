@@ -45,12 +45,12 @@ log = logging.getLogger(__name__)
 
 
 async def build_admin_home(
-    repo: Repo, credentials: AdminCredentials, *, locale: str, viewer: int | None = None
+    repo: Repo, credentials: AdminCredentials, *, locale: str
 ) -> dict[str, Any]:
     """`services/admin_status.py`'s AdminStatus as JSON — what the bot's
     /admin home words as text (#176). `usage` is the bot's own lines,
     label and value: a new one shows in the Mini App with no change there."""
-    status = await admin_status(repo, credentials=credentials, viewer=viewer)
+    status = await admin_status(repo, credentials=credentials)
     return {
         "users": status.users,
         "excluded": status.excluded,
@@ -290,7 +290,6 @@ async def handle_admin_home(request: web.Request) -> web.Response:
         repo,
         request.app["mini_admin_credentials"],
         locale=await repo.user_locale(admin.person_id),
-        viewer=admin.person_id,
     )
     return web.json_response(payload)
 
