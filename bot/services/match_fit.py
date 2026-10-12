@@ -7,6 +7,11 @@ reference at 0, a softmax gives probabilities. Fitting is plain gradient
 descent on the log-loss, **pulled towards the current weights** (an L2 term
 around them, not around zero): with a few dozen labels the weights should
 move only where the operator's answers clearly disagree with them.
+
+**Labels weigh by who gave them** (owner, 2026-10-12): the operator's own
+count whole, the advisers' (`advice.ADVISER_SOURCES`: Claude and Gemini
+agreeing, with or without the model) count `ADVISER_WEIGHT` — two language
+models agreeing is evidence, not the operator's word.
 """
 
 from __future__ import annotations
@@ -15,7 +20,12 @@ import math
 import random
 from dataclasses import dataclass
 
+from bot.services.advice import ADVISER_SOURCES
 from bot.services.game_match import CLASSES, probabilities
+
+# What one adviser-made label weighs against one of the operator's (1.0).
+OPERATOR_WEIGHT = 1.0
+ADVISER_WEIGHT = 0.6
 
 # What an operator's label teaches about the pair: its class.
 LABEL_CLASS = {
@@ -35,10 +45,16 @@ LABEL_CLASS = {
 Weights = dict[str, dict[str, float]]
 
 
+def label_weight(decided_by: str | None) -> float:
+    """How much a label teaches: an adviser's less than the operator's."""
+    return ADVISER_WEIGHT if (decided_by or "") in ADVISER_SOURCES else OPERATOR_WEIGHT
+
+
 @dataclass(slots=True)
 class Example:
     features: dict[str, float]
     label: str  # a class: one of CLASSES or "other"
+    weight: float = OPERATOR_WEIGHT  # `label_weight` of who gave it
 
 
 @dataclass(slots=True)
@@ -78,7 +94,7 @@ def fit(
     w = {c: {k: start[c].get(k, 0.0) for k in signs} for c in CLASSES}
     if not examples:
         return w
-    n = len(examples)
+    n = sum(e.weight for e in examples) or 1.0
     for _ in range(epochs):
         grad = {c: dict.fromkeys(signs, 0.0) for c in CLASSES}
         for e in examples:
@@ -87,7 +103,7 @@ def fit(
                 error = probs[c] - (1.0 if e.label == c else 0.0)
                 if error:
                     for k, x in e.features.items():
-                        grad[c][k] += error * x / n
+                        grad[c][k] += e.weight * error * x / n
         # A step on the labels, then the pull back towards the start taken
         # exactly (a proximal step): stable however strong the pull.
         shrink = 1.0 + 2 * rate * strength

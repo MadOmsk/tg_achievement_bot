@@ -717,3 +717,43 @@ async def test_a_titlehub_product_counts_only_when_its_mark_names_the_game(
     await collector.remember_title(entry)
     [version] = await repo.versions_of_title("xbox_360", "1297287122")
     assert version["product_id"] == "BV83SM3191S5"
+
+
+async def test_the_kept_answers_are_read_again_with_no_request(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`scripts/reparse_store_payloads.py`: what an old parser wrote (a
+    phantom Series version, an answer with prices) is written again from the
+    kept answer, and nothing asks a store."""
+
+    async def no_request(*_a: object, **_kw: object) -> None:
+        raise AssertionError("a store was asked")
+
+    for name in ("products_for_title", "products", "search"):
+        monkeypatch.setattr(store_collect.xbox_catalog, name, no_request)
+    monkeypatch.setattr(store_collect.steam_store, "app_details", no_request)
+    monkeypatch.setattr(store_collect.hltb_page, "fetch_page", no_request)
+
+    await repo.upsert_title("1799887933", "The Witcher 3", "xbox_modern")
+    old = _xbox_product()
+    [one_v, series_v] = xbox_catalog.parse_product(old)
+    await repo.save_version(one_v, platform="xbox_modern", title_id="1799887933")
+    series = await repo.save_version(series_v, platform="xbox_modern", title_id="1799887933")
+    kept = _xbox_product(XboxConsoleGenOptimized=["ConsoleGen8"])
+    kept["DisplaySkuAvailabilities"] = [
+        {
+            "Availabilities": [
+                {"Actions": ["Purchase"], "OrderManagementData": {"Price": {"ListPrice": 9}}}
+            ]
+        }
+    ]
+    await repo.save_payload("xbox_title:1799887933", "xbox_catalog", [kept])
+
+    done = await StoreCollector(repo).reparse_stored()
+    assert done["xbox versions"] == 1
+    assert await repo.version_row(series) is None
+    [again] = await repo.payload("xbox_title:1799887933", "xbox_catalog")
+    assert (
+        "Price"
+        not in again["DisplaySkuAvailabilities"][0]["Availabilities"][0]["OrderManagementData"]
+    )

@@ -6,7 +6,9 @@ remaster of b" teaches the remaster's side — and fits the weights, pulled
 towards the current ones. Prints how well the current and the fitted weights
 answer held-out labels, and the weights that moved; writes the fitted weights
 as JSON. Changes nothing: the weights are put into `game_match.WEIGHTS` by
-hand, once they are judged better.
+hand, once they are judged better. The advisers' labels (Claude and Gemini
+agreeing, `scripts/advise_pairs.py`) count `match_fit.ADVISER_WEIGHT` each,
+the operator's whole; the counts per source are printed.
 
 Read-only, safe beside a running bot.
 
@@ -26,12 +28,21 @@ from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services.game_link import load_candidates
 from bot.services.game_match import WEIGHTS, features
-from bot.services.match_fit import LABEL_CLASS, Example, changes, cross_validate, fit, score
+from bot.services.match_fit import (
+    LABEL_CLASS,
+    Example,
+    changes,
+    cross_validate,
+    fit,
+    label_weight,
+    score,
+)
 
 logging.basicConfig(level="WARNING")
 
 
-async def examples_from(repo: Repo) -> list[Example]:
+async def examples_from(repo: Repo, sources: dict[str, int] | None = None) -> list[Example]:
+    """Every label as an example; `sources` counts them by who gave them."""
     labels = await repo.all_decisions()
     ids = sorted({lab["version_id"] for lab in labels} | {lab["other_id"] for lab in labels})
     candidates = await load_candidates(repo, ids)
@@ -47,14 +58,17 @@ async def examples_from(repo: Repo) -> list[Example]:
             f = json.loads(lab["features"])  # the versions are gone: what was seen then
         else:
             continue
-        found.append(Example(f, label))
+        found.append(Example(f, label, label_weight(lab["decided_by"])))
+        if sources is not None:
+            by = str(lab["decided_by"] or "?")
+            sources[by] = sources.get(by, 0) + 1
     return found
 
 
-async def load() -> list[Example]:
+async def load(sources: dict[str, int]) -> list[Example]:
     database = await Database(Path(get_settings().db_path)).connect()
     try:
-        return await examples_from(Repo(database))
+        return await examples_from(Repo(database), sources)
     finally:
         await database.close()
 
@@ -64,11 +78,16 @@ def main() -> None:
     parser.add_argument("--out", default="match_weights.fitted.json")
     parser.add_argument("--strength", type=float, default=0.05)
     args = parser.parse_args()
-    examples = asyncio.run(load())
+    sources: dict[str, int] = {}
+    examples = asyncio.run(load(sources))
     by_class: dict[str, int] = {}
     for e in examples:
         by_class[e.label] = by_class.get(e.label, 0) + 1
     print(f"labels: {len(examples)} {by_class}")
+    print(
+        "by source: "
+        + ", ".join(f"{by} {n} (×{label_weight(by):g})" for by, n in sorted(sources.items()))
+    )
     if len(examples) < 5:
         print("too few labels to fit anything yet")
         return

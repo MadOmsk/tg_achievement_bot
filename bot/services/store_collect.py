@@ -628,6 +628,131 @@ class StoreCollector:
             if len(seen) >= SIBLING_CONCEPTS:
                 break
 
+    # ------------------------------------------------------------ the stored answers again
+
+    async def reparse_stored(self) -> dict[str, int]:
+        """Every kept answer read again through today's parsers, and written as
+        a collection would write it — **no request** (owner, 2026-10-12;
+        `scripts/reparse_store_payloads.py`): versions, their consoles and
+        availability, Xbox add-ons (only their own game's), the 360 store
+        pages, HLTB entries and their links. The answers themselves are kept
+        again without prices. What only a request brings (a Steam DLC's or
+        package's own answer, the Russian appdetails) is left as it is."""
+        done: dict[str, int] = {}
+
+        def count(key: str) -> None:
+            done[key] = done.get(key, 0) + 1
+
+        repo = self._repo
+        for subject in await repo.payload_subjects("steam_store", "steam:"):
+            data = steam_store.without_prices(await repo.payload(subject, "steam_store"))
+            if not data:
+                continue
+            await repo.save_payload(subject, "steam_store", data)
+            appid = subject.split(":", 1)[1]
+            ours = await repo.title_record("steam", appid) is not None
+            if not ours and str(data.get("type") or "game") not in ("game", "demo"):
+                await repo.delete_store_versions("steam", appid)
+                continue
+            await repo.save_version(
+                steam_store.parse_app(data),
+                platform="steam" if ours else None,
+                title_id=appid if ours else None,
+                origin="played" if ours else "store",
+            )
+            count("steam versions")
+        addons_done: set[str] = set()
+        for subject in await repo.payload_subjects("xbox_catalog", "xbox_title:"):
+            found = xbox_catalog.without_prices(await repo.payload(subject, "xbox_catalog") or [])
+            await repo.save_payload(subject, "xbox_catalog", found)
+            await self._remember_x360(found)
+            title_id = subject.split(":", 1)[1]
+            owners = {str(p.get("ProductId")) for p in found if p.get("ProductId")}
+            for product in found:
+                if str(product.get("ProductType") or "") not in (
+                    "Game",
+                    "Application",
+                ) or xbox_catalog.bundle_items(product):
+                    continue
+                versions = xbox_catalog.parse_product(product)
+                ids = await self._save_xbox_versions(versions, "xbox_modern", title_id, "played")
+                count("xbox versions")
+                if versions:
+                    addons_done.add(versions[0].product_id)
+                    await self._reparse_xbox_addons(versions[0].product_id, ids, owners)
+        for subject in await repo.payload_subjects("xbox_catalog", "xbox_addons:"):
+            # Add-ons of products found by name (no title payload of their own).
+            product_id = subject.split(":", 1)[1]
+            if product_id in addons_done:
+                continue
+            cursor_ids = [
+                int(v["version_id"])
+                for v in await repo.versions_of_product("xbox", product_id)
+                if v["console"] != "360"
+            ]
+            if cursor_ids:
+                await self._reparse_xbox_addons(product_id, cursor_ids, None)
+        for subject in await repo.payload_subjects("psn_store", "psn:"):
+            concept = psn_store.without_prices(await repo.payload(subject, "psn_store"))
+            if not concept:
+                continue
+            await repo.save_payload(subject, "psn_store", concept)
+            for version in psn_store.parse_concept(concept):
+                # Which list a PSN version has was proved when it was collected
+                # (asking Sony): kept as it is (`save_version` never blanks it).
+                await repo.save_version(version, platform=None, title_id=None, origin="store")
+                count("psn versions")
+        hltb_ids: list[int] = []
+        for subject in await repo.payload_subjects("hltb_page", "hltb:"):
+            data = await repo.payload(subject, "hltb_page")
+            entry = hltb_page.parse_page(data) if data else None
+            if entry is None:
+                continue
+            await repo.save_hltb_game(entry)
+            hltb_ids.append(entry.hltb_id)
+            count("hltb pages")
+        for title_id in await repo.x360_title_ids():
+            await link_x360_product(repo, title_id)
+        for hltb_id in await repo.linked_hltb_ids():
+            await link_hltb_entry(repo, hltb_id)
+            count("hltb links checked")
+        return done
+
+    async def _reparse_xbox_addons(
+        self, product_id: str, version_ids: list[int], owners: set[str] | None
+    ) -> None:
+        """A product's kept add-ons answer, as `_xbox_addons` writes it."""
+        subject = f"xbox_addons:{product_id}"
+        kept = await self._repo.payload(subject, "xbox_catalog")
+        if not isinstance(kept, dict):
+            return
+        editions = xbox_catalog.without_prices(kept.get("editions") or [])
+        found = xbox_catalog.without_prices(kept.get("addons") or [])
+        await self._repo.save_payload(
+            subject, "xbox_catalog", {"editions": editions, "addons": found}
+        )
+        await self._remember_x360(editions + found)
+        mine = (owners or set()) | {product_id}
+        foreign = [
+            str(p.get("ProductId"))
+            for p in found
+            if p.get("ProductId") and not xbox_catalog.belongs_to(p, mine)
+        ]
+        for version_id in version_ids:
+            await self._repo.delete_dlcs(version_id, foreign)
+        for product in found:
+            addon = xbox_catalog.parse_addon(product)
+            if addon is None or not xbox_catalog.belongs_to(product, mine):
+                continue
+            for version_id in version_ids:
+                await self._repo.save_dlc(version_id, addon)
+        for edition in editions:
+            if xbox_catalog.bundle_items(edition):
+                name = xbox_catalog.title_of(edition)
+                await self._repo.save_edition(
+                    "xbox", str(edition.get("ProductId")), name, None, xbox_catalog.sold(edition)
+                )
+
     # ------------------------------------------------------------ Xbox 360 (owner, 2026-10-12)
 
     async def _remember_x360(self, products: list[dict]) -> None:

@@ -125,6 +125,15 @@ class _StoresRepo:
         await self._conn.commit()
         return row is not None
 
+    async def payload_subjects(self, source: str, prefix: str) -> list[str]:
+        """The subjects of one source's kept answers that start so."""
+        cursor = await self._conn.execute(
+            "SELECT subject FROM source_payloads WHERE source = ? AND subject LIKE ?"
+            " ORDER BY subject",
+            (source, prefix.replace("%", "") + "%"),
+        )
+        return [str(row[0]) for row in await cursor.fetchall()]
+
     async def payload(self, subject: str, source: str) -> Any | None:
         cursor = await self._conn.execute(
             "SELECT payload FROM source_payloads WHERE subject = ? AND source = ?",
@@ -664,6 +673,23 @@ class _StoresRepo:
         )
         row = await cursor.fetchone()
         return int(row["version_id"]) if row else None
+
+    async def versions_of_product(self, store: str, product_id: str) -> list[dict[str, Any]]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM versions WHERE store = ? AND product_id = ? ORDER BY version_id",
+            (store, product_id),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def x360_title_ids(self) -> list[str]:
+        """The 360 title ids a backward-compatible product is kept for."""
+        return [s.split(":", 1)[1] for s in await self.payload_subjects("xbox_catalog", "x360:")]
+
+    async def linked_hltb_ids(self) -> list[int]:
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT hltb_id FROM version_hltb ORDER BY hltb_id"
+        )
+        return [int(row[0]) for row in await cursor.fetchall()]
 
     async def version_row(self, version_id: int) -> dict | None:
         cursor = await self._conn.execute(

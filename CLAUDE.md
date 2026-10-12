@@ -233,6 +233,7 @@ name, or when the tree goes stale.
 │   ├── render_screen.py          draws any screen, prints it or sends it to the owner's DM (#63)
 │   ├── check_integrity.py        stored achievements vs what each platform reports, read-only (#120)
 │   ├── collect_game.py           collect one game from the stores now (#147), beside a running bot
+│   ├── reparse_store_payloads.py the store side again from the kept answers, no request (#147)
 │   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
 │   ├── fit_match_weights.py      the games matcher's weights fitted to the operator's labels (#147)
 │   ├── xbox-deploy.sh            what CI runs on the server (/usr/local/bin/xbox-deploy)
@@ -773,6 +774,14 @@ What the stores and HLTB say about a game, collected but not shown yet
     judged better. **Disputed
     pairs are the operator's** (owner, 2026-10-09; Haiku may advise one day, not
     decide).
+- **A fixed parser is applied to what is kept, not by asking again**:
+  `scripts/reparse_store_payloads.py` (`StoreCollector.reparse_stored`, no
+  request) reads every kept answer through today's parsers, writes it as a
+  collection would (and keeps the answer again without prices), checks the
+  HLTB links, then rebuilds every game. Dry run on a copy by default, printing
+  what would change; `--apply` backs the database up into `backups/` first,
+  with the bot stopped. What only a request brings (a Steam DLC's or
+  package's own answer, the Russian appdetails) stays as it was.
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,
