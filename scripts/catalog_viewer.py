@@ -71,7 +71,7 @@ def _page(title: str, body: str) -> web.Response:
         ' · <a href="/rules">rules</a> · <a href="/titles">titles</a>'
         ' · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
-        ' · <a href="/payloads">payloads</a>'
+        ' · <a href="/payloads">payloads</a> · <a href="/proposals">proposals</a>'
     )
     html = (
         "<!doctype html><meta charset=utf-8>"
@@ -1312,6 +1312,154 @@ def _game_pair_rows(conn: sqlite3.Connection, pairs: list[sqlite3.Row], back: st
     )
 
 
+_PROPOSAL_WORDS = {
+    "same": "one game",
+    "series": "another of the series",
+    "confirm": "the model is right",
+    "not_related": "not related",
+    "other_relation": "related, another way",
+    "flip": "the other way round",
+    "unsure": "unsure",
+}
+
+
+def _proposal_decision(answer: str, model: str) -> str | None:
+    """An adviser's answer as the decision the game picker posts."""
+    kind, _, rest = answer.partition(":")
+    if kind == "same":
+        return "same"
+    if kind == "series":
+        return "series"
+    if kind == "not_related":
+        return "other"
+    if kind == "confirm":
+        return model
+    if kind == "flip":
+        return f"{model}:flip"
+    if kind == "other_relation" and rest:
+        relation, _, direction = rest.partition(" ")
+        return f"{relation}:flip" if direction.startswith("second") else relation
+    return None
+
+
+def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
+    """A game in a card: its covers, identity, and every version with its
+    store page (or that it has none)."""
+    row = conn.execute("SELECT game_id FROM games WHERE game_id = ?", (game_id,)).fetchone()
+    if row is None:
+        return f"<p>game {game_id} is gone (rebuilt since)</p>"
+    versions = conn.execute(
+        "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.on_sale, v.name,"
+        " v.console, v.release_date, v.platform, v.title_id, gv.role, " + COVER + ","
+        " (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = v.platform"
+        "  AND a.title_id = v.title_id) AS achievements"
+        " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
+        " WHERE gv.game_id = ? ORDER BY v.release_date, v.console",
+        (game_id,),
+    ).fetchall()
+    covers = list(dict.fromkeys(v["cover"] for v in versions if v["cover"]))[:3]
+    lines = "".join(
+        f"<li><small>{escape(v['console'])} · {escape((v['release_date'] or '?')[:4])}"
+        + (f" · {escape(v['role'])}" if v["role"] != "version" else "")
+        + f" · {_store_link(v)}"
+        + (f" · {v['achievements']} ach." if v["achievements"] else "")
+        + f' · <a href="/version/{v["version_id"]}">«{escape(v["name"] or "")}»</a></small></li>'
+        for v in versions
+    )
+    return (
+        "<div>" + "".join(_img(cv, 70) for cv in covers) + "</div>"
+        f'<p><a href="/game/{game_id}"><b>{escape(_identity(conn, game_id))}</b></a></p>'
+        f"<ul style='margin:0;padding-left:18px'>{lines}</ul>"
+    )
+
+
+async def proposals(request: web.Request) -> web.Response:
+    """An adviser's proposals for the game pairs (owner, 2026-10-12): each
+    pair whole, covers and store pages, and one tap to take the proposal as
+    the operator's answer — or the usual answers when it is wrong."""
+    items = [dict(i) for i in request.app["proposals"]]
+    if not items:
+        return _page("Proposals", "<p>(no proposals file: start the viewer with --proposals)</p>")
+    show = request.query.get("answer", "")
+    order = {"high": 0, "medium": 1, "low": 2}
+    with _db(request) as conn:
+
+        def answered(a: int, b: int) -> bool:
+            return (
+                conn.execute(
+                    "SELECT 1 FROM match_decisions d"
+                    " JOIN game_versions x ON x.version_id = d.version_id"
+                    " JOIN game_versions y ON y.version_id = d.other_id"
+                    " WHERE (x.game_id = ? AND y.game_id = ?) OR (x.game_id = ? AND y.game_id = ?)"
+                    " LIMIT 1",
+                    (a, b, b, a),
+                ).fetchone()
+                is not None
+            )
+
+        for n, item in enumerate(items, 1):
+            item["n"] = n
+        open_items = [i for i in items if not answered(i["game_a"], i["game_b"])]
+        counts: dict[str, int] = {}
+        for i in open_items:
+            key = i["answer"].split(":")[0]
+            counts[key] = counts.get(key, 0) + 1
+        chosen = [i for i in open_items if not show or i["answer"].split(":")[0] == show]
+        chosen.sort(key=lambda i: (order.get(i["confidence"], 3), -i["p"]))
+        page = chosen[:40]
+        cards = []
+        for i in page:
+            back = f"/proposals?answer={quote(show)}#p{i['n']}"
+            decision = _proposal_decision(i["answer"], i["model"])
+            accept = (
+                '<form method=post action="/decide-games" style="display:inline;margin:0">'
+                f'<input type=hidden name=game_id value="{i["game_a"]}">'
+                f'<input type=hidden name=other_game value="{i["game_b"]}">'
+                f'<input type=hidden name=back value="{escape(back)}">'
+                f'<input type=hidden name=decision value="{escape(decision)}">'
+                "<button style='font-weight:bold'>✓ take the proposal</button></form>"
+                if decision
+                else ""
+            )
+            words = _PROPOSAL_WORDS.get(i["answer"].split(":")[0], i["answer"])
+            if ":" in i["answer"]:
+                words += " — " + i["answer"].split(":", 1)[1]
+            cards.append(
+                f"<div id=p{i['n']} style='border:1px solid #ccc;border-radius:8px;"
+                "padding:8px;margin:10px 0'>"
+                f"<p><b>#{i['n']}</b> · the model: <b>{escape(i['model'])}</b>"
+                f" {i['p']:.0%} (first → second)</p>"
+                "<div style='display:flex;flex-wrap:wrap;gap:12px'>"
+                f"<div style='flex:1 1 300px'><small>first</small>"
+                f"{_game_detail(conn, i['game_a'])}</div>"
+                f"<div style='flex:1 1 300px'><small>second</small>"
+                f"{_game_detail(conn, i['game_b'])}</div></div>"
+                f"<p>the adviser: <b>{escape(words)}</b> · {escape(i['confidence'])}"
+                f"<br><small>{escape(i['why'])}</small></p>"
+                f"<p>{accept}</p>"
+                f"{_game_picker(i['game_a'], i['game_b'], back, i['model'])}"
+                "</div>"
+            )
+    filters = " · ".join(
+        (
+            f"<b>{escape(w)} ({counts.get(k, 0)})</b>"
+            if k == show
+            else f'<a href="/proposals?answer={k}">{escape(w)} ({counts.get(k, 0)})</a>'
+        )
+        for k, w in _PROPOSAL_WORDS.items()
+        if counts.get(k)
+    )
+    head = (
+        f"<p>{len(open_items)} open of {len(items)} · "
+        + ('<a href="/proposals">all</a> · ' if show else "<b>all</b> · ")
+        + filters
+        + "</p><p><small>The first game is the one the model speaks of"
+        " (“the first is a remaster of the second”). Answered pairs leave the list."
+        " Showing 40 at a time, the adviser's surest first.</small></p>"
+    )
+    return _page("Proposals: game ↔ game", _flash(request) + head + "".join(cards))
+
+
 async def decisions(request: web.Request) -> web.Response:
     """Every label the operator gave, newest first."""
     with _db(request) as conn:
@@ -1544,10 +1692,16 @@ def _pictures(row: sqlite3.Row | None) -> str:
     )
 
 
-def build(db_path: Path) -> web.Application:
+def build(db_path: Path, proposals_path: Path | None = None) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
     app["skipped"] = set()  # pairs answered "skip": asked again, after the rest
+    # An adviser's proposals, read once at start (`--proposals`).
+    app["proposals"] = (
+        json.loads(proposals_path.read_text(encoding="utf-8"))
+        if proposals_path and proposals_path.exists()
+        else []
+    )
     covers = db_path.resolve().parent / "covers"
     if covers.is_dir():
         # The covers the bot downloaded (#55), beside its database.
@@ -1563,6 +1717,7 @@ def build(db_path: Path) -> web.Application:
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
+    app.router.add_get("/proposals", proposals)
     app.router.add_post("/decide-games", decide_games)
     app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
     app.router.add_post("/decide", decide)
@@ -1595,6 +1750,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--db", help="database file (default: DB_PATH from the env file)")
     parser.add_argument("--port", type=int, default=8090)
+    parser.add_argument(
+        "--proposals", help="an adviser's proposals for the game pairs (JSON), shown at /proposals"
+    )
     args = parser.parse_args()
     if args.db:
         db_path = Path(args.db)
@@ -1603,7 +1761,8 @@ def main() -> None:
 
         db_path = Path(get_settings().db_path)
     print(f"{db_path} — http://127.0.0.1:{args.port}/ (no authentication)")
-    web.run_app(build(db_path), host="127.0.0.1", port=args.port, print=None)
+    proposals = Path(args.proposals) if args.proposals else None
+    web.run_app(build(db_path, proposals), host="127.0.0.1", port=args.port, print=None)
 
 
 if __name__ == "__main__":
