@@ -617,7 +617,12 @@ What the stores and HLTB say about a game, collected but not shown yet
     add-ons have no names without the store's GraphQL, so a PSN
     version's DLC are its trophy groups for now;
   - the HLTB page (`hltb_games`, with DLC entries and per-platform times),
-    linked to every version of a matched list (`version_hltb`). `hltb_cache`
+    linked to every version of a matched list (`version_hltb`). **Only an
+    entry's own page sets its type, parent and times** (`page_read_at`,
+    migration 101): a DLC's page lists its game among its relations — that
+    one is its parent (`game_parent`), never its child — and another page's
+    row of an entry (averages only) fills one whose own page was never read,
+    and overwrites nothing. `hltb_cache`
     stays for `/hltb`'s search until it is switched off. The consoles HLTB
     names are **not** versions (2026-10-11, 098: HLTB is matched by name, and a
     version nobody sells is no version); the game page shows them as "also

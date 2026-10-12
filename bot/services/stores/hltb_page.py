@@ -40,6 +40,9 @@ class HltbEntry:
     image_url: str | None = None
     # The entry's DLC and expansions as its page lists them (no page of their own read).
     children: list[HltbEntry] = field(default_factory=list)
+    # On a DLC's page, the game it belongs to (`relationships` lists it beside
+    # the DLC's siblings): its parent, never one of its children.
+    parent: HltbEntry | None = None
 
 
 async def fetch_page(hltb_id: int) -> dict | None:
@@ -98,27 +101,40 @@ def parse_page(data: dict) -> HltbEntry | None:
         summary_en=" ".join(str(game.get("profile_summary") or "").split()) or None,
         image_url=_image(game.get("game_image")),
     )
-    entry.children = [
-        HltbEntry(
-            hltb_id=int(child["game_id"]),
-            name=str(child.get("game_name") or ""),
-            game_type=_text(child.get("game_type")),
-            parent_hltb_id=entry.hltb_id,
-            times={
-                key: {"average": hours}
-                for key, raw in (
-                    ("main", child.get("comp_main")),
-                    ("extra", child.get("comp_plus")),
-                    ("completionist", child.get("comp_100")),
-                    ("all", child.get("comp_all")),
-                )
-                if (hours := _hours(raw))
-            },
-        )
+    related = [
+        _related(child, entry.hltb_id)
         for child in data.get("relationships") or []
         if child.get("game_id")
     ]
+    # A DLC's page lists its own game among its relations (2026-10-12: 17
+    # games stood as their DLC's "child", Cyberpunk 2077 under Phantom
+    # Liberty): the one its `game_parent` names is the parent.
+    for item in related:
+        if entry.parent_hltb_id and item.hltb_id == entry.parent_hltb_id:
+            item.parent_hltb_id = None
+            entry.parent = item
+    entry.children = [item for item in related if item is not entry.parent]
     return entry
+
+
+def _related(child: dict, page_id: int) -> HltbEntry:
+    """A relation as its page row gives it: names, type, average times."""
+    return HltbEntry(
+        hltb_id=int(child["game_id"]),
+        name=str(child.get("game_name") or ""),
+        game_type=_text(child.get("game_type")),
+        parent_hltb_id=page_id,
+        times={
+            key: {"average": hours}
+            for key, raw in (
+                ("main", child.get("comp_main")),
+                ("extra", child.get("comp_plus")),
+                ("completionist", child.get("comp_100")),
+                ("all", child.get("comp_all")),
+            )
+            if (hours := _hours(raw))
+        },
+    )
 
 
 def _hours(seconds: object) -> float | None:

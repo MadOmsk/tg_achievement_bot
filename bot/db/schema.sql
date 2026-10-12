@@ -1105,7 +1105,8 @@ CREATE TABLE IF NOT EXISTS hltb_games (
     summary_en     TEXT,
     summary_ru     TEXT,
     image_url      TEXT,
-    checked_at     TEXT NOT NULL
+    checked_at     TEXT NOT NULL,
+    page_read_at   TEXT            -- its own page last read (101); NULL: known from another's
 );
 
 CREATE TABLE IF NOT EXISTS version_hltb (

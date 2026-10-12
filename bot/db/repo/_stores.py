@@ -352,43 +352,79 @@ class _StoresRepo:
     # ------------------------------------------------------------ HLTB
 
     async def save_hltb_game(self, entry: HltbEntry) -> None:
-        """The entry and, without a page of their own, its DLC rows."""
-        for item in (entry, *entry.children):
+        """The entry from its own page, and the entries its page names (its
+        DLC, or on a DLC's page its game) as far as that page tells. An
+        entry's own page is the only one that sets its type, parent and
+        times (`page_read_at`, migration 101): another page's row of it — a
+        game's on its DLC's page, with averages only — fills an entry no page
+        of its own was read for, and never overwrites one (2026-10-12: four
+        games' times were the averages their DLC's page listed)."""
+        now = utcnow_iso()
+        await self._conn.execute(
+            "INSERT INTO hltb_games (hltb_id, name, game_type, parent_hltb_id, steam_appid,"
+            "  developer, publisher, release_year, platforms, times, platform_times, details,"
+            "  summary_en, image_url, checked_at, page_read_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(hltb_id) DO UPDATE SET name = excluded.name,"
+            "  game_type = excluded.game_type, parent_hltb_id = excluded.parent_hltb_id,"
+            "  steam_appid = COALESCE(excluded.steam_appid, hltb_games.steam_appid),"
+            "  developer = COALESCE(excluded.developer, hltb_games.developer),"
+            "  publisher = COALESCE(excluded.publisher, hltb_games.publisher),"
+            "  release_year = COALESCE(excluded.release_year, hltb_games.release_year),"
+            "  platforms = COALESCE(excluded.platforms, hltb_games.platforms),"
+            "  times = excluded.times,"
+            "  platform_times = COALESCE(excluded.platform_times, hltb_games.platform_times),"
+            "  details = COALESCE(excluded.details, hltb_games.details),"
+            "  summary_en = COALESCE(excluded.summary_en, hltb_games.summary_en),"
+            "  image_url = COALESCE(excluded.image_url, hltb_games.image_url),"
+            "  checked_at = excluded.checked_at, page_read_at = excluded.page_read_at",
+            (
+                entry.hltb_id,
+                entry.name,
+                entry.game_type,
+                entry.parent_hltb_id,
+                entry.steam_appid,
+                entry.developer,
+                entry.publisher,
+                entry.release_year,
+                json.dumps(entry.platforms) if entry.platforms else None,
+                json.dumps(entry.times),
+                json.dumps(entry.platform_times) if entry.platform_times else None,
+                json.dumps(entry.details, ensure_ascii=False) if entry.details else None,
+                entry.summary_en,
+                entry.image_url,
+                now,
+                now,
+            ),
+        )
+        unread = "hltb_games.page_read_at IS NULL"
+        for item in [*entry.children, *([entry.parent] if entry.parent else [])]:
             await self._conn.execute(
-                "INSERT INTO hltb_games (hltb_id, name, game_type, parent_hltb_id, steam_appid,"
-                "  developer, publisher, release_year, platforms, times, platform_times, details,"
-                "  summary_en, image_url, checked_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(hltb_id) DO UPDATE SET name = excluded.name,"
-                "  game_type = excluded.game_type,"
-                "  parent_hltb_id = COALESCE(excluded.parent_hltb_id, hltb_games.parent_hltb_id),"
-                "  steam_appid = COALESCE(excluded.steam_appid, hltb_games.steam_appid),"
-                "  developer = COALESCE(excluded.developer, hltb_games.developer),"
-                "  publisher = COALESCE(excluded.publisher, hltb_games.publisher),"
-                "  release_year = COALESCE(excluded.release_year, hltb_games.release_year),"
-                "  platforms = COALESCE(excluded.platforms, hltb_games.platforms),"
-                "  times = excluded.times,"
-                "  platform_times = COALESCE(excluded.platform_times, hltb_games.platform_times),"
-                "  details = COALESCE(excluded.details, hltb_games.details),"
-                "  summary_en = COALESCE(excluded.summary_en, hltb_games.summary_en),"
-                "  image_url = COALESCE(excluded.image_url, hltb_games.image_url),"
-                "  checked_at = excluded.checked_at",
+                "INSERT INTO hltb_games (hltb_id, name, game_type, parent_hltb_id, times,"
+                "  checked_at) VALUES (?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(hltb_id) DO UPDATE SET"
+                f"  name = CASE WHEN {unread} THEN excluded.name ELSE hltb_games.name END,"
+                f"  game_type = CASE WHEN {unread}"
+                "   THEN COALESCE(excluded.game_type, hltb_games.game_type)"
+                "   ELSE hltb_games.game_type END,"
+                # A child's parent is this page; the parent's own parent is
+                # not this page's to say, but its having been taken for this
+                # page's child (the old reading) is undone.
+                f"  parent_hltb_id = CASE WHEN NOT ({unread}) THEN hltb_games.parent_hltb_id"
+                "   WHEN excluded.parent_hltb_id IS NOT NULL THEN excluded.parent_hltb_id"
+                "   WHEN hltb_games.parent_hltb_id = ? THEN NULL"
+                "   ELSE hltb_games.parent_hltb_id END,"
+                f"  times = CASE WHEN {unread} THEN excluded.times ELSE hltb_games.times END,"
+                f"  checked_at = CASE WHEN {unread} THEN excluded.checked_at"
+                "   ELSE hltb_games.checked_at END",
                 (
                     item.hltb_id,
                     item.name,
                     item.game_type,
                     item.parent_hltb_id,
-                    item.steam_appid,
-                    item.developer,
-                    item.publisher,
-                    item.release_year,
-                    json.dumps(item.platforms) if item.platforms else None,
                     json.dumps(item.times),
-                    json.dumps(item.platform_times) if item.platform_times else None,
-                    json.dumps(item.details, ensure_ascii=False) if item.details else None,
-                    item.summary_en,
-                    item.image_url,
-                    utcnow_iso(),
+                    now,
+                    entry.hltb_id,
                 ),
             )
         # The Russian summary already paid for in the legacy store is kept.
