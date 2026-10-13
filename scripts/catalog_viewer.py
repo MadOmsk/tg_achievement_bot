@@ -84,7 +84,7 @@ def _page(title: str, body: str) -> web.Response:
         ' · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
         ' · <a href="/payloads">payloads</a> · <a href="/proposals">proposals</a>'
-        ' · <a href="/advised">advised</a>'
+        ' · <a href="/advised">advised</a> · <a href="/decisions">answers</a>'
         ' · <a href="/series">series</a>'
     )
     html = (
@@ -1835,15 +1835,18 @@ def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, s
         more = tuple(
             (key, _relation_sentence(key, this, that, html=False)) for key, _ in _GAME_DECISIONS
         )
-        buttons = _advised_buttons(
-            "/decide-games",
-            {"game_id": i["game_a"], "other_game": i["game_b"]},
-            i,
-            this,
-            that,
-            more,
-            back,
-        )
+        label = i.get("label")
+        if label:
+            # Already written (the two games may be one by now): the answer
+            # goes on the very pair of versions the advisers' label is on, so
+            # agreeing confirms it and anything else replaces it. The label's
+            # first version is FIRST's unless the written answer was flipped.
+            flipped = (i.get("claude") or {}).get("direction") == "second"
+            first, second = (label[1], label[0]) if flipped else (label[0], label[1])
+            action, hidden = "/decide", {"version_id": first, "other_id": second}
+        else:
+            action, hidden = "/decide-games", {"game_id": i["game_a"], "other_game": i["game_b"]}
+        buttons = _advised_buttons(action, hidden, i, this, that, more, back)
         return sides, this, that, buttons
     sides = (
         "<div style='flex:1 1 300px'><small>FIRST</small><br>"
@@ -2100,22 +2103,83 @@ async def proposals(request: web.Request) -> web.Response:
 
 
 async def decisions(request: web.Request) -> web.Response:
-    """Every label the operator gave, newest first."""
+    """The latest answers, newest first — the operator's and the advisers'
+    (owner, 2026-10-13: a mistaken tap is found and fixed here): each with
+    whose it is, a way to answer it again and to take it back."""
+    who = request.query.get("by", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT d.version_id, a.name AS this, d.relation, d.other_id, b.name AS that,"
-            " d.model, d.decided_at FROM match_decisions d"
+            "SELECT d.version_id, a.name AS this, "
+            + _console_sql("a.store", "a.console")
+            + " AS this_console,"
+            " ga.game_id AS this_game, d.relation, d.other_id, b.name AS that,"
+            " "
+            + _console_sql("b.store", "b.console")
+            + " AS that_console, gb.game_id AS that_game,"
+            " d.decided_by, d.decided_at FROM match_decisions d"
             " JOIN versions a ON a.version_id = d.version_id"
-            " JOIN versions b ON b.version_id = d.other_id ORDER BY d.decided_at DESC LIMIT ?",
-            (PAGE_SIZE * 3,),
+            " JOIN versions b ON b.version_id = d.other_id"
+            " LEFT JOIN game_versions ga ON ga.version_id = d.version_id"
+            " LEFT JOIN game_versions gb ON gb.version_id = d.other_id"
+            " WHERE (? = '' OR (? = 'operator' AND d.decided_by = 'viewer')"
+            "  OR (? = 'advisers' AND d.decided_by <> 'viewer'))"
+            " ORDER BY d.decided_at DESC LIMIT ?",
+            (who, who, who, PAGE_SIZE * 3),
         ).fetchall()
-    links = {
-        "version_id": lambda r: f"/version/{r['version_id']}",
-        "this": lambda r: f"/version/{r['version_id']}",
-        "other_id": lambda r: f"/version/{r['other_id']}",
-        "that": lambda r: f"/version/{r['other_id']}",
-    }
-    return _page("The operator's labels", _table(rows, links))
+        cards = []
+        for r in rows:
+            back = f"/decisions?by={quote(who)}"
+            this = f"{r['this']} ({r['this_console']})"
+            that = f"{r['that']} ({r['that_console']})"
+            whose = "you" if r["decided_by"] == "viewer" else r["decided_by"]
+            games = ""
+            if r["this_game"] and r["that_game"]:
+                games = (
+                    f" · games <a href='/game/{r['this_game']}'>{r['this_game']}</a>"
+                    f" / <a href='/game/{r['that_game']}'>{r['that_game']}</a>"
+                )
+            cards.append(
+                "<div style='border:1px solid #ccc;border-radius:8px;padding:8px;margin:8px 0'>"
+                f"<p><small>{escape(r['decided_at'][:16].replace('T', ' '))} · "
+                f"<b>{escape(whose)}</b>{games}</small><br>"
+                f"<a href='/version/{r['version_id']}'>v{r['version_id']}</a> → "
+                f"<a href='/version/{r['other_id']}'>v{r['other_id']}</a>: "
+                f"{_relation_sentence(r['relation'], this, that)}</p>"
+                f"{_undo_form(r['version_id'], r['other_id'], back)}"
+                "<details><summary><small>answer again…</small></summary>"
+                f"{_decision_picker(r['version_id'], r['other_id'], back)}</details></div>"
+            )
+    tabs = " · ".join(
+        (f"<b>{label}</b>" if key == who else f'<a href="/decisions?by={key}">{label}</a>')
+        for key, label in (("", "all"), ("operator", "yours"), ("advisers", "the advisers'"))
+    )
+    return _page(
+        "Answers",
+        _flash(request) + f"<p>{tabs}</p>" + ("".join(cards) or "<p>(none)</p>"),
+    )
+
+
+def _undo_form(version_id: int, other_id: int, back: str) -> str:
+    return (
+        '<form method=post action="/decision/undo" style="margin:0 0 4px">'
+        f'<input type=hidden name=version_id value="{version_id}">'
+        f'<input type=hidden name=other_id value="{other_id}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        "<button>✕ take this answer back</button></form>"
+    )
+
+
+async def decision_undo(request: web.Request) -> web.Response:
+    """An answer taken back: the pair is the model's again, and the two
+    versions are linked anew."""
+    from bot.services.game_link import GameLinker
+
+    form = await request.post()
+    a, b = int(str(form["version_id"])), int(str(form["other_id"]))
+    repo = _repo(request)
+    await repo.delete_decision(a, b)
+    await GameLinker(repo).link_versions([a, b])
+    raise _back(str(form.get("back") or "/decisions"), f"v{a} / v{b}: answer taken back")
 
 
 def _version_line(v: sqlite3.Row) -> str:
@@ -2588,6 +2652,7 @@ def build(
     app.router.add_get("/decisions", decisions)
     app.router.add_get("/proposals", proposals)
     app.router.add_get("/advised", advised)
+    app.router.add_post("/decision/undo", decision_undo)
     app.router.add_post("/decide-games", decide_games)
     app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
     app.router.add_post("/decide", decide)
