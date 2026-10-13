@@ -1758,11 +1758,11 @@ def _opinion(who: str, answer: dict | None, this: str, that: str, kind: str) -> 
         return f"<b>{who}</b>: —"
     relation = str(answer.get("relation") or "?")
     direction = answer.get("direction")
-    if kind == "games" and relation != "unsure":
-        decision = "other" if relation == "not_related" else relation
-        if direction == "second":
-            decision += ":flip"
-        said = escape(_relation_sentence(decision, this, that))
+    decision = _adviser_decision(answer)
+    if kind in ("games", "versions") and decision:
+        said = _relation_sentence(decision, this, that)
+        if relation == "extra":
+            said += " (<b>not a game</b>)"
     else:
         arrow = ""
         if direction == "first":
@@ -1779,6 +1779,49 @@ def _opinion(who: str, answer: dict | None, this: str, that: str, kind: str) -> 
     return f"<b>{who}</b> ({escape(', '.join(extra))}): {said}{why}"
 
 
+def _adviser_decision(answer: dict | None) -> str | None:
+    """An adviser's (or the model's) answer as the decision a button posts:
+    the relation, ":flip" when SECOND is the remaster / demo / … of FIRST,
+    "other" for not related or not a game; None for unsure."""
+    if not answer:
+        return None
+    relation = str(answer.get("relation") or "")
+    if relation in ("", "unsure"):
+        return None
+    if relation in ("not_related", "extra"):
+        return "other"
+    if answer.get("direction") == "second":
+        return f"{relation}:flip"
+    return relation
+
+
+def _advised_buttons(
+    action: str,
+    hidden: dict[str, object],
+    i: dict,
+    this: str,
+    that: str,
+    more: tuple[tuple[str, str], ...],
+    back: str,
+) -> str:
+    """A button for each opinion — the model's, Claude's, Gemini's — saying
+    whose it is ("✓ Claude and Gemini: …" where they agree), then another of
+    the series and ask later; the rest under "more…"."""
+    who: dict[str, list[str]] = {}
+    for name, key in (("Claude", "claude"), ("Gemini", "gemini"), ("the model", "model")):
+        decision = _adviser_decision(i.get(key))
+        if decision:
+            who.setdefault(decision, []).append(name)
+    quick = [
+        (decision, f"✓ <b>{' and '.join(names)}</b>: {_relation_sentence(decision, this, that)}")
+        for decision, names in who.items()
+    ]
+    if "series" not in who:
+        quick.append(("series", "another game of the series"))
+    quick.append(("skip", "ask later"))
+    return _answer_forms(action, hidden, quick, more, back)
+
+
 def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, str, str, str]:
     """A re-check card's two sides, the names its sentences use, and its
     answer buttons."""
@@ -1789,9 +1832,19 @@ def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, s
             f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_a'])}</div>"
             f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_b'])}</div>"
         )
-        model = (i.get("model") or {}).get("relation") or ""
-        model = "other" if model == "not_related" else model
-        return sides, this, that, _game_picker(i["game_a"], i["game_b"], back, model, (this, that))
+        more = tuple(
+            (key, _relation_sentence(key, this, that, html=False)) for key, _ in _GAME_DECISIONS
+        )
+        buttons = _advised_buttons(
+            "/decide-games",
+            {"game_id": i["game_a"], "other_game": i["game_b"]},
+            i,
+            this,
+            that,
+            more,
+            back,
+        )
+        return sides, this, that, buttons
     sides = (
         "<div style='flex:1 1 300px'><small>FIRST</small><br>"
         f"{escape(str(i['first']))}</div>"
@@ -1817,12 +1870,22 @@ def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, s
             + _game_detail(conn, int(i["game_id"]))
             + "</div>"
         )
+        this = str(v["name"]) if v else f"version {version}"
+        that = _game_name(conn, int(i["game_id"]))
         answers = (
-            _decision_picker(version, int(other), back)
+            _advised_buttons(
+                "/decide",
+                {"version_id": version, "other_id": int(other)},
+                i,
+                this,
+                that,
+                tuple(_DECISIONS_QUICK) + tuple(_DECISIONS_MORE),
+                back,
+            )
             if other is not None
             else "<p>(that game is gone)</p>"
         )
-        return sides, "FIRST", "SECOND", answers
+        return sides, this, that, answers
     answers = "<p><small>(rejecting or linking it is not here yet)</small></p>"
     if i.get("hltb_id"):
         answers = (
