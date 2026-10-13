@@ -1832,6 +1832,27 @@ def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, s
             f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_a'])}</div>"
             f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_b'])}</div>"
         )
+        label = i.get("label")
+        if label and i["game_a"] == i["game_b"]:
+            # Written "one game": the two games are one by now, so each side
+            # is the version the answer is on, as the question showed it.
+            flipped = (i.get("claude") or {}).get("direction") == "second"
+            first, second = (label[1], label[0]) if flipped else (label[0], label[1])
+            rows = {
+                r["version_id"]: r
+                for r in conn.execute(
+                    "SELECT * FROM versions WHERE version_id IN (?, ?)", (first, second)
+                )
+            }
+            this = str(rows[first]["name"]) if first in rows else this
+            that = str(rows[second]["name"]) if second in rows else that
+            sides = "".join(
+                f"<div style='flex:1 1 300px'><small>{side}</small> "
+                f"<small>(now game <a href='/game/{i['game_a']}'>{i['game_a']}</a>)</small><br>"
+                + (_version_line(rows[v]) if v in rows else f"v{v}")
+                + f"<br><small>{escape(str(i[key]))}</small></div>"
+                for side, v, key in (("FIRST", first, "first"), ("SECOND", second, "second"))
+            )
         more = tuple(
             (key, _relation_sentence(key, this, that, html=False)) for key, _ in _GAME_DECISIONS
         )
