@@ -84,6 +84,7 @@ def _page(title: str, body: str) -> web.Response:
         ' · <a href="/versions">versions</a>'
         ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
         ' · <a href="/payloads">payloads</a> · <a href="/proposals">proposals</a>'
+        ' · <a href="/advised">advised</a>'
         ' · <a href="/series">series</a>'
     )
     html = (
@@ -1744,6 +1745,169 @@ def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
     )
 
 
+_ADVISED_WHY = {
+    "overruled": "Claude and Gemini against the model",
+    "conflict": "Claude and Gemini disagree",
+}
+
+
+def _opinion(who: str, answer: dict | None, this: str, that: str, kind: str) -> str:
+    """One adviser's (or the model's) answer as a line: for two games a
+    sentence naming them, else the relation and its direction."""
+    if not answer:
+        return f"<b>{who}</b>: —"
+    relation = str(answer.get("relation") or "?")
+    direction = answer.get("direction")
+    if kind == "games" and relation != "unsure":
+        decision = "other" if relation == "not_related" else relation
+        if direction == "second":
+            decision += ":flip"
+        said = escape(_relation_sentence(decision, this, that))
+    else:
+        arrow = ""
+        if direction == "first":
+            arrow = " (FIRST → SECOND)"
+        elif direction == "second":
+            arrow = " (SECOND → FIRST)"
+        said = f"<b>{escape(relation)}</b>{arrow}"
+    extra = []
+    if answer.get("p") is not None:
+        extra.append(f"{float(answer['p']):.0%}")
+    if answer.get("confidence"):
+        extra.append(str(answer["confidence"]))
+    why = f"<br><small>{escape(str(answer['why']))}</small>" if answer.get("why") else ""
+    return f"<b>{who}</b> ({escape(', '.join(extra))}): {said}{why}"
+
+
+def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, str, str, str]:
+    """A re-check card's two sides, the names its sentences use, and its
+    answer buttons."""
+    t = i["type"]
+    if t == "games":
+        this, that = _game_name(conn, i["game_a"]), _game_name(conn, i["game_b"])
+        sides = (
+            f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_a'])}</div>"
+            f"<div style='flex:1 1 300px'>{_game_detail(conn, i['game_b'])}</div>"
+        )
+        model = (i.get("model") or {}).get("relation") or ""
+        model = "other" if model == "not_related" else model
+        return sides, this, that, _game_picker(i["game_a"], i["game_b"], back, model, (this, that))
+    sides = (
+        "<div style='flex:1 1 300px'><small>FIRST</small><br>"
+        f"{escape(str(i['first']))}</div>"
+        "<div style='flex:1 1 300px'><small>SECOND</small><br>"
+        f"{escape(str(i['second']))}</div>"
+    )
+    if t == "versions":
+        version = int(i["version_id"])
+        label = i.get("label")
+        other = None
+        if label and version in label[:2]:
+            other = label[1] if label[0] == version else label[0]
+        else:
+            row = conn.execute(
+                "SELECT anchor_version_id FROM games WHERE game_id = ?", (i["game_id"],)
+            ).fetchone()
+            other = row[0] if row else None
+        v = conn.execute("SELECT * FROM versions WHERE version_id = ?", (version,)).fetchone()
+        sides = (
+            "<div style='flex:1 1 300px'><small>this version</small><br>"
+            + (_version_line(v) if v else str(version))
+            + "</div><div style='flex:1 1 300px'><small>that game</small>"
+            + _game_detail(conn, int(i["game_id"]))
+            + "</div>"
+        )
+        answers = (
+            _decision_picker(version, int(other), back)
+            if other is not None
+            else "<p>(that game is gone)</p>"
+        )
+        return sides, "FIRST", "SECOND", answers
+    answers = "<p><small>(rejecting or linking it is not here yet)</small></p>"
+    if i.get("hltb_id"):
+        answers = (
+            f'<p><a href="/hltb/{int(i["hltb_id"])}">the HLTB entry</a> · '
+            "<small>(rejecting or linking it is not here yet)</small></p>"
+        )
+    return sides, "FIRST", "SECOND", answers
+
+
+async def advised(request: web.Request) -> web.Response:
+    """The operator's second look at the advisers' work (owner, 2026-10-13):
+    every pair Claude and Gemini decided against the model (already written)
+    and every pair they disagreed on, of every kind, with the three opinions.
+    Games and versions are answered here (the operator's word replaces the
+    advisers'); an HLTB or DLC pair can only be looked at for now."""
+    items = request.app["advised"]
+    if not items:
+        return _page("Advised", "<p>(no file: start the viewer with --advised)</p>")
+    kind, why = request.query.get("type", ""), request.query.get("why", "")
+    with _db(request) as conn:
+        marks = ",".join("?" * len(ADVISERS))
+        operator = {
+            frozenset((r[0], r[1]))
+            for r in conn.execute(
+                "SELECT version_id, other_id FROM match_decisions"
+                f" WHERE decided_by NOT IN ({marks})",
+                tuple(ADVISERS),
+            )
+        }
+
+        def anchor(game_id: int) -> int | None:
+            row = conn.execute(
+                "SELECT anchor_version_id FROM games WHERE game_id = ?", (game_id,)
+            ).fetchone()
+            return row[0] if row else None
+
+        def answered(i: dict) -> bool:
+            label = i.get("label")
+            if label and frozenset(label[:2]) in operator:
+                return True
+            if i["type"] == "games":
+                a, b = anchor(i["game_a"]), anchor(i["game_b"])
+                return bool(a and b and frozenset((a, b)) in operator)
+            return False
+
+        open_items = [(n, i) for n, i in enumerate(items, 1) if not answered(i)]
+        counts: dict[tuple[str, str], int] = {}
+        for _, i in open_items:
+            counts[(i["type"], i["why"])] = counts.get((i["type"], i["why"]), 0) + 1
+        shown = [
+            (n, i)
+            for n, i in open_items
+            if (not kind or i["type"] == kind) and (not why or i["why"] == why)
+        ][:40]
+        cards = []
+        for n, i in shown:
+            back = f"/advised?type={quote(kind)}&why={quote(why)}#a{n}"
+            sides, this, that, answers = _advised_sides(conn, i, back)
+            t = i["type"]
+            written = ""
+            if i.get("label"):
+                written = f" · written: <b>{escape(str(i['label'][2]))}</b>"
+            cards.append(
+                f"<div id=a{n} style='border:1px solid #ccc;border-radius:8px;"
+                "padding:8px;margin:10px 0'>"
+                f"<p><b>#{n}</b> · {escape(t)} · {escape(_ADVISED_WHY.get(i['why'], i['why']))}"
+                + (" · audit" if i.get("audit") else "")
+                + f"{written}</p>"
+                f"<div style='display:flex;flex-wrap:wrap;gap:12px'>{sides}</div>"
+                f"<p>{_opinion('Model', i.get('model'), this, that, t)}<br>"
+                f"{_opinion('Claude', i.get('claude'), this, that, t)}<br>"
+                f"{_opinion('Gemini', i.get('gemini'), this, that, t)}</p>"
+                f"{answers}</div>"
+            )
+    filters = " · ".join(
+        f'<a href="/advised?type={k}&why={w}">{k}: {escape(_ADVISED_WHY[w])} ({c})</a>'
+        for (k, w), c in sorted(counts.items())
+    )
+    head = (
+        f"<p>{len(open_items)} open of {len(items)} · <a href='/advised'>all</a> · {filters}</p>"
+        "<p><small>Your answer replaces the advisers' and leaves this list.</small></p>"
+    )
+    return _page("Advised: a second look", _flash(request) + head + "".join(cards))
+
+
 async def proposals(request: web.Request) -> web.Response:
     """An adviser's proposals for the game pairs (owner, 2026-10-12): each
     pair whole, covers and store pages, and one tap to take the proposal as
@@ -2313,7 +2477,10 @@ def _pictures(row: sqlite3.Row | None) -> str:
 
 
 def build(
-    db_path: Path, proposals_path: Path | None = None, gemini_dir: Path | None = None
+    db_path: Path,
+    proposals_path: Path | None = None,
+    gemini_dir: Path | None = None,
+    advised_path: Path | None = None,
 ) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
@@ -2327,6 +2494,13 @@ def build(
     )
     # Gemini's answers about the same pairs, read once at start (`--gemini`).
     app["gemini"] = load_gemini(gemini_dir)
+    # The advisers' work for a second look (`--advised`, written by
+    # `advise_pairs conflicts --review`).
+    app["advised"] = (
+        json.loads(advised_path.read_text(encoding="utf-8"))
+        if advised_path and advised_path.exists()
+        else []
+    )
     covers = db_path.resolve().parent / "covers"
     if covers.is_dir():
         # The covers the bot downloaded (#55), beside its database.
@@ -2350,6 +2524,7 @@ def build(
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
     app.router.add_get("/proposals", proposals)
+    app.router.add_get("/advised", advised)
     app.router.add_post("/decide-games", decide_games)
     app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
     app.router.add_post("/decide", decide)
@@ -2392,6 +2567,10 @@ def main() -> None:
         help="a folder of Gemini's answers about the proposals (*.txt, pair|relation|"
         "direction|confidence|why), shown on the /proposals cards",
     )
+    parser.add_argument(
+        "--advised",
+        help="the advisers' pairs for a second look (advise_pairs conflicts --review), at /advised",
+    )
     args = parser.parse_args()
     if args.db:
         db_path = Path(args.db)
@@ -2402,7 +2581,13 @@ def main() -> None:
     print(f"{db_path} — http://127.0.0.1:{args.port}/ (no authentication)")
     proposals = Path(args.proposals) if args.proposals else None
     gemini = Path(args.gemini) if args.gemini else None
-    web.run_app(build(db_path, proposals, gemini), host="127.0.0.1", port=args.port, print=None)
+    advised_path = Path(args.advised) if args.advised else None
+    web.run_app(
+        build(db_path, proposals, gemini, advised_path),
+        host="127.0.0.1",
+        port=args.port,
+        print=None,
+    )
 
 
 if __name__ == "__main__":

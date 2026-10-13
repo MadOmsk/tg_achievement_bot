@@ -57,6 +57,7 @@ from bot.services.advice import (
     ADVISERS,
     AUDIT_FRACTION,
     AUDIT_SEED,
+    BOTH,
     PAIR_TYPES,
     AdviceStore,
     Answer,
@@ -909,12 +910,71 @@ async def conflicts(args: argparse.Namespace) -> None:
                 }
             )
     out = Path(args.out)
+    if args.review:
+        # Everything the operator re-checks (owner, 2026-10-13): the
+        # conflicts and the pairs the advisers decided against the model, of
+        # every kind, in one file for the viewer's /advised.
+        items = review_items(store, facts)
+        review_path = out.parent / f"{out.stem}_review.json"
+        review_path.parent.mkdir(parents=True, exist_ok=True)
+        review_path.write_text(json.dumps(items, ensure_ascii=False, indent=1), "utf-8")
+        print(f"{len(items)} pairs to re-check → {review_path}")
     gemini_dir, other_path = write_conflicts(out, proposals, lines, other)
     print(f"{len(proposals)} game pairs → {out}; {len(other)} other pairs → {other_path}")
     print(
         "viewer: .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer"
         f" --db {args.db} --proposals {out} --gemini {gemini_dir}"
     )
+
+
+def review_items(store: AdviceStore, facts: Facts) -> list[dict[str, Any]]:
+    """The pairs for the operator's second look: every conflict, and every
+    answer Claude and Gemini gave against the model (written or kept aside),
+    with all three opinions and, for a written one, the pair of versions its
+    label is on (so a correction replaces it)."""
+    claude, gemini, applied = store.answers("claude"), store.answers("gemini"), store.applied()
+    items = []
+    for q, state, _answer, _by, reason in states(store, facts):
+        pid = q["pair_id"]
+        done = applied.get(pid) or {}
+        if state == "conflict":
+            why = "conflict"
+        elif done.get("decided_by") == BOTH:
+            why = "overruled"
+        else:
+            continue
+        item: dict[str, Any] = {
+            "pair_id": pid,
+            "type": q["type"],
+            "why": why,
+            "reason": reason,
+            "audit": q.get("audit", False),
+            "first": q["first"],
+            "second": q["second"],
+            "model": q.get("model"),
+            "claude": _plain(claude[pid]) if pid in claude else None,
+            "gemini": _plain(gemini[pid]) if pid in gemini else None,
+            "state": done.get("state") or state,
+            "label": done.get("label"),
+        }
+        if q["type"] == "games":
+            item["game_a"] = facts.current_game(q["game_a"])
+            item["game_b"] = facts.current_game(q["game_b"])
+        for key in (
+            "version_id",
+            "other_id",
+            "game_id",
+            "platform",
+            "title_id",
+            "hltb_id",
+            "dlc_id",
+        ):
+            if key in q:
+                item[key] = q[key]
+        items.append(item)
+    order = {"games": 0, "versions": 1, "hltb": 2, "dlc": 3}
+    items.sort(key=lambda i: (order.get(i["type"], 9), i["why"] != "conflict", i["pair_id"]))
+    return items
 
 
 def write_conflicts(
@@ -980,6 +1040,12 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("conflicts", help="the disputed pairs, for the viewer's /proposals")
     p.add_argument("--out", required=True)
+    p.add_argument(
+        "--review",
+        action="store_true",
+        help="also <out>_review.json: conflicts and the advisers' answers against the model,"
+        " every kind, for the viewer's /advised",
+    )
     args = parser.parse_args()
     args.db = args.db or _default_db()
     if args.command != "import" and not args.db:
