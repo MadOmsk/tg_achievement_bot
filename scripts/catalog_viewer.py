@@ -1841,7 +1841,8 @@ def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, s
             rows = {
                 r["version_id"]: r
                 for r in conn.execute(
-                    "SELECT * FROM versions WHERE version_id IN (?, ?)", (first, second)
+                    "SELECT v.*, " + COVER + " FROM versions v WHERE v.version_id IN (?, ?)",
+                    (first, second),
                 )
             }
             this = str(rows[first]["name"]) if first in rows else this
@@ -1849,6 +1850,7 @@ def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, s
             sides = "".join(
                 f"<div style='flex:1 1 300px'><small>{side}</small> "
                 f"<small>(now game <a href='/game/{i['game_a']}'>{i['game_a']}</a>)</small><br>"
+                + (f"{_img(rows[v]['cover'], 70)}<br>" if v in rows else "")
                 + (_version_line(rows[v]) if v in rows else f"v{v}")
                 + f"<br><small>{escape(str(i[key]))}</small></div>"
                 for side, v, key in (("FIRST", first, "first"), ("SECOND", second, "second"))
