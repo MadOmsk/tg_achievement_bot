@@ -631,9 +631,14 @@ class _StoresRepo:
         the list (not where it was refused). A miss, or an entry refused
         everywhere, counts as a failed attempt — after the third the list
         leaves the queue (`record_fetch`)."""
+        from bot.services.game_match import is_part
+
         subject = f"{platform}:{title_id}"
         if hltb_id is not None:
             for version_id in await self.ensure_list_version(platform, title_id):
+                row = await self.version_row(version_id)
+                if row is not None and is_part(row["kind"], row["role"], [row["name"] or ""]):
+                    continue  # a demo, a beta, a tool: no entry of its own
                 await self.link_version_hltb(version_id, hltb_id, "auto", score)
             if await self.list_hltb_match(platform, title_id) is not None:
                 await self.record_fetch(subject, "hltb_match", status="ok")

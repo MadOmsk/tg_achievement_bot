@@ -281,3 +281,61 @@ async def test_a_dlc_link_by_hand_stays_and_a_refusal_is_never_made_again(repo: 
         (8, "manual"),
         (9, "auto"),
     ]
+
+
+# ----------------------------------------- demos get no automatic HLTB entry (2026-10-14)
+
+
+async def test_a_demo_or_a_beta_is_given_no_automatic_hltb_link_but_the_operator_may(
+    repo: Repo,
+) -> None:
+    from bot.services.game_match import is_part
+
+    assert is_part("demo", None, ["Control"]) and is_part(None, "tool", ["Control"])
+    assert is_part(None, None, ["Resident Evil 7 Teaser: Beginning Hour"]) is False
+    assert is_part(None, None, ["Halo Infinite - Insider"]) and is_part(None, None, ["X Demo"])
+    assert not is_part("game", "version", ["Control"])
+
+    await repo.upsert_title("DM", "Control Demo", "xbox_modern")
+    demo = await repo.save_version(
+        StoreVersion(
+            store="xbox", product_id="DM", console="series", name="Control Demo", kind="demo"
+        ),
+        platform="xbox_modern",
+        title_id="DM",
+    )
+
+    await repo.record_hltb_match("xbox_modern", "DM", 12, 0.9)
+    assert await repo.list_hltb_match("xbox_modern", "DM") is None
+
+    # The operator can still say it (a teaser HowLongToBeat times): never pruned.
+    await repo.link_version_hltb(demo, 12, "manual")
+    assert await repo.list_hltb_match("xbox_modern", "DM") == (12, None)
+
+
+async def test_the_evidence_check_refuses_an_automatic_link_of_a_demo(repo: Repo) -> None:
+    await repo.upsert_title("G1", "Control", "xbox_modern")
+    game = await repo.save_version(
+        StoreVersion(store="xbox", product_id="G1", console="series", name="Control"),
+        platform="xbox_modern",
+        title_id="G1",
+    )
+    demo = await repo.save_version(
+        StoreVersion(
+            store="steam", product_id="9", console="steam", name="Control Demo", kind="demo"
+        ),
+        platform=None,
+        title_id=None,
+    )
+    page = {"game": [{"game_id": 5, "game_name": "Control", "game_type": "game"}]}
+    await repo.save_hltb_game(hltb_page.parse_page(page))  # type: ignore[arg-type]
+    await repo.save_payload("hltb:5", "hltb_page", page)
+    await repo.link_version_hltb(game, 5)
+    await repo.link_version_hltb(demo, 5)
+
+    await link_hltb_entry(repo, 5)
+
+    cursor = await repo._conn.execute(
+        "SELECT version_id, source FROM version_hltb ORDER BY version_id"
+    )
+    assert [tuple(r) for r in await cursor.fetchall()] == [(game, "auto"), (demo, "rejected")]

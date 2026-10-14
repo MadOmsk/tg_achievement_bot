@@ -37,18 +37,23 @@ class _SeriesRepo:
         labels = [tuple(row) for row in await cursor.fetchall()]
         return {"games": games, "relations": relations, "labels": labels}
 
-    async def write_series(self, proposals: list[tuple[str, list[int], Members]]) -> int:
+    async def write_series(
+        self, proposals: list[tuple[str, list[int], Members, str | None]]
+    ) -> int:
         """The linker's proposals `(name, core games earliest first, every
-        member's (p, reason))` over the previous ones, in one transaction:
-        each proposal keeps the series anchored on one of its own games (two
-        such series are merged), else takes a series the operator made of
-        its games, else a new one anchored on its earliest game. Returns how
-        many live series there are."""
+        member's (p, reason), rule key)` over the previous ones, in one
+        transaction: each proposal keeps the series anchored on one of its own
+        games (two such series are merged), else takes a series the operator
+        made of its games, else a new one anchored on its earliest game. A
+        proposal with a rule key is its rule's series, found by the key, with
+        no anchor, and never merged with another. Returns how many live
+        series there are."""
         now = utcnow_iso()
         async with self.transaction():
             await self._fold_merged_games()
             cursor = await self._conn.execute(
-                "SELECT series_id, anchor_game_id, merged_into, name_source, name FROM series"
+                "SELECT series_id, anchor_game_id, merged_into, name_source, name, rule_key"
+                " FROM series"
             )
             series = {int(r["series_id"]): dict(r) for r in await cursor.fetchall()}
 
@@ -70,13 +75,48 @@ class _SeriesRepo:
                 " JOIN series s ON s.series_id = gs.series_id"
                 " WHERE gs.source <> 'auto' AND gs.member = 1"
                 " AND s.anchor_game_id IS NULL AND s.merged_into IS NULL"
+                " AND s.rule_key IS NULL"
             )
             made_by_hand: dict[int, list[int]] = {}
             for row in await cursor.fetchall():
                 made_by_hand.setdefault(int(row[0]), []).append(int(row[1]))
 
+            by_rule = {
+                str(s["rule_key"]): sid
+                for sid, s in series.items()
+                if s["rule_key"] and not s["merged_into"]
+            }
             wanted: dict[int, Members] = {}
-            for name, core, members in proposals:
+            for name, core, members, rule_key in proposals:
+                if rule_key is not None:
+                    target = by_rule.get(rule_key)
+                    if target is None:
+                        cursor = await self._conn.execute(
+                            "INSERT INTO series (name, anchor_game_id, rule_key, created_at,"
+                            " updated_at) VALUES (?, NULL, ?, ?, ?)",
+                            (name, rule_key, now, now),
+                        )
+                        target = int(cursor.lastrowid)
+                        by_rule[rule_key] = target
+                        series[target] = {
+                            "series_id": target,
+                            "anchor_game_id": None,
+                            "merged_into": None,
+                            "name_source": "auto",
+                            "name": name,
+                            "rule_key": rule_key,
+                        }
+                    elif series[target]["name_source"] == "auto" and series[target]["name"] != name:
+                        await self._conn.execute(
+                            "UPDATE series SET name = ?, updated_at = ? WHERE series_id = ?",
+                            (name, now, target),
+                        )
+                        series[target]["name"] = name
+                    into = wanted.setdefault(target, {})
+                    for game, (p, reason) in members.items():
+                        if game not in into or into[game][0] < p:
+                            into[game] = (p, reason)
+                    continue
                 hits = sorted({anchors[g] for g in core if g in anchors})
                 if hits:
                     target = hits[0]
@@ -106,6 +146,7 @@ class _SeriesRepo:
                             "merged_into": None,
                             "name_source": "auto",
                             "name": name,
+                            "rule_key": None,
                         }
                     anchors[core[0]] = target
                 # Named by the proposal holding its own anchor: a series the

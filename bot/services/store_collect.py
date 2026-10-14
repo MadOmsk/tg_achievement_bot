@@ -21,7 +21,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from bot.services.game_link import GameLinker
-from bot.services.game_match import name_key
+from bot.services.game_match import is_part, name_key
 from bot.services.hltb import ensure_title_match
 from bot.services.hltb_match import (
     core,
@@ -935,7 +935,9 @@ class StoreCollector:
         # The list's other versions (a console's, made since) are the same
         # entry too, unless one was told it is not.
         for version_id in await self._repo.versions_of_list(platform, title_id):
-            await self._repo.link_version_hltb(version_id, hltb_id)
+            row = await self._repo.version_row(version_id)
+            if row is not None and not is_part(row["kind"], row["role"], [row["name"] or ""]):
+                await self._repo.link_version_hltb(version_id, hltb_id)
         subject, source = f"hltb:{hltb_id}", "hltb_page"
         if not force and not await self._repo.fetch_due(subject, source):
             report.skipped.append(source)
@@ -1004,7 +1006,11 @@ async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:
             version_kind=version.get("kind"),
             version_year=candidate_year(version),
         )
-        if not fits:
+        if not fits or is_part(
+            version.get("kind"),
+            version.get("role"),
+            [str(n) for n in (version.get("name"), version.get("name_ru")) if n],
+        ):
             await repo.unlink_version_hltb(int(version["version_id"]), hltb_id, only_auto=True)
         elif version.get("name"):
             names.append(str(version["name"]))

@@ -248,7 +248,8 @@ Types and the answers each allows:
   | series | not_related | extra | unsure
 - hltb: one of our games (FIRST) against a HowLongToBeat entry (SECOND).
   same (the entry is this very game) | not_related (another game, a DLC, another release
-  of the series) | unsure
+  of the series, or FIRST is a demo, a beta or a trial: HowLongToBeat times the game) |
+  unsure
 - dlc: one of our DLC (FIRST) against a HowLongToBeat DLC entry (SECOND).
   same | not_related | unsure
 
@@ -262,14 +263,22 @@ What the answers mean:
   ("Call of Duty: Black Ops II - Zombies").
 - remaster_of: the same game re-released with better technology, its design kept; an
   enhanced re-release counts. A remaster of a remake is a remaster of the remake (Gears of
-  War: Reloaded is a remaster of Gears of War: Ultimate Edition).
+  War: Reloaded is a remaster of Gears of War: Ultimate Edition). A next-generation
+  release is a remaster when it is a separate product (its own store page and
+  achievement list, a subtitle or "Remastered") sold beside the previous release; it is
+  the same game when one product runs on both generations (Smart Delivery, cross-buy) or
+  it replaced the previous release by an update.
 - remake_of: rebuilt from the ground up (Resident Evil 4 of 2023 is a remake of Resident
-  Evil 4 of 2005). A remake is an original of its own.
+  Evil 4 of 2005). A remake is an original of its own. The word "Remake" in a name marks
+  one; "Intergrade", "Director's Cut" or "Special Edition" alone do not (Final Fantasy VII
+  Remake and its Intergrade are two games, both remakes of Final Fantasy VII).
 - contains: a compilation or collection that holds the other; a compilation holds at least
   two games.
 - vr_of: the VR version of the other.
 - series: different games of one series: sequels, prequels, spin-offs, a reboot that is a
-  new game.
+  new game. A game is in several series: its franchise's (Call of Duty), a local one inside
+  it (Modern Warfare), and for a LEGO game the series LEGO beside its licence's (LEGO Star
+  Wars is in LEGO and in Star Wars).
 - not_related: unrelated.
 - extra: one side is not a game at all and not of the other game: a soundtrack or an
   artbook of another game, a companion app, a video.

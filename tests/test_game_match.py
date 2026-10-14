@@ -1067,3 +1067,21 @@ async def test_linking_writes_the_game_on_the_version_and_keeps_when_it_got_ther
     assert (await cursor.fetchone())[0] == first[3]
     lonely = await _version(repo, "L", "Some Other Game", "2001")
     assert await repo.linked_game_of(lonely) is None
+
+
+# --------------------------------------------- the word "Remake" marks a remake (2026-10-14)
+
+
+def test_the_word_remake_marks_a_remake_and_intergrade_does_not() -> None:
+    ff7 = _c(1, "FINAL FANTASY VII", console="ps4", year=1997)
+    remake = _c(2, "FINAL FANTASY VII REMAKE", console="ps4", year=2020)
+    intergrade = _c(3, "FINAL FANTASY VII REMAKE INTERGRADE", console="ps5", year=2021)
+    director = _c(4, "Ghost of Tsushima Director's Cut", console="ps5", year=2021)
+    base = _c(5, "Ghost of Tsushima", console="ps4", year=2020)
+
+    assert features(remake, ff7)["remake_word"] == 1.0
+    # Both say it: nothing in the words tells the two apart (the operator did).
+    assert "remake_word" not in features(intergrade, remake)
+    # "Intergrade", "Director's Cut" alone mark nothing of a remake.
+    assert "remake_word" not in features(director, base)
+    assert "remake_word" not in features(_c(6, "Final Fantasy VII Intergrade", year=2021), ff7)

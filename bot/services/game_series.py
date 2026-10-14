@@ -35,7 +35,15 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bot.services.advice import ADVISER_SOURCES
-from bot.services.game_match import _aliased, _same, _unmarked, game_core, release_name
+from bot.services.game_match import (
+    _EDITION_TAIL_WORDS,
+    _RELEASE_WORDS,
+    _aliased,
+    _same,
+    _unmarked,
+    game_core,
+    release_name,
+)
 from bot.services.hltb_match import normalize
 
 if TYPE_CHECKING:
@@ -48,6 +56,8 @@ ADVISERS_P = 0.9  # the advisers' "another game of the series"
 PREFIX_P = 0.5  # a common franchise prefix, the same studio or publisher
 STRONG_P = 0.9  # evidence this sure joins two groups whose names disagree
 SURE_P = 0.85  # below: a membership the advisers may be asked about
+LEGO_P = 0.95  # a LEGO game is in the series LEGO (owner, 2026-10-14)
+LOCAL_P = 0.7  # a franchise's own series: a longer name, or a subtitle, two games share
 
 _RELATION_WORDS = {
     "remaster_of": ("a remaster of", "remastered as"),
@@ -98,6 +108,10 @@ class Proposal:
     name: str
     core: list[int]
     members: dict[int, tuple[float, str]] = field(default_factory=dict)
+    # A series a rule names, with no anchor game ("lego", "key:star wars
+    # jedi", "sub:call of duty|modern warfare"); the games are in it beside
+    # their franchise's series.
+    rule_key: str | None = None
 
 
 def franchise_key(name: str) -> str:
@@ -112,6 +126,10 @@ def franchise_key(name: str) -> str:
         if i and (word.isdigit() or word in _PLATFORMS):
             words = words[:i]
             break
+    # "LEGO Star Wars" is of Star Wars as its licence (and of LEGO, a series
+    # of its own: `umbrellas`).
+    if len(words) > 1 and words[0] == "lego":
+        words = words[1:]
     return " ".join(words)
 
 
@@ -339,6 +357,122 @@ def propose(games: dict[int, SeriesGame], found: list[Evidence]) -> list[Proposa
     return proposals
 
 
+def _subtitle(name: str) -> tuple[str, str] | None:
+    """The subtitle a name goes on with, as `(key, as written)` — two words
+    or more, up to a number: "Call of Duty: Modern Warfare 2" → "modern
+    warfare"; None when there is none ("Gears 5") or it says nothing."""
+    text = release_name(_aliased(_MARKS.sub("", name)))
+    parts = _SUBTITLE.split(text, maxsplit=1)
+    if len(parts) < 2:
+        return None
+    words = game_core(parts[1]).split()
+    for i, word in enumerate(words):
+        if word.isdigit() or word in _PLATFORMS:
+            words = words[:i]
+            break
+    # Only what names a place in the franchise: an edition's words do not
+    # ("Mafia: Definitive Edition").
+    if len(words) < 2 or all(
+        w in {"the", "of", "and", "a", "an"} | _RELEASE_WORDS | _EDITION_TAIL_WORDS for w in words
+    ):
+        return None
+    key = " ".join(words)
+    return key, _as_written(key, parts[1]) or key.title()
+
+
+def _share_company(games: dict[int, SeriesGame], ids: list[int]) -> bool:
+    return any(
+        _same(games[a].developer, games[b].developer)
+        or _same(games[a].publisher, games[b].publisher)
+        for i, a in enumerate(ids)
+        for b in ids[i + 1 :]
+    )
+
+
+def umbrellas(games: dict[int, SeriesGame], proposals: list[Proposal]) -> list[Proposal]:
+    """The series a rule names (owner, 2026-10-14), beside the franchises':
+    every LEGO game is in LEGO — and in its licence's series, as its name
+    without "LEGO" says —, and a franchise has local series inside it: a
+    longer name two of its games share ("Star Wars Jedi" in Star Wars), or a
+    subtitle two games of one studio or publisher share ("Modern Warfare" in
+    Call of Duty). A local series is never the whole of its franchise."""
+    found: list[Proposal] = []
+    lego = sorted(
+        (
+            g
+            for g, game in games.items()
+            if game.kind != "extra" and _core_words(game)[:1] == ["lego"]
+        ),
+        key=lambda g: (games[g].year or 9999, g),
+    )
+    if len(lego) >= 2:
+        found.append(
+            Proposal("LEGO", lego, {g: (LEGO_P, "a LEGO game") for g in lego}, rule_key="lego")
+        )
+    for parent in proposals:
+        found += _local_series(games, parent)
+    _under_franchises(games, proposals)
+    return found
+
+
+def _under_franchises(games: dict[int, SeriesGame], proposals: list[Proposal]) -> None:
+    """A series named by a longer form of a franchise of two words or more is
+    in that franchise too, whoever made its games (Star Wars Jedi, by Respawn,
+    in Star Wars): its games are members of the shorter one. One-word
+    franchises are left alone ("Portal" and "Portal Knights")."""
+    keyed = [(p, _series_key([games[g] for g in p.core if g in games])) for p in proposals]
+    for inner, inner_key in keyed:
+        for outer, outer_key in keyed:
+            words = outer_key.split()
+            if (
+                outer is not inner
+                and len(words) >= 2
+                and len(outer.core) >= 2
+                and inner_key.split()[: len(words)] == words
+                and len(inner_key.split()) > len(words)
+            ):
+                for g in inner.core:
+                    outer.members.setdefault(g, (LOCAL_P, f"«{inner.name}» is of «{outer.name}»"))
+
+
+def _local_series(games: dict[int, SeriesGame], parent: Proposal) -> list[Proposal]:
+    core = [g for g in parent.core if games[g].kind != "extra"]
+    top = _series_key([games[g] for g in core]) if core else ""
+    found: list[Proposal] = []
+    by_key: dict[str, list[int]] = defaultdict(list)
+    by_sub: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for g in core:
+        key = franchise_key(games[g].name)
+        if key and key != top and compatible(top, key):
+            by_key[key].append(g)
+        if (sub := _subtitle(games[g].name)) is not None:
+            by_sub[(key, sub[0])].append(g)
+
+    def several_games(ids: list[int]) -> bool:
+        # One name twice is one game the matcher left split, or a remaster:
+        # no series (as in `_prefix_evidence`).
+        return 2 <= len(ids) < len(core) and len({tuple(_core_words(games[g])) for g in ids}) >= 2
+
+    def local(name: str, ids: list[int], rule_key: str) -> Proposal:
+        return Proposal(
+            name,
+            sorted(ids, key=lambda g: (games[g].year or 9999, g)),
+            {g: (LOCAL_P, f"«{name}» in its name") for g in ids},
+            rule_key=rule_key,
+        )
+
+    for (key, sub), ids in sorted(by_sub.items()):
+        if several_games(ids) and _share_company(games, ids):
+            written = Counter(w for g in ids if (w := (_subtitle(games[g].name) or ("", ""))[1]))
+            name = max(written, key=lambda w: written[w]) if written else sub.title()
+            found.append(local(name, ids, f"sub:{key}|{sub}"))
+    taken = [set(p.core) for p in found]
+    for key, ids in sorted(by_key.items()):
+        if several_games(ids) and not any(set(ids) <= members for members in taken):
+            found.append(local(series_name([games[g] for g in ids]), ids, f"key:{key}"))
+    return found
+
+
 def _series_key(group: list[SeriesGame]) -> str:
     """`_franchise_of(group)`, lengthened to the words every game's core
     name goes on with alike ("Cities: Skylines", not "Cities")."""
@@ -459,7 +593,10 @@ class SeriesBuilder:
         relations = [(int(g), int(r), str(k)) for g, r, k in data["relations"]]
         labels = [(int(a), int(b), str(by)) for a, b, by in data["labels"]]
         proposals = propose(games, evidence(games, relations, labels))
-        return await self._repo.write_series([(p.name, p.core, p.members) for p in proposals])
+        proposals += umbrellas(games, proposals)
+        return await self._repo.write_series(
+            [(p.name, p.core, p.members, p.rule_key) for p in proposals]
+        )
 
 
 async def series_questions(

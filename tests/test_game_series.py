@@ -255,3 +255,95 @@ async def test_the_viewer_shows_and_edits_series(repo: Repo, tmp_path) -> None:
         await client.post(f"/series/{halo}/rename", data={"name": "Halo saga"})
         await client.post("/series/rebuild")
     assert await _members(repo) == {"Halo saga": {h3}, "Bungie shooters": {reach}}
+
+
+# ------------------------------------------------- series a rule names (owner, 2026-10-14)
+
+
+def _with_umbrellas(games: dict[int, SeriesGame]) -> dict[str, set[int]]:
+    from bot.services.game_series import umbrellas
+
+    found = propose(games, evidence(games, [], []))
+    return {p.name: set(p.members) for p in [*found, *umbrellas(games, found)]}
+
+
+def test_every_lego_game_is_in_lego_and_in_its_licences_series() -> None:
+    games = _games(
+        (1, "LEGO Star Wars: The Complete Saga", 2007, "Traveller's Tales", "LucasArts"),
+        (2, "LEGO® Marvel's Avengers", 2016, "Traveller's Tales", "Warner Bros."),
+        (3, "LEGO Star Wars: The Skywalker Saga", 2022, "Traveller's Tales", "Warner Bros."),
+        (4, "Star Wars: Battlefront", 2004, "Pandemic", "LucasArts"),
+        (5, "Star Wars Jedi: Fallen Order", 2019, "Respawn", "Electronic Arts"),
+    )
+    series = _with_umbrellas(games)
+    assert series["LEGO"] == {1, 2, 3}
+    star_wars = next(
+        m for name, m in series.items() if name.lower().startswith("star wars") and 4 in m
+    )
+    assert {1, 3, 4} <= star_wars  # "LEGO Star Wars" is a Star Wars game too
+    assert 2 not in star_wars  # a LEGO game alone says nothing of another licence
+
+
+def test_a_franchise_has_local_series_two_of_its_games_share() -> None:
+    games = _games(
+        (1, "Call of Duty 4: Modern Warfare", 2007, "Infinity Ward", "Activision"),
+        (2, "Call of Duty: Modern Warfare 2", 2009, "Infinity Ward", "Activision"),
+        (3, "Call of Duty: Modern Warfare 3", 2011, "Infinity Ward", "Activision"),
+        (4, "Call of Duty: Black Ops", 2010, "Treyarch", "Activision"),
+        (5, "Call of Duty: Black Ops II", 2012, "Treyarch", "Activision"),
+        (6, "Call of Duty: Ghosts", 2013, "Infinity Ward", "Activision"),
+    )
+    series = _with_umbrellas(games)
+    assert series["Call of Duty"] == {1, 2, 3, 4, 5, 6}
+    assert series["Modern Warfare"] == {1, 2, 3}
+    assert series["Black Ops"] == {4, 5}
+    assert "Ghosts" not in series  # one game is no series
+
+
+def test_a_longer_franchise_name_two_games_share_is_a_series_inside() -> None:
+    games = _games(
+        (1, "Star Wars: Battlefront", 2004, "Pandemic", "LucasArts"),
+        (2, "Star Wars: Knights of the Old Republic", 2003, "BioWare", "LucasArts"),
+        (3, "Star Wars Jedi: Fallen Order", 2019, "Respawn", "Electronic Arts"),
+        (4, "Star Wars Jedi: Survivor", 2023, "Respawn", "Electronic Arts"),
+        (5, "Star Wars: The Force Unleashed", 2008, "LucasArts", "LucasArts"),
+    )
+    series = _with_umbrellas(games)
+    assert series["Star Wars Jedi"] == {3, 4}
+    assert {1, 2, 3, 4, 5} <= series["Star Wars"]
+
+
+async def test_a_series_a_rule_names_is_kept_by_its_key_and_never_merged(repo: Repo) -> None:
+    async def game(name: str, year: int, studio: str = "TT") -> int:
+        game_id = await repo.create_game(name, year)
+        await repo._conn.execute(
+            "UPDATE games SET developer = ?, publisher = ?, kind = 'game' WHERE game_id = ?",
+            (studio, studio, game_id),
+        )
+        await repo._conn.commit()
+        return game_id
+
+    a = await game("LEGO Star Wars: The Complete Saga", 2007)
+    b = await game("LEGO Batman: The Videogame", 2008)
+    c = await game("Star Wars: Battlefront", 2004, "Pandemic")
+    for g, v in ((a, 1), (b, 2), (c, 3)):
+        await repo._conn.execute(
+            "INSERT INTO versions (store, product_id, console, name, kind, updated_at, game_id,"
+            " role) VALUES ('steam', ?, 'steam', 'x', 'game', 'x', ?, 'version')",
+            (str(v), g),
+        )
+    await repo._conn.commit()
+
+    await SeriesBuilder(repo).rebuild()
+    await SeriesBuilder(repo).rebuild()  # again: the same series, not new ones
+
+    cursor = await repo._conn.execute(
+        "SELECT s.name, s.rule_key, s.anchor_game_id, group_concat(gs.game_id) FROM series s"
+        " JOIN game_series gs ON gs.series_id = s.series_id WHERE s.rule_key IS NOT NULL"
+        " GROUP BY s.series_id"
+    )
+    rows = [tuple(r) for r in await cursor.fetchall()]
+    assert [(r[0], r[1], r[2]) for r in rows] == [("LEGO", "lego", None)]
+    assert sorted(rows[0][3].split(",")) == sorted([str(a), str(b)])
+    cursor = await repo._conn.execute("SELECT COUNT(*) FROM series WHERE rule_key = 'lego'")
+    assert (await cursor.fetchone())[0] == 1

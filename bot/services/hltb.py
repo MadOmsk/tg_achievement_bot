@@ -191,6 +191,12 @@ async def ensure_title_match(repo: Repo, platform: str, title_id: str) -> None:
     if row is None:
         return
     names = tuple(dict.fromkeys(n for n in (row.name_en, row.name, row.name_ru) if n))
+    from bot.services.game_match import is_part
+
+    if is_part(None, None, names):
+        # A demo, a beta, a tool (owner, 2026-10-14): HLTB times the game.
+        await repo.give_up_hltb_match(row.platform, title_id)
+        return
     if not any(usable_name(n) for n in names):
         # A platform's own placeholder ("Unknown", "?") or a name with
         # nothing Latin in it — HLTB's English-only search has nothing to

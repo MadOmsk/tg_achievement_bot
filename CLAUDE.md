@@ -822,6 +822,20 @@ What the stores and HLTB say about a game, collected but not shown yet
     remake, a collection, VR, a demo; either says sequel; it names the other
     game; the two say much the same or little; no genre in common. Every class
     starts at 0 on them, so they change nothing until a fit weighs them.
+  - **Rules the owner gave in conversation** (2026-10-14), in the model and in
+    the advisers' prompt (`advice.RULES`): the word **"Remake"** in a name marks
+    a remake (`_REMAKE`), "Intergrade", "Director's Cut" or "Special Edition"
+    alone do not (Final Fantasy VII Remake and its Intergrade are two games,
+    both remakes of Final Fantasy VII, by the operator's label); a
+    **next-generation release** is a remaster when it is a separate product
+    (its own page and achievement list) sold beside the previous release, the
+    same game when one product runs on both generations or it replaced the
+    previous release by an update (`one_list`, `cross_gen_set`,
+    `later_list_same_family`); **a demo, a beta, a tool or an extra gets no
+    automatic HowLongToBeat entry** (`game_match.is_part`: the store's kind, the
+    linker's role or the name — `ensure_title_match`, `record_hltb_match`, the
+    evidence check and `_hltb` all skip it), the operator may link one by hand.
+
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own
     version as the subject), and the weights are fitted by gradient descent
@@ -852,8 +866,9 @@ What the stores and HLTB say about a game, collected but not shown yet
     viewer writes them (`save_decision`, then the linker); an HLTB match
     agreed on becomes a `manual` link. Questions and answers are JSON in
     `data/advice/` beside the database (`pair_state(pair_id, dir)` for the
-    viewer), never in the database. Not writable yet, kept there:
-    rejecting an HLTB match, linking an HLTB DLC.
+    viewer), never in the database. An HLTB entry refused is kept as a
+    `rejected` link (never made again), a DLC's HLTB entry written by hand is a
+    `manual` link in `dlc_hltb` (or `rejected`), so every answer can be written.
   - **Series** (owner, 2026-10-12; migration 105, `services/game_series.py`,
     `db/repo/_series.py`): a series is an entity of its own (`series`), and a
     game may be in several (`game_series`) — a crossover (Street Fighter X
@@ -877,6 +892,17 @@ What the stores and HLTB say about a game, collected but not shown yet
     ("Cities: Skylines"), as most of them write it. Proposed again after
     every linking (`SeriesBuilder`, whole: cheap); a series keeps its id by
     its anchor game, an operator's merge stands (`merged_into`).
+    **Series a rule names** (owner, 2026-10-14; migration 111, `series.rule_key`,
+    no anchor game, `game_series.umbrellas`): every LEGO game is in the series
+    **LEGO** (0.95) *and* in its licence's series — `franchise_key` reads
+    "LEGO Star Wars" as Star Wars —; a franchise has **local series** inside
+    it, a longer name two of its games share ("Star Wars Jedi" in Star Wars,
+    key `key:…`) or a subtitle two games of one studio or publisher share
+    ("Modern Warfare" in Call of Duty, key `sub:franchise|subtitle`; edition
+    words, one name twice and the whole franchise make none); a franchise of
+    two words or more has the series named by a longer form of it as members
+    (Star Wars Jedi, by Respawn, is of Star Wars). A game is so in several
+    series, and such a series is found by its key, never merged.
     `game_series.series_questions` lists the unsure memberships (under
     `SURE_P`, nobody answered) for the advisers, `answer_series_question`
     keeps their answer; the viewer has `/series`, a series' page (games by

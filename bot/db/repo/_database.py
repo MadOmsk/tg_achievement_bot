@@ -54,6 +54,9 @@ INDEXES_AFTER_MIGRATIONS = (
     "DROP INDEX IF EXISTS idx_title_achievements_title",
     # A game's versions (108): game_id is a column a migration added.
     "CREATE INDEX IF NOT EXISTS idx_versions_game ON versions(game_id, role)",
+    # A series a rule names (111): one per rule key.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_series_rule_key ON series(rule_key)"
+    " WHERE rule_key IS NOT NULL",
 )
 
 

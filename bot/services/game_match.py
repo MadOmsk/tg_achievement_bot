@@ -143,6 +143,20 @@ class Verdict:
         return self.probs.get("same", 0.0)
 
 
+def is_part(kind: str | None, role: str | None, names: tuple[str, ...] | list[str]) -> bool:
+    """A version that is a part of a game, not a game: a demo, a beta, a trial,
+    a tool, a mode, an extra — by the store's kind, the role the linker gave
+    it, or its name. HowLongToBeat times the game, not these (owner,
+    2026-10-14): a part gets no automatic entry (the operator may link one by
+    hand: Resident Evil 7's teaser)."""
+    if (kind or "") in ("demo", "app", "music", "video") or (role or "") in PART_ROLES:
+        return True
+    return any(_DEMO.search(n) or _TOOL.search(n) or _EXTRA.search(n) for n in names if n)
+
+
+PART_ROLES = frozenset({"demo", "tool", "mode", "extra"})
+
+
 def is_extra(candidate: Candidate) -> bool:
     """Not a game: kept an entry of its own, joined to nothing."""
     return (candidate.kind or "") in EXTRA_KINDS or any(_EXTRA.search(n) for n in candidate.names)
