@@ -22,14 +22,17 @@ class _GamesRepo:
             "  v.store_group, v.cross_gen_set, v.stand_in, t.name AS list_name,"
             "  v.genres, v.description_en,"
             "  (SELECT GROUP_CONCAT(h.summary_en, ' ') FROM version_hltb vh JOIN hltb_games h"
-            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_summary,"
+            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
+            "   AND vh.source <> 'rejected') AS hltb_summary,"
             "  t.name_en AS list_name_en,"
             "  (SELECT GROUP_CONCAT(vh.hltb_id) FROM version_hltb vh"
-            "   WHERE vh.version_id = v.version_id) AS hltb_ids,"
+            "   WHERE vh.version_id = v.version_id AND vh.source <> 'rejected') AS hltb_ids,"
             "  (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_games h"
-            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_year,"
+            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
+            "   AND vh.source <> 'rejected') AS hltb_year,"
             "  (SELECT GROUP_CONCAT(h.game_type) FROM version_hltb vh JOIN hltb_games h"
-            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id) AS hltb_types"
+            "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
+            "   AND vh.source <> 'rejected') AS hltb_types"
             " FROM versions v LEFT JOIN titles t ON t.platform = v.platform"
             "  AND t.title_id = v.title_id"
         )
@@ -386,7 +389,8 @@ class _GamesRepo:
                 " COALESCE(v.publisher, h.publisher) AS publisher"
                 " FROM versions v"
                 " LEFT JOIN hltb_games h ON h.hltb_id = (SELECT MIN(vh.hltb_id)"
-                "  FROM version_hltb vh WHERE vh.version_id = v.version_id)"
+                "  FROM version_hltb vh WHERE vh.version_id = v.version_id"
+                "  AND vh.source <> 'rejected')"
                 " WHERE v.game_id = ?",
                 (game_id,),
             )

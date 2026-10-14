@@ -1175,7 +1175,7 @@ async def handle_game_hltb(request: web.Request) -> web.Response:
     hltb_block: dict[str, Any] | None = None
     try:
         await ensure_title_match(repo, platform, title_id)
-        match = await repo.title_hltb_match(platform, title_id)
+        match = await repo.list_hltb_match(platform, title_id)
         if match:
             hltb_id, _score = match
             anthropic = request.app.get("mini_anthropic_auth")

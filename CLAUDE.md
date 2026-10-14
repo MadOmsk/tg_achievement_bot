@@ -509,9 +509,21 @@ every column. History: #106.
   only). No foreign keys point at `titles`. Its columns: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
   `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
-  HLTB entry it is (`hltb_id`/`hltb_match_score`/`hltb_attempts`/`hltb_checked_at`,
-  see HowLongToBeat's own "Automatic title matching"), and which Steam app it is
+  Steam app it is
   (`steam_appid`/`steam_appid_attempts`/`steam_appid_checked_at`, `tips_checked_at`).
+  **Which HLTB entry a list is has one home, the links of its versions**
+  (`version_hltb`, migration 110; owner, 2026-10-14): `titles.hltb_id` and its
+  three companions were a copy that the Mini App read and the operator's links
+  never reached. Every list is at least one version (a stand-in made from the
+  list, `stores.stand_in_for`), so it has somewhere to be linked;
+  `repo.list_hltb_match` is the one reading (the operator's link before an
+  automatic one, then the surer score, then the lower id; a list carried by a
+  version as a regional twin is found through it). A link has a source: `auto`
+  (the matcher, with its `score`), `manual` (the operator's, kept through every
+  check and replacing a refusal) or `rejected` — said not to be this version's,
+  by the operator, the advisers or the evidence check, so no collection or
+  match makes it again. When a list was last asked about is `fetch_state`
+  (`hltb_match`, subject `platform:title_id`).
 - **All three platforms localize a game's title** (#61). PSN's comes in the same call
   as its trophy groups; Xbox's rides on the `ru-RU` contract-4 response already
   fetched for descriptions (x360 keeps the titlehub name); Steam's needs the
@@ -2012,7 +2024,7 @@ History: #112.
 ### Automatic title matching
 
 **Every game gets its HLTB entry matched for it, without a person ever searching**
-(`bot/services/hltb_match.py`, `titles.hltb_id`/`hltb_match_score`) — the Mini App's
+(`bot/services/hltb_match.py`, a link of the list's versions, `repo.list_hltb_match`) — the Mini App's
 game page shows HLTB's hours and description straight away. `/hltb` above is
 unrelated: it stays a person picking from a candidate list, cached by the id they
 picked.
@@ -2026,8 +2038,9 @@ picked.
   looks at it, not before. **Backfill never triggers it** (backfill never publishes),
   so a freshly connected account's whole library costs nothing up front; the requests
   land one at a time, spread across whenever people actually earn something or open a
-  game page, never as a burst. Both call sites end up at the same one-row check
-  (`titles.hltb_id IS NULL AND hltb_attempts < 3`, re-askable an hour apart) — a
+  game page, never as a burst. Both call sites end up at the same check (no link
+  yet, and `fetch_state` says it is due: a miss is retried an hour later, three in
+  a row wait a month) — a
   matched (or three-times-failed) game is a no-op wherever it is asked from.
 - **The matcher scores every HLTB search result against every name the game has** —
   its platform names, normalized (accents, apostrophes, `&`, roman numerals) and also

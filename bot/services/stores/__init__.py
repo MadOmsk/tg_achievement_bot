@@ -94,6 +94,61 @@ PC_LABELS = {"xbox": "xbox pc", "egs": "egs pc", "gog": "gog pc"}
 PC_UNKNOWN = "pc (store unknown)"
 
 
+def store_of(platform: str, platforms: str | None = None) -> str:
+    """The store a stand-in stands under: its platform's, but a PC list of
+    an unknown store (Win32 alone) is no Microsoft product."""
+    if pc_of_unknown_store(platform, platforms):
+        return UNKNOWN_STORE
+    return "xbox" if platform in ("xbox_modern", "xbox_360") else platform
+
+
+def console_of(platform: str, platforms: str) -> str:
+    """The console a list stands for, from the platforms `titles` keeps:
+    the newest one it names, as a version is one console."""
+    from bot.services.platform_format import ONE, PS4, PS5, SERIES, X360, parse_platforms
+
+    found = parse_platforms(platforms)
+    if platform == "xbox_360":
+        return X360
+    if platform == "steam":
+        return "steam"
+    if platform == "psn":
+        return PS5 if PS5 in found and PS4 not in found else PS4
+    if SERIES in found and ONE not in found:
+        return SERIES
+    if found == {"pc"}:
+        return "pc"
+    return ONE
+
+
+def stand_in_for(record: dict[str, object]) -> StoreVersion:
+    """An achievement list as a version when no store describes it: the
+    list's own row in `titles` (a 360 game, an Xbox card the catalog no
+    longer carries, a PSN list not proved). Every list is at least one
+    version, so it can be put into a game and carry an HLTB entry."""
+    from bot.services.hltb_match import normalize
+
+    platform, platforms = str(record["platform"]), str(record.get("platforms") or "")
+    return StoreVersion(
+        store=store_of(platform, platforms),
+        product_id=str(record["title_id"]),
+        console=console_of(platform, platforms),
+        # A list whose name was lost ("?" on production's PSN lists) is
+        # named by its English name.
+        name=next(
+            (
+                str(n)
+                for n in (record.get("name"), record.get("name_en"))
+                if n and normalize(str(n))
+            ),
+            None,
+        ),
+        name_ru=record.get("name_ru"),  # type: ignore[arg-type]
+        kind="game",
+        stand_in=True,
+    )
+
+
 def console_label(store: str | None, console: str | None) -> str:
     """A version's platform as shown, from its store and its console: a
     console is its own name ("series", "ps5", "steam"); a PC is its store's

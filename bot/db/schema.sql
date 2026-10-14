@@ -440,17 +440,9 @@ CREATE TABLE IF NOT EXISTS titles (
     cover_hash TEXT,
     cover_checked_at TEXT,
     achievements_checked_at TEXT,
-    -- Which HowLongToBeat entry this game is (#131, migration 063): matched
-    -- automatically, never chosen by a person — bot/services/hltb_match.py
-    -- scores every candidate a search turns up and only keeps one it is
-    -- sure of. NULL until matched or given up on (three failed attempts,
-    -- same shape as platforms_attempts above); `hltb_match_score` is the
-    -- winning score, for telling a confident match from a Steam-appid one
-    -- (always 1.0) apart when the operator needs to check by hand.
-    hltb_id INTEGER,
-    hltb_match_score REAL,
-    hltb_attempts INTEGER NOT NULL DEFAULT 0,
-    hltb_checked_at TEXT,
+    -- Which HowLongToBeat entry this list is is not here (110): it is a
+    -- link of the list's versions (`version_hltb`, `repo.list_hltb_match`),
+    -- and when it was last asked, `fetch_state` ('hltb_match').
     -- The Steam app this game is (migration 069): a Steam game's own title_id,
     -- else looked up once — HLTB's page first, then Steam's store search — and
     -- given up on after three failed attempts, like the HLTB entry above. NULL
@@ -1122,7 +1114,11 @@ CREATE TABLE IF NOT EXISTS hltb_games (
 CREATE TABLE IF NOT EXISTS version_hltb (
     version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
     hltb_id    INTEGER NOT NULL,
-    source     TEXT NOT NULL,      -- auto / manual
+    -- auto: matched by the model; manual: the operator's, kept through every
+    -- check; rejected (110): said not to be this version's, so it is never
+    -- linked again (the matcher, a collection, an old link all skip it).
+    source     TEXT NOT NULL,
+    score      REAL,               -- 110: the matcher's score of an auto link
     PRIMARY KEY (version_id, hltb_id)
 );
 

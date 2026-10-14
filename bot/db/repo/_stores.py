@@ -10,6 +10,7 @@ import zlib
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
+from bot.db.repo._sql import platform_is
 from bot.util import utcnow, utcnow_iso
 
 if TYPE_CHECKING:
@@ -489,7 +490,7 @@ class _StoresRepo:
             "SELECT d.dlc_id, v.store, d.store_id, d.name, v.name AS version_name"
             " FROM version_hltb vh JOIN versions v ON v.version_id = vh.version_id"
             " JOIN dlcs d ON d.version_id = v.version_id WHERE vh.hltb_id = ?"
-            " ORDER BY d.dlc_id",
+            " AND vh.source <> 'rejected' ORDER BY d.dlc_id",
             (hltb_id,),
         )
         return [dict(row) for row in await cursor.fetchall()]
@@ -511,24 +512,118 @@ class _StoresRepo:
     async def versions_of_hltb(self, hltb_id: int) -> list[dict[str, Any]]:
         cursor = await self._conn.execute(
             "SELECT v.*, vh.source AS link_source FROM version_hltb vh"
-            " JOIN versions v ON v.version_id = vh.version_id WHERE vh.hltb_id = ?",
+            " JOIN versions v ON v.version_id = vh.version_id WHERE vh.hltb_id = ?"
+            " AND vh.source <> 'rejected'",
             (hltb_id,),
         )
         return [dict(row) for row in await cursor.fetchall()]
 
-    async def link_version_hltb(self, version_id: int, hltb_id: int, source: str = "auto") -> None:
-        await self._conn.execute(
-            "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source) VALUES (?, ?, ?)",
-            (version_id, hltb_id, source),
-        )
+    async def link_version_hltb(
+        self, version_id: int, hltb_id: int, source: str = "auto", score: float | None = None
+    ) -> None:
+        """An automatic link never replaces a link already there (the
+        operator's, or a refusal); the operator's own replaces whatever
+        there is, a refusal too."""
+        if source == "manual":
+            await self._conn.execute(
+                "INSERT INTO version_hltb (version_id, hltb_id, source, score)"
+                " VALUES (?, ?, 'manual', NULL) ON CONFLICT(version_id, hltb_id)"
+                " DO UPDATE SET source = 'manual', score = NULL",
+                (version_id, hltb_id),
+            )
+        else:
+            await self._conn.execute(
+                "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source, score)"
+                " VALUES (?, ?, ?, ?)",
+                (version_id, hltb_id, source, score),
+            )
         await self._conn.commit()
 
-    async def title_hltb_id(self, platform: str, title_id: str) -> int | None:
+    async def list_hltb_match(
+        self, platform: str, title_id: str
+    ) -> tuple[int, float | None] | None:
+        """The HowLongToBeat entry an achievement list is (owner, 2026-10-14:
+        one home, the links of its versions): the operator's link before an
+        automatic one, then the surer match, then the lower id. None when it
+        has none — not matched yet, none found, or every link refused."""
+        versions = await self.versions_of_list(platform, title_id)
+        if not versions:
+            return None
+        marks = ",".join("?" * len(versions))
         cursor = await self._conn.execute(
-            "SELECT hltb_id FROM titles WHERE platform = ? AND title_id = ?", (platform, title_id)
+            "SELECT vh.hltb_id, vh.score FROM version_hltb vh"
+            f" WHERE vh.version_id IN ({marks}) AND vh.source <> 'rejected'"
+            " ORDER BY vh.source = 'manual' DESC, vh.score IS NULL, vh.score DESC, vh.hltb_id"
+            " LIMIT 1",
+            versions,
         )
         row = await cursor.fetchone()
-        return int(row["hltb_id"]) if row and row["hltb_id"] else None
+        return (int(row["hltb_id"]), row["score"]) if row else None
+
+    async def versions_of_list(self, platform: str, title_id: str) -> list[int]:
+        """The versions an achievement list is of: those whose list it is, and
+        those that carry it as a regional twin (a second list of one product,
+        kept beside the first in `store_ids`). An Xbox list matches either
+        generation, as everywhere."""
+        where, params = platform_is(platform, "v.platform")
+        values = ("xbox_modern", "xbox_360") if not params else (platform,)
+        twins = " OR ".join("v.store_ids LIKE ?" for _ in values)
+        cursor = await self._conn.execute(
+            f"SELECT v.version_id FROM versions v WHERE ({where} AND v.title_id = ?) OR {twins}"
+            " ORDER BY v.version_id",
+            (*params, title_id, *(f'%"{p}:{title_id}"%' for p in values)),
+        )
+        return [int(row[0]) for row in await cursor.fetchall()]
+
+    async def title_hltb_id(self, platform: str, title_id: str) -> int | None:
+        match = await self.list_hltb_match(platform, title_id)
+        return match[0] if match else None
+
+    async def ensure_list_version(self, platform: str, title_id: str) -> list[int]:
+        """The versions of an achievement list; every list is at least one,
+        so when it has none a stand-in is made from the list itself."""
+        found = await self.versions_of_list(platform, title_id)
+        if found:
+            return found
+        record = await self.title_record(platform, title_id)
+        if not record:
+            return []
+        from bot.services.stores import stand_in_for
+
+        stand_in = stand_in_for(record)
+        # A product that is already a version (this list is its second, as
+        # a regional twin is) takes the list as an id, never as a rewrite.
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE store = ? AND product_id = ? AND console = ?",
+            (stand_in.store, stand_in.product_id, stand_in.console),
+        )
+        row = await cursor.fetchone()
+        if row is not None:
+            await self.add_store_ids(int(row[0]), [("list", f"{platform}:{title_id}")])
+            await self._conn.commit()
+            return [int(row[0])]
+        return [await self.save_version(stand_in, platform=platform, title_id=title_id)]
+
+    async def record_hltb_match(
+        self, platform: str, title_id: str, hltb_id: int | None, score: float | None
+    ) -> None:
+        """What one match attempt found: an automatic link on each version of
+        the list (not where it was refused). A miss, or an entry refused
+        everywhere, counts as a failed attempt — after the third the list
+        leaves the queue (`record_fetch`)."""
+        subject = f"{platform}:{title_id}"
+        if hltb_id is not None:
+            for version_id in await self.ensure_list_version(platform, title_id):
+                await self.link_version_hltb(version_id, hltb_id, "auto", score)
+            if await self.list_hltb_match(platform, title_id) is not None:
+                await self.record_fetch(subject, "hltb_match", status="ok")
+                return
+        await self.record_fetch(subject, "hltb_match", status="error", error="no match")
+
+    async def give_up_hltb_match(self, platform: str, title_id: str) -> None:
+        """A name not worth even searching (a platform's own placeholder, or
+        nothing Latin in it): not asked again for the longest step."""
+        await self.record_fetch(f"{platform}:{title_id}", "hltb_match", status="not_found")
 
     async def steam_app_patched_since(self, appid: int, since: str) -> bool:
         cursor = await self._conn.execute(
@@ -550,15 +645,22 @@ class _StoresRepo:
     async def unlink_version_hltb(
         self, version_id: int, hltb_id: int, *, only_auto: bool = False
     ) -> None:
+        """The version is not this entry: the link is kept as a refusal
+        (`rejected`), so nothing makes it again. `only_auto`: only an
+        automatic link (the evidence says no), never the operator's."""
         if only_auto:
             await self._conn.execute(
-                "DELETE FROM version_hltb WHERE version_id = ? AND hltb_id = ? AND source = 'auto'",
+                "UPDATE version_hltb SET source = 'rejected', score = NULL"
+                " WHERE version_id = ? AND hltb_id = ? AND source = 'auto'",
                 (version_id, hltb_id),
             )
             await self._conn.commit()
             return
         await self._conn.execute(
-            "DELETE FROM version_hltb WHERE version_id = ? AND hltb_id = ?", (version_id, hltb_id)
+            "INSERT INTO version_hltb (version_id, hltb_id, source, score)"
+            " VALUES (?, ?, 'rejected', NULL) ON CONFLICT(version_id, hltb_id)"
+            " DO UPDATE SET source = 'rejected', score = NULL",
+            (version_id, hltb_id),
         )
         await self._conn.commit()
 
@@ -702,7 +804,7 @@ class _StoresRepo:
 
     async def linked_hltb_ids(self) -> list[int]:
         cursor = await self._conn.execute(
-            "SELECT DISTINCT hltb_id FROM version_hltb ORDER BY hltb_id"
+            "SELECT DISTINCT hltb_id FROM version_hltb WHERE source <> 'rejected' ORDER BY hltb_id"
         )
         return [int(row[0]) for row in await cursor.fetchall()]
 

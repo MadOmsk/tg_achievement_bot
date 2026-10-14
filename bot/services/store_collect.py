@@ -27,18 +27,16 @@ from bot.services.hltb_match import (
     core,
     entry_fits_version,
     match_dlc_entries,
-    normalize,
     similarity,
 )
 from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
 from bot.services.stores import (
-    UNKNOWN_STORE,
     StoreVersion,
     edition_kind,
     hltb_page,
-    pc_of_unknown_store,
     psn_store,
+    stand_in_for,
     steam_store,
     xbox_catalog,
 )
@@ -841,24 +839,7 @@ class StoreCollector:
         record = await self._repo.title_record(platform, title_id)
         if not record:
             return
-        version = StoreVersion(
-            store=_store_of(platform, str(record.get("platforms") or "")),
-            product_id=title_id,
-            console=_console_of(platform, str(record.get("platforms") or "")),
-            # A list whose name was lost ("?" on production's PSN lists)
-            # is named by its English name.
-            name=next(
-                (
-                    str(n)
-                    for n in (record.get("name"), record.get("name_en"))
-                    if n and normalize(str(n))
-                ),
-                None,
-            ),
-            name_ru=record.get("name_ru"),  # type: ignore[arg-type]
-            kind="game",
-            stand_in=True,
-        )
+        version = stand_in_for(record)
         said = await self._repo.payload(f"titlehub:{title_id}", "titlehub")
         if isinstance(said, dict):
             version.developer = said.get("developer")
@@ -951,9 +932,10 @@ class StoreCollector:
         if hltb_id is None:
             return
         report.hltb_id = hltb_id
-        versions = await self._repo.versions_of_title(platform, title_id)
-        for version in versions:
-            await self._repo.link_version_hltb(int(version["version_id"]), hltb_id)
+        # The list's other versions (a console's, made since) are the same
+        # entry too, unless one was told it is not.
+        for version_id in await self._repo.versions_of_list(platform, title_id):
+            await self._repo.link_version_hltb(version_id, hltb_id)
         subject, source = f"hltb:{hltb_id}", "hltb_page"
         if not force and not await self._repo.fetch_due(subject, source):
             report.skipped.append(source)
@@ -995,33 +977,6 @@ def _close(ours: str, hit: str) -> bool:
     a, b = ours.split(), hit.split()
     short, long_ = (a, b) if len(a) <= len(b) else (b, a)
     return len(short) >= 2 and long_[: len(short)] == short
-
-
-def _store_of(platform: str, platforms: str | None = None) -> str:
-    """The store a stand-in stands under: its platform's, but a PC list of
-    an unknown store (Win32 alone) is no Microsoft product."""
-    if pc_of_unknown_store(platform, platforms):
-        return UNKNOWN_STORE
-    return "xbox" if platform in ("xbox_modern", "xbox_360") else platform
-
-
-def _console_of(platform: str, platforms: str) -> str:
-    """The console a list stands for, from the platforms `titles` keeps:
-    the newest one it names, as a version is one console."""
-    from bot.services.platform_format import ONE, PS4, PS5, SERIES, X360, parse_platforms
-
-    found = parse_platforms(platforms)
-    if platform == "xbox_360":
-        return X360
-    if platform == "steam":
-        return "steam"
-    if platform == "psn":
-        return PS5 if PS5 in found and PS4 not in found else PS4
-    if SERIES in found and ONE not in found:
-        return SERIES
-    if found == {"pc"}:
-        return "pc"
-    return ONE
 
 
 async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:

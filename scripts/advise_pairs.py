@@ -410,12 +410,18 @@ async def _hltb_questions(
     conn: aiosqlite.Connection, facts: Facts, *, audit: bool
 ) -> list[dict[str, Any]]:
     """HLTB matches in the grey zone (`audit=False`), or the sure ones."""
-    where = "hltb_match_score >= ?" if audit else "hltb_match_score < ?"
+    where = "b.score >= ?" if audit else "b.score < ?"
     found = []
+    # A list's automatic match (the operator's and the refused are not asked
+    # again): the surest link of any of its versions.
     for r in await _rows(
         conn,
-        "SELECT platform, title_id, COALESCE(name_en, name) AS name, hltb_id, hltb_match_score"
-        f" FROM titles WHERE hltb_id IS NOT NULL AND {where}",
+        "SELECT t.platform, t.title_id, COALESCE(t.name_en, t.name) AS name, b.hltb_id,"
+        " b.score AS hltb_match_score FROM titles t JOIN ("
+        "  SELECT v.platform, v.title_id, vh.hltb_id, MAX(vh.score) AS score"
+        "  FROM versions v JOIN version_hltb vh ON vh.version_id = v.version_id"
+        "  WHERE vh.source = 'auto' GROUP BY v.platform, v.title_id, vh.hltb_id) b"
+        f" ON b.platform = t.platform AND b.title_id = t.title_id WHERE {where}",
         (HLTB_GREY_BELOW,),
     ):
         ids = facts.list_versions(r["platform"], str(r["title_id"]))
@@ -798,12 +804,14 @@ async def apply_one(
     if q["type"] == "hltb":
         if operator_answered(facts, q):
             return {**done, "state": "operator"}
-        if answer.relation != "same":
-            # Hook: no way yet to reject a title's HLTB match so that it
-            # stays rejected (`StoreCollector._hltb` links it again from
-            # `titles.hltb_id`). Kept here for the operator.
-            return {**done, "state": "recorded", "reason": "reject: no way to write it yet"}
         ids = facts.list_versions(q["platform"], q["title_id"])
+        if answer.relation != "same":
+            # Not this entry: a refusal on each version of the list, which no
+            # check or collection makes into a link again.
+            if not dry_run:
+                for v in ids:
+                    await repo.unlink_version_hltb(v, q["hltb_id"])
+            return {**done, "state": "applied", "hltb": [ids, q["hltb_id"], "rejected"]}
         if not dry_run:
             for v in ids:
                 # The operator's own kind of link: kept through every check.

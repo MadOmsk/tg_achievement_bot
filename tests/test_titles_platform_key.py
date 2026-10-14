@@ -27,10 +27,17 @@ async def test_a_game_found_to_be_360_moves_and_keeps_what_was_learned(repo: Rep
     await repo.update_title_platform("360", Platform.XBOX_360)
 
     cursor = await repo._conn.execute(
-        "SELECT platform, icon_url, hltb_id, platforms FROM titles WHERE title_id = '360'"
+        "SELECT platform, icon_url, platforms FROM titles WHERE title_id = '360'"
     )
     rows = [tuple(row) for row in await cursor.fetchall()]
-    assert rows == [("xbox_360", "https://art", 42, '["Xbox360"]')]
+    assert rows == [("xbox_360", "https://art", '["Xbox360"]')]
+    # Its HLTB entry is a link of its version, which went with it; so did the
+    # time it was last asked about.
+    assert await repo.list_hltb_match("xbox_360", "360") == (42, 0.9)
+    # (an Xbox id is one game: either generation finds it)
+    assert await repo.list_hltb_match("xbox_modern", "360") == (42, 0.9)
+    cursor = await repo._conn.execute("SELECT subject FROM fetch_state WHERE source = 'hltb_match'")
+    assert [r[0] for r in await cursor.fetchall()] == ["xbox_360:360"]
 
 
 async def test_a_move_onto_an_existing_row_fills_its_gaps(repo: Repo) -> None:

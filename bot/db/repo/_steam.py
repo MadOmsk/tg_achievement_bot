@@ -78,7 +78,7 @@ class _SteamRepo:
     async def title_steam(self, platform: str, title_id: str) -> TitleSteam | None:
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT title_id, platform, name, name_en, hltb_id, steam_appid,"
+            "SELECT title_id, platform, name, name_en, steam_appid,"
             "  tips_checked_at,"
             "  (steam_appid IS NULL"
             f"   AND steam_appid_attempts < {self.STEAM_APPID_ATTEMPTS}"
@@ -96,11 +96,12 @@ class _SteamRepo:
         # A Steam game is its own Steam app.
         if platform == "steam" and str(row["title_id"]).isdigit():
             appid = int(row["title_id"])
+        match = await self.list_hltb_match(platform, row["title_id"])
         return TitleSteam(
             platform=platform,
             title_id=row["title_id"],
             names=tuple(dict.fromkeys(str(n) for n in (row["name_en"], row["name"]) if n)),
-            hltb_id=row["hltb_id"],
+            hltb_id=match[0] if match else None,
             steam_appid=appid,
             appid_due=appid is None and bool(row["appid_due"]),
             tips_checked_at=row["tips_checked_at"],

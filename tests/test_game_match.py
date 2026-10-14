@@ -903,8 +903,8 @@ def test_a_win32_list_is_a_pc_version_of_an_unknown_store() -> None:
 
 
 async def test_a_win32_list_joins_its_namesakes_game(repo: Repo) -> None:
-    from bot.services.store_collect import _store_of
     from bot.services.stores import UNKNOWN_STORE
+    from bot.services.stores import store_of as _store_of
 
     assert _store_of("xbox_modern", '["Win32"]') == UNKNOWN_STORE
     assert _store_of("xbox_modern", '["PC", "XboxOne"]') == "xbox"
