@@ -1119,6 +1119,10 @@ CREATE TABLE IF NOT EXISTS version_hltb (
     PRIMARY KEY (version_id, hltb_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_version_hltb_hltb ON version_hltb(hltb_id);
+
+CREATE INDEX IF NOT EXISTS idx_version_hltb_hltb ON version_hltb(hltb_id);
+
 CREATE TABLE IF NOT EXISTS dlc_hltb (
     dlc_id  INTEGER NOT NULL REFERENCES dlcs(dlc_id) ON DELETE CASCADE,
     hltb_id INTEGER NOT NULL,

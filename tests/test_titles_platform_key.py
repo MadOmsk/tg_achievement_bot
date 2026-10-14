@@ -49,6 +49,29 @@ async def test_a_move_onto_an_existing_row_fills_its_gaps(repo: Repo) -> None:
     assert [tuple(row) for row in await cursor.fetchall()] == [("xbox_360", "https://art")]
 
 
+async def test_a_move_takes_the_versions_of_its_list_with_it(repo: Repo) -> None:
+    from bot.services.stores import StoreVersion
+
+    await repo.upsert_title("360", "Fable II", Platform.XBOX_MODERN)
+    version = await repo.save_version(
+        StoreVersion(store="xbox", product_id="P1", console="one", name="Fable II"),
+        platform="xbox_modern",
+        title_id="360",
+    )
+
+    await repo.update_title_platform("360", Platform.XBOX_360)
+
+    cursor = await repo._conn.execute(
+        "SELECT platform, title_id FROM versions WHERE version_id = ?", (version,)
+    )
+    assert tuple(await cursor.fetchone()) == ("xbox_360", "360")
+    cursor = await repo._conn.execute(
+        "SELECT store_id FROM version_store_ids WHERE store = 'list' AND version_id = ?",
+        (version,),
+    )
+    assert [row[0] for row in await cursor.fetchall()] == ["xbox_360:360"]
+
+
 async def test_a_360_game_named_through_the_modern_contract_stays_360(repo: Repo) -> None:
     await repo.upsert_title("360", "Fable II", Platform.XBOX_360)
 

@@ -362,6 +362,21 @@ class _CatalogRepo:
         await self._conn.execute(
             "DELETE FROM titles WHERE platform = ? AND title_id = ?", (old_plat, title_id)
         )
+        # The versions whose list it is follow it (2026-10-14: they used to be
+        # left on the old generation, pointing at a list that was gone).
+        await self._conn.execute(
+            "UPDATE versions SET platform = ? WHERE platform = ? AND title_id = ?",
+            (new_plat, old_plat, title_id),
+        )
+        await self._conn.execute(
+            "UPDATE OR IGNORE version_store_ids SET store_id = ?"
+            " WHERE store = 'list' AND store_id = ?",
+            (f"{new_plat}:{title_id}", f"{old_plat}:{title_id}"),
+        )
+        await self._conn.execute(
+            "DELETE FROM version_store_ids WHERE store = 'list' AND store_id = ?",
+            (f"{old_plat}:{title_id}",),
+        )
         await self._conn.execute(
             "UPDATE OR IGNORE title_guide_reads SET platform = ?"
             " WHERE platform = ? AND title_id = ?",
