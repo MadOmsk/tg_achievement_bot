@@ -509,6 +509,26 @@ class _StoresRepo:
                 sorted(links.items()),
             )
 
+    async def link_dlc_hltb(self, dlc_id: int, hltb_id: int) -> None:
+        """The operator's (or the advisers') word that this DLC is this HLTB
+        entry: kept through every check, replacing a refusal."""
+        await self._conn.execute(
+            "INSERT INTO dlc_hltb (dlc_id, hltb_id, source) VALUES (?, ?, 'manual')"
+            " ON CONFLICT(dlc_id, hltb_id) DO UPDATE SET source = 'manual'",
+            (dlc_id, hltb_id),
+        )
+        await self._conn.commit()
+
+    async def reject_dlc_hltb(self, dlc_id: int, hltb_id: int) -> None:
+        """This DLC is not this HLTB entry: kept as a refusal (`rejected`), so
+        the matcher never makes the link again."""
+        await self._conn.execute(
+            "INSERT INTO dlc_hltb (dlc_id, hltb_id, source) VALUES (?, ?, 'rejected')"
+            " ON CONFLICT(dlc_id, hltb_id) DO UPDATE SET source = 'rejected'",
+            (dlc_id, hltb_id),
+        )
+        await self._conn.commit()
+
     async def versions_of_hltb(self, hltb_id: int) -> list[dict[str, Any]]:
         cursor = await self._conn.execute(
             "SELECT v.*, vh.source AS link_source FROM version_hltb vh"

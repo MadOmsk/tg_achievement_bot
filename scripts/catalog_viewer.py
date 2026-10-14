@@ -622,9 +622,11 @@ async def dlcs(request: web.Request) -> web.Response:
 # A DLC's HLTB entry (`dlc_hltb`): its id, name and times, the first if several.
 _DLC_HLTB = (
     "(SELECT h.hltb_id FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id"
-    " WHERE dh.dlc_id = d.dlc_id ORDER BY h.hltb_id LIMIT 1) AS hltb_id,"
+    " WHERE dh.dlc_id = d.dlc_id AND dh.source <> 'rejected' ORDER BY h.hltb_id LIMIT 1)"
+    " AS hltb_id,"
     " (SELECT h.times FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id"
-    " WHERE dh.dlc_id = d.dlc_id ORDER BY h.hltb_id LIMIT 1) AS hltb_times"
+    " WHERE dh.dlc_id = d.dlc_id AND dh.source <> 'rejected' ORDER BY h.hltb_id LIMIT 1)"
+    " AS hltb_times"
 )
 
 
@@ -754,7 +756,7 @@ async def hltb_entry(request: web.Request) -> web.Response:
             " d.on_sale, v.store, d.version_id, v.name AS version,"
             f" {_console_sql()} AS console, " + _DLC_HLTB + " FROM dlc_hltb dh"
             " JOIN dlcs d ON d.dlc_id = dh.dlc_id JOIN versions v ON v.version_id = d.version_id"
-            " WHERE dh.hltb_id = ?",
+            " WHERE dh.hltb_id = ? AND dh.source <> 'rejected'",
             (hltb_id,),
         ).fetchall()
         titles_ = conn.execute(

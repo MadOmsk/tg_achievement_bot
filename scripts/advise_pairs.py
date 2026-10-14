@@ -482,7 +482,10 @@ async def _dlc_questions(conn: aiosqlite.Connection, facts: Facts) -> list[dict[
             children[int(h["parent_hltb_id"])].append(
                 (int(h["hltb_id"]), str(h["name"] or ""), h.get("steam_appid"))
             )
-    linked = {int(r["dlc_id"]) for r in await _rows(conn, "SELECT dlc_id FROM dlc_hltb")}
+    linked = {
+        int(r["dlc_id"])
+        for r in await _rows(conn, "SELECT dlc_id FROM dlc_hltb WHERE source <> 'rejected'")
+    }
     found = []
     for entry, dlcs in (await _dlc_rows(conn)).items():
         kids = children.get(entry)
@@ -815,11 +818,16 @@ async def apply_one(
         if not dry_run:
             for v in ids:
                 # The operator's own kind of link: kept through every check.
-                await repo.unlink_version_hltb(v, q["hltb_id"])
                 await repo.link_version_hltb(v, q["hltb_id"], "manual")
         return {**done, "state": "applied", "hltb": [ids, q["hltb_id"], "manual"]}
-    # dlc. Hook: no repo method writes a hand-made `dlc_hltb` link yet.
-    return {**done, "state": "recorded", "reason": f"dlc {answer.relation}: no way to write it yet"}
+    # dlc: the answer is a hand-made link, or a refusal the matcher keeps.
+    if not dry_run:
+        if answer.relation == "same":
+            await repo.link_dlc_hltb(q["dlc_id"], q["hltb_id"])
+        else:
+            await repo.reject_dlc_hltb(q["dlc_id"], q["hltb_id"])
+    kind = "manual" if answer.relation == "same" else "rejected"
+    return {**done, "state": "applied", "dlc": [q["dlc_id"], q["hltb_id"], kind]}
 
 
 async def apply(args: argparse.Namespace) -> None:
@@ -840,13 +848,20 @@ async def apply(args: argparse.Namespace) -> None:
             if outcome.state != "agreed" or outcome.answer is None or outcome.decided_by is None:
                 continue
             before = applied.get(pid)
-            if before and before.get("answer") == outcome.answer.relation:
+            # "recorded" was an answer there was no way to write yet.
+            if (
+                before
+                and before.get("answer") == outcome.answer.relation
+                and before.get("state") != "recorded"
+            ):
                 continue
             done = await apply_one(repo, facts, q, outcome.answer, outcome.decided_by, args.dry_run)
             written[(q["type"], done["state"])] += 1
             if done.get("label") and done["state"] == "applied":
                 touched |= set(done["label"][:2])
-            what = done.get("label") or done.get("hltb") or done.get("reason") or ""
+            what = (
+                done.get("label") or done.get("hltb") or done.get("dlc") or done.get("reason") or ""
+            )
             print(f"  {pid}: {done['state']} {outcome.decided_by} {outcome.answer.relation} {what}")
             applied[pid] = done
         if touched and not args.dry_run:

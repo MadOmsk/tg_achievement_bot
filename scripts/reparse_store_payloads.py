@@ -48,7 +48,10 @@ SUMMARY = (
         "SELECT COUNT(*) FROM versions WHERE console = '360' AND stand_in = 0",
     ),
     ("dlc", "SELECT COUNT(*) FROM dlcs"),
-    ("dlc linked to HLTB", "SELECT COUNT(DISTINCT dlc_id) FROM dlc_hltb"),
+    (
+        "dlc linked to HLTB",
+        "SELECT COUNT(DISTINCT dlc_id) FROM dlc_hltb WHERE source <> 'rejected'",
+    ),
     ("version ↔ HLTB links", "SELECT COUNT(*) FROM version_hltb"),
     (
         "HLTB games filed under a child",

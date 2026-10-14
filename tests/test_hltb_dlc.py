@@ -257,3 +257,27 @@ async def test_a_regional_twin_list_is_matched_through_the_version_that_carries_
     assert await repo.list_hltb_match("steam", "2130") == (55, 0.9)  # the same product
     row = await repo.version_row(version)
     assert row["name"] == "Dark Messiah of Might & Magic" and row["stand_in"] == 0
+
+
+async def test_a_dlc_link_by_hand_stays_and_a_refusal_is_never_made_again(repo: Repo) -> None:
+    version = await _list_with_version(repo, "T9")
+    await repo.save_dlc(version, StoreDlc(store_id="D1", name="Expansion"))
+    cursor = await repo._conn.execute("SELECT dlc_id FROM dlcs WHERE version_id = ?", (version,))
+    dlc = int((await cursor.fetchone())[0])
+    await repo.replace_dlc_hltb([dlc], {dlc: 7})
+    cursor = await repo._conn.execute("SELECT hltb_id, source FROM dlc_hltb")
+    assert [tuple(r) for r in await cursor.fetchall()] == [(7, "auto")]
+
+    await repo.reject_dlc_hltb(dlc, 7)
+    await repo.replace_dlc_hltb([dlc], {dlc: 7})  # the matcher says it again
+    cursor = await repo._conn.execute("SELECT hltb_id, source FROM dlc_hltb")
+    assert [tuple(r) for r in await cursor.fetchall()] == [(7, "rejected")]
+
+    await repo.link_dlc_hltb(dlc, 8)
+    await repo.replace_dlc_hltb([dlc], {dlc: 9})  # the automatic ones are rewritten
+    cursor = await repo._conn.execute("SELECT hltb_id, source FROM dlc_hltb ORDER BY hltb_id")
+    assert [tuple(r) for r in await cursor.fetchall()] == [
+        (7, "rejected"),
+        (8, "manual"),
+        (9, "auto"),
+    ]
