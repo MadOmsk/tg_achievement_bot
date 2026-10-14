@@ -154,7 +154,8 @@ def is_part(kind: str | None, role: str | None, names: tuple[str, ...] | list[st
     return any(_DEMO.search(n) or _TOOL.search(n) or _EXTRA.search(n) for n in names if n)
 
 
-PART_ROLES = frozenset({"demo", "tool", "mode", "extra"})
+# (A mode is no such part: Fortnite's Save the World has an entry of its own.)
+PART_ROLES = frozenset({"demo", "tool", "extra"})
 
 
 def is_extra(candidate: Candidate) -> bool:
