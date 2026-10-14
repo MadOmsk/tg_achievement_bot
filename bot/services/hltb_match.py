@@ -387,6 +387,21 @@ async def _check_steam(
 
 # HLTB's types that are not a game of their own.
 NOT_A_GAME = frozenset({"dlc", "expansion", "mod", "hack"})
+# A release of a game is out this many years or fewer before its entry: an
+# edition, a full release after early access ("Palworld" 2024, its entry 2026;
+# "Final Fantasy XV" 2016, its Royal Edition entry 2018). More: the entry is a
+# remake or a remaster (owner, 2026-10-14; it was a year).
+SAME_GAME_YEARS = 3
+
+_EPISODE = re.compile(
+    r"\b(?:episode|chapter)\s*(?:\d+|[ivx]+|one|two|three|four|five)\b", re.IGNORECASE
+)
+
+
+def is_episode(*names: str | None) -> bool:
+    """An episode or a chapter of an episodic game ("Batman: The Enemy Within -
+    Episode 1", "Poppy Playtime: Chapter 2")."""
+    return any(_EPISODE.search(n) for n in names if n)
 
 
 def entry_fits_version(
@@ -411,7 +426,7 @@ def entry_fits_version(
     if version_store == "steam" and steam_appids and version_product.isdigit():
         if int(version_product) not in steam_appids:
             return False
-    if entry_year and version_year and version_year < entry_year - 1:
+    if entry_year and version_year and version_year < entry_year - SAME_GAME_YEARS:
         return False
     return True
 

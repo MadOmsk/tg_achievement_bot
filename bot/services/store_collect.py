@@ -26,6 +26,7 @@ from bot.services.hltb import ensure_title_match
 from bot.services.hltb_match import (
     core,
     entry_fits_version,
+    is_episode,
     match_dlc_entries,
     similarity,
 )
@@ -1006,6 +1007,19 @@ async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:
             version_kind=version.get("kind"),
             version_year=candidate_year(version),
         )
+        # An episodic game (owner, 2026-10-14): HowLongToBeat lists each episode
+        # (a DLC of the game, as it files them), ours is a version of the
+        # whole — every episode is linked to the main entry instead.
+        parent = entry.get("parent_hltb_id")
+        if (
+            not fits
+            and parent
+            and (entry.get("game_type") or "") in ("dlc", "expansion")
+            and is_episode(version.get("name"), version.get("name_ru"))
+        ):
+            await repo.link_version_hltb(int(version["version_id"]), int(parent), "auto")
+            await repo.unlink_version_hltb(int(version["version_id"]), hltb_id, only_auto=True)
+            continue
         if not fits or is_part(
             version.get("kind"),
             version.get("role"),

@@ -339,3 +339,70 @@ async def test_the_evidence_check_refuses_an_automatic_link_of_a_demo(repo: Repo
         "SELECT version_id, source FROM version_hltb ORDER BY version_id"
     )
     assert [tuple(r) for r in await cursor.fetchall()] == [(game, "auto"), (demo, "rejected")]
+
+
+# ------------------------------------- an edition's year, an episodic game (2026-10-14)
+
+
+def test_an_edition_or_an_early_access_game_is_its_entry_a_remake_is_not() -> None:
+    def fits(version_year: int, entry_year: int) -> bool:
+        return entry_fits_version(
+            game_type="game",
+            steam_appids=set(),
+            entry_year=entry_year,
+            version_store="xbox",
+            version_product="X",
+            version_kind="game",
+            version_year=version_year,
+        )
+
+    assert fits(2024, 2026)  # Palworld: early access, then the full release
+    assert fits(2016, 2018)  # Final Fantasy XV, its Royal Edition's entry
+    assert fits(2015, 2018)  # three years: still the game
+    assert not fits(2014, 2018)  # four: a remake or a remaster
+    assert not fits(2005, 2023)  # Resident Evil 4
+
+
+async def test_an_episode_is_linked_to_the_games_main_entry_when_hltb_lists_episodes(
+    repo: Repo,
+) -> None:
+    from bot.services.hltb_match import is_episode
+
+    assert is_episode("Batman: The Enemy Within - Episode 1")
+    assert is_episode("Poppy Playtime: Chapter 2") and is_episode("X Episode One")
+    assert not is_episode("Chapters of a Life") and not is_episode("Episodes")
+
+    version = await repo.save_version(
+        StoreVersion(
+            store="xbox",
+            product_id="E1",
+            console="one",
+            name="Batman: The Enemy Within - Episode 1",
+        ),
+        platform=None,
+        title_id=None,
+    )
+    main = {
+        "game": [{"game_id": 100, "game_name": "Batman: The Enemy Within", "game_type": "game"}]
+    }
+    episode = {
+        "game": [
+            {
+                "game_id": 101,
+                "game_name": "Batman: The Enemy Within - Episode 1",
+                "game_type": "dlc",
+                "game_parent": 100,
+            }
+        ]
+    }
+    await repo.save_hltb_game(hltb_page.parse_page(main))  # type: ignore[arg-type]
+    await repo.save_hltb_game(hltb_page.parse_page(episode))  # type: ignore[arg-type]
+    await repo.save_payload("hltb:101", "hltb_page", episode)
+    await repo.link_version_hltb(version, 101)
+
+    await link_hltb_entry(repo, 101)
+
+    cursor = await repo._conn.execute(
+        "SELECT hltb_id, source FROM version_hltb WHERE version_id = ? ORDER BY hltb_id", (version,)
+    )
+    assert [tuple(r) for r in await cursor.fetchall()] == [(100, "auto"), (101, "rejected")]
