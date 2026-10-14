@@ -672,7 +672,13 @@ What the stores and HLTB say about a game, collected but not shown yet
     the evidence agrees** (`hltb_match.entry_fits_version`, checked whenever
     the entry is looked at): no DLC's or mod's entry on a base game, no entry
     naming another Steam app (either of the two its page names), no version
-    out a year or more before the entry. **HLTB's DLC are put on our DLC only
+    out more than `SAME_GAME_YEARS` (3) before the entry — an edition or a full
+    release after early access is its game (Palworld 2024, its entry 2026), four
+    years is a remake or a remaster (owner, 2026-10-14; it was a year). **An
+    episodic game** (owner, 2026-10-14): HLTB files each episode or chapter as a
+    DLC of the game, ours is a version of the whole, so a version named "Episode
+    N" or "Chapter N" whose entry is a DLC with a parent is linked to the parent
+    (the main entry) and the episode's own is refused (`is_episode`). **HLTB's DLC are put on our DLC only
     inside their game** (`match_dlc_entries`, `dlc_hltb`, owner, 2026-10-12):
     the entry's children against the DLC of the versions that entry stands
     for — by the Steam app a child's page names, else by the name with the
