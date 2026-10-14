@@ -310,12 +310,8 @@ async def test_a_second_list_never_takes_the_first_ones_place(repo) -> None:
     assert first == again
     row = await repo.version_row(first)
     assert (row["platform"], row["title_id"]) == ("psn", "NPWR00001_00")
-    cur = await repo._conn.execute(
-        "SELECT store_id FROM version_store_ids WHERE version_id = ? AND store = 'list'"
-        " ORDER BY store_id",
-        (first,),
-    )
-    assert [r[0] for r in await cur.fetchall()] == ["psn:NPWR00001_00", "psn:NPWR00002_00"]
+    lists = sorted(sid for kind, sid in await repo.store_ids_of(first) if kind == "list")
+    assert lists == ["psn:NPWR00001_00", "psn:NPWR00002_00"]
 
 
 def test_a_steam_apps_own_type_is_its_kind() -> None:
@@ -757,3 +753,39 @@ async def test_the_kept_answers_are_read_again_with_no_request(
         "Price"
         not in again["DisplaySkuAvailabilities"][0]["Availabilities"][0]["OrderManagementData"]
     )
+
+
+async def test_migration_109_folds_the_store_ids_into_a_column(tmp_path) -> None:
+    import json
+
+    import aiosqlite
+
+    from bot.db.repo import MIGRATIONS_DIR
+
+    sql = (MIGRATIONS_DIR / "109_versions_hold_their_store_ids.sql").read_text(encoding="utf-8")
+    async with aiosqlite.connect(tmp_path / "m108.db") as conn:
+        await conn.executescript(
+            """
+            CREATE TABLE versions (version_id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE version_store_ids (
+                store TEXT NOT NULL, store_id TEXT NOT NULL, version_id INTEGER NOT NULL,
+                source TEXT NOT NULL, PRIMARY KEY (store, store_id, version_id));
+            CREATE INDEX idx_version_store_ids_version ON version_store_ids(version_id);
+            INSERT INTO versions VALUES (1, 'PS4 game'), (2, 'Bare');
+            INSERT INTO version_store_ids VALUES
+                ('psn_concept', '204794', 1, 'catalog'), ('psn_title', 'CUSA1', 1, 'catalog'),
+                ('list', 'psn:NPWR1', 1, 'catalog');
+            """
+        )
+        await conn.executescript(sql)
+        cursor = await conn.execute("SELECT version_id, store_ids FROM versions ORDER BY 1")
+        rows = [(r[0], r[1]) for r in await cursor.fetchall()]
+        cursor = await conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'version_store_ids'")
+        gone = await cursor.fetchall()
+    assert json.loads(rows[0][1]) == [
+        ["psn_concept", "204794"],
+        ["psn_title", "CUSA1"],
+        ["list", "psn:NPWR1"],
+    ]
+    assert rows[1] == (2, None)
+    assert gone == []

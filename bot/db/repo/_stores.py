@@ -27,6 +27,17 @@ GAVE_UP_DAYS = 30
 RETRY_HOURS = 1
 
 
+def _read_store_ids(raw: object) -> list[tuple[str, str]]:
+    """A version's `store_ids` column as `(kind, id)` pairs."""
+    try:
+        found = json.loads(str(raw or "[]"))
+    except ValueError:
+        return []
+    if not isinstance(found, list):
+        return []
+    return [(str(k), str(i)) for k, i in found]
+
+
 class _StoresRepo:
     # ------------------------------------------------------------ fetch state
 
@@ -238,22 +249,27 @@ class _StoresRepo:
         if platform and title_id:
             # Every list proved to be this version, the first one included.
             ids.append(("list", f"{platform}:{title_id}"))
-        for kind, store_id in ids:
-            await self._conn.execute(
-                "INSERT OR IGNORE INTO version_store_ids (store, store_id, version_id, source)"
-                " VALUES (?, ?, ?, 'catalog')",
-                (kind, store_id, version_id),
-            )
+        await self.add_store_ids(version_id, ids)
         await self._conn.commit()
         return version_id
 
-    async def add_store_id(self, version_id: int, store: str, store_id: str, source: str) -> None:
-        await self._conn.execute(
-            "INSERT OR IGNORE INTO version_store_ids (store, store_id, version_id, source)"
-            " VALUES (?, ?, ?, ?)",
-            (store, store_id, version_id, source),
+    async def store_ids_of(self, version_id: int) -> list[tuple[str, str]]:
+        """Every id naming a version, `(kind, id)`, in the order they came."""
+        cursor = await self._conn.execute(
+            "SELECT store_ids FROM versions WHERE version_id = ?", (version_id,)
         )
-        await self._conn.commit()
+        row = await cursor.fetchone()
+        return _read_store_ids(row[0] if row else None)
+
+    async def add_store_ids(self, version_id: int, ids: list[tuple[str, str]]) -> None:
+        """These ids joined to the version's own, each once. No commit."""
+        known = await self.store_ids_of(version_id)
+        merged = list(dict.fromkeys([*known, *ids]))
+        if merged != known:
+            await self._conn.execute(
+                "UPDATE versions SET store_ids = ? WHERE version_id = ?",
+                (json.dumps(merged), version_id),
+            )
 
     async def versions_of_title(self, platform: str, title_id: str) -> list[dict[str, Any]]:
         cursor = await self._conn.execute(
@@ -265,12 +281,16 @@ class _StoresRepo:
     async def store_ids_of_title(self, platform: str, title_id: str, store: str) -> list[str]:
         """The ids of one kind (`psn_title`, …) its versions are known by."""
         cursor = await self._conn.execute(
-            "SELECT DISTINCT i.store_id FROM version_store_ids i"
-            " JOIN versions v ON v.version_id = i.version_id"
-            " WHERE v.platform = ? AND v.title_id = ? AND i.store = ?",
-            (platform, title_id, store),
+            "SELECT store_ids FROM versions WHERE platform = ? AND title_id = ?",
+            (platform, title_id),
         )
-        return [str(row[0]) for row in await cursor.fetchall()]
+        found = [
+            sid
+            for row in await cursor.fetchall()
+            for kind, sid in _read_store_ids(row[0])
+            if kind == store
+        ]
+        return list(dict.fromkeys(found))
 
     async def psn_holder_of(self, np_communication_id: str) -> str | None:
         """A PSN account somebody holds that earned something in this trophy
@@ -556,7 +576,7 @@ class _StoresRepo:
         """A version that is not one (a bundle taken for a game, a wrong
         match): its DLC, store ids and HLTB links go with it."""
         async with self.transaction():
-            for table in ("dlc_hltb", "dlcs", "version_hltb", "version_store_ids", "versions"):
+            for table in ("dlc_hltb", "dlcs", "version_hltb", "versions"):
                 if table == "dlc_hltb":
                     await self._conn.execute(
                         "DELETE FROM dlc_hltb WHERE dlc_id IN"
@@ -600,12 +620,7 @@ class _StoresRepo:
                     " AND NOT EXISTS (SELECT 1 FROM games WHERE anchor_version_id = ?)",
                     (into, old, into),
                 )
-                await self._conn.execute(
-                    "INSERT OR IGNORE INTO version_store_ids (store, store_id, version_id, source)"
-                    " SELECT store, store_id, ?, source FROM version_store_ids"
-                    " WHERE version_id = ?",
-                    (into, old),
-                )
+                await self.add_store_ids(into, await self.store_ids_of(old))
                 await self._conn.execute(
                     "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source)"
                     " SELECT ?, hltb_id, source FROM version_hltb WHERE version_id = ?",

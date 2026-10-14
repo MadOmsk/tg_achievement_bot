@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import aiosqlite
 
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
@@ -368,15 +370,20 @@ class _CatalogRepo:
             "UPDATE versions SET platform = ? WHERE platform = ? AND title_id = ?",
             (new_plat, old_plat, title_id),
         )
-        await self._conn.execute(
-            "UPDATE OR IGNORE version_store_ids SET store_id = ?"
-            " WHERE store = 'list' AND store_id = ?",
-            (f"{new_plat}:{title_id}", f"{old_plat}:{title_id}"),
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE platform = ? AND title_id = ?",
+            (new_plat, title_id),
         )
-        await self._conn.execute(
-            "DELETE FROM version_store_ids WHERE store = 'list' AND store_id = ?",
-            (f"{old_plat}:{title_id}",),
-        )
+        for row in await cursor.fetchall():
+            ids = await self.store_ids_of(int(row[0]))
+            moved = [
+                ("list", f"{new_plat}:{title_id}") if i == ("list", f"{old_plat}:{title_id}") else i
+                for i in ids
+            ]
+            await self._conn.execute(
+                "UPDATE versions SET store_ids = ? WHERE version_id = ?",
+                (json.dumps(list(dict.fromkeys(moved))), int(row[0])),
+            )
         await self._conn.execute(
             "UPDATE OR IGNORE title_guide_reads SET platform = ?"
             " WHERE platform = ? AND title_id = ?",

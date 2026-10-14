@@ -595,7 +595,8 @@ What the stores and HLTB say about a game, collected but not shown yet
   GOG) it takes the role `covered` — kept in its game (it still draws its
   namesake in) and shown nowhere but the game page's full table.
   A version points at its achievement list (`platform`, `title_id`) once that is
-  proved; `version_store_ids` holds every id naming it (regional CUSAs, the Xbox
+  proved; `versions.store_ids` (a JSON list of `[kind, id]`, migration 109 — it was
+  the table `version_store_ids`) holds every id naming it (regional CUSAs, the Xbox
   title id). `origin` is `played` or `store` (found, nobody here owns it).
 - **A PC version's store is `versions.store`** (owner, 2026-10-12): `xbox`
   (Microsoft's, console `pc`), `steam`, later `egs`, `gog` — one more value
@@ -720,7 +721,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
   stand-in (`store = 'list'`) is made from `titles`, and goes once a store
   product is found. A version's first proved list stays its list; another one
-  (a regional twin) is kept beside it, as every list is, in `version_store_ids`
+  (a regional twin) is kept beside it, as every list is, in `versions.store_ids`
   (`list`, `platform:title_id`).
 - **A game's year is the earliest of its versions', its developer and publisher
   the earliest version's** (owner, 2026-10-10; `game_match.game_facts`, migration

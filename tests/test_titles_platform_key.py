@@ -65,11 +65,9 @@ async def test_a_move_takes_the_versions_of_its_list_with_it(repo: Repo) -> None
         "SELECT platform, title_id FROM versions WHERE version_id = ?", (version,)
     )
     assert tuple(await cursor.fetchone()) == ("xbox_360", "360")
-    cursor = await repo._conn.execute(
-        "SELECT store_id FROM version_store_ids WHERE store = 'list' AND version_id = ?",
-        (version,),
-    )
-    assert [row[0] for row in await cursor.fetchall()] == ["xbox_360:360"]
+    assert [i for i in await repo.store_ids_of(version) if i[0] == "list"] == [
+        ("list", "xbox_360:360")
+    ]
 
 
 async def test_a_360_game_named_through_the_modern_contract_stays_360(repo: Repo) -> None:

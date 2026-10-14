@@ -1067,20 +1067,15 @@ CREATE TABLE IF NOT EXISTS versions (
     of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
     link_p        REAL,
     linked_at     TEXT,
+    -- Every id that names this version (109; it was the table
+    -- version_store_ids): a JSON list of [kind, id] — psn_concept / psn_title
+    -- (several CUSAs for one PS4 version), xbox_product / xbox_title,
+    -- steam_app, and `list` for each achievement list proved to be this
+    -- version ("platform:title_id").
+    store_ids     TEXT,
     UNIQUE (store, product_id, console)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);
-
--- Every store id that names a version: regional PSN products (several CUSA
--- for one PS4 version), an Xbox title id, a Steam appid.
-CREATE TABLE IF NOT EXISTS version_store_ids (
-    store      TEXT NOT NULL,      -- steam_app / xbox_product / xbox_title / psn_title / psn_concept
-    store_id   TEXT NOT NULL,
-    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
-    source     TEXT NOT NULL,      -- catalog / presence / search / manual
-    PRIMARY KEY (store, store_id, version_id)
-);
-CREATE INDEX IF NOT EXISTS idx_version_store_ids_version ON version_store_ids(version_id);
 
 CREATE TABLE IF NOT EXISTS dlcs (
     dlc_id       INTEGER PRIMARY KEY,

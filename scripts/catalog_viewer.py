@@ -330,7 +330,6 @@ _HOME_TABLES = (
         "/versions",
         "a store product on one console (or a stand-in made from a list), and the game it is in",
     ),
-    ("version_store_ids", "/versions", "every id naming a version: regional CUSAs, Xbox title ids"),
     ("dlcs", "/dlcs", "add-ons the stores list for each version"),
     ("hltb_games", "/hltb", "HowLongToBeat entries: games and DLC, their times"),
     ("version_hltb", "/hltb", "which HLTB entry each version is"),
@@ -457,10 +456,10 @@ async def version(request: web.Request) -> web.Response:
         row = conn.execute(
             "SELECT v.* FROM versions v WHERE v.version_id = ?", (version_id,)
         ).fetchone()
-        ids = conn.execute(
-            "SELECT store, store_id, source FROM version_store_ids WHERE version_id = ?",
-            (version_id,),
-        ).fetchall()
+        ids = [
+            {"kind": kind, "id": store_id}
+            for kind, store_id in json.loads((row["store_ids"] if row else None) or "[]")
+        ]
         dlcs = conn.execute(
             "SELECT d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
             " d.on_sale, v.store, " + _DLC_HLTB + " FROM dlcs d"
