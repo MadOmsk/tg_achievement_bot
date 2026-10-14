@@ -800,11 +800,18 @@ What the stores and HLTB say about a game, collected but not shown yet
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
+  - **The stores' texts are signs too** (owner, 2026-10-13): a version's
+    genres and short description (`versions.genres`, `description_en`) and its
+    HLTB summary give `TEXT_SIGNS` — the subject's text says remastered,
+    remake, a collection, VR, a demo; either says sequel; it names the other
+    game; the two say much the same or little; no genre in common. Every class
+    starts at 0 on them, so they change nothing until a fit weighs them.
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own
     version as the subject), and the weights are fitted by gradient descent
-    **pulled towards the current ones** (a proximal step), so a few dozen
-    labels move only what they clearly disagree with. The script prints
+    **pulled towards the current ones** (a proximal step) — weakly
+    (`strength` 0.001, step 0.5, 800 passes: held out, a stronger pull kept
+    the weights near their start and lost accuracy, 85% against 80%). The script prints
     held-out accuracy before and after and the weights that moved, writes them
     as JSON, and changes nothing: `WEIGHTS` is edited by hand once the fit is
     judged better. **A label weighs by who gave it**: the operator's 1.0, the

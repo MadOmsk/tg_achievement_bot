@@ -955,3 +955,36 @@ async def test_a_label_outlives_its_version(repo: Repo) -> None:
         (steam, xbox, "other", "steam:292030:steam", "xbox:BR765873CQJD:one")
     ]
     await GameLinker(repo).link_all()  # a label whose version is gone is simply not read
+
+
+# ------------------------------------------------------------- stores' texts
+
+
+def test_a_remaster_s_description_and_the_other_game_it_names_are_signs() -> None:
+    old = _c(1, "Dark Souls: Prepare to Die Edition", year=2012, blurb="A dark fantasy action RPG.")
+    new = _c(
+        2,
+        "DARK SOULS: REMASTERED",
+        year=2018,
+        blurb="Re-experience Dark Souls, beautifully remastered in high definition at 60fps.",
+    )
+    f = features(old, new)
+    assert f["text_remaster"] == 1.0
+    assert "text_remake" not in f
+
+
+def test_two_descriptions_saying_the_same_and_genres_that_differ() -> None:
+    text = "Hunt monsters across a vast open world as a witcher for hire."
+    a = _c(1, "Witcher 3", year=2015, blurb=text, genres=frozenset({"rpg"}))
+    b = _c(2, "Witcher 3", year=2015, store="steam", blurb=text, genres=frozenset({"racing"}))
+    f = features(a, b)
+    assert f["text_same"] == 1.0
+    assert f["genres_differ"] == 1.0
+
+
+def test_text_signs_change_nothing_until_weights_are_fitted() -> None:
+    a = _c(1, "Halo", year=2001, blurb="The original classic, remastered in HD.")
+    b = _c(2, "Halo", year=2001, store="steam", blurb="A sci-fi shooter.")
+    plain = _c(1, "Halo", year=2001)
+    other = _c(2, "Halo", year=2001, store="steam")
+    assert compare(a, b).probs == compare(plain, other).probs

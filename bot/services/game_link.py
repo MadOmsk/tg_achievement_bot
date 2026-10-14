@@ -18,6 +18,7 @@ around the seeds, in one transaction.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ from bot.services.game_match import (
     is_compilation,
     is_extra,
     kind_of,
+    plain_text,
 )
 from bot.services.game_series import SeriesBuilder
 from bot.services.hltb_match import normalize
@@ -531,6 +533,22 @@ def _opens(game: Candidate, demo: Candidate) -> bool:
     return any(c and any(w[: len(c.split())] == c.split() for w in words) for c in game.cores)
 
 
+# Words a store adds to a genre's name that say nothing of it.
+GENRE_NOISE = frozenset({"and", "games", "game", "other"})
+
+
+def _genres(raw: object) -> frozenset[str]:
+    """A version's genres as words ("Action & adventure" is action and
+    adventure), so two stores' words for one genre meet."""
+    try:
+        found = json.loads(str(raw or "[]"))
+    except ValueError:
+        return frozenset()
+    if not isinstance(found, list):
+        return frozenset()
+    return frozenset(w for g in found for w in normalize(str(g)).split() if w not in GENRE_NOISE)
+
+
 def _candidate(row: dict) -> Candidate:
     names = tuple(
         dict.fromkeys(
@@ -561,4 +579,7 @@ def _candidate(row: dict) -> Candidate:
         hltb_types=frozenset(
             t.strip() for t in str(row.get("hltb_types") or "").split(",") if t.strip()
         ),
+        genres=_genres(row.get("genres")),
+        blurb=plain_text(row.get("description_en")),
+        hltb_blurb=plain_text(row.get("hltb_summary")),
     )

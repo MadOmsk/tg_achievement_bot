@@ -82,12 +82,17 @@ def fit(
     examples: list[Example],
     start: Weights,
     *,
-    strength: float = 0.05,
-    rate: float = 0.05,
-    epochs: int = 400,
+    strength: float = 0.001,
+    rate: float = 0.5,
+    epochs: int = 800,
 ) -> Weights:
     """Weights fitted to the examples, starting from and pulled towards
-    `start` (`strength` per unit of squared distance)."""
+    `start` (`strength` per unit of squared distance). The step and the
+    passes are large enough to settle (2026-10-13: at 0.05 × 400 a sign
+    seen on a tenth of the labels barely moved off its start — the text
+    signs, starting at 0, could not show what they are worth). The pull
+    is weak: held out, 0.02 → 80%, 0.005 → 83%, 0.001 → 85% right on 677
+    labels — the labels, not the start, should speak."""
     signs = sorted(
         {k for e in examples for k in e.features} | {k for c in CLASSES for k in start[c]}
     )

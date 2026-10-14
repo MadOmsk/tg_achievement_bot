@@ -97,6 +97,11 @@ class Candidate:
     stand_in: bool = False
     # Its HLTB entries' types ("compil": HLTB files it as a compilation).
     hltb_types: frozenset[str] = frozenset()
+    # What its store says of it (owner, 2026-10-13): its genres, as words,
+    # and its short description; and its HLTB entries' summary.
+    genres: frozenset[str] = frozenset()
+    blurb: str = ""
+    hltb_blurb: str = ""
 
     @property
     def cores(self) -> tuple[str, ...]:
@@ -331,6 +336,25 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "extra_both": -20.0,
     },
 }
+# What the stores' descriptions and genres say (owner, 2026-10-13: "we do
+# not know how they work until the weights are fitted"): every class starts
+# at 0 on them — they change nothing until a fit gives them weights.
+TEXT_SIGNS = (
+    "text_remaster",  # the subject's text says remastered / HD / enhanced, the other's not
+    "text_remake",  # … remake / reimagined / rebuilt from the ground up
+    "text_contains",  # … a collection / trilogy / "includes the original"
+    "text_vr",  # … VR
+    "text_demo",  # … a demo / a trial / a prologue
+    "text_sequel",  # either says sequel / prequel / the next chapter
+    "text_names_other",  # the subject's text names the other game
+    "text_same",  # the two descriptions say much the same
+    "text_differ",  # the two descriptions share few words
+    "genres_differ",  # both name genres, no word in common
+)
+for _signs in WEIGHTS.values():
+    for _sign in TEXT_SIGNS:
+        _signs.setdefault(_sign, 0.0)
+
 MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
 LINK_P = 0.85  # at or above: linked (one game, or the relation)
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
@@ -340,6 +364,78 @@ VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
 _REMAKE = re.compile(r"\b(remake|reimagined|reignited|n sane|rehydrated|part i)\b", re.I)
 _COMPILATION = re.compile(r"\b(collection|trilogy|anthology|legendary edition)\b|\s\+\s", re.I)
 _VR = re.compile(r"\bvr\b", re.I)
+_TEXT_REMASTER = re.compile(
+    r"remaster|high[- ]definition|\bin hd\b|\bhd\b|enhanced|definitive|re-?experience"
+    r"|upgraded|\b4k\b|60 ?fps",
+    re.I,
+)
+_TEXT_REMAKE = re.compile(
+    r"\bremake|reimagin|re-imagin|rebuilt|from the ground up|reborn|retold", re.I
+)
+_TEXT_CONTAINS = re.compile(
+    r"\bcollection\b|trilogy|anthology|\bbundle\b"
+    r"|\b(?:two|three|four|five|six|seven|\d+) (?:classic )?games\b"
+    r"|\bincludes? (?:the )?(?:original|both|all)\b",
+    re.I,
+)
+_TEXT_SEQUEL = re.compile(
+    r"\bsequel|prequel|follow-up|next chapter|continues the story|\bnew chapter|\breturns? to\b",
+    re.I,
+)
+_TEXT_VR = re.compile(r"\bvr\b|virtual reality", re.I)
+_TEXT_DEMO = re.compile(r"\bdemo\b|\btrial\b|free to try|playable preview|prologue", re.I)
+TEXT_SAME = 0.6  # of the two descriptions' words, shared: the same text
+TEXT_DIFFER = 0.15
+_TEXT_STOP = frozenset(
+    "the a an of and or to in on for with your you is are be as by at this that it its"
+    " from all new game games play".split()
+)
+_TAGS = re.compile(r"<[^>]+>")
+
+
+def plain_text(text: object) -> str:
+    """A store's description without its markup."""
+    return " ".join(_TAGS.sub(" ", str(text or "")).split())
+
+
+def _text_words(text: str) -> frozenset[str]:
+    return frozenset(w for w in normalize(text).split() if w not in _TEXT_STOP)
+
+
+def text_features(s: Candidate, o: Candidate) -> dict[str, float]:
+    """What the stores' texts say of a pair, read from the subject's side."""
+    f: dict[str, float] = {}
+    if s.genres and o.genres and not s.genres & o.genres:
+        f["genres_differ"] = 1.0
+    st, ot = f"{s.blurb} {s.hltb_blurb}".strip(), f"{o.blurb} {o.hltb_blurb}".strip()
+    if not st and not ot:
+        return f
+    for sign, pattern in (
+        ("text_remaster", _TEXT_REMASTER),
+        ("text_remake", _TEXT_REMAKE),
+        ("text_contains", _TEXT_CONTAINS),
+        ("text_vr", _TEXT_VR),
+    ):
+        if pattern.search(st) and not pattern.search(ot):
+            f[sign] = 1.0
+    if _TEXT_DEMO.search(s.blurb) and not _TEXT_DEMO.search(o.blurb):
+        f["text_demo"] = 1.0
+    if _TEXT_SEQUEL.search(st) or _TEXT_SEQUEL.search(ot):
+        f["text_sequel"] = 1.0
+    said = f" {normalize(st)} "
+    if any(len(c.split()) >= 2 and c not in s.cores and f" {c} " in said for c in o.cores):
+        f["text_names_other"] = 1.0
+    if s.blurb and o.blurb:
+        a, b = _text_words(s.blurb), _text_words(o.blurb)
+        if a and b:
+            shared = len(a & b) / len(a | b)
+            if shared >= TEXT_SAME:
+                f["text_same"] = 1.0
+            elif shared <= TEXT_DIFFER:
+                f["text_differ"] = 1.0
+    return f
+
+
 _FAMILIES = {
     "360": "xbox",
     "one": "xbox",
@@ -504,6 +600,7 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["years_near"] = 1.0
     else:
         f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
+    f.update(text_features(s, o))
     if "demo_of" in f or "tool_of" in f or "mode_of" in f:
         # Its game's name opens it (that is what made it one): the rest of
         # its name says nothing more, nor, for a tool or a mode, its years.

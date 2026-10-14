@@ -76,7 +76,7 @@ async def load(sources: dict[str, int]) -> list[Example]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="match_weights.fitted.json")
-    parser.add_argument("--strength", type=float, default=0.05)
+    parser.add_argument("--strength", type=float, default=0.001)
     args = parser.parse_args()
     sources: dict[str, int] = {}
     examples = asyncio.run(load(sources))
