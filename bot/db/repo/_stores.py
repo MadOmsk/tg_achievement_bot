@@ -625,7 +625,12 @@ class _StoresRepo:
         return [await self.save_version(stand_in, platform=platform, title_id=title_id)]
 
     async def record_hltb_match(
-        self, platform: str, title_id: str, hltb_id: int | None, score: float | None
+        self,
+        platform: str,
+        title_id: str,
+        hltb_id: int | None,
+        score: float | None,
+        entry_name: str | None = None,
     ) -> None:
         """What one match attempt found: an automatic link on each version of
         the list (not where it was refused). A miss, or an entry refused
@@ -637,8 +642,12 @@ class _StoresRepo:
         if hltb_id is not None:
             for version_id in await self.ensure_list_version(platform, title_id):
                 row = await self.version_row(version_id)
-                if row is not None and is_part(row["kind"], row["role"], [row["name"] or ""]):
-                    continue  # a demo, a beta, a tool: no entry of its own
+                if (
+                    row is not None
+                    and is_part(row["kind"], row["role"], [row["name"] or ""])
+                    and not is_part(None, None, [entry_name or ""])
+                ):
+                    continue  # a demo, a beta, a tool: no entry of its own, unless the entry is
                 await self.link_version_hltb(version_id, hltb_id, "auto", score)
             if await self.list_hltb_match(platform, title_id) is not None:
                 await self.record_fetch(subject, "hltb_match", status="ok")

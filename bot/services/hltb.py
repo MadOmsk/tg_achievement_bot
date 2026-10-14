@@ -220,7 +220,9 @@ async def ensure_title_match(repo: Repo, platform: str, title_id: str) -> None:
     if match is None:
         await repo.record_hltb_match(row.platform, title_id, None, None)
         return
-    await repo.record_hltb_match(row.platform, title_id, match.hltb_id, match.score)
+    await repo.record_hltb_match(
+        row.platform, title_id, match.hltb_id, match.score, entry_name=match.name
+    )
     log.info("HLTB match for %s (%s): %s (score=%.3f)", title_id, names[0], match.name, match.score)
 
 

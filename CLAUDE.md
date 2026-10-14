@@ -675,10 +675,9 @@ What the stores and HLTB say about a game, collected but not shown yet
     out more than `SAME_GAME_YEARS` (3) before the entry — an edition or a full
     release after early access is its game (Palworld 2024, its entry 2026), four
     years is a remake or a remaster (owner, 2026-10-14; it was a year). **An
-    episodic game** (owner, 2026-10-14): HLTB files each episode or chapter as a
-    DLC of the game, ours is a version of the whole, so a version named "Episode
-    N" or "Chapter N" whose entry is a DLC with a parent is linked to the parent
-    (the main entry) and the episode's own is refused (`is_episode`). **HLTB's DLC are put on our DLC only
+    episode sold as a product of its own** (owner, 2026-10-15: Poppy Playtime's
+    chapters) has an entry of its own, which HLTB may file as a DLC of the game:
+    a version named "Episode N" / "Chapter N" keeps it (`is_episode`). **HLTB's DLC are put on our DLC only
     inside their game** (`match_dlc_entries`, `dlc_hltb`, owner, 2026-10-12):
     the entry's children against the DLC of the versions that entry stands
     for — by the Steam app a child's page names, else by the name with the
@@ -840,7 +839,9 @@ What the stores and HLTB say about a game, collected but not shown yet
     `later_list_same_family`); **a demo, a beta, a tool or an extra gets no
     automatic HowLongToBeat entry** (`game_match.is_part`: the store's kind, the
     linker's role or the name — `ensure_title_match`, `record_hltb_match`, the
-    evidence check and `_hltb` all skip it), the operator may link one by hand.
+    evidence check and `_hltb` all skip it), unless the entry is the demo's own
+    (its name says demo or beta: Resident Evil 2's "1-Shot Demo"); the operator
+    may link one by hand.
 
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own

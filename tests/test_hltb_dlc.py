@@ -363,7 +363,7 @@ def test_an_edition_or_an_early_access_game_is_its_entry_a_remake_is_not() -> No
     assert not fits(2005, 2023)  # Resident Evil 4
 
 
-async def test_an_episode_is_linked_to_the_games_main_entry_when_hltb_lists_episodes(
+async def test_an_episode_sold_on_its_own_keeps_its_own_entry_though_hltb_files_it_as_a_dlc(
     repo: Repo,
 ) -> None:
     from bot.services.hltb_match import is_episode
@@ -374,35 +374,65 @@ async def test_an_episode_is_linked_to_the_games_main_entry_when_hltb_lists_epis
 
     version = await repo.save_version(
         StoreVersion(
-            store="xbox",
-            product_id="E1",
-            console="one",
-            name="Batman: The Enemy Within - Episode 1",
+            store="xbox", product_id="P2", console="series", name="Poppy Playtime: Chapter 2"
         ),
         platform=None,
         title_id=None,
     )
-    main = {
-        "game": [{"game_id": 100, "game_name": "Batman: The Enemy Within", "game_type": "game"}]
-    }
-    episode = {
+    main = {"game": [{"game_id": 100, "game_name": "Poppy Playtime", "game_type": "game"}]}
+    chapter = {
         "game": [
             {
                 "game_id": 101,
-                "game_name": "Batman: The Enemy Within - Episode 1",
+                "game_name": "Poppy Playtime - Chapter 2",
                 "game_type": "dlc",
                 "game_parent": 100,
             }
         ]
     }
     await repo.save_hltb_game(hltb_page.parse_page(main))  # type: ignore[arg-type]
-    await repo.save_hltb_game(hltb_page.parse_page(episode))  # type: ignore[arg-type]
-    await repo.save_payload("hltb:101", "hltb_page", episode)
+    await repo.save_hltb_game(hltb_page.parse_page(chapter))  # type: ignore[arg-type]
+    await repo.save_payload("hltb:101", "hltb_page", chapter)
     await repo.link_version_hltb(version, 101)
 
     await link_hltb_entry(repo, 101)
 
     cursor = await repo._conn.execute(
-        "SELECT hltb_id, source FROM version_hltb WHERE version_id = ? ORDER BY hltb_id", (version,)
+        "SELECT hltb_id, source FROM version_hltb WHERE version_id = ?", (version,)
     )
-    assert [tuple(r) for r in await cursor.fetchall()] == [(100, "auto"), (101, "rejected")]
+    assert [tuple(r) for r in await cursor.fetchall()] == [(101, "auto")]
+    # A plain game is still not a DLC's entry.
+    other = await repo.save_version(
+        StoreVersion(store="xbox", product_id="G", console="series", name="Poppy Playtime"),
+        platform=None,
+        title_id=None,
+    )
+    await repo.link_version_hltb(other, 101)
+    await link_hltb_entry(repo, 101)
+    cursor = await repo._conn.execute(
+        "SELECT source FROM version_hltb WHERE version_id = ?", (other,)
+    )
+    assert [r[0] for r in await cursor.fetchall()] == ["rejected"]
+
+
+async def test_a_demo_may_have_the_entry_that_is_the_demos_own(repo: Repo) -> None:
+    demo = await repo.save_version(
+        StoreVersion(
+            store="xbox",
+            product_id="D1",
+            console="one",
+            name="RESIDENT EVIL 2 1-Shot Demo",
+            kind="demo",
+        ),
+        platform=None,
+        title_id=None,
+    )
+    for hltb_id, name in ((64088, 'Resident Evil 2 "1-Shot Demo"'), (2, "Resident Evil 2")):
+        page = {"game": [{"game_id": hltb_id, "game_name": name, "game_type": "game"}]}
+        await repo.save_hltb_game(hltb_page.parse_page(page))  # type: ignore[arg-type]
+        await repo.save_payload(f"hltb:{hltb_id}", "hltb_page", page)
+        await repo.link_version_hltb(demo, hltb_id)
+        await link_hltb_entry(repo, hltb_id)
+
+    cursor = await repo._conn.execute("SELECT hltb_id, source FROM version_hltb ORDER BY hltb_id")
+    assert [tuple(r) for r in await cursor.fetchall()] == [(2, "rejected"), (64088, "auto")]

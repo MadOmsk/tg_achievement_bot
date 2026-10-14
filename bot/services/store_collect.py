@@ -935,9 +935,13 @@ class StoreCollector:
         report.hltb_id = hltb_id
         # The list's other versions (a console's, made since) are the same
         # entry too, unless one was told it is not.
+        entry = await self._repo.hltb_game_row(hltb_id)
+        entry_part = bool(entry) and is_part(None, None, [str(entry["name"] or "")])
         for version_id in await self._repo.versions_of_list(platform, title_id):
             row = await self._repo.version_row(version_id)
-            if row is not None and not is_part(row["kind"], row["role"], [row["name"] or ""]):
+            if row is not None and (
+                entry_part or not is_part(row["kind"], row["role"], [row["name"] or ""])
+            ):
                 await self._repo.link_version_hltb(version_id, hltb_id)
         subject, source = f"hltb:{hltb_id}", "hltb_page"
         if not force and not await self._repo.fetch_due(subject, source):
@@ -1006,25 +1010,16 @@ async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:
             version_product=str(version["product_id"]),
             version_kind=version.get("kind"),
             version_year=candidate_year(version),
+            version_episode=is_episode(version.get("name"), version.get("name_ru")),
         )
-        # An episodic game (owner, 2026-10-14): HowLongToBeat lists each episode
-        # (a DLC of the game, as it files them), ours is a version of the
-        # whole — every episode is linked to the main entry instead.
-        parent = entry.get("parent_hltb_id")
-        if (
-            not fits
-            and parent
-            and (entry.get("game_type") or "") in ("dlc", "expansion")
-            and is_episode(version.get("name"), version.get("name_ru"))
-        ):
-            await repo.link_version_hltb(int(version["version_id"]), int(parent), "auto")
-            await repo.unlink_version_hltb(int(version["version_id"]), hltb_id, only_auto=True)
-            continue
-        if not fits or is_part(
+        # A demo has no entry — unless the entry is the demo's own (HowLongToBeat
+        # times a few: Resident Evil 2's "1-Shot Demo", an open beta).
+        part = is_part(
             version.get("kind"),
             version.get("role"),
             [str(n) for n in (version.get("name"), version.get("name_ru")) if n],
-        ):
+        ) and not is_part(None, None, [str(entry["name"])])
+        if not fits or part:
             await repo.unlink_version_hltb(int(version["version_id"]), hltb_id, only_auto=True)
         elif version.get("name"):
             names.append(str(version["name"]))

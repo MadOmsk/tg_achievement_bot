@@ -413,6 +413,7 @@ def entry_fits_version(
     version_product: str,
     version_kind: str | None,
     version_year: int | None,
+    version_episode: bool = False,
 ) -> bool:
     """Whether an HLTB entry may stand for this version (owner, 2026-10-12):
     the evidence agrees. A DLC's or a mod's entry is no base game's; a Steam
@@ -421,7 +422,13 @@ def entry_fits_version(
     entry is the remake). The match itself (`rank` / `decide`) chose the entry
     by name, platforms and years already; this is the check a stored link
     passes again whenever the entry's page is read."""
-    if (game_type or "") in NOT_A_GAME and (version_kind or "game") not in NOT_A_GAME:
+    # An episode sold as a product of its own has an entry of its own, which
+    # HowLongToBeat may file as a DLC of the game (Poppy Playtime's chapters).
+    if (
+        (game_type or "") in NOT_A_GAME
+        and (version_kind or "game") not in NOT_A_GAME
+        and not version_episode
+    ):
         return False
     if version_store == "steam" and steam_appids and version_product.isdigit():
         if int(version_product) not in steam_appids:
