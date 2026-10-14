@@ -34,6 +34,7 @@ LABEL_CLASS = {
     "demo_of": "same",
     "tool_of": "same",
     "mode_of": "same",
+    "extra_of": "same",  # a soundtrack or an artbook is a part of its game
     "remaster_of": "remaster_of",
     "remake_of": "remake_of",
     "contains": "contains",

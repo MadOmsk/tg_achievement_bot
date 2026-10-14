@@ -31,8 +31,10 @@ _EDITION = re.compile(
     r"|special edition)\b",
     re.IGNORECASE,
 )
+# An Insider program's build is a beta of its game (owner, 2026-10-14).
 _DEMO = re.compile(
-    r"\b(demo|trial|prologue|beta|tech(?:nical)? test|playtest|stress test)\b", re.IGNORECASE
+    r"\b(demo|trial|prologue|beta|tech(?:nical)? test|playtest|stress test|insider)\b",
+    re.IGNORECASE,
 )
 # A tool made for a game, not a game (owner, 2026-10-10: "Fallout 4: Creation
 # Kit" belongs to Fallout 4). Steam files it as a game.
@@ -52,15 +54,21 @@ _COD = re.compile(r"^\s*COD(?=\s*:|\s)")
 MODE_KIND = "advertising"
 
 # Not a game at all (owner, 2026-10-12): an extra — a soundtrack, an artbook,
-# an app, an Insider build. The store's own type says it first (Xbox's
-# Application, Steam's music and video); a name says it where the store files
-# it as a game ("DOOM: The Dark Ages Digital Artbook and Soundtrack", "Sea of
-# Thieves Insider" — an Insider program's build is named so on every game).
+# an app. The store's own type says it first (Xbox's Application, Steam's
+# music and video); a name says it where the store files it as a game ("DOOM:
+# The Dark Ages Digital Artbook and Soundtrack"). **A soundtrack or an artbook
+# is a part of its game** (owner, 2026-10-14), as a demo is: the game whose
+# name is what the extra's name says before its extra words. An app of no game
+# stays an entry of its own.
 EXTRA_KINDS = frozenset({"app", "music", "video"})
 _EXTRA = re.compile(
-    r"\b(soundtrack|o\.?s\.?t|original score|art ?book|digital comic|making of)\b"
-    r"|\binsider[\s™®]*$",
+    r"\b(soundtrack|o\.?s\.?t|original score|art ?book|digital comic|making of)\b",
     re.IGNORECASE,
+)
+# Words between a game's name and its extra's words ("… Digital Artbook and
+# Soundtrack", "…: Original Soundtrack").
+_EXTRA_FILLER = frozenset(
+    {"digital", "original", "official", "deluxe", "complete", "game", "and", "the", "&", "-"}
 )
 
 NAME_FLOOR = 0.8  # below this, two versions are not compared further
@@ -146,13 +154,32 @@ def is_compilation(candidate: Candidate) -> bool:
     return "compil" in candidate.hltb_types or any(_COMPILATION.search(n) for n in candidate.names)
 
 
+def extra_game_name(candidate: Candidate) -> str | None:
+    """The game a soundtrack or an artbook is of, as `game_core` says it:
+    its name before its extra words ("DOOM: The Dark Ages Digital Artbook and
+    Soundtrack" is DOOM: The Dark Ages'); None when no name says so."""
+    for name in candidate.names:
+        match = _EXTRA.search(_aliased(name))
+        if match is None:
+            continue
+        words = re.sub(r"[:\-–—|]", " ", _aliased(name)[: match.start()]).split()
+        while words and words[-1].casefold().strip("™®") in _EXTRA_FILLER:
+            words.pop()
+        if words:
+            return game_core(" ".join(words))
+    return None
+
+
 def kind_of(candidate: Candidate) -> str:
     """A version's role inside its game, from the store's own kind first and
-    the name second: a mode (a Steam launcher of one mode of another app), a
-    demo, a tool, an edition, or the game itself. (A remaster is no role: it
-    is a game of its own, 2026-10-11.)"""
+    the name second: a mode (a Steam launcher of one mode of another app), an
+    extra (not a game: a soundtrack, an artbook, an app), a demo, a tool, an
+    edition, or the game itself. (A remaster is no role: it is a game of its
+    own, 2026-10-11.)"""
     if (candidate.kind or "") == MODE_KIND:
         return "mode"
+    if is_extra(candidate):
+        return "extra"
     if any(_TOOL.search(n) for n in candidate.names):
         return "tool"
     if (candidate.kind or "") == "demo" or any(_DEMO.search(n) for n in candidate.names):
@@ -218,6 +245,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": 7.0,
         "tool_of": 7.0,
         "mode_of": 7.0,  # a mode's launcher, its game's name opening its own
+        "extra_of": 7.0,  # a soundtrack or an artbook of this very game
     },
     "remaster_of": {
         "bias": -5.0,
@@ -253,6 +281,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_of": -5.0,
         "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
         "extra_both": -20.0,
     },
@@ -292,6 +321,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_of": -5.0,
         "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
         "extra_both": -20.0,
     },
@@ -315,6 +345,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_of": -5.0,
         "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
         "extra_both": -20.0,
     },
@@ -332,6 +363,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "demo_of": -5.0,
         "tool_of": -5.0,
         "mode_of": -5.0,
+        "extra_of": -5.0,
         "extra_pair": -20.0,  # an extra relates to nothing but as "another of the series"
         "extra_both": -20.0,
     },
@@ -537,7 +569,11 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     ):
         f["later_list_same_store"] = 1.0
 
-    if _mode_pair(s, o):
+    extra_of = _extra_pair(s, o)
+    if extra_of:
+        f["extra_of"] = 1.0
+        f.pop("subtitle", None)
+    elif _mode_pair(s, o):
         f["mode_of"] = 1.0
         f.pop("subtitle", None)
     elif _demo_pair(s, o):
@@ -560,7 +596,9 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["edition_word_near"] = 1.0
     if is_compilation(s) and not is_compilation(o):
         f["compilation_word"] = 1.0
-    if is_extra(s) != is_extra(o):
+    if extra_of:
+        pass  # a part of its game, as a demo is
+    elif is_extra(s) != is_extra(o):
         f["extra_pair"] = 1.0
     elif is_extra(s):
         f["extra_both"] = 1.0
@@ -601,11 +639,12 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     else:
         f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
     f.update(text_features(s, o))
-    if "demo_of" in f or "tool_of" in f or "mode_of" in f:
+    if "demo_of" in f or "tool_of" in f or "mode_of" in f or extra_of:
         # Its game's name opens it (that is what made it one): the rest of
-        # its name says nothing more, nor, for a tool or a mode, its years.
+        # its name says nothing more, nor, for a tool, a mode or an extra,
+        # its years.
         f["name"] = 0.0
-        if "tool_of" in f or "mode_of" in f:
+        if "tool_of" in f or "mode_of" in f or extra_of:
             f.pop("years_gap", None)
         if "mode_of" in f:
             # A mode's list is a part of its game's one list (Zombies' 50 of
@@ -689,6 +728,20 @@ def _demo_pair(a: Candidate, b: Candidate) -> bool:
             and abs(demo.year - game.year) <= NEAR_YEARS
         ):
             return True
+    return False
+
+
+def _extra_pair(a: Candidate, b: Candidate) -> bool:
+    """A soundtrack or an artbook and the game its name names, whole: "DOOM:
+    The Dark Ages" for "… Digital Artbook and Soundtrack", never "DOOM".
+    Years say nothing: an artbook comes out when it comes out."""
+    for extra, game in ((a, b), (b, a)):
+        if kind_of(extra) != "extra" or kind_of(game) in ("extra", "mode", "tool", "demo"):
+            continue
+        said = extra_game_name(extra)
+        if said and not _groups_differ(extra, game):
+            if any(game_core(n) == said for n in game.names if n):
+                return True
     return False
 
 
@@ -944,7 +997,7 @@ def game_name(members: list[Candidate], *, release: bool = False) -> str:
     (Control and its Ultimate Edition) is called by their common core — the
     plainest version's, the earliest. Its parts (demos, tools, modes) say
     nothing about its name."""
-    games = [m for m in members if kind_of(m) not in ("demo", "tool", "mode")] or members
+    games = [m for m in members if kind_of(m) not in ("demo", "tool", "mode", "extra")] or members
     plain = [m for m in games if kind_of(m) == "version"] or games
     plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
     first = plain[0]

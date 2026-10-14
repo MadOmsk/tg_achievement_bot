@@ -912,6 +912,8 @@ _DECISIONS_MORE = (
     ("tool_of:flip", "⇄ it is a tool for this"),
     ("mode_of", "a mode of it (a launcher of one of its modes)"),
     ("mode_of:flip", "⇄ it is a mode of this"),
+    ("extra_of", "its soundtrack / artbook"),
+    ("extra_of:flip", "⇄ this is its soundtrack / artbook"),
     ("series", "another game of its series"),
     ("skip", "skip: ask again later"),
 )
@@ -928,6 +930,8 @@ _GAME_DECISIONS = (
     ("contains:flip", "that compilation holds this"),
     ("vr_of", "this is the VR version of that"),
     ("vr_of:flip", "that is the VR version of this"),
+    ("extra_of", "this is a soundtrack / artbook of that"),
+    ("extra_of:flip", "that is a soundtrack / artbook of this"),
     ("series", "another game of the series"),
     ("other", "not related"),
     ("same", "one game after all"),
@@ -991,6 +995,8 @@ def _relation_sentence(decision: str, this: str, that: str, *, html: bool = True
         "remake_of": f"{a} is a {bold('remake')} of {b}",
         "contains": f"{a} is a {bold('compilation that holds')} {b}",
         "vr_of": f"{a} is the {bold('VR version')} of {b}",
+        "extra_of": f"{a} is the {bold('soundtrack / artbook')} of {b}",
+        "demo_of": f"{a} is a {bold('demo / beta')} of {b}",
     }.get(relation, f"{a} {bold(relation)} {b}")
 
 

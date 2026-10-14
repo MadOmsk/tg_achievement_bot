@@ -761,21 +761,30 @@ async def test_a_mode_is_recorded_as_a_mode_of_its_game(repo: Repo) -> None:
 # ------------------------------------------------------------------ kinds (2026-10-12)
 
 
-def test_an_extra_is_never_one_game_with_its_game_nor_related() -> None:
-    from bot.services.game_match import is_extra
+def test_a_soundtrack_or_artbook_is_a_part_of_the_game_it_names() -> None:
+    """Owner, 2026-10-14: a soundtrack or an artbook belongs to its game, as
+    a demo does — the game its name names whole, never a shorter one; an
+    Insider build is a beta; an app of no game stays apart."""
+    from bot.services.game_match import extra_game_name, is_extra, kind_of
 
     doom = _c(1, "DOOM: The Dark Ages", console="series", year=2025)
-    book = _c(2, "DOOM: The Dark Ages Digital Artbook and Soundtrack", console="series", year=2025)
+    book = _c(2, "DOOM: The Dark Ages Digital Artbook and Soundtrack", console="series")
     ost = _c(3, "The Alters: Original Soundtrack", console="pc", kind="app")
     insider = _c(4, "Sea of Thieves Insider", console="one", year=2018)
-    assert all(is_extra(c) for c in (book, ost, insider))
+    assert is_extra(book) and is_extra(ost) and not is_extra(insider)
+    assert kind_of(insider) == "demo"
     assert not is_extra(doom) and not is_extra(_c(5, "Comic Jumper"))
+    assert extra_game_name(book) == "doom the dark ages"
+    assert extra_game_name(ost) == "alters"
     v = compare(doom, book)
+    assert v.state == "linked" and v.relation == "same" and "extra_of" in v.features
+    # Not the series' first game, whose name only opens the artbook's.
+    old = _c(6, "DOOM", console="steam", year=2016)
+    v = compare(old, book)
     assert v.state == "apart" and "extra_pair" in v.features
-    assert compare(_c(6, "Sea of Thieves", console="one", year=2018), insider).state == "apart"
-    # One extra on two consoles is still one extra.
-    insider_series = _c(7, "Sea of Thieves Insider", console="series", year=2018)
-    assert _linked(insider, insider_series, "same")
+    # An app is no part of a game.
+    app = _c(7, "Xbox Console Companion", console="pc", kind="app")
+    assert compare(app, doom).state == "apart"
 
 
 def test_a_compilation_is_never_one_game_with_one_of_its_games() -> None:
@@ -804,9 +813,17 @@ async def test_games_get_their_kind_and_the_operators_stands(repo: Repo) -> None
         )
         return tuple(await cur.fetchone())  # type: ignore[return-value]
 
-    assert await repo.linked_game_of(book) != await repo.linked_game_of(game)
+    # The artbook is a part of its game: the game stays a game.
+    assert await repo.linked_game_of(book) == await repo.linked_game_of(game)
+    cur = await repo._conn.execute(
+        "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (book,)
+    )
+    assert tuple(await cur.fetchone()) == ("extra", game)
     assert await kind(game) == ("game", "auto")
-    assert await kind(book) == ("extra", "auto")
+    app = await _version(repo, "APP", "Xbox Console Companion", "2018")
+    await repo._conn.execute("UPDATE versions SET kind = 'app' WHERE version_id = ?", (app,))
+    await linker.link_versions([app])
+    assert await kind(app) == ("extra", "auto")
     assert await kind(coll) == ("compilation", "auto")
     await repo.set_game_kind_manual(await repo.linked_game_of(coll), "game")  # type: ignore[arg-type]
     await linker.link_all()

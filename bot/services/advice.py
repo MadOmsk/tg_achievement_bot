@@ -54,12 +54,12 @@ AUDIT_SEED = 147
 # Relations one side has *of* the other: "first" when the first side is the
 # demo / remaster / compilation … of the second.
 DIRECTED = frozenset(
-    {"demo_of", "tool_of", "mode_of", "remaster_of", "remake_of", "contains", "vr_of"}
+    {"demo_of", "tool_of", "mode_of", "extra_of", "remaster_of", "remake_of", "contains", "vr_of"}
 )
 # Answers that relate nothing; they agree with one another.
 UNRELATED = frozenset({"series", "not_related", "extra"})
 _GAME_ANSWERS = frozenset(
-    {"same", "remaster_of", "remake_of", "contains", "vr_of", "unsure"} | UNRELATED
+    {"same", "extra_of", "remaster_of", "remake_of", "contains", "vr_of", "unsure"} | UNRELATED
 )
 ALLOWED: dict[str, frozenset[str]] = {
     "games": _GAME_ANSWERS,
@@ -84,6 +84,8 @@ _SYNONYMS = {
     "demo": "demo_of",
     "tool": "tool_of",
     "mode": "mode_of",
+    "soundtrack": "extra_of",
+    "artbook": "extra_of",
     "vr": "vr_of",
     "compilation": "contains",
 }
@@ -95,6 +97,7 @@ _CLASS = {
     "demo_of": "same",
     "tool_of": "same",
     "mode_of": "same",
+    "extra_of": "same",
     "remaster_of": "remaster_of",
     "remake_of": "remake_of",
     "contains": "contains",
@@ -238,10 +241,11 @@ exactly), a type, a FIRST side and a SECOND side.
 
 Types and the answers each allows:
 - games: two games, each with its releases.
-  same | remaster_of | remake_of | contains | vr_of | series | not_related | extra | unsure
+  same | extra_of | remaster_of | remake_of | contains | vr_of | series | not_related | extra
+  | unsure
 - versions: one release (FIRST) against a game (SECOND, with its releases).
-  same | demo_of | tool_of | mode_of | remaster_of | remake_of | contains | vr_of | series
-  | not_related | extra | unsure
+  same | demo_of | tool_of | mode_of | extra_of | remaster_of | remake_of | contains | vr_of
+  | series | not_related | extra | unsure
 - hltb: one of our games (FIRST) against a HowLongToBeat entry (SECOND).
   same (the entry is this very game) | not_related (another game, a DLC, another release
   of the series) | unsure
@@ -252,7 +256,8 @@ What the answers mean:
 - same: one game. A port is the same game however late (PS4 and PS5, Xbox One and Series,
   PC and console, another store, a re-listing); a GOTY / Complete / Deluxe edition is the
   same game.
-- demo_of: a demo, beta, trial, playtest or tech test of the other. tool_of: an editor,
+- demo_of: a demo, beta, trial, playtest, tech test or Insider build of the other. extra_of:
+  a soundtrack or an artbook of the other (a part of that game). tool_of: an editor,
   creation kit, SDK or dedicated server for it. mode_of: a launcher of one mode of it
   ("Call of Duty: Black Ops II - Zombies").
 - remaster_of: the same game re-released with better technology, its design kept; an
@@ -266,13 +271,14 @@ What the answers mean:
 - series: different games of one series: sequels, prequels, spin-offs, a reboot that is a
   new game.
 - not_related: unrelated.
-- extra: one side is not a game at all: a soundtrack, an artbook, a companion app, a
-  video, an Insider build.
+- extra: one side is not a game at all and not of the other game: a soundtrack or an
+  artbook of another game, a companion app, a video.
 - unsure: you cannot tell.
 
-Direction, for demo_of, tool_of, mode_of, remaster_of, remake_of, contains and vr_of only:
-"first" when FIRST is the demo / tool / mode / remaster / remake / compilation / VR
-version of SECOND, "second" when SECOND is that of FIRST; null for every other answer.
+Direction, for demo_of, tool_of, mode_of, extra_of, remaster_of, remake_of, contains and
+vr_of only: "first" when FIRST is the demo / tool / mode / extra / remaster / remake /
+compilation / VR version of SECOND, "second" when SECOND is that of FIRST; null for every
+other answer.
 
 The sides are described from store data, which may be incomplete or wrong (a store's date
 is often a re-release). Rely on what you know about the real games. When you are not

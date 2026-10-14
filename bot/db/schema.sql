@@ -1188,11 +1188,11 @@ CREATE TABLE IF NOT EXISTS games (
 CREATE TABLE IF NOT EXISTS game_versions (
     version_id    INTEGER PRIMARY KEY REFERENCES versions(version_id) ON DELETE CASCADE,
     game_id       INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    role          TEXT NOT NULL,   -- version / demo / tool / mode (100)
+    role          TEXT NOT NULL,   -- version / demo / tool / mode (100) / extra (107) / covered
     of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
     p             REAL,
     linked_at     TEXT NOT NULL,
-    CHECK (of_version_id IS NULL OR role IN ('demo', 'tool', 'mode'))
+    CHECK (of_version_id IS NULL OR role IN ('demo', 'tool', 'mode', 'extra'))
 );
 CREATE INDEX IF NOT EXISTS idx_game_versions_game ON game_versions(game_id, role);
 

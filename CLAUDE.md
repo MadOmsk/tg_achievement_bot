@@ -776,11 +776,14 @@ What the stores and HLTB say about a game, collected but not shown yet
     `game`, `compilation` (holds more than one game: its name — Collection,
     Trilogy, Anthology, "X + Y" —, its HLTB entry filed `compil`, or two
     `contains` relations or more) or `extra`, **not a game** — a soundtrack,
-    an artbook, an app, an Insider build: the store's type first (Xbox
-    `Application`, Steam `music` / `video`), else its name
-    (`game_match.is_extra`). An extra stays an entry of its own: the model
-    never puts it in one game with a non-extra nor relates it to anything
-    (`extra_pair`, `extra_both`) — only "another of the series" is left. A
+    an artbook, an app: the store's type first (Xbox `Application`, Steam
+    `music` / `video`), else its name (`game_match.is_extra`). **A soundtrack
+    or an artbook is a part of its game** (owner, 2026-10-14; migration 107):
+    role `extra`, label `extra_of`, joined to the game its name names before
+    its extra words, whole ("DOOM: The Dark Ages Digital Artbook and
+    Soundtrack" is DOOM: The Dark Ages', never DOOM's; `extra_game_name`).
+    An Insider build is a beta (`demo`). An extra of no game (an app) stays an
+    entry of its own, related to nothing (`extra_pair`, `extra_both`). A
     compilation is never one game with a single game (`compilation_word`).
     The linker sets the kind on every rebuild; the operator's choice on the
     game's viewer page (`kind_source = 'manual'`) stands. The viewer marks
