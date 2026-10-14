@@ -347,3 +347,18 @@ async def test_a_series_a_rule_names_is_kept_by_its_key_and_never_merged(repo: R
     assert sorted(rows[0][3].split(",")) == sorted([str(a), str(b)])
     cursor = await repo._conn.execute("SELECT COUNT(*) FROM series WHERE rule_key = 'lego'")
     assert (await cursor.fetchone())[0] == 1
+
+
+def test_a_lego_game_is_of_its_licence_whoever_made_the_other_games() -> None:
+    games = _games(
+        (1, "LEGO Star Wars: The Complete Saga", 2007, "Traveller's Tales", "LucasArts"),
+        (2, "Star Wars: Battlefront", 2004, "Pandemic", "Activision"),
+        (3, "Star Wars Jedi: Fallen Order", 2019, "Respawn", "Electronic Arts"),
+        (4, "LEGO Worlds", 2017, "Traveller's Tales", "Warner Bros."),
+        (5, "Worlds Adrift", 2018, "Bossa", "Bossa"),
+    )
+    series = _with_umbrellas(games)
+    star_wars = next(m for name, m in series.items() if name.lower() == "star wars")
+    assert {1, 2, 3} <= star_wars  # no studio or publisher in common
+    # "Worlds" is not "Worlds Adrift": one word is no licence of two.
+    assert not any(4 in m and 5 in m for m in series.values())

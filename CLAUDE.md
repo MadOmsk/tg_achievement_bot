@@ -895,7 +895,9 @@ What the stores and HLTB say about a game, collected but not shown yet
     **Series a rule names** (owner, 2026-10-14; migration 111, `series.rule_key`,
     no anchor game, `game_series.umbrellas`): every LEGO game is in the series
     **LEGO** (0.95) *and* in its licence's series — `franchise_key` reads
-    "LEGO Star Wars" as Star Wars —; a franchise has **local series** inside
+    "LEGO Star Wars" as Star Wars, and `_licence_evidence` (0.9) joins it to the
+    games of that franchise whoever made them, the same name or a longer one of
+    two words or more ("Worlds" is not "Worlds Adrift") —; a franchise has **local series** inside
     it, a longer name two of its games share ("Star Wars Jedi" in Star Wars,
     key `key:…`) or a subtitle two games of one studio or publisher share
     ("Modern Warfare" in Call of Duty, key `sub:franchise|subtitle`; edition

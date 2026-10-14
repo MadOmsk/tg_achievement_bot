@@ -57,6 +57,7 @@ PREFIX_P = 0.5  # a common franchise prefix, the same studio or publisher
 STRONG_P = 0.9  # evidence this sure joins two groups whose names disagree
 SURE_P = 0.85  # below: a membership the advisers may be asked about
 LEGO_P = 0.95  # a LEGO game is in the series LEGO (owner, 2026-10-14)
+LICENCE_P = 0.9  # a LEGO game is of its licence's series, whoever made the games
 LOCAL_P = 0.7  # a franchise's own series: a longer name, or a subtitle, two games share
 
 _RELATION_WORDS = {
@@ -198,6 +199,41 @@ def evidence(
             )
         )
     found += _prefix_evidence(games)
+    found += _licence_evidence(games)
+    return found
+
+
+def _licence_evidence(games: dict[int, SeriesGame]) -> list[Evidence]:
+    """A LEGO game is of its licence's series (owner, 2026-10-14: "LEGO Star
+    Wars is Star Wars too"), by whatever studio or publisher the other games
+    have: the games whose franchise it names — the same name, or a longer
+    one of two words or more ("Star Wars" and "Star Wars Jedi"; "Worlds" is
+    not "Worlds Adrift")."""
+    keys = {g: franchise_key(game.name) for g, game in games.items()}
+    lego = {
+        g for g, game in games.items() if game.kind != "extra" and _core_words(game)[:1] == ["lego"]
+    }
+    found: list[Evidence] = []
+    for a in sorted(lego):
+        key = keys[a]
+        if len(key) < 3:
+            continue
+        for b, game in games.items():
+            if b in lego or game.kind == "extra":
+                continue
+            other = keys[b]
+            shorter = min(key, other, key=len)
+            if key == other or (compatible(key, other) and len(shorter.split()) >= 2):
+                found.append(
+                    Evidence(
+                        a,
+                        b,
+                        LICENCE_P,
+                        f"a LEGO game of the licence «{shorter}», as «{game.name}»",
+                        f"«{games[a].name}» is a LEGO game of the licence «{shorter}»",
+                        kind="licence",
+                    )
+                )
     return found
 
 
