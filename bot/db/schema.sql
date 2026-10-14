@@ -1089,26 +1089,167 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_dlcs_store ON dlcs(version_id, store_id)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dlcs_group ON dlcs(version_id, trophy_group_id)
     WHERE trophy_group_id IS NOT NULL;
 
--- The new HLTB store: one row per entry, the page's fields. `hltb_cache`
--- stays for /hltb's search until it is switched off.
-CREATE TABLE IF NOT EXISTS hltb_games (
-    hltb_id        INTEGER PRIMARY KEY,
-    name           TEXT NOT NULL,
-    game_type      TEXT,           -- game / dlc / expansion / mod / …
+-- The HowLongToBeat mirror (#147; owner, 2026-10-15): one row per entry — a
+-- game or its additional content (`game_type`; an additional content's
+-- `parent_hltb_id` is its main game) — with every field the page gives, named
+-- as HLTB names it where we had no name; hours are seconds, as HLTB gives
+-- them. Nothing of it is copied into our tables: a game, a version and a DLC
+-- link to an entry (`version_hltb`, `dlc_hltb`) and read it. An entry known
+-- only from another page's row (`page_read_at` NULL) has the few fields that
+-- row gives. `summary_ru` is our translation of `summary_en`, kept while the
+-- English text is the one `summary_ru_of` names (112).
+CREATE TABLE IF NOT EXISTS hltb_entries (
+    hltb_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    alias TEXT,
+    game_type TEXT,
     parent_hltb_id INTEGER,
-    steam_appid    INTEGER,
-    developer      TEXT,
-    publisher      TEXT,
-    release_year   INTEGER,
-    platforms      TEXT,           -- JSON list, as HLTB names them
-    times          TEXT,           -- JSON: bucket → average / median / fastest / slowest hours
-    platform_times TEXT,           -- JSON: platform → main / extra / complete hours, count
-    details        TEXT,           -- JSON: score, alias, releases, ratings, modes, speedruns
-    summary_en     TEXT,
-    summary_ru     TEXT,
-    image_url      TEXT,
-    checked_at     TEXT NOT NULL,
-    page_read_at   TEXT            -- its own page last read (101); NULL: known from another's
+    image TEXT,
+    name_year INTEGER,
+    steam_appid INTEGER,
+    steam_alt INTEGER,
+    itch_id INTEGER,
+    ign_id TEXT,
+    developer TEXT,
+    publisher TEXT,
+    genres TEXT,
+    summary_en TEXT,
+    release_world TEXT,
+    release_na TEXT,
+    release_eu TEXT,
+    release_jp TEXT,
+    rating_esrb TEXT,
+    rating_pegi TEXT,
+    rating_cero TEXT,
+    review_score INTEGER,
+    comp_main INTEGER,
+    comp_main_avg INTEGER,
+    comp_main_med INTEGER,
+    comp_main_h INTEGER,
+    comp_main_l INTEGER,
+    comp_main_count INTEGER,
+    comp_plus INTEGER,
+    comp_plus_avg INTEGER,
+    comp_plus_med INTEGER,
+    comp_plus_h INTEGER,
+    comp_plus_l INTEGER,
+    comp_plus_count INTEGER,
+    comp_100 INTEGER,
+    comp_100_avg INTEGER,
+    comp_100_med INTEGER,
+    comp_100_h INTEGER,
+    comp_100_l INTEGER,
+    comp_100_count INTEGER,
+    comp_all INTEGER,
+    comp_all_avg INTEGER,
+    comp_all_med INTEGER,
+    comp_all_h INTEGER,
+    comp_all_l INTEGER,
+    comp_all_count INTEGER,
+    comp_speed INTEGER,
+    comp_speed_avg INTEGER,
+    comp_speed_med INTEGER,
+    comp_speed_min INTEGER,
+    comp_speed_max INTEGER,
+    comp_speed_count INTEGER,
+    comp_speed100 INTEGER,
+    comp_speed100_avg INTEGER,
+    comp_speed100_med INTEGER,
+    comp_speed100_min INTEGER,
+    comp_speed100_max INTEGER,
+    comp_speed100_count INTEGER,
+    invested_co INTEGER,
+    invested_co_avg INTEGER,
+    invested_co_med INTEGER,
+    invested_co_h INTEGER,
+    invested_co_l INTEGER,
+    invested_co_count INTEGER,
+    invested_mp INTEGER,
+    invested_mp_avg INTEGER,
+    invested_mp_med INTEGER,
+    invested_mp_h INTEGER,
+    invested_mp_l INTEGER,
+    invested_mp_count INTEGER,
+    comp_lvl_sp INTEGER,
+    comp_lvl_co INTEGER,
+    comp_lvl_mp INTEGER,
+    comp_lvl_spd INTEGER,
+    comp_lvl_combine INTEGER,
+    comp_lvl_platform INTEGER,
+    count_comp INTEGER,
+    count_total INTEGER,
+    count_backlog INTEGER,
+    count_playing INTEGER,
+    count_replay INTEGER,
+    count_retired INTEGER,
+    count_custom INTEGER,
+    count_review INTEGER,
+    count_discussion INTEGER,
+    added_stats TEXT,
+    review_count INTEGER,
+    summary_ru TEXT,
+    summary_ru_of TEXT,
+    checked_at TEXT NOT NULL,
+    page_read_at TEXT,
+    release_year INTEGER GENERATED ALWAYS AS (
+        CASE WHEN substr(release_world, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+                  AND substr(release_world, 1, 4) <> '0000'
+             THEN CAST(substr(release_world, 1, 4) AS INTEGER)
+             ELSE NULLIF(name_year, 0) END) VIRTUAL,
+    image_url TEXT GENERATED ALWAYS AS (
+        CASE WHEN image IS NOT NULL AND image <> ''
+             THEN 'https://howlongtobeat.com/games/' || image END) VIRTUAL
+);
+
+-- A platform's own row of an entry (platformData): hours HLTB gives for it.
+CREATE TABLE IF NOT EXISTS hltb_platform_times (
+    hltb_id     INTEGER NOT NULL,
+    platform    TEXT NOT NULL,
+    comp_main   INTEGER,
+    comp_plus   INTEGER,
+    comp_100    INTEGER,
+    comp_low    INTEGER,
+    comp_high   INTEGER,
+    count_comp  INTEGER,
+    count_total INTEGER,
+    PRIMARY KEY (hltb_id, platform)
+);
+
+-- A group of platforms with one set of hours (individuality), as HLTB writes
+-- the set: "PC, PlayStation Vita, Xbox 360, Xbox One".
+CREATE TABLE IF NOT EXISTS hltb_platform_groups (
+    hltb_id    INTEGER NOT NULL,
+    platforms  TEXT NOT NULL,
+    comp_main  INTEGER,
+    comp_plus  INTEGER,
+    comp_100   INTEGER,
+    comp_all   INTEGER,
+    compare    REAL,
+    count_comp INTEGER,
+    PRIMARY KEY (hltb_id, platforms)
+);
+
+-- The platforms an entry is on (profile_platform), one row each.
+CREATE TABLE IF NOT EXISTS hltb_entry_platforms (
+    hltb_id  INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    PRIMARY KEY (hltb_id, platform)
+);
+
+-- How many of HLTB's users gave an entry each score bucket (userReviews).
+CREATE TABLE IF NOT EXISTS hltb_review_scores (
+    hltb_id INTEGER NOT NULL,
+    score   INTEGER NOT NULL,
+    votes   INTEGER NOT NULL,
+    PRIMARY KEY (hltb_id, score)
+);
+
+-- Entries a page names that are not its additional content (another game, a
+-- compilation, "omit"): additional content is `parent_hltb_id`.
+CREATE TABLE IF NOT EXISTS hltb_related (
+    hltb_id    INTEGER NOT NULL,
+    related_id INTEGER NOT NULL,
+    PRIMARY KEY (hltb_id, related_id)
 );
 
 CREATE TABLE IF NOT EXISTS version_hltb (

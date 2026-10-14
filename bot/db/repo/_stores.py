@@ -383,93 +383,140 @@ class _StoresRepo:
 
     # ------------------------------------------------------------ HLTB
 
-    async def save_hltb_game(self, entry: HltbEntry) -> None:
-        """The entry from its own page, and the entries its page names (its
-        DLC, or on a DLC's page its game) as far as that page tells. An
-        entry's own page is the only one that sets its type, parent and
-        times (`page_read_at`, migration 101): another page's row of it — a
-        game's on its DLC's page, with averages only — fills an entry no page
-        of its own was read for, and never overwrites one (2026-10-12: four
-        games' times were the averages their DLC's page listed)."""
+    async def save_hltb_page(self, entry: HltbEntry) -> None:
+        """An entry from its own page — every field, its platform rows, its
+        groups of platforms, its platforms, its users' scores, the entries it
+        names — and the entries its page names (its additional content, or on
+        a DLC's page its game) as far as that page tells. An entry's own page
+        is the only one that sets its type, parent and hours (`page_read_at`):
+        another page's row of it — a game's on its DLC's page, with averages
+        only — fills an entry no page of its own was read for, and never
+        overwrites one (2026-10-12: four games' times were the averages their
+        DLC's page listed)."""
         now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO hltb_games (hltb_id, name, game_type, parent_hltb_id, steam_appid,"
-            "  developer, publisher, release_year, platforms, times, platform_times, details,"
-            "  summary_en, image_url, checked_at, page_read_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT(hltb_id) DO UPDATE SET name = excluded.name,"
-            "  game_type = excluded.game_type, parent_hltb_id = excluded.parent_hltb_id,"
-            "  steam_appid = COALESCE(excluded.steam_appid, hltb_games.steam_appid),"
-            "  developer = COALESCE(excluded.developer, hltb_games.developer),"
-            "  publisher = COALESCE(excluded.publisher, hltb_games.publisher),"
-            "  release_year = COALESCE(excluded.release_year, hltb_games.release_year),"
-            "  platforms = COALESCE(excluded.platforms, hltb_games.platforms),"
-            "  times = excluded.times,"
-            "  platform_times = COALESCE(excluded.platform_times, hltb_games.platform_times),"
-            "  details = COALESCE(excluded.details, hltb_games.details),"
-            "  summary_en = COALESCE(excluded.summary_en, hltb_games.summary_en),"
-            "  image_url = COALESCE(excluded.image_url, hltb_games.image_url),"
-            "  checked_at = excluded.checked_at, page_read_at = excluded.page_read_at",
-            (
-                entry.hltb_id,
-                entry.name,
-                entry.game_type,
-                entry.parent_hltb_id,
-                entry.steam_appid,
-                entry.developer,
-                entry.publisher,
-                entry.release_year,
-                json.dumps(entry.platforms) if entry.platforms else None,
-                json.dumps(entry.times),
-                json.dumps(entry.platform_times) if entry.platform_times else None,
-                json.dumps(entry.details, ensure_ascii=False) if entry.details else None,
-                entry.summary_en,
-                entry.image_url,
-                now,
-                now,
-            ),
-        )
-        unread = "hltb_games.page_read_at IS NULL"
-        for item in [*entry.children, *([entry.parent] if entry.parent else [])]:
+        row = {k: v for k, v in entry.row.items() if k != "hltb_id"}
+        columns = ["hltb_id", *row, "checked_at", "page_read_at"]
+        async with self.transaction():
             await self._conn.execute(
-                "INSERT INTO hltb_games (hltb_id, name, game_type, parent_hltb_id, times,"
-                "  checked_at) VALUES (?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(hltb_id) DO UPDATE SET"
-                f"  name = CASE WHEN {unread} THEN excluded.name ELSE hltb_games.name END,"
-                f"  game_type = CASE WHEN {unread}"
-                "   THEN COALESCE(excluded.game_type, hltb_games.game_type)"
-                "   ELSE hltb_games.game_type END,"
-                # A child's parent is this page; the parent's own parent is
-                # not this page's to say, but its having been taken for this
-                # page's child (the old reading) is undone.
-                f"  parent_hltb_id = CASE WHEN NOT ({unread}) THEN hltb_games.parent_hltb_id"
-                "   WHEN excluded.parent_hltb_id IS NOT NULL THEN excluded.parent_hltb_id"
-                "   WHEN hltb_games.parent_hltb_id = ? THEN NULL"
-                "   ELSE hltb_games.parent_hltb_id END,"
-                f"  times = CASE WHEN {unread} THEN excluded.times ELSE hltb_games.times END,"
-                f"  checked_at = CASE WHEN {unread} THEN excluded.checked_at"
-                "   ELSE hltb_games.checked_at END",
-                (
-                    item.hltb_id,
-                    item.name,
-                    item.game_type,
-                    item.parent_hltb_id,
-                    json.dumps(item.times),
-                    now,
-                    entry.hltb_id,
-                ),
+                f"INSERT INTO hltb_entries ({', '.join(columns)})"
+                f" VALUES ({', '.join('?' * len(columns))})"
+                " ON CONFLICT(hltb_id) DO UPDATE SET "
+                + ", ".join(f"{c} = excluded.{c}" for c in columns[1:]),
+                (entry.hltb_id, *row.values(), now, now),
             )
-        # The Russian summary already paid for in the legacy store is kept.
-        await self._conn.execute(
-            "UPDATE hltb_games SET summary_ru = (SELECT description_ru FROM hltb_cache c"
-            "  WHERE c.hltb_id = hltb_games.hltb_id)"
-            " WHERE hltb_id = ? AND summary_ru IS NULL",
-            (entry.hltb_id,),
-        )
-        await self._conn.commit()
+            for table in (
+                "hltb_platform_times",
+                "hltb_platform_groups",
+                "hltb_entry_platforms",
+                "hltb_review_scores",
+                "hltb_related",
+            ):
+                await self._conn.execute(f"DELETE FROM {table} WHERE hltb_id = ?", (entry.hltb_id,))
+            await self._conn.executemany(
+                "INSERT OR REPLACE INTO hltb_platform_times (hltb_id, platform, comp_main,"
+                " comp_plus, comp_100, comp_low, comp_high, count_comp, count_total)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        entry.hltb_id,
+                        r["platform"],
+                        r["comp_main"],
+                        r["comp_plus"],
+                        r["comp_100"],
+                        r["comp_low"],
+                        r["comp_high"],
+                        r["count_comp"],
+                        r["count_total"],
+                    )
+                    for r in entry.platform_rows
+                ],
+            )
+            await self._conn.executemany(
+                "INSERT OR REPLACE INTO hltb_platform_groups (hltb_id, platforms, comp_main,"
+                " comp_plus, comp_100, comp_all, compare, count_comp)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        entry.hltb_id,
+                        g["platforms"],
+                        g["comp_main"],
+                        g["comp_plus"],
+                        g["comp_100"],
+                        g["comp_all"],
+                        g["compare"],
+                        g["count_comp"],
+                    )
+                    for g in entry.groups
+                ],
+            )
+            await self._conn.executemany(
+                "INSERT OR IGNORE INTO hltb_entry_platforms (hltb_id, platform) VALUES (?, ?)",
+                [(entry.hltb_id, p) for p in entry.platforms],
+            )
+            await self._conn.executemany(
+                "INSERT OR REPLACE INTO hltb_review_scores (hltb_id, score, votes)"
+                " VALUES (?, ?, ?)",
+                [(entry.hltb_id, score, votes) for score, votes in entry.reviews.items()],
+            )
+            await self._conn.executemany(
+                "INSERT OR IGNORE INTO hltb_related (hltb_id, related_id) VALUES (?, ?)",
+                [(entry.hltb_id, item.hltb_id) for item in entry.others],
+            )
+            unread = "hltb_entries.page_read_at IS NULL"
+            stats = (
+                "comp_main",
+                "comp_plus",
+                "comp_100",
+                "comp_all",
+                "comp_all_count",
+                "count_backlog",
+                "review_score",
+            )
+            for item in [*entry.children, *entry.others, *([entry.parent] if entry.parent else [])]:
+                await self._conn.execute(
+                    "INSERT INTO hltb_entries (hltb_id, name, game_type, parent_hltb_id,"
+                    f"  {', '.join(stats)}, checked_at)"
+                    f" VALUES (?, ?, ?, ?, {', '.join('?' * len(stats))}, ?)"
+                    " ON CONFLICT(hltb_id) DO UPDATE SET"
+                    f"  name = CASE WHEN {unread} THEN excluded.name ELSE hltb_entries.name END,"
+                    f"  game_type = CASE WHEN {unread}"
+                    "   THEN COALESCE(excluded.game_type, hltb_entries.game_type)"
+                    "   ELSE hltb_entries.game_type END,"
+                    # A child's parent is this page; the parent's own parent is
+                    # not this page's to say, but its having been taken for this
+                    # page's child (the old reading) is undone.
+                    f"  parent_hltb_id = CASE WHEN NOT ({unread}) THEN hltb_entries.parent_hltb_id"
+                    "   WHEN excluded.parent_hltb_id IS NOT NULL THEN excluded.parent_hltb_id"
+                    "   WHEN hltb_entries.parent_hltb_id = ? THEN NULL"
+                    "   ELSE hltb_entries.parent_hltb_id END,"
+                    + ", ".join(
+                        f" {c} = CASE WHEN {unread} THEN excluded.{c} ELSE hltb_entries.{c} END"
+                        for c in stats
+                    )
+                    + f", checked_at = CASE WHEN {unread} THEN excluded.checked_at"
+                    "   ELSE hltb_entries.checked_at END",
+                    (
+                        item.hltb_id,
+                        item.name,
+                        item.game_type,
+                        item.parent_hltb_id,
+                        *(item.row.get(c) for c in stats),
+                        now,
+                        entry.hltb_id,
+                    ),
+                )
+            # The Russian summary already paid for in the legacy store is kept.
+            await self._conn.execute(
+                "UPDATE hltb_entries SET summary_ru = (SELECT description_ru FROM hltb_cache c"
+                "  WHERE c.hltb_id = hltb_entries.hltb_id)"
+                " WHERE hltb_id = ? AND summary_ru IS NULL",
+                (entry.hltb_id,),
+            )
 
     async def hltb_game_row(self, hltb_id: int) -> dict | None:
-        cursor = await self._conn.execute("SELECT * FROM hltb_games WHERE hltb_id = ?", (hltb_id,))
+        cursor = await self._conn.execute(
+            "SELECT * FROM hltb_entries WHERE hltb_id = ?", (hltb_id,)
+        )
         row = await cursor.fetchone()
         return dict(row) if row else None
 
@@ -477,7 +524,7 @@ class _StoresRepo:
         """An HLTB game's DLC and expansions as stored (its page's relations,
         their own pages where read)."""
         cursor = await self._conn.execute(
-            "SELECT hltb_id, name, steam_appid, game_type FROM hltb_games"
+            "SELECT hltb_id, name, steam_appid, game_type FROM hltb_entries"
             " WHERE parent_hltb_id = ? ORDER BY hltb_id",
             (hltb_id,),
         )

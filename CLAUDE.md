@@ -2041,6 +2041,25 @@ History: #112.
   and console exclusives are covered. Read from the page's `__NEXT_DATA__`
   (`profile_summary`, beside `genre`), never from rendered HTML whose class names
   change every deploy.
+- **The HowLongToBeat mirror** (owner, 2026-10-15; migration 112, `hltb_entries`
+  and its child tables, `stores/hltb_page.py`, `repo.save_hltb_page`): one row per
+  entry — a game or its additional content (`game_type`; an additional content's
+  `parent_hltb_id` is its main game) — with **every field the page gives**, named
+  as HLTB names it where we had no name, hours as the seconds HLTB gives (0 is
+  none, a count stays a count): identity and ids (Steam, itch, IGN), studio,
+  genres, release dates by region, ratings, the score, the average / median /
+  fastest / slowest / count of main, extra, 100% and all, speedruns, co-op and
+  multiplayer hours, the modes it has, HLTB's own users' counts (stored; shown
+  or not is the Mini App's decision). Beside it: `hltb_platform_times` (a row
+  per platform), `hltb_platform_groups` (platforms sharing one set of hours),
+  `hltb_entry_platforms`, `hltb_review_scores` (the users' scores), `hltb_related`
+  (named entries that are not additional content). **Nothing is copied into our
+  tables** — a game, a version and a DLC link to an entry (`version_hltb`,
+  `dlc_hltb`) and read it. An entry's own page is the only one that sets its
+  type, parent and hours (`page_read_at`); another page's row of it fills an
+  entry no page was read for and overwrites nothing. The raw page stays in
+  `source_payloads`, so every field is read again from it with no request
+  (`scripts/reparse_store_payloads.py`).
 - **The same page read also keeps the rest of it** (`hltb_cache.details`, one
   JSON object, migration 064): rating, developer/publisher, alias, release dates,
   play modes, co-op/multiplayer hours, each time bucket's median/fastest/slowest,

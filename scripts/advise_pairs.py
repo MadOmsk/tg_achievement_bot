@@ -192,7 +192,7 @@ class Facts:
         bits = [h.get("game_type") or "?", str(h.get("release_year") or "?")]
         if studio := self._studio(h):
             bits.append(studio)
-        platforms = json.loads(h["platforms"]) if h.get("platforms") else []
+        platforms = str(h["platforms"]).split(", ") if h.get("platforms") else []
         if platforms:
             bits.append("on " + ", ".join(platforms[:6]))
         if h.get("steam_appid"):
@@ -294,7 +294,8 @@ async def load_facts(conn: aiosqlite.Connection) -> Facts:
     for r in await _rows(
         conn,
         "SELECT hltb_id, name, game_type, parent_hltb_id, steam_appid, developer, publisher,"
-        " release_year, platforms FROM hltb_games",
+        " release_year, (SELECT group_concat(p.platform, ', ') FROM hltb_entry_platforms p"
+        "  WHERE p.hltb_id = hltb_entries.hltb_id) AS platforms FROM hltb_entries",
     ):
         f.hltb[int(r["hltb_id"])] = r
     f.labels = await _rows(
@@ -456,7 +457,7 @@ async def _dlc_rows(conn: aiosqlite.Connection) -> dict[int, list[dict]]:
         " v.name AS version_name, v.console, v.version_id"
         " FROM version_hltb vh JOIN versions v ON v.version_id = vh.version_id"
         " JOIN dlcs d ON d.version_id = v.version_id"
-        " WHERE vh.hltb_id IN (SELECT DISTINCT parent_hltb_id FROM hltb_games"
+        " WHERE vh.hltb_id IN (SELECT DISTINCT parent_hltb_id FROM hltb_entries"
         "  WHERE parent_hltb_id IS NOT NULL) ORDER BY d.dlc_id",
     ):
         by_entry[int(r["hltb_id"])].append(r)

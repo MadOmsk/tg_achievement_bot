@@ -214,19 +214,13 @@ def _console_sql(store: str = "v.store", console: str = "v.console") -> str:
     )
 
 
-def _hours(times: object) -> str:
-    """HLTB's times in one line: main, main + extra, completionist."""
-    try:
-        data = json.loads(str(times)) if times else {}
-    except ValueError:
-        return ""
+def _hours(main: object, plus: object = None, hundred: object = None) -> str:
+    """An entry's hours (HLTB gives seconds) in one line: main, main + extra,
+    completionist."""
     parts = []
-    for key, word in (("main", "main"), ("extra", "+extra"), ("completionist", "100%")):
-        bucket = data.get(key) or (data.get("complete") if key == "completionist" else None)
-        if isinstance(bucket, dict):
-            hours = bucket.get("average") or bucket.get("median")
-            if hours:
-                parts.append(f"{word} {hours}h")
+    for seconds, word in ((main, "main"), (plus, "+extra"), (hundred, "100%")):
+        if isinstance(seconds, int) and seconds > 0:
+            parts.append(f"{word} {round(seconds / 3600, 1)}h")
     return " · ".join(parts)
 
 
@@ -240,7 +234,7 @@ COVER = (
     "  AND t.title_id = v.title_id AND t.cover_path IS NOT NULL),"
     " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
     "  AND t.title_id = v.title_id),"
-    " (SELECT h.image_url FROM version_hltb vh JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
+    " (SELECT h.image_url FROM version_hltb vh JOIN hltb_entries h ON h.hltb_id = vh.hltb_id"
     "  WHERE vh.version_id = v.version_id AND vh.source <> 'rejected'"
     "  AND h.image_url IS NOT NULL LIMIT 1)) AS cover"
 )
@@ -332,7 +326,7 @@ _HOME_TABLES = (
         "a store product on one console (or a stand-in made from a list), and the game it is in",
     ),
     ("dlcs", "/dlcs", "add-ons the stores list for each version"),
-    ("hltb_games", "/hltb", "HowLongToBeat entries: games and DLC, their times"),
+    ("hltb_entries", "/hltb", "HowLongToBeat entries: games and DLC, their times"),
     ("version_hltb", "/hltb", "which HLTB entry each version is"),
     ("source_payloads", "/payloads", "each store's last answer, kept as it came"),
     ("fetch_state", "/fetch", "when each source was asked for each game, and when it is due again"),
@@ -475,7 +469,7 @@ async def version(request: web.Request) -> web.Response:
         ).fetchall()
         hltb = conn.execute(
             "SELECT h.hltb_id, h.name, h.game_type, vh.source FROM version_hltb vh"
-            " JOIN hltb_games h ON h.hltb_id = vh.hltb_id WHERE vh.version_id = ?",
+            " JOIN hltb_entries h ON h.hltb_id = vh.hltb_id WHERE vh.version_id = ?",
             (version_id,),
         ).fetchall()
         siblings = (
@@ -499,7 +493,7 @@ async def version(request: web.Request) -> web.Response:
             "  AND t.title_id = v.title_id) AS list_icon,"
             " (SELECT '/covers/' || t.cover_path FROM titles t WHERE t.platform = v.platform"
             "  AND t.title_id = v.title_id) AS list_cover,"
-            " (SELECT h.image_url FROM version_hltb vh JOIN hltb_games h"
+            " (SELECT h.image_url FROM version_hltb vh JOIN hltb_entries h"
             "  ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "  AND vh.source <> 'rejected' AND h.image_url IS NOT NULL LIMIT 1) AS hltb_image"
             " FROM versions v WHERE v.version_id = ?",
@@ -621,10 +615,10 @@ async def dlcs(request: web.Request) -> web.Response:
 
 # A DLC's HLTB entry (`dlc_hltb`): its id, name and times, the first if several.
 _DLC_HLTB = (
-    "(SELECT h.hltb_id FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id"
+    "(SELECT h.hltb_id FROM dlc_hltb dh JOIN hltb_entries h ON h.hltb_id = dh.hltb_id"
     " WHERE dh.dlc_id = d.dlc_id AND dh.source <> 'rejected' ORDER BY h.hltb_id LIMIT 1)"
     " AS hltb_id,"
-    " (SELECT h.times FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id"
+    " (SELECT h.comp_main FROM dlc_hltb dh JOIN hltb_entries h ON h.hltb_id = dh.hltb_id"
     " WHERE dh.dlc_id = d.dlc_id AND dh.source <> 'rejected' ORDER BY h.hltb_id LIMIT 1)"
     " AS hltb_times"
 )
@@ -678,8 +672,9 @@ async def dlc(request: web.Request) -> web.Response:
             (dlc_id,),
         ).fetchone()
         hltb = conn.execute(
-            "SELECT h.hltb_id, h.name, h.game_type, h.parent_hltb_id, h.times, dh.source"
-            " FROM dlc_hltb dh JOIN hltb_games h ON h.hltb_id = dh.hltb_id WHERE dh.dlc_id = ?",
+            "SELECT h.hltb_id, h.name, h.game_type, h.parent_hltb_id, h.comp_main, h.comp_plus,"
+            " h.comp_100, dh.source"
+            " FROM dlc_hltb dh JOIN hltb_entries h ON h.hltb_id = dh.hltb_id WHERE dh.dlc_id = ?",
             (dlc_id,),
         ).fetchall()
         twins = (
@@ -715,7 +710,7 @@ async def dlc(request: web.Request) -> web.Response:
             "".join(
                 f'<p><a href="/hltb/{h["hltb_id"]}">{escape(h["name"])}</a>'
                 f" <small>({escape(h['game_type'] or '?')}, {escape(h['source'])})</small>"
-                f" — {escape(_hours(h['times']) or 'no times')}</p>"
+                f" — {escape(_hours(h['comp_main'], h['comp_plus'], h['comp_100']) or '-')}</p>"
                 for h in hltb
             )
             or "<p>(no HLTB entry linked)</p>"
@@ -730,7 +725,7 @@ async def hltb_list(request: web.Request) -> web.Response:
     with _db(request) as conn:
         rows = conn.execute(
             "SELECT hltb_id, name, game_type, parent_hltb_id, developer, release_year, checked_at"
-            " FROM hltb_games ORDER BY checked_at DESC LIMIT ?",
+            " FROM hltb_entries ORDER BY checked_at DESC LIMIT ?",
             (PAGE_SIZE,),
         ).fetchall()
     return _page(PAGES["/hltb"], _table(rows, {"hltb_id": _hltb_href, "name": _hltb_href}))
@@ -739,9 +734,10 @@ async def hltb_list(request: web.Request) -> web.Response:
 async def hltb_entry(request: web.Request) -> web.Response:
     hltb_id = int(request.match_info["hltb_id"])
     with _db(request) as conn:
-        row = conn.execute("SELECT * FROM hltb_games WHERE hltb_id = ?", (hltb_id,)).fetchone()
+        row = conn.execute("SELECT * FROM hltb_entries WHERE hltb_id = ?", (hltb_id,)).fetchone()
         children = conn.execute(
-            "SELECT hltb_id, name, game_type, times FROM hltb_games WHERE parent_hltb_id = ?",
+            "SELECT hltb_id, name, game_type, comp_main, comp_plus, comp_100 FROM hltb_entries"
+            " WHERE parent_hltb_id = ?",
             (hltb_id,),
         ).fetchall()
         linked = conn.execute(
@@ -768,10 +764,22 @@ async def hltb_entry(request: web.Request) -> web.Response:
         ).fetchall()
     body = (
         _record(row, {"parent_hltb_id": lambda r: f"/hltb/{r['parent_hltb_id']}"})
-        + (f"<p>times: {escape(_hours(row['times']))}</p>" if row is not None else "")
+        + (
+            f"<p>times: {escape(_hours(row['comp_main'], row['comp_plus'], row['comp_100']))}</p>"
+            if row is not None
+            else ""
+        )
         + "<h2>DLC and expansions</h2>"
         + _table(
-            [{**dict(c), "times": _hours(c["times"])} for c in children],  # type: ignore[misc]
+            [
+                {
+                    "hltb_id": c["hltb_id"],
+                    "name": c["name"],
+                    "game_type": c["game_type"],
+                    "times": _hours(c["comp_main"], c["comp_plus"], c["comp_100"]),
+                }
+                for c in children
+            ],
             {"hltb_id": _hltb_href, "name": _hltb_href},
         )
         + "<h2>Versions linked</h2>"
@@ -1240,8 +1248,9 @@ async def game(request: web.Request) -> web.Response:
             # HLTB's platforms: where the game also came out, as no store
             # we read says (Nintendo, older consoles, PC outside Steam).
             "SELECT DISTINCT h.hltb_id, h.name, h.game_type, h.release_year,"
-            " h.platforms AS also_released_on FROM version_hltb vh"
-            " JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
+            " (SELECT group_concat(p.platform, ', ') FROM hltb_entry_platforms p"
+            "  WHERE p.hltb_id = h.hltb_id) AS also_released_on FROM version_hltb vh"
+            " JOIN hltb_entries h ON h.hltb_id = vh.hltb_id"
             " JOIN versions v ON v.version_id = vh.version_id"
             " WHERE v.game_id = ? AND vh.source <> 'rejected'",
             (game_id,),

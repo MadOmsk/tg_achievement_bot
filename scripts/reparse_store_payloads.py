@@ -55,7 +55,7 @@ SUMMARY = (
     ("version ↔ HLTB links", "SELECT COUNT(*) FROM version_hltb"),
     (
         "HLTB games filed under a child",
-        "SELECT COUNT(*) FROM hltb_games c JOIN hltb_games p ON p.hltb_id = c.parent_hltb_id"
+        "SELECT COUNT(*) FROM hltb_entries c JOIN hltb_entries p ON p.hltb_id = c.parent_hltb_id"
         " WHERE c.game_type = 'game' AND p.game_type = 'dlc'",
     ),
     ("games", "SELECT COUNT(*) FROM games WHERE merged_into IS NULL"),

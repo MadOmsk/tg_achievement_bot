@@ -58,14 +58,14 @@ async def test_a_games_dlc_entries_are_linked_to_its_dlc(repo: Repo) -> None:
         "game": [{"game_id": 2127, "game_name": "Cyberpunk 2077", "game_type": "game"}],
         "relationships": [{"game_id": 113203, "game_name": "Phantom Liberty", "game_type": "dlc"}],
     }
-    await repo.save_hltb_game(hltb_page.parse_page(page))  # type: ignore[arg-type]
+    await repo.save_hltb_page(hltb_page.parse_page(page))  # type: ignore[arg-type]
     await repo.save_payload("hltb:2127", "hltb_page", page)
     await repo.link_version_hltb(vid, 2127)
     await link_hltb_entry(repo, 2127)
     cursor = await repo._conn.execute("SELECT hltb_id, source FROM dlc_hltb")
     assert [tuple(r) for r in await cursor.fetchall()] == [(113203, "auto")]
     # The entry turns out to be a DLC's: no base game keeps it.
-    await repo._conn.execute("UPDATE hltb_games SET game_type = 'dlc' WHERE hltb_id = 2127")
+    await repo._conn.execute("UPDATE hltb_entries SET game_type = 'dlc' WHERE hltb_id = 2127")
     await link_hltb_entry(repo, 2127)
     # The link stays as a refusal, so nothing makes it again.
     cursor = await repo._conn.execute("SELECT source FROM version_hltb")
@@ -328,7 +328,7 @@ async def test_the_evidence_check_refuses_an_automatic_link_of_a_demo(repo: Repo
         title_id=None,
     )
     page = {"game": [{"game_id": 5, "game_name": "Control", "game_type": "game"}]}
-    await repo.save_hltb_game(hltb_page.parse_page(page))  # type: ignore[arg-type]
+    await repo.save_hltb_page(hltb_page.parse_page(page))  # type: ignore[arg-type]
     await repo.save_payload("hltb:5", "hltb_page", page)
     await repo.link_version_hltb(game, 5)
     await repo.link_version_hltb(demo, 5)
@@ -390,8 +390,8 @@ async def test_an_episode_sold_on_its_own_keeps_its_own_entry_though_hltb_files_
             }
         ]
     }
-    await repo.save_hltb_game(hltb_page.parse_page(main))  # type: ignore[arg-type]
-    await repo.save_hltb_game(hltb_page.parse_page(chapter))  # type: ignore[arg-type]
+    await repo.save_hltb_page(hltb_page.parse_page(main))  # type: ignore[arg-type]
+    await repo.save_hltb_page(hltb_page.parse_page(chapter))  # type: ignore[arg-type]
     await repo.save_payload("hltb:101", "hltb_page", chapter)
     await repo.link_version_hltb(version, 101)
 
@@ -429,7 +429,7 @@ async def test_a_demo_may_have_the_entry_that_is_the_demos_own(repo: Repo) -> No
     )
     for hltb_id, name in ((64088, 'Resident Evil 2 "1-Shot Demo"'), (2, "Resident Evil 2")):
         page = {"game": [{"game_id": hltb_id, "game_name": name, "game_type": "game"}]}
-        await repo.save_hltb_game(hltb_page.parse_page(page))  # type: ignore[arg-type]
+        await repo.save_hltb_page(hltb_page.parse_page(page))  # type: ignore[arg-type]
         await repo.save_payload(f"hltb:{hltb_id}", "hltb_page", page)
         await repo.link_version_hltb(demo, hltb_id)
         await link_hltb_entry(repo, hltb_id)

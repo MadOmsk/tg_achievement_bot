@@ -453,7 +453,7 @@ class StoreCollector:
             if entry is None:
                 continue
             await self._repo.save_payload(f"hltb:{entry.hltb_id}", "hltb_page", data)
-            await self._repo.save_hltb_game(entry)
+            await self._repo.save_hltb_page(entry)
             await self._from_hltb(entry, report)
             if entry.steam_appid and str(entry.steam_appid) in steam_versions:
                 await self._repo.link_version_hltb(
@@ -709,7 +709,7 @@ class StoreCollector:
             entry = hltb_page.parse_page(data) if data else None
             if entry is None:
                 continue
-            await repo.save_hltb_game(entry)
+            await repo.save_hltb_page(entry)
             hltb_ids.append(entry.hltb_id)
             count("hltb pages")
         for title_id in await repo.x360_title_ids():
@@ -960,7 +960,7 @@ class StoreCollector:
             await self._repo.record_fetch(subject, source, status="not_found")
             return
         changed = await self._repo.save_payload(subject, source, data)
-        await self._repo.save_hltb_game(entry)
+        await self._repo.save_hltb_page(entry)
         await self._from_hltb(entry, report)
         await self.check_hltb_links(hltb_id)
         await self._repo.record_fetch(subject, source, status="ok", changed=changed)
