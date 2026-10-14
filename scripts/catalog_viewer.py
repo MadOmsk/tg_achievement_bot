@@ -77,16 +77,28 @@ def _button(
     )
 
 
+# Every page the menu lists, once (owner, 2026-10-14: the menu, the home
+# page's table and each page's title say one name): path → name.
+PAGES = {
+    "/": "Home",
+    "/games": "Games",
+    "/review": "Review",
+    "/rules": "Rules",
+    "/titles": "Titles",
+    "/versions": "Versions",
+    "/dlcs": "DLC",
+    "/hltb": "HLTB",
+    "/fetch": "Fetch state",
+    "/payloads": "Payloads",
+    "/proposals": "Proposals",
+    "/advised": "Advised",
+    "/decisions": "Answers",
+    "/series": "Series",
+}
+
+
 def _page(title: str, body: str) -> web.Response:
-    nav = (
-        '<a href="/">home</a> · <a href="/games">games</a> · <a href="/review">review</a>'
-        ' · <a href="/rules">rules</a> · <a href="/titles">titles</a>'
-        ' · <a href="/versions">versions</a>'
-        ' · <a href="/dlcs">dlcs</a> · <a href="/hltb">hltb</a> · <a href="/fetch">fetch state</a>'
-        ' · <a href="/payloads">payloads</a> · <a href="/proposals">proposals</a>'
-        ' · <a href="/advised">advised</a> · <a href="/decisions">answers</a>'
-        ' · <a href="/series">series</a>'
-    )
+    nav = " · ".join(f'<a href="{path}">{escape(name)}</a>' for path, name in PAGES.items())
     html = (
         "<!doctype html><meta charset=utf-8>"
         '<meta name=viewport content="width=device-width,initial-scale=1">'
@@ -297,48 +309,44 @@ def _search_form(action: str, q: str) -> str:
     )
 
 
-_HOME_LINKS = {
-    "games": "/games",
-    "game_versions": "/games",
-    "match_pairs": "/review",
-    "match_decisions": "/decisions",
-    "titles": "/titles",
-    "versions": "/versions",
-    "version_store_ids": "/versions",
-    "dlcs": "/dlcs",
-    "hltb_games": "/hltb",
-    "version_hltb": "/hltb",
-    "source_payloads": "/payloads",
-    "fetch_state": "/fetch",
-}
+# The home page's tables: the page each is seen on, and what it holds.
+_HOME_TABLES = (
+    ("games", "/games", "games: what the model built over the versions, merged ones included"),
+    (
+        "game_versions",
+        "/games",
+        "which game each version is in, and its role: version, demo, tool, mode, extra",
+    ),
+    ("match_pairs", "/review", "the pairs the model is unsure of: its review queue"),
+    (
+        "match_decisions",
+        "/decisions",
+        "every answer on a pair of versions: yours and the advisers'",
+    ),
+    ("titles", "/titles", "achievement lists people here have: Xbox, Steam, PSN"),
+    ("versions", "/versions", "a store product on one console (or a stand-in made from a list)"),
+    ("version_store_ids", "/versions", "every id naming a version: regional CUSAs, Xbox title ids"),
+    ("dlcs", "/dlcs", "add-ons the stores list for each version"),
+    ("hltb_games", "/hltb", "HowLongToBeat entries: games and DLC, their times"),
+    ("version_hltb", "/hltb", "which HLTB entry each version is"),
+    ("source_payloads", "/payloads", "each store's last answer, kept as it came"),
+    ("fetch_state", "/fetch", "when each source was asked for each game, and when it is due again"),
+)
 
 
 async def home(request: web.Request) -> web.Response:
     with _db(request) as conn:
-        counts = [
-            (table, conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
-            for table in (
-                "games",
-                "game_versions",
-                "match_pairs",
-                "match_decisions",
-                "titles",
-                "versions",
-                "version_store_ids",
-                "dlcs",
-                "hltb_games",
-                "version_hltb",
-                "source_payloads",
-                "fetch_state",
-            )
-        ]
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table, _, _ in _HOME_TABLES
+        }
     rows = "".join(
-        f'<tr><td><a href="{_HOME_LINKS[t]}">{t}</a></td><td>{n}</td></tr>' for t, n in counts
+        f"<tr><td>{table}</td><td align=right>{counts[table]}</td>"
+        f'<td><a href="{path}">{escape(PAGES[path])}</a></td><td>{escape(what)}</td></tr>'
+        for table, path, what in _HOME_TABLES
     )
-    return _page(
-        "Games: the store side",
-        _search_form("/titles", "") + f"<table>{rows}</table>",
-    )
+    head = "<tr><th>table</th><th>rows</th><th>page</th><th>what it holds</th></tr>"
+    return _page(PAGES["/"], _search_form("/titles", "") + f"<table>{head}{rows}</table>")
 
 
 async def titles(request: web.Request) -> web.Response:
@@ -353,7 +361,7 @@ async def titles(request: web.Request) -> web.Response:
             (q, f"%{q}%", f"%{q}%", q, PAGE_SIZE),
         ).fetchall()
     return _page(
-        "Achievement lists (titles)",
+        PAGES["/titles"],
         _search_form("/titles", q)
         + _table(rows, {"title_id": _title_href, "name": _title_href, "hltb_id": _hltb_href}),
     )
@@ -433,7 +441,7 @@ async def versions(request: web.Request) -> web.Response:
             (q, f"%{q}%", q, q, PAGE_SIZE),
         ).fetchall()
     return _page(
-        "Versions",
+        PAGES["/versions"],
         _search_form("/versions", q) + _table(_with_store(rows), _VERSION_LINKS),
     )
 
@@ -598,7 +606,7 @@ async def dlcs(request: web.Request) -> web.Response:
             " WHERE ? = '' OR d.name LIKE ? OR v.name LIKE ? ORDER BY d.updated_at DESC LIMIT ?",
             (q, f"%{q}%", f"%{q}%", PAGE_SIZE),
         ).fetchall()
-    return _page("DLC", _search_form("/dlcs", q) + _dlc_table(rows))
+    return _page(PAGES["/dlcs"], _search_form("/dlcs", q) + _dlc_table(rows))
 
 
 # A DLC's HLTB entry (`dlc_hltb`): its id, name and times, the first if several.
@@ -714,7 +722,7 @@ async def hltb_list(request: web.Request) -> web.Response:
             " FROM hltb_games ORDER BY checked_at DESC LIMIT ?",
             (PAGE_SIZE,),
         ).fetchall()
-    return _page("HLTB entries", _table(rows, {"hltb_id": _hltb_href, "name": _hltb_href}))
+    return _page(PAGES["/hltb"], _table(rows, {"hltb_id": _hltb_href, "name": _hltb_href}))
 
 
 async def hltb_entry(request: web.Request) -> web.Response:
@@ -784,7 +792,7 @@ async def fetch(request: web.Request) -> web.Response:
         if r["status"] != "ok" or r["interval_days"] > 7
     )
     return _page(
-        "Fetch state",
+        PAGES["/fetch"],
         _flash(request) + _table(rows, {"subject": _payload_href}) + "<h2>Ask again</h2>" + buttons,
     )
 
@@ -796,7 +804,7 @@ async def payloads(request: web.Request) -> web.Response:
             " ORDER BY fetched_at DESC LIMIT ?",
             (PAGE_SIZE * 3,),
         ).fetchall()
-    return _page("Raw answers", _table(rows, {"subject": _payload_href}))
+    return _page(PAGES["/payloads"], _table(rows, {"subject": _payload_href}))
 
 
 async def payload(request: web.Request) -> web.Response:
@@ -1074,7 +1082,7 @@ async def rules(request: web.Request) -> web.Response:
         f" achievements are compared when both lists have {m.ACHIEVEMENTS_MIN}+ names.</p>"
         f"<div class=scroll><table><tr><th>sign</th>{head}</tr>{rows}</table></div>"
     )
-    return _page("How versions are matched", body)
+    return _page(PAGES["/rules"], body)
 
 
 def _achievements_link(v: sqlite3.Row) -> str:
@@ -1151,7 +1159,7 @@ async def games(request: web.Request) -> web.Response:
             (q, f"%{q}%", PAGE_SIZE * 3),
         ).fetchall()
     return _page(
-        "Games",
+        PAGES["/games"],
         _flash(request)
         + _search_form("/games", q)
         + _table(
@@ -1544,7 +1552,7 @@ async def review(request: web.Request) -> web.Response:
         if games_tab
         else "<p>Is this version that game (or its edition, demo, tool) — or another game?</p>"
     )
-    return _page("To review", _flash(request) + f"<p>{tabs}</p>" + note + cards)
+    return _page(PAGES["/review"], _flash(request) + f"<p>{tabs}</p>" + note + cards)
 
 
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
@@ -1935,7 +1943,7 @@ async def advised(request: web.Request) -> web.Response:
     advisers'); an HLTB or DLC pair can only be looked at for now."""
     items = request.app["advised"]
     if not items:
-        return _page("Advised", "<p>(no file: start the viewer with --advised)</p>")
+        return _page(PAGES["/advised"], "<p>(no file: start the viewer with --advised)</p>")
     kind, why = request.query.get("type", ""), request.query.get("why", "")
     with _db(request) as conn:
         marks = ",".join("?" * len(ADVISERS))
@@ -2000,7 +2008,7 @@ async def advised(request: web.Request) -> web.Response:
         f"<p>{len(open_items)} open of {len(items)} · <a href='/advised'>all</a> · {filters}</p>"
         "<p><small>Your answer replaces the advisers' and leaves this list.</small></p>"
     )
-    return _page("Advised: a second look", _flash(request) + head + "".join(cards))
+    return _page(PAGES["/advised"], _flash(request) + head + "".join(cards))
 
 
 async def proposals(request: web.Request) -> web.Response:
@@ -2009,7 +2017,9 @@ async def proposals(request: web.Request) -> web.Response:
     the operator's answer — or the usual answers when it is wrong."""
     items = [dict(i) for i in request.app["proposals"]]
     if not items:
-        return _page("Proposals", "<p>(no proposals file: start the viewer with --proposals)</p>")
+        return _page(
+            PAGES["/proposals"], "<p>(no proposals file: start the viewer with --proposals)</p>"
+        )
     show = request.query.get("answer", "")
     order = {"high": 0, "medium": 1, "low": 2}
     with _db(request) as conn:
@@ -2128,7 +2138,7 @@ async def proposals(request: web.Request) -> web.Response:
         + "</p><p><small>Each button records the answer it spells out. Answered"
         " pairs leave the list. Showing 40 at a time, Claude's surest first.</small></p>"
     )
-    return _page("Proposals: game ↔ game", _flash(request) + head + "".join(cards))
+    return _page(PAGES["/proposals"], _flash(request) + head + "".join(cards))
 
 
 async def decisions(request: web.Request) -> web.Response:
@@ -2183,7 +2193,7 @@ async def decisions(request: web.Request) -> web.Response:
         for key, label in (("", "all"), ("operator", "yours"), ("advisers", "the advisers'"))
     )
     return _page(
-        "Answers",
+        PAGES["/decisions"],
         _flash(request) + f"<p>{tabs}</p>" + ("".join(cards) or "<p>(none)</p>"),
     )
 
@@ -2464,7 +2474,7 @@ async def series_list(request: web.Request) -> web.Response:
         + _search_form("/series", q)
         + _table(rows, {"series_id": _series_href, "name": _series_href})
     )
-    return _page("Series", body)
+    return _page(PAGES["/series"], body)
 
 
 async def series_page(request: web.Request) -> web.Response:
