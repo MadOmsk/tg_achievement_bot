@@ -277,7 +277,9 @@ async def load_facts(conn: aiosqlite.Connection) -> Facts:
         " developer, publisher, release_date, stand_in FROM versions",
     ):
         f.versions[int(r["version_id"])] = r
-    for r in await _rows(conn, "SELECT version_id, game_id, role FROM game_versions"):
+    for r in await _rows(
+        conn, "SELECT version_id, game_id, role FROM versions WHERE game_id IS NOT NULL"
+    ):
         f.game_of[int(r["version_id"])] = int(r["game_id"])
         f.role_of[int(r["version_id"])] = str(r["role"])
         f.members[int(r["game_id"])].append(int(r["version_id"]))

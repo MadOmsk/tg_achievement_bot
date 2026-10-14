@@ -1055,6 +1055,18 @@ CREATE TABLE IF NOT EXISTS versions (
     -- Xbox's cross-gen set (098): one set is one game; store_group keeps
     -- only the product group, which can hold a whole series.
     cross_gen_set TEXT,
+    -- The game this version is in (108: it was the table game_versions, a
+    -- version is in exactly one game): the matcher's output, rebuilt from the
+    -- operator's labels and the model; NULL until it is linked. `role` is
+    -- version / demo / tool / mode / extra / covered, checked in
+    -- game_link.py (a CHECK would mean rebuilding this table whenever a
+    -- role is added); a demo, a tool, a mode and an extra name the version
+    -- they are of.
+    game_id       INTEGER REFERENCES games(game_id) ON DELETE SET NULL,
+    role          TEXT,
+    of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
+    link_p        REAL,
+    linked_at     TEXT,
     UNIQUE (store, product_id, console)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);
@@ -1187,18 +1199,8 @@ CREATE TABLE IF NOT EXISTS games (
     kind_source TEXT NOT NULL DEFAULT 'auto'
 );
 
--- A game's versions (099): the matcher's output, rebuilt from the operator's
--- labels and the model; a version is in exactly one game.
-CREATE TABLE IF NOT EXISTS game_versions (
-    version_id    INTEGER PRIMARY KEY REFERENCES versions(version_id) ON DELETE CASCADE,
-    game_id       INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
-    role          TEXT NOT NULL,   -- version / demo / tool / mode (100) / extra (107) / covered
-    of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
-    p             REAL,
-    linked_at     TEXT NOT NULL,
-    CHECK (of_version_id IS NULL OR role IN ('demo', 'tool', 'mode', 'extra'))
-);
-CREATE INDEX IF NOT EXISTS idx_game_versions_game ON game_versions(game_id, role);
+-- A game's versions are columns of `versions` (108; the table game_versions
+-- of 099 is gone): see game_id, role, of_version_id.
 
 -- The operator's decisions (099): labels on pairs of versions, the input the
 -- games are rebuilt from, with the pair's signs for fitting the weights.

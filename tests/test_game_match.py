@@ -455,7 +455,7 @@ async def test_a_demo_is_of_the_version_on_its_console(repo: Repo) -> None:
     demo = await _version(repo, "DEMO", "RESIDENT EVIL 2 1-Shot Demo", "2019", console="series")
     await GameLinker(repo).link_versions([game_one, game_series, demo])
     cur = await repo._conn.execute(
-        "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (demo,)
+        "SELECT role, of_version_id FROM versions WHERE version_id = ?", (demo,)
     )
     assert tuple(await cur.fetchone()) == ("demo", game_series)
 
@@ -753,7 +753,7 @@ async def test_a_mode_is_recorded_as_a_mode_of_its_game(repo: Repo) -> None:
     await GameLinker(repo).link_versions([game, zombies])
     assert await repo.linked_game_of(zombies) == await repo.linked_game_of(game)
     cur = await repo._conn.execute(
-        "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (zombies,)
+        "SELECT role, of_version_id FROM versions WHERE version_id = ?", (zombies,)
     )
     assert tuple(await cur.fetchone()) == ("mode", game)
 
@@ -816,7 +816,7 @@ async def test_games_get_their_kind_and_the_operators_stands(repo: Repo) -> None
     # The artbook is a part of its game: the game stays a game.
     assert await repo.linked_game_of(book) == await repo.linked_game_of(game)
     cur = await repo._conn.execute(
-        "SELECT role, of_version_id FROM game_versions WHERE version_id = ?", (book,)
+        "SELECT role, of_version_id FROM versions WHERE version_id = ?", (book,)
     )
     assert tuple(await cur.fetchone()) == ("extra", game)
     assert await kind(game) == ("game", "auto")
@@ -916,7 +916,7 @@ async def test_a_win32_list_joins_its_namesakes_game(repo: Repo) -> None:
     assert await repo.linked_game_of(seen) == game
     assert await repo.linked_game_of(ps4) == game
     # A known-store PC version (Steam) covers it (owner, 2026-10-12).
-    cur = await repo._conn.execute("SELECT role FROM game_versions WHERE version_id = ?", (seen,))
+    cur = await repo._conn.execute("SELECT role FROM versions WHERE version_id = ?", (seen,))
     assert (await cur.fetchone())[0] == "covered"
 
 
@@ -927,7 +927,7 @@ async def test_a_lone_unknown_store_pc_version_is_shown(repo: Repo) -> None:
     ps4 = await _version(repo, "HR4", "HEAVY RAIN™", "2016", store="psn", console="ps4")
     seen = await _version(repo, "1743969133", "Heavy Rain", "", store=UNKNOWN_STORE, console="pc")
     await GameLinker(repo).link_versions([ps4, seen])
-    cur = await repo._conn.execute("SELECT role FROM game_versions WHERE version_id = ?", (seen,))
+    cur = await repo._conn.execute("SELECT role FROM versions WHERE version_id = ?", (seen,))
     assert (await cur.fetchone())[0] == "version"
 
 
@@ -1005,3 +1005,65 @@ def test_text_signs_change_nothing_until_weights_are_fitted() -> None:
     plain = _c(1, "Halo", year=2001)
     other = _c(2, "Halo", year=2001, store="steam")
     assert compare(a, b).probs == compare(plain, other).probs
+
+
+# ------------------------------------------------ a version holds its game (108)
+
+
+async def test_migration_108_moves_the_games_columns_onto_versions(tmp_path) -> None:
+    import aiosqlite
+
+    from bot.db.repo import MIGRATIONS_DIR
+
+    sql = (MIGRATIONS_DIR / "108_versions_hold_their_game.sql").read_text(encoding="utf-8")
+    async with aiosqlite.connect(tmp_path / "m107.db") as conn:
+        await conn.executescript(
+            """
+            CREATE TABLE games (game_id INTEGER PRIMARY KEY);
+            CREATE TABLE versions (version_id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE game_versions (
+                version_id INTEGER PRIMARY KEY, game_id INTEGER NOT NULL, role TEXT NOT NULL,
+                of_version_id INTEGER, p REAL, linked_at TEXT NOT NULL);
+            CREATE INDEX idx_game_versions_game ON game_versions(game_id, role);
+            INSERT INTO games VALUES (1), (2);
+            INSERT INTO versions VALUES (10, 'Game'), (11, 'Its demo'), (12, 'Unlinked');
+            INSERT INTO game_versions VALUES
+                (10, 1, 'version', NULL, 0.97, 't1'), (11, 1, 'demo', 10, NULL, 't2');
+            """
+        )
+        await conn.executescript(sql)
+        cursor = await conn.execute(
+            "SELECT version_id, game_id, role, of_version_id, link_p, linked_at"
+            " FROM versions ORDER BY version_id"
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+        cursor = await conn.execute("SELECT name FROM sqlite_master WHERE name = 'game_versions'")
+        gone = await cursor.fetchall()
+    assert rows == [
+        (10, 1, "version", None, 0.97, "t1"),
+        (11, 1, "demo", 10, None, "t2"),
+        (12, None, None, None, None, None),
+    ]
+    assert gone == []
+
+
+async def test_linking_writes_the_game_on_the_version_and_keeps_when_it_got_there(
+    repo: Repo,
+) -> None:
+    game = await _version(repo, "G", "Control", "2019")
+    demo = await _version(repo, "D", "Control Demo", "2019", kind="demo")
+    await GameLinker(repo).link_versions([game, demo])
+    cursor = await repo._conn.execute(
+        "SELECT game_id, role, of_version_id, linked_at FROM versions WHERE version_id = ?",
+        (demo,),
+    )
+    first = tuple(await cursor.fetchone())
+    assert first[1:3] == ("demo", game) and first[0] == await repo.linked_game_of(game)
+
+    await GameLinker(repo).link_versions([game, demo])
+    cursor = await repo._conn.execute(
+        "SELECT linked_at FROM versions WHERE version_id = ?", (demo,)
+    )
+    assert (await cursor.fetchone())[0] == first[3]
+    lonely = await _version(repo, "L", "Some Other Game", "2001")
+    assert await repo.linked_game_of(lonely) is None

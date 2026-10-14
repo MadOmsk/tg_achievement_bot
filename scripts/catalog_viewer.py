@@ -312,11 +312,6 @@ def _search_form(action: str, q: str) -> str:
 # The home page's tables: the page each is seen on, and what it holds.
 _HOME_TABLES = (
     ("games", "/games", "games: what the model built over the versions, merged ones included"),
-    (
-        "game_versions",
-        "/games",
-        "which game each version is in, and its role: version, demo, tool, mode, extra",
-    ),
     ("match_pairs", "/review", "the pairs the model is unsure of: its review queue"),
     (
         "match_decisions",
@@ -324,7 +319,17 @@ _HOME_TABLES = (
         "every answer on a pair of versions: yours and the advisers'",
     ),
     ("titles", "/titles", "achievement lists people here have: Xbox, Steam, PSN"),
-    ("versions", "/versions", "a store product on one console (or a stand-in made from a list)"),
+    (
+        "title_achievements",
+        "/titles",
+        "every achievement of those lists: names, descriptions, rarity",
+    ),
+    ("seen_achievements", "/titles", "what each account earned, achievement by achievement"),
+    (
+        "versions",
+        "/versions",
+        "a store product on one console (or a stand-in made from a list), and the game it is in",
+    ),
     ("version_store_ids", "/versions", "every id naming a version: regional CUSAs, Xbox title ids"),
     ("dlcs", "/dlcs", "add-ons the stores list for each version"),
     ("hltb_games", "/hltb", "HowLongToBeat entries: games and DLC, their times"),
@@ -479,7 +484,7 @@ async def version(request: web.Request) -> web.Response:
             else []
         )
         demo_of = conn.execute(
-            "SELECT of_version_id, role FROM game_versions WHERE version_id = ?"
+            "SELECT of_version_id, role FROM versions WHERE version_id = ?"
             " AND of_version_id IS NOT NULL",
             (version_id,),
         ).fetchone()
@@ -496,8 +501,8 @@ async def version(request: web.Request) -> web.Response:
             (version_id,),
         ).fetchone()
         games = conn.execute(
-            "SELECT gv.game_id, g.name, gv.role, gv.p FROM game_versions gv"
-            " JOIN games g ON g.game_id = gv.game_id WHERE gv.version_id = ?",
+            "SELECT v.game_id, g.name, v.role, v.link_p AS p FROM versions v"
+            " JOIN games g ON g.game_id = v.game_id WHERE v.version_id = ?",
             (version_id,),
         ).fetchall()
         labels = conn.execute(
@@ -660,10 +665,9 @@ async def dlc(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute(
             "SELECT d.*, v.store, v.name AS version, " + _console_sql() + " AS console,"
-            " gv.game_id, g.name AS game FROM dlcs d"
+            " v.game_id, g.name AS game FROM dlcs d"
             " JOIN versions v ON v.version_id = d.version_id"
-            " LEFT JOIN game_versions gv ON gv.version_id = d.version_id"
-            " LEFT JOIN games g ON g.game_id = gv.game_id WHERE d.dlc_id = ?",
+            " LEFT JOIN games g ON g.game_id = v.game_id WHERE d.dlc_id = ?",
             (dlc_id,),
         ).fetchone()
         hltb = conn.execute(
@@ -1145,15 +1149,14 @@ async def games(request: web.Request) -> web.Response:
     with _db(request) as conn:
         rows = conn.execute(
             "SELECT g.game_id, g.name, g.kind, g.year, g.developer, g.name_source,"
-            "  (SELECT COUNT(*) FROM game_versions gv WHERE gv.game_id = g.game_id) AS versions,"
-            "  (SELECT COUNT(*) FROM match_pairs mp JOIN game_versions gv"
-            "   ON gv.version_id IN (mp.version_id, mp.other_id)"
-            "   WHERE gv.game_id = g.game_id) AS review,"
+            "  (SELECT COUNT(*) FROM versions v WHERE v.game_id = g.game_id) AS versions,"
+            "  (SELECT COUNT(*) FROM match_pairs mp JOIN versions v"
+            "   ON v.version_id IN (mp.version_id, mp.other_id)"
+            "   WHERE v.game_id = g.game_id) AS review,"
             "  (SELECT GROUP_CONCAT(r.kind || ' ' || r.related_id) FROM game_relations r"
             "   WHERE r.game_id = g.game_id) AS relates,"
-            f"  (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM game_versions gv"
-            "   JOIN versions v ON v.version_id = gv.version_id"
-            "   WHERE gv.game_id = g.game_id AND gv.role <> 'covered') AS consoles"
+            f"  (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM versions v"
+            "   WHERE v.game_id = g.game_id AND v.role <> 'covered') AS consoles"
             " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name LIKE ?)"
             " ORDER BY versions DESC, g.game_id DESC LIMIT ?",
             (q, f"%{q}%", PAGE_SIZE * 3),
@@ -1174,11 +1177,10 @@ async def game(request: web.Request) -> web.Response:
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
         members = conn.execute(
-            "SELECT gv.version_id, v.store, v.product_id, v.stand_in, v.on_sale,"
+            "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.on_sale,"
             f" {_console_sql()} AS console, v.name, v.release_date, v.developer, v.platform,"
-            " v.title_id, " + COVER + ", gv.role, gv.of_version_id, gv.p"
-            " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
-            " WHERE gv.game_id = ? ORDER BY v.release_date, v.console",
+            " v.title_id, " + COVER + ", v.role, v.of_version_id, v.link_p AS p"
+            " FROM versions v WHERE v.game_id = ? ORDER BY v.release_date, v.console",
             (game_id,),
         ).fetchall()
         relations = conn.execute(
@@ -1209,8 +1211,7 @@ async def game(request: web.Request) -> web.Response:
             " v.name AS version, v.product_id, v.stand_in, v.on_sale AS version_on_sale,"
             " d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
             " d.on_sale, " + _DLC_HLTB + " FROM dlcs d"
-            " JOIN game_versions gv ON gv.version_id = d.version_id"
-            " JOIN versions v ON v.version_id = d.version_id WHERE gv.game_id = ?"
+            " JOIN versions v ON v.version_id = d.version_id WHERE v.game_id = ?"
             " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
             (game_id,),
         ).fetchall()
@@ -1220,8 +1221,8 @@ async def game(request: web.Request) -> web.Response:
             " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
             "  '; ') FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
             " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
-            " JOIN game_versions gv ON gv.version_id = i.version_id"
-            " WHERE gv.game_id = ? ORDER BY e.store, e.name",
+            " JOIN versions v ON v.version_id = i.version_id"
+            " WHERE v.game_id = ? ORDER BY e.store, e.name",
             (game_id,),
         ).fetchall()
         hltb = conn.execute(
@@ -1230,8 +1231,8 @@ async def game(request: web.Request) -> web.Response:
             "SELECT DISTINCT h.hltb_id, h.name, h.game_type, h.release_year,"
             " h.platforms AS also_released_on FROM version_hltb vh"
             " JOIN hltb_games h ON h.hltb_id = vh.hltb_id"
-            " JOIN game_versions gv ON gv.version_id = vh.version_id"
-            " WHERE gv.game_id = ?",
+            " JOIN versions v ON v.version_id = vh.version_id"
+            " WHERE v.game_id = ?",
             (game_id,),
         ).fetchall()
     here = f"/game/{game_id}"
@@ -1417,10 +1418,9 @@ def _pair_rows(
         for r in conn.execute(
             "SELECT v.version_id, v.name, " + _console_sql() + " AS console, v.release_date,"
             " v.store, v.product_id,"
-            " v.stand_in, v.on_sale, v.developer, " + COVER + ", gv.game_id, g.name AS game,"
+            " v.stand_in, v.on_sale, v.developer, " + COVER + ", v.game_id, g.name AS game,"
             " g.year"
-            " FROM versions v LEFT JOIN game_versions gv ON gv.version_id = v.version_id"
-            " LEFT JOIN games g ON g.game_id = gv.game_id"
+            " FROM versions v LEFT JOIN games g ON g.game_id = v.game_id"
             f" WHERE v.version_id IN ({marks})",
             ids,
         ).fetchall()
@@ -1506,8 +1506,8 @@ async def review(request: web.Request) -> web.Response:
     # doubt inside one game (is this version a remaster after all?) is a
     # version question: keep it here, or move it out as another game.
     two_games = (
-        "(SELECT game_id FROM game_versions WHERE version_id = mp.version_id) IS NOT"
-        " (SELECT game_id FROM game_versions WHERE version_id = mp.other_id)"
+        "(SELECT game_id FROM versions WHERE version_id = mp.version_id) IS NOT"
+        " (SELECT game_id FROM versions WHERE version_id = mp.other_id)"
     )
     games_where = f"mp.relation IN ({marks}) AND {two_games}"
     versions_where = f"NOT ({games_where})"
@@ -1558,12 +1558,10 @@ async def review(request: web.Request) -> web.Response:
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
     """A game in one cell: its covers, name and identity, consoles."""
     row = conn.execute(
-        f"SELECT (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM game_versions gv"
-        "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?"
-        "  AND gv.role <> 'covered') AS consoles,"
-        " (SELECT " + COVER.replace(" AS cover", "") + " FROM game_versions gv"
-        "  JOIN versions v ON v.version_id = gv.version_id WHERE gv.game_id = ?"
-        "  AND gv.role IN ('version', 'edition') LIMIT 1) AS cover",
+        f"SELECT (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM versions v"
+        "  WHERE v.game_id = ? AND v.role <> 'covered') AS consoles,"
+        " (SELECT " + COVER.replace(" AS cover", "") + " FROM versions v"
+        "  WHERE v.game_id = ? AND v.role IN ('version', 'edition') LIMIT 1) AS cover",
         (game_id, game_id),
     ).fetchone()
     return (
@@ -1586,10 +1584,12 @@ def _game_pair_rows(
     seen: set[frozenset[int]] = set()
     for r in pairs:
         ga = conn.execute(
-            "SELECT game_id FROM game_versions WHERE version_id = ?", (r["subject"],)
+            "SELECT game_id FROM versions WHERE version_id = ? AND game_id IS NOT NULL",
+            (r["subject"],),
         ).fetchone()
         gb = conn.execute(
-            "SELECT game_id FROM game_versions WHERE version_id = ?", (r["other"],)
+            "SELECT game_id FROM versions WHERE version_id = ? AND game_id IS NOT NULL",
+            (r["other"],),
         ).fetchone()
         if ga is None or gb is None or frozenset((ga[0], gb[0])) in seen:
             continue  # one row per pair of games, the surest
@@ -1734,13 +1734,13 @@ def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
         "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.on_sale, v.name,"
         " "
         + _console_sql()
-        + " AS console, v.release_date, v.platform, v.title_id, gv.role, "
+        + " AS console, v.release_date, v.platform, v.title_id, v.role, "
         + COVER
         + ","
         " (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = v.platform"
         "  AND a.title_id = v.title_id) AS achievements"
-        " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
-        " WHERE gv.game_id = ? AND gv.role <> 'covered' ORDER BY v.release_date, v.console",
+        " FROM versions v"
+        " WHERE v.game_id = ? AND v.role <> 'covered' ORDER BY v.release_date, v.console",
         (game_id,),
     ).fetchall()
     covers = list(dict.fromkeys(v["cover"] for v in versions if v["cover"]))[:3]
@@ -2028,8 +2028,8 @@ async def proposals(request: web.Request) -> web.Response:
             return (
                 conn.execute(
                     "SELECT 1 FROM match_decisions d"
-                    " JOIN game_versions x ON x.version_id = d.version_id"
-                    " JOIN game_versions y ON y.version_id = d.other_id"
+                    " JOIN versions x ON x.version_id = d.version_id"
+                    " JOIN versions y ON y.version_id = d.other_id"
                     " WHERE (x.game_id = ? AND y.game_id = ?) OR (x.game_id = ? AND y.game_id = ?)"
                     " LIMIT 1",
                     (a, b, b, a),
@@ -2151,15 +2151,11 @@ async def decisions(request: web.Request) -> web.Response:
             "SELECT d.version_id, a.name AS this, "
             + _console_sql("a.store", "a.console")
             + " AS this_console,"
-            " ga.game_id AS this_game, d.relation, d.other_id, b.name AS that,"
-            " "
-            + _console_sql("b.store", "b.console")
-            + " AS that_console, gb.game_id AS that_game,"
+            " a.game_id AS this_game, d.relation, d.other_id, b.name AS that,"
+            " " + _console_sql("b.store", "b.console") + " AS that_console, b.game_id AS that_game,"
             " d.decided_by, d.decided_at FROM match_decisions d"
             " JOIN versions a ON a.version_id = d.version_id"
             " JOIN versions b ON b.version_id = d.other_id"
-            " LEFT JOIN game_versions ga ON ga.version_id = d.version_id"
-            " LEFT JOIN game_versions gb ON gb.version_id = d.other_id"
             " WHERE (? = '' OR (? = 'operator' AND d.decided_by = 'viewer')"
             "  OR (? = 'advisers' AND d.decided_by <> 'viewer'))"
             " ORDER BY d.decided_at DESC LIMIT ?",
@@ -2292,8 +2288,8 @@ async def decide_games(request: web.Request) -> web.Response:
         with _db(request) as conn:
             for row in conn.execute(
                 "SELECT mp.version_id, mp.other_id FROM match_pairs mp"
-                " JOIN game_versions a ON a.version_id = mp.version_id"
-                " JOIN game_versions b ON b.version_id = mp.other_id"
+                " JOIN versions a ON a.version_id = mp.version_id"
+                " JOIN versions b ON b.version_id = mp.other_id"
                 " WHERE (a.game_id = ? AND b.game_id = ?) OR (a.game_id = ? AND b.game_id = ?)",
                 (game_id, other_game, other_game, game_id),
             ):
@@ -2369,7 +2365,7 @@ async def game_detach(request: web.Request) -> web.Response:
     repo = _repo(request)
     with _db(request) as conn:
         row = conn.execute(
-            "SELECT version_id FROM game_versions WHERE game_id = ? AND version_id <> ?"
+            "SELECT version_id FROM versions WHERE game_id = ? AND version_id <> ?"
             " ORDER BY version_id = (SELECT anchor_version_id FROM games WHERE game_id = ?) DESC,"
             " version_id LIMIT 1",
             (game_id, version_id, game_id),

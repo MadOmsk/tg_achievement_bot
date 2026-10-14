@@ -52,6 +52,8 @@ INDEXES_AFTER_MIGRATIONS = (
     "CREATE INDEX IF NOT EXISTS idx_bot_messages_system ON bot_messages(is_system, sent_at)",
     # The primary key (platform, title_id, achievement_id) already serves it.
     "DROP INDEX IF EXISTS idx_title_achievements_title",
+    # A game's versions (108): game_id is a column a migration added.
+    "CREATE INDEX IF NOT EXISTS idx_versions_game ON versions(game_id, role)",
 )
 
 

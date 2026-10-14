@@ -1,6 +1,6 @@
 """Games over versions (#147; migrations 092, 099). The operator's decisions
 are labels on pairs of versions (`match_decisions`, input); which game each
-version is in (`game_versions`) and how games relate (`game_relations`) are
+version is in (`versions.game_id`, 108) and how games relate (`game_relations`) are
 the matcher's output, rebuilt from the labels and the model — so a decision
 outlives every rebuild."""
 
@@ -144,7 +144,9 @@ class _GamesRepo:
             batch = ids[start : start + 500]
             marks = ",".join("?" * len(batch))
             cursor = await self._conn.execute(
-                f"SELECT * FROM game_versions WHERE version_id IN ({marks})", batch
+                "SELECT version_id, game_id, role, of_version_id, link_p AS p, linked_at"
+                f" FROM versions WHERE game_id IS NOT NULL AND version_id IN ({marks})",
+                batch,
             )
             found.update({int(r["version_id"]): dict(r) for r in await cursor.fetchall()})
         return found
@@ -156,7 +158,7 @@ class _GamesRepo:
             batch = ids[start : start + 500]
             marks = ",".join("?" * len(batch))
             cursor = await self._conn.execute(
-                f"SELECT version_id FROM game_versions WHERE game_id IN ({marks})", batch
+                f"SELECT version_id FROM versions WHERE game_id IN ({marks})", batch
             )
             found += [int(r[0]) for r in await cursor.fetchall()]
         return found
@@ -269,14 +271,13 @@ class _GamesRepo:
         """`{version: (game, role, of_version, p)}` — these versions' rows,
         replaced."""
         now = utcnow_iso()
+        # All the right-hand sides read the row as it was: `linked_at` stays
+        # while the version stays in its game.
         await self._conn.executemany(
-            "INSERT INTO game_versions (version_id, game_id, role, of_version_id, p, linked_at)"
-            " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(version_id) DO UPDATE SET"
-            "  game_id = excluded.game_id, role = excluded.role,"
-            "  of_version_id = excluded.of_version_id, p = excluded.p,"
-            "  linked_at = CASE WHEN game_versions.game_id = excluded.game_id"
-            "   THEN game_versions.linked_at ELSE excluded.linked_at END",
-            [(vid, g, role, of, p, now) for vid, (g, role, of, p) in members.items()],
+            "UPDATE versions SET game_id = ?, role = ?, of_version_id = ?, link_p = ?,"
+            " linked_at = CASE WHEN game_id IS ? THEN COALESCE(linked_at, ?) ELSE ? END"
+            " WHERE version_id = ?",
+            [(g, role, of, p, g, now, now, vid) for vid, (g, role, of, p) in members.items()],
         )
         await self._conn.commit()
 
@@ -340,8 +341,8 @@ class _GamesRepo:
     async def drop_empty_games(self) -> int:
         """Games no version is in any more, that nothing points at."""
         cursor = await self._conn.execute(
-            "DELETE FROM games WHERE NOT EXISTS (SELECT 1 FROM game_versions gv"
-            "  WHERE gv.game_id = games.game_id)"
+            "DELETE FROM games WHERE NOT EXISTS (SELECT 1 FROM versions v"
+            "  WHERE v.game_id = games.game_id)"
             " AND NOT EXISTS (SELECT 1 FROM games g WHERE g.merged_into = games.game_id)"
             " AND merged_into IS NULL"
         )
@@ -351,16 +352,16 @@ class _GamesRepo:
     async def linked_game_of(self, version_id: int) -> int | None:
         """The game a version is in."""
         cursor = await self._conn.execute(
-            "SELECT game_id FROM game_versions WHERE version_id = ?", (version_id,)
+            "SELECT game_id FROM versions WHERE version_id = ?", (version_id,)
         )
         row = await cursor.fetchone()
-        return int(row["game_id"]) if row else None
+        return int(row["game_id"]) if row and row["game_id"] is not None else None
 
     async def anchor_of(self, game_id: int) -> int | None:
         """A version that stands for the game: its anchor, else any of its."""
         cursor = await self._conn.execute(
             "SELECT COALESCE(g.anchor_version_id,"
-            " (SELECT MIN(gv.version_id) FROM game_versions gv WHERE gv.game_id = g.game_id))"
+            " (SELECT MIN(v.version_id) FROM versions v WHERE v.game_id = g.game_id))"
             " FROM games g WHERE g.game_id = ?",
             (game_id,),
         )
@@ -379,14 +380,14 @@ class _GamesRepo:
             cursor = await self._conn.execute(
                 # A version's own studio, else its HLTB entry's: a stand-in (a
                 # 360 game) has none of its own.
-                "SELECT v.name, v.release_date, gv.role AS kind, v.stand_in,"
+                "SELECT v.name, v.release_date, v.role AS kind, v.stand_in,"
                 " h.release_year AS hltb_year,"
                 " COALESCE(v.developer, h.developer) AS developer,"
                 " COALESCE(v.publisher, h.publisher) AS publisher"
-                " FROM game_versions gv JOIN versions v ON v.version_id = gv.version_id"
+                " FROM versions v"
                 " LEFT JOIN hltb_games h ON h.hltb_id = (SELECT MIN(vh.hltb_id)"
                 "  FROM version_hltb vh WHERE vh.version_id = v.version_id)"
-                " WHERE gv.game_id = ?",
+                " WHERE v.game_id = ?",
                 (game_id,),
             )
             rows = [dict(row) for row in await cursor.fetchall()]

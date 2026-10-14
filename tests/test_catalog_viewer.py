@@ -67,3 +67,35 @@ def test_a_store_link_says_whether_it_is_sold() -> None:
     assert "xbox.com" in link and "↗" in link and "снято с продажи" in link
     stand_in = {"store": "xbox", "product_id": "1", "stand_in": 1, "on_sale": None}
     assert "no store page" in _store_link(stand_in) and "неизвестно" in _store_link(stand_in)  # type: ignore[arg-type]
+
+
+async def test_every_page_of_the_viewer_answers(tmp_path: Path, settings, monkeypatch) -> None:
+    """The menu's pages (and a game's and a version's) open on a database
+    with one linked game."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    monkeypatch.setattr("bot.config.get_settings", lambda: settings)
+
+    from bot.db.repo import Database, Repo
+    from bot.services.game_link import GameLinker
+    from bot.services.stores import StoreVersion
+    from scripts.catalog_viewer import PAGES, build
+
+    path = tmp_path / "games.db"
+    database = await Database(path).connect()
+    try:
+        repo = Repo(database)
+        version = await repo.save_version(
+            StoreVersion(store="xbox", product_id="P1", console="series", name="Control"),
+            platform=None,
+            title_id=None,
+        )
+        await GameLinker(repo).link_versions([version])
+        game = await repo.linked_game_of(version)
+    finally:
+        await database.close()
+
+    async with TestClient(TestServer(build(path))) as client:
+        for page in (*PAGES, f"/game/{game}", f"/version/{version}"):
+            response = await client.get(page)
+            assert response.status == 200, page

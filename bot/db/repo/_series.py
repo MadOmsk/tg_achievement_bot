@@ -23,15 +23,15 @@ class _SeriesRepo:
         cursor = await self._conn.execute(
             "SELECT g.game_id, g.name, g.year, g.developer, g.publisher, g.kind FROM games g"
             " WHERE g.merged_into IS NULL"
-            " AND EXISTS (SELECT 1 FROM game_versions gv WHERE gv.game_id = g.game_id)"
+            " AND EXISTS (SELECT 1 FROM versions v WHERE v.game_id = g.game_id)"
         )
         games = [dict(row) for row in await cursor.fetchall()]
         cursor = await self._conn.execute("SELECT game_id, related_id, kind FROM game_relations")
         relations = [tuple(row) for row in await cursor.fetchall()]
         cursor = await self._conn.execute(
             "SELECT DISTINCT ga.game_id, gb.game_id, d.decided_by FROM match_decisions d"
-            " JOIN game_versions ga ON ga.version_id = d.version_id"
-            " JOIN game_versions gb ON gb.version_id = d.other_id"
+            " JOIN versions ga ON ga.version_id = d.version_id"
+            " JOIN versions gb ON gb.version_id = d.other_id"
             " WHERE d.relation = 'series' AND ga.game_id <> gb.game_id"
         )
         labels = [tuple(row) for row in await cursor.fetchall()]

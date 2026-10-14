@@ -614,7 +614,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   Creation Kit, an editor — owner, 2026-10-10) and a mode (owner, 2026-10-12:
   a Steam app of type `advertising` launching one mode of another app, "Call
   of Duty: Black Ops II - Zombies") belong to one version of their game
-  (`game_versions.of_version_id`, role `mode` since migration 100), joined to
+  (`versions.of_version_id`, role `mode` since migration 100), joined to
   the game whose name opens theirs (`mode_of`, like `demo_of`; a mode's list
   being a part of its game's is no compilation's sign). Names: a leading
   Microsoft "COD" reads as "Call of Duty" (`game_match._COD`, one rule, no
@@ -738,7 +738,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   (`match_decisions`: same / demo_of / tool_of / mode_of / remaster_of /
   remake_of / contains / vr_of / other, with the pair's signs and the model that
   saw them — what the weights will be fitted to); which game a version is in
-  (`game_versions`, **one game per version**, its role version / demo / tool / mode and the version a demo, tool or mode is of) and how games relate
+  (columns of `versions` since migration 108 — `game_id`, `role`, `of_version_id`, `link_p`, `linked_at`; the old table `game_versions` was one row per version —, **one game per version**, its role version / demo / tool / mode / extra and the version a demo, tool, mode or extra is of; the roles are checked in `game_link.py`, not by a CHECK, which would mean rebuilding `versions`) and how games relate
   (`game_relations`) are rebuilt from the labels and the model by
   `services/game_link.py`, so a decision outlives every rebuild. **A label
   outlives its versions too** (migration 106, 2026-10-12): `match_decisions`
