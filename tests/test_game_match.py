@@ -1122,14 +1122,16 @@ async def test_a_stand_ins_name_follows_its_lists(repo: Repo) -> None:
     assert (row["name"], row["name_ru"]) == ("New Name", "Новое")
 
 
-async def test_xbox_and_steam_achievements_are_the_main_games_and_psn_keeps_sonys(
+async def test_steam_is_the_main_games_and_xbox_and_psn_keep_their_own(
     repo: Repo,
 ) -> None:
     from bot.constants import achievement_group
+    from bot.services.xbox.models import xbox_group
 
     assert achievement_group("steam", None) == "main_game"
-    assert achievement_group("xbox_modern", None) == "main_game"
-    assert achievement_group("xbox_360", "x") == "x"
+    assert achievement_group("xbox_modern", None) is None  # not known yet
+    assert achievement_group("xbox_modern", "base") == "base"
+    assert (xbox_group(["0"]), xbox_group([]), xbox_group(None)) == ("base", "non_base", None)
     assert achievement_group("psn", None) is None  # not fetched with its groups yet
     assert achievement_group("psn", "001") == "001"
 
@@ -1189,3 +1191,28 @@ async def test_a_360_list_takes_the_product_its_fission_mark_names(repo: Repo, m
     row = await repo.version_row(stand_in)
     assert (row["product_id"], row["stand_in"], row["console"]) == ("BV83", 0, "360")
     assert await repo.stand_in_lists("xbox_360") == []
+
+
+async def test_an_xbox_list_read_whole_gives_the_earned_rows_their_group(repo: Repo) -> None:
+    await repo._conn.execute("PRAGMA foreign_keys = OFF")  # no account needed here
+    await repo._conn.execute(
+        "INSERT INTO seen_achievements (xuid, title_id, achievement_id, name, platform,"
+        " is_backfill, created_at) VALUES ('x1', '77', '5', 'A', 'xbox_modern', 0, 'now')"
+    )
+    await repo._conn.commit()
+    from bot.db.repo import TitleAchievementRow
+
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern",
+                title_id="77",
+                achievement_id="5",
+                name_en="A",
+                trophy_group_id="non_base",
+            )
+        ],
+        complete=True,
+    )
+    cursor = await repo._conn.execute("SELECT trophy_group_id FROM seen_achievements")
+    assert (await cursor.fetchone())[0] == "non_base"

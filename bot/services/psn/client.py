@@ -24,6 +24,8 @@ import asyncio
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import date, datetime
+from enum import Enum
 
 from psnawp_api import PSNAWP
 from psnawp_api.core.psnawp_exceptions import (
@@ -37,6 +39,7 @@ from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRari
 from pyrate_limiter import Duration, Rate
 
 from bot.constants import PresenceState
+from bot.services import raw_answers
 from bot.services.rate_limiter import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -516,6 +519,13 @@ async def trophies_for_title(
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
 
+    # Kept whole (raw_answers): every field psnawp read of every trophy —
+    # progress targets, rewards, rarity tiers — not only what is parsed here.
+    await raw_answers.keep(
+        f"trophies:{account_id}:{title.np_communication_id}",
+        "psn_trophies",
+        [as_json(trophy) for trophy in trophies],
+    )
     return [
         EarnedTrophy(
             trophy_id=trophy.trophy_id,
@@ -593,11 +603,11 @@ async def trophy_groups_for_title(
     is cosmetic, and a missing one must never be the reason a title's
     trophies go unstored.
     """
-    english = await _groups_from(client, account_id, title)
+    english = await _groups_from(client, account_id, title, "en")
     if english is None:
         return TrophyGroups(None, None, None, [])
     russian = (
-        await _groups_from(translation_client, account_id, title)
+        await _groups_from(translation_client, account_id, title, "ru")
         if translation_client is not None
         else None
     )
@@ -627,6 +637,29 @@ async def trophy_groups_for_title(
     )
 
 
+def as_json(value: object, depth: int = 0) -> object:
+    """A psnawp object as plain JSON — every attribute it holds, dates as
+    ISO text, enums by value — for keeping it whole (raw_answers)."""
+    if depth > 6:
+        return None
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(k): as_json(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [as_json(v, depth + 1) for v in value]
+    fields = getattr(value, "__dict__", None)
+    if fields is None and hasattr(value, "__slots__"):
+        fields = {k: getattr(value, k, None) for k in value.__slots__}
+    if fields is None:
+        return str(value)
+    return {str(k): as_json(v, depth + 1) for k, v in fields.items() if not str(k).startswith("_")}
+
+
 @dataclass(slots=True)
 class _Summary:
     title_name: str | None
@@ -634,7 +667,7 @@ class _Summary:
 
 
 async def _groups_from(
-    client: PSNAWP, account_id: str, title: TrophyTitle | TitleRef
+    client: PSNAWP, account_id: str, title: TrophyTitle | TitleRef, language: str
 ) -> _Summary | None:
     """One client's answer, or None when it could not give one."""
     try:
@@ -652,6 +685,11 @@ async def _groups_from(
             "psn trophy groups for title %s unavailable", title.np_communication_id, exc_info=True
         )
         return None
+    await raw_answers.keep(
+        f"groups:{title.np_communication_id}:{language}",
+        "psn_trophies",
+        as_json(summary),
+    )
 
     result: dict[str, tuple[str | None, int]] = {}
     for group in summary.trophy_groups:

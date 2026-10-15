@@ -49,6 +49,20 @@ _FRACTION = re.compile(r"\.(\d{1,6})\d*")
 _EARLIEST_REAL_UNLOCK = datetime(2005, 1, 1, tzinfo=UTC)
 
 
+# An Xbox achievement's group (owner, 2026-10-15): the base list it shipped
+# with, or one added later — Xbox has no other groups (no group per DLC).
+BASE_GROUP = "base"
+NON_BASE_GROUP = "non_base"
+
+
+def xbox_group(group_ids: list[str] | None) -> str | None:
+    """`groupIds` as our group: None when the answer did not say (an older
+    contract), never a guess."""
+    if group_ids is None:
+        return None
+    return BASE_GROUP if "0" in [str(g) for g in group_ids] else NON_BASE_GROUP
+
+
 class _Rarity(BaseModel):
     model_config = ConfigDict(extra="ignore")
     current_percentage: float | None = Field(default=None, alias="currentPercentage")
@@ -94,6 +108,9 @@ class ModernAchievement(BaseModel):
         default_factory=list, alias="titleAssociations"
     )
     is_secret: bool = Field(default=False, alias="isSecret")
+    # Contract 6 only (2026-10-15): ["0"] for the base list, [] for one
+    # added later; absent (None) on the older contracts.
+    group_ids: list[str] | None = Field(default=None, alias="groupIds")
 
     @property
     def is_achieved(self) -> bool:
@@ -121,6 +138,7 @@ class ModernAchievement(BaseModel):
             rarity_percent=self.rarity.current_percentage if self.rarity else None,
             platform=Platform.XBOX_MODERN,
             is_secret=self.is_secret,
+            trophy_group_id=xbox_group(self.group_ids),
         )
 
     def _icon_url(self) -> str | None:

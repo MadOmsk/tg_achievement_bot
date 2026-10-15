@@ -22,6 +22,7 @@ from bot.constants import (
     PresenceState,
     XboxApiValue,
 )
+from bot.services import raw_answers
 from bot.services.rate_limiter import RateLimiter
 from bot.services.xbox.auth import XboxAuthService
 from bot.services.xbox.models import (
@@ -235,7 +236,10 @@ class XboxClient:
                 person_id, title_id, params, language=language, earned_only=earned_only
             )
 
-        payload = await self._get_achievements(person_id, "4", params, language=language)
+        # Contract 6: contract 4 and each achievement's `groupIds` — `"0"` the
+        # base list it shipped with, none an achievement added later (a DLC,
+        # an update) — which is what a Mythic achievement counts (2026-10-15).
+        payload = await self._get_achievements(person_id, "6", params, language=language)
         if payload.get("achievements"):
             return (
                 parse_achievements(
@@ -301,7 +305,7 @@ class XboxClient:
         supplies their rarity.
         """
         payload = await self._get_achievements(
-            person_id, "4", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
+            person_id, "6", {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
         )
         rarity, title_name = parse_rarity_with_title(payload)
         if not rarity:
@@ -433,7 +437,16 @@ class XboxClient:
                 payload = response.json()
             except ValueError:
                 raise XboxApiError("achievements response is not JSON") from None
-            return payload if isinstance(payload, dict) else {}
+            payload = payload if isinstance(payload, dict) else {}
+            # Kept whole (raw_answers): one subject per account, endpoint,
+            # contract, language and question (title, page).
+            asked = ",".join(f"{k}={params[k]}" for k in sorted(params))
+            await raw_answers.keep(
+                f"{endpoint}:{manager.xsts_token.xuid}:c{contract}:{language}:{asked}",
+                "xbox_achievements",
+                payload,
+            )
+            return payload
 
         raise XboxApiError("achievements request gave up")
 

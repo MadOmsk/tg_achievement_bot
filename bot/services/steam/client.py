@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 import httpx
 
 from bot.constants import SteamCommunityVisibility
+from bot.services import raw_answers
 from bot.services.rate_limiter import RateLimiter
 from bot.services.stores import steam_store
 
@@ -395,6 +396,9 @@ async def get_player_achievements(
         api_key,
         {"steamid": steam_id, "appid": appid, "l": language},
     )
+    await raw_answers.keep(
+        f"player_achievements:{steam_id}:{appid}:{language}", "steam_achievements", payload
+    )
     stats = payload.get("playerstats") or {}
     if not stats.get("success"):
         return []
@@ -478,6 +482,7 @@ async def get_schema(
     payload = await _get(
         "/ISteamUserStats/GetSchemaForGame/v2/", api_key, {"appid": appid, "l": language}
     )
+    await raw_answers.keep(f"schema:{appid}:{language}", "steam_achievements", payload)
     achievements = (payload.get("game") or {}).get("availableGameStats", {}).get(
         "achievements"
     ) or []
@@ -501,6 +506,7 @@ async def get_global_percentages(appid: str) -> dict[str, float]:
     payload = await _get(
         "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/", "", {"gameid": appid}
     )
+    await raw_answers.keep(f"global_percentages:{appid}", "steam_achievements", payload)
     achievements = (payload.get("achievementpercentages") or {}).get("achievements") or []
     result: dict[str, float] = {}
     for item in achievements:

@@ -85,6 +85,19 @@ class _CatalogRepo:
                     1 if complete else 0,
                 ),
             )
+        # An Xbox list read whole gives each achievement its group (base or
+        # non_base, 2026-10-15); the rows people earned take it from here.
+        for platform, title_id in {
+            (r.platform, r.title_id) for r in rows if r.platform in ("xbox_modern", "xbox_360")
+        }:
+            await self._conn.execute(
+                "UPDATE seen_achievements SET trophy_group_id = (SELECT ta.trophy_group_id"
+                "  FROM title_achievements ta WHERE ta.platform = seen_achievements.platform"
+                "  AND ta.title_id = seen_achievements.title_id"
+                "  AND ta.achievement_id = seen_achievements.achievement_id)"
+                " WHERE platform = ? AND title_id = ? AND trophy_group_id IS NULL",
+                (platform, title_id),
+            )
         await self._conn.commit()
 
     async def get_title_achievements(

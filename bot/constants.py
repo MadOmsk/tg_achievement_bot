@@ -43,17 +43,18 @@ def account_platform_of(platform: str) -> str:
     return platform
 
 
-# The group an achievement belongs to on a platform that has no groups of its
-# own (owner, 2026-10-15): all of Xbox's and Steam's are the main game's, ready
-# for the Xbox update that brings an analogue of the platinum. PSN keeps Sony's
-# own (`default`, `001`, ...).
+# The group an achievement belongs to (owner, 2026-10-15). PSN: Sony's own
+# (`default`, `001`, ...). Xbox: `base` (the list it shipped with) or
+# `non_base` (added later), from contract 6's `groupIds` — what a Mythic
+# achievement counts. Steam has no groups: all are the main game's.
 MAIN_GAME_GROUP = "main_game"
 
 
 def achievement_group(platform: str, group_id: str | None) -> str | None:
-    """The group to store for an achievement: Sony's own on PSN (`None` there
-    still means "not fetched with its groups yet"), the main game's elsewhere."""
-    if platform == Platform.PSN:
+    """The group to store for an achievement: the platform's own on PSN and
+    Xbox (`None` there means "not known yet", never a guess), the main
+    game's on Steam."""
+    if platform in (Platform.PSN, Platform.XBOX_MODERN, Platform.XBOX_360):
         return group_id
     return group_id or MAIN_GAME_GROUP
 

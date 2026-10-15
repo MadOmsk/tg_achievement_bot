@@ -120,11 +120,11 @@ def _client(session: StubSession) -> XboxClient:
     return XboxClient(StubAuth(StubManager(session)))  # type: ignore[arg-type]
 
 
-async def test_modern_title_uses_contract_4_only() -> None:
-    session = StubSession({"4": MODERN_PAYLOAD})
+async def test_modern_title_uses_contract_6_only() -> None:
+    session = StubSession({"6": MODERN_PAYLOAD})
     parsed = await _client(session).title_achievements(1, "111", "xbox_modern")
 
-    assert session.contracts == ["4"]
+    assert session.contracts == ["6"]
     assert [item.achievement_id for item in parsed] == ["2"]
     assert parsed[0].rarity_percent == 12.5
 
@@ -134,11 +134,11 @@ async def test_back_compat_title_uses_contract_3() -> None:
     Series X arrives as "xbox_modern" and contract 4 answers with an empty list —
     the client asks the Xbox 360 contracts: what was earned from contract 1,
     its rarity from contract 3 (#121)."""
-    session = StubSession({"4": {"achievements": []}, "3": X360_C3_PAYLOAD, "1": X360_PAYLOAD})
+    session = StubSession({"6": {"achievements": []}, "3": X360_C3_PAYLOAD, "1": X360_PAYLOAD})
 
     parsed = await _client(session).title_achievements(1, "222", "xbox_modern")
 
-    assert session.contracts == ["4", "3", "1"]
+    assert session.contracts == ["6", "3", "1"]
     assert len(parsed) == 1
     assert parsed[0].platform == "xbox_360"
     assert parsed[0].rarity_percent == 4.5
@@ -148,11 +148,11 @@ async def test_back_compat_title_uses_contract_3() -> None:
 
 async def test_back_compat_title_falls_back_to_contract_1() -> None:
     """If both contract 4 and contract 3 yield no achievements, fall back to contract 1."""
-    session = StubSession({"4": {"achievements": []}, "1": X360_PAYLOAD})
+    session = StubSession({"6": {"achievements": []}, "1": X360_PAYLOAD})
 
     parsed = await _client(session).title_achievements(1, "222", "xbox_modern")
 
-    assert session.contracts == ["4", "3", "1"]
+    assert session.contracts == ["6", "3", "1"]
     assert len(parsed) == 1
     assert parsed[0].platform == "xbox_360"
     assert parsed[0].rarity_percent is None
@@ -189,20 +189,20 @@ async def test_x360_full_list_comes_from_contract_3_alone() -> None:
     assert [a.achievement_id for a in parsed] == ["7", "8"]
 
 
-async def test_known_x360_console_falls_back_to_contract_1_and_skips_contract_4() -> None:
+async def test_known_x360_console_falls_back_to_contract_1_and_skips_contract_6() -> None:
     session = StubSession({"1": X360_PAYLOAD})
     parsed = await _client(session).title_achievements(1, "222", "xbox_360")
 
     assert session.contracts == ["3", "1"]
-    assert "4" not in session.contracts
+    assert "6" not in session.contracts
     assert parsed[0].platform == "xbox_360"
 
 
 async def test_title_rarity_with_name_x360_contract_3() -> None:
-    session = StubSession({"4": {"achievements": []}, "3": X360_C3_PAYLOAD})
+    session = StubSession({"6": {"achievements": []}, "3": X360_C3_PAYLOAD})
     rarity, name = await _client(session).title_rarity_with_name(1, "222")
 
-    assert session.contracts == ["4", "3"]
+    assert session.contracts == ["6", "3"]
     assert rarity == {"7": 4.5, "8": 40.0}  # the whole game, earned or not
     assert name is None
 
@@ -235,3 +235,22 @@ async def test_title_history_enforces_a_hard_overall_deadline(
 
     with pytest.raises(XboxApiError):
         await client.title_history(1)
+
+
+async def test_every_achievements_answer_is_kept_whole() -> None:
+    from bot.services import raw_answers
+
+    kept: list[tuple[str, str, dict]] = []
+
+    async def sink(subject: str, source: str, payload: dict) -> None:
+        kept.append((subject, source, payload))
+
+    raw_answers.set_sink(sink)
+    try:
+        session = StubSession({"6": MODERN_PAYLOAD})
+        await _client(session).title_achievements(1, "111", "xbox_modern")
+    finally:
+        raw_answers.set_sink(None)
+    ((subject, source, payload),) = kept
+    assert source == "xbox_achievements" and payload == MODERN_PAYLOAD
+    assert ":c6:" in subject and "titleId=111" in subject
