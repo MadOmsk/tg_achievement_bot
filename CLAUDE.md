@@ -449,10 +449,14 @@ every column. History: #106.
   spoiler. `trophy_type` is the PSN tier; `trophy_group_id` is the achievement's
   group (migration 118, owner, 2026-10-15): PSN's own (`default`, `001`…) —
   `NULL` there on rows stored before #46, which is how the poller knows a game's
-  DLC trophies were never fetched —, and **`main_game` on Xbox and Steam**, every
-  achievement, ready for the Xbox update that brings an analogue of the platinum
-  (`constants.achievement_group`, applied where `seen_achievements` and
-  `title_achievements` are written). **A PSN trophy group past the base game is a
+  DLC trophies were never fetched —; **Xbox's own: `base`** (the list
+  a game shipped with) **or `non_base`** (added later: a DLC, an update), from
+  contract 6's `groupIds` (`["0"]` / `[]`; migration 121, owner, 2026-10-15) —
+  what a Mythic achievement counts; Xbox has no group per DLC; `NULL` until a
+  contract-6 read (the catalog's) says, and an earned row takes its group from
+  the catalog when the list is read whole —; **`main_game` on Steam**, which has
+  no groups (`constants.achievement_group`, applied where `seen_achievements`
+  and `title_achievements` are written). **A PSN trophy group past the base game is a
   DLC row (`dlcs.trophy_group_id`) of every version of its list**, stand-ins
   included, made whenever the groups are saved (`save_title_groups`); Sony names no
   store product for a group, so the link to a store's own DLC is by name, if ever.
@@ -998,6 +1002,19 @@ What the stores and HLTB say about a game, collected but not shown yet
   the version out and relates the games). The rest is under "more…". **No authentication
   yet** (#186).
 
+### The platforms' answers, kept whole
+
+**Every answer about achievements is kept as it came** (owner, 2026-10-15;
+`services/raw_answers.py`): Xbox's achievements service (every contract and
+page, `xbox_achievements`), Steam's player achievements, schema and global
+percentages (`steam_achievements`), PSN's trophies and groups as psnawp read
+them (`psn_trophies`, `psn/client.as_json`) — in `source_payloads`, compressed,
+the latest per subject, not rewritten while unchanged. What a poll parses is a
+part of what came; the rest (types, time windows, rewards, progress targets,
+grey icons, Xbox's `groupIds`) can be read again with no request. The clients
+hand an answer to `raw_answers.keep`; the bot's assembly points it at
+`repo.save_payload`; with no sink (tests, scripts) nothing is kept.
+
 ### Secrets
 
 `tokens` stores encrypted Xbox refresh tokens only (access/XSTS tokens stay in
@@ -1021,7 +1038,8 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
 - **One process refreshes.** `XboxAuthService`'s guard is an `asyncio.Lock` — it
   serializes callers inside one process, not across two. Anything touching Xbox from
   outside the bot (a script, another checkout) runs with the bot stopped.
-- **Contracts.** Modern Xbox: contract 4, the only one with rarity. Only
+- **Contracts.** Modern Xbox: contract 6 — contract 4 (the only one with
+  rarity) and each achievement's `groupIds` (2026-10-15). Only
   `progressState == "Achieved"` enters `seen_achievements` — an `InProgress` row
   would hide the achievement forever once it is earned. Xbox 360: contract 1 — no
   rarity from Microsoft and only a bare `imageId`, so its card uses the box art.
