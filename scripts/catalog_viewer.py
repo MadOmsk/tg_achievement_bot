@@ -2474,8 +2474,11 @@ async def proposals(request: web.Request) -> web.Response:
                     "SELECT 1 FROM match_decisions d"
                     " JOIN versions x ON x.version_id = d.version_id"
                     " JOIN versions y ON y.version_id = d.other_id"
-                    " WHERE (x.game_id = ? AND y.game_id = ?) OR (x.game_id = ? AND y.game_id = ?)"
-                    " LIMIT 1",
+                    " WHERE ((x.game_id = ? AND y.game_id = ?)"
+                    "  OR (x.game_id = ? AND y.game_id = ?))"
+                    # Claude and Gemini without the model are no answer (owner,
+                    # 2026-10-15: all three must agree), the operator's is.
+                    "  AND d.decided_by <> 'claude+gemini' LIMIT 1",
                     (a, b, b, a),
                 ).fetchone()
                 is not None
