@@ -222,7 +222,8 @@ class _AdminRepo:
         now = utcnow_iso()
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "UPDATE titles SET name_ru = COALESCE(?, name_ru), name_en = COALESCE(?, name_en),"
+            "UPDATE achievement_list_connectors SET name_ru = COALESCE(?, name_ru), name_en = "
+            "COALESCE(?, name_en),"
             f"  updated_at = ? WHERE {where} AND title_id = ?",
             (name_ru, name_en, now, *params, title_id),
         )
@@ -233,7 +234,8 @@ class _AdminRepo:
             # perfectly good `name`, and waiting for the next poll would mean
             # asking the platform for the same thing twice.
             await self._conn.execute(
-                "INSERT INTO titles (platform, title_id, name, name_ru, name_en, updated_at) "
+                "INSERT INTO achievement_list_connectors (platform, title_id, name, name_ru, "
+                "name_en, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(platform, title_id) DO NOTHING",
                 (platform, title_id, name_en or name_ru, name_ru, name_en, now),
             )
@@ -244,7 +246,8 @@ class _AdminRepo:
         (#61) — poller/steam_localization.py's own small bite. Oldest first,
         so a backlog drains in order rather than by chance."""
         cursor = await self._conn.execute(
-            "SELECT title_id FROM titles WHERE platform = ? AND name_ru IS NULL "
+            "SELECT title_id FROM achievement_list_connectors WHERE platform = ? AND name_ru IS "
+            "NULL "
             "ORDER BY updated_at LIMIT ?",
             (platform, limit),
         )
@@ -256,7 +259,8 @@ class _AdminRepo:
         per poll."""
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            f"SELECT 1 FROM titles WHERE {where} AND title_id = ? AND name_ru IS NOT NULL LIMIT 1",
+            f"SELECT 1 FROM achievement_list_connectors WHERE {where} AND title_id = ? AND "
+            f"name_ru IS NOT NULL LIMIT 1",
             (*params, title_id),
         )
         return await cursor.fetchone() is not None
@@ -287,7 +291,8 @@ class _AdminRepo:
         ids = list(dict.fromkeys(title_id for _platform, title_id in wanted))
         placeholders = ", ".join("?" * len(ids))
         cursor = await self._conn.execute(
-            f"SELECT platform, title_id, {columns} FROM titles WHERE title_id IN ({placeholders})",
+            f"SELECT platform, title_id, {columns} FROM achievement_list_connectors WHERE "
+            f"title_id IN ({placeholders})",
             ids,
         )
         stored = {
@@ -315,7 +320,8 @@ class _AdminRepo:
     async def platforms_lookup_due(self, title_id: str) -> bool:
         """Whether publishing this game should ask titlehub for its platforms first."""
         cursor = await self._conn.execute(
-            "SELECT 1 FROM titles t WHERE t.platform = 'xbox_modern' AND t.title_id = ?"
+            "SELECT 1 FROM achievement_list_connectors t WHERE t.platform = 'xbox_modern' AND "
+            "t.title_id = ?"
             f" AND {self._PLATFORMS_DUE}",
             (title_id,),
         )
@@ -333,7 +339,7 @@ class _AdminRepo:
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             f"        WHERE {titles_on()}) AS owner "
-            f"FROM titles t WHERE {self._PLATFORMS_DUE} "
+            f"FROM achievement_list_connectors t WHERE {self._PLATFORMS_DUE} "
             # Filtered before the LIMIT: a game nobody here can be asked about
             # must not take a place in the batch, or a head of such games
             # would stall the queue for good.
@@ -349,13 +355,14 @@ class _AdminRepo:
         third one stores '[]' — "known to be unknown" — and leaves the queue."""
         if platforms_json:
             await self._conn.execute(
-                "UPDATE titles SET platforms = ?, platforms_checked_at = ?"
+                "UPDATE achievement_list_connectors SET platforms = ?, platforms_checked_at = ?"
                 " WHERE platform = 'xbox_modern' AND title_id = ?",
                 (platforms_json, utcnow_iso(), title_id),
             )
         else:
             await self._conn.execute(
-                "UPDATE titles SET platforms_attempts = platforms_attempts + 1,"
+                "UPDATE achievement_list_connectors SET platforms_attempts = platforms_attempts + "
+                "1,"
                 " platforms_checked_at = ?,"
                 " platforms = CASE WHEN platforms_attempts + 1 >= ? THEN '[]' ELSE platforms END "
                 "WHERE platform = 'xbox_modern' AND title_id = ?",
@@ -386,7 +393,7 @@ class _AdminRepo:
             f"  (SELECT MIN(CAST(substr({earned_at()}, 1, 4) AS INTEGER))"
             f"   FROM seen_achievements s WHERE {titles_on()}"
             f"   AND {earned_date_is_real()}) AS first_played_year "
-            f"FROM titles t WHERE {where} AND t.title_id = ?",
+            f"FROM achievement_list_connectors t WHERE {where} AND t.title_id = ?",
             (*params, title_id),
         )
         row = await cursor.fetchone()
@@ -419,7 +426,7 @@ class _AdminRepo:
         """
         where, params = platform_is(platform)
         await self._conn.execute(
-            "UPDATE titles SET achievements_total = ?, updated_at = ?"
+            "UPDATE achievement_list_connectors SET achievements_total = ?, updated_at = ?"
             f" WHERE {where} AND title_id = ?",
             (total, utcnow_iso(), *params, title_id),
         )
@@ -440,18 +447,18 @@ class _AdminRepo:
         # every new title it resolves, and must not blank out an icon_url a
         # separate ensure_title_icon() call already cached here.
         await self._conn.execute(
-            "INSERT INTO titles"
+            "INSERT INTO achievement_list_connectors"
             " (platform, title_id, name, icon_url, achievements_total, platforms, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(platform, title_id) DO UPDATE SET name = excluded.name,"
             " updated_at = excluded.updated_at,"
-            " icon_url = COALESCE(excluded.icon_url, titles.icon_url),"
+            " icon_url = COALESCE(excluded.icon_url, achievement_list_connectors.icon_url),"
             # Same "only overwrite when this call actually has one" rule as
             # icon_url above (#46): most upserts here know the name and
             # nothing else, and must not blank a total somebody else cached.
             " achievements_total = COALESCE(excluded.achievements_total,"
-            "                               titles.achievements_total),"
-            " platforms = COALESCE(excluded.platforms, titles.platforms)",
+            "                               achievement_list_connectors.achievements_total),"
+            " platforms = COALESCE(excluded.platforms, achievement_list_connectors.platforms)",
             (platform, title_id, name, icon_url, achievements_total, platforms, utcnow_iso()),
         )
         await self._conn.commit()
@@ -466,7 +473,8 @@ class _AdminRepo:
         if platform not in ("xbox_modern", "xbox_360"):
             return platform
         cursor = await self._conn.execute(
-            "SELECT platform FROM titles WHERE platform IN ('xbox_modern', 'xbox_360')"
+            "SELECT platform FROM achievement_list_connectors WHERE platform IN ('xbox_modern', "
+            "'xbox_360')"
             " AND title_id = ?",
             (title_id,),
         )
@@ -479,7 +487,8 @@ class _AdminRepo:
         """`platform` may be `xbox`: presence names an Xbox game by id only."""
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            f"SELECT name FROM titles WHERE {where} AND title_id = ?", (*params, title_id)
+            f"SELECT name FROM achievement_list_connectors WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         return row["name"] if row else None
@@ -488,7 +497,8 @@ class _AdminRepo:
         """`(cover_path, icon_url)` — a game's cover on disk and its URL."""
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            f"SELECT cover_path, icon_url FROM titles WHERE {where} AND title_id = ?",
+            f"SELECT cover_path, icon_url FROM achievement_list_connectors WHERE {where} AND "
+            f"title_id = ?",
             (*params, title_id),
         )
         row = await cursor.fetchone()
@@ -497,7 +507,8 @@ class _AdminRepo:
     async def title_icon_url(self, platform: str, title_id: str) -> str | None:
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            f"SELECT icon_url FROM titles WHERE {where} AND title_id = ?", (*params, title_id)
+            f"SELECT icon_url FROM achievement_list_connectors WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         return row["icon_url"] if row else None
@@ -524,7 +535,7 @@ class _AdminRepo:
             "   AND al.external_id = s.xuid AND al.is_active = 1 "
             "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
-            f"LEFT JOIN titles t ON {titles_on()} "
+            f"LEFT JOIN achievement_list_connectors t ON {titles_on()} "
             "WHERE t.title_id IS NULL AND s.account_platform = 'xbox' "
             "GROUP BY s.title_id LIMIT ?",
             (limit,),
@@ -566,7 +577,7 @@ class _AdminRepo:
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             f"        WHERE {titles_on()}) AS owner "
-            "FROM titles t "
+            "FROM achievement_list_connectors t "
             "WHERE t.cover_path IS NULL "
             "ORDER BY t.cover_checked_at IS NOT NULL, t.cover_checked_at, t.updated_at DESC "
             "LIMIT ?",
@@ -602,7 +613,7 @@ class _AdminRepo:
         somebody else already fetched.
         """
         await self._conn.execute(
-            "UPDATE titles SET"
+            "UPDATE achievement_list_connectors SET"
             "  icon_url = COALESCE(?, icon_url),"
             "  cover_path = COALESCE(?, cover_path),"
             "  cover_hash = COALESCE(?, cover_hash),"

@@ -941,7 +941,8 @@ async def test_migration_104_moves_win32_stand_ins_to_the_unknown_store(repo: Re
     conn = repo._conn
     for title_id, platforms in (("1", '["Win32"]'), ("2", '["PC"]')):
         await conn.execute(
-            "INSERT INTO titles (platform, title_id, name, platforms, updated_at)"
+            "INSERT INTO achievement_list_connectors (platform, title_id, name, platforms, "
+            "updated_at)"
             " VALUES (?, ?, ?, ?, 'now')",
             ("xbox_modern", title_id, f"Game {title_id}", platforms),
         )
@@ -950,6 +951,8 @@ async def test_migration_104_moves_win32_stand_ins_to_the_unknown_store(repo: Re
             " updated_at, stand_in) VALUES ('xbox', ?, 'pc', 'xbox_modern', ?, ?, 'now', 1)",
             (title_id, title_id, f"Game {title_id}"),
         )
+    # The migration speaks of the table by the name it had then.
+    await conn.execute("CREATE TEMP VIEW titles AS SELECT * FROM achievement_list_connectors")
     await conn.execute(_migration("104_pc_unknown_store.sql"))  # one statement
     cur = await conn.execute("SELECT product_id, store FROM versions ORDER BY product_id")
     assert [tuple(r) for r in await cur.fetchall()] == [("1", "unknown"), ("2", "xbox")]
@@ -1101,3 +1104,19 @@ async def test_a_version_keeps_how_it_was_first_found(repo: Repo) -> None:
     assert again == first
     assert (row["found_how"], row["found_via"]) == ("hltb", "hltb:42")
     assert row["found_at"]
+
+
+async def test_a_stand_ins_name_follows_its_lists(repo: Repo) -> None:
+    await repo._conn.execute(
+        "INSERT INTO achievement_list_connectors (platform, title_id, name, updated_at)"
+        " VALUES ('xbox_360', '9', 'Old Name', '2026-10-15T00:00:00')"
+    )
+    await repo._conn.commit()
+    (version,) = await repo.ensure_list_version("xbox_360", "9")
+    await repo._conn.execute(
+        "UPDATE achievement_list_connectors SET name = 'New Name', name_ru = 'Новое'"
+        " WHERE title_id = '9'"
+    )
+    await repo._conn.commit()
+    row = await repo.version_row(version)
+    assert (row["name"], row["name_ru"]) == ("New Name", "Новое")

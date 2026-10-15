@@ -143,7 +143,7 @@ class GameIdentity:
 
     names: tuple[str, ...]
     platform: str  # xbox_modern / xbox_360 / steam / psn
-    platforms: tuple[str, ...] = ()  # titles.platforms, our spelling
+    platforms: tuple[str, ...] = ()  # the list's platforms, our spelling
     steam_appid: int | None = None
     # The year of the earliest achievement anybody here earned in it: the
     # game was out by then. Our platforms give no release year of their own.

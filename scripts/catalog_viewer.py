@@ -299,9 +299,10 @@ COVER = (
     "COALESCE(json_extract(v.media, '$.cover'), json_extract(v.media, '$.poster'),"
     # The list's cover as the bot keeps it on disk (#55): Xbox's 360 art
     # answers no https, so its address alone is no picture here.
-    " (SELECT '/covers/' || t.cover_path FROM titles t WHERE t.platform = v.platform"
+    " (SELECT '/covers/' || t.cover_path FROM achievement_list_connectors t WHERE t.platform = "
+    "v.platform"
     "  AND t.title_id = v.title_id AND t.cover_path IS NOT NULL),"
-    " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
+    " (SELECT t.icon_url FROM achievement_list_connectors t WHERE t.platform = v.platform"
     "  AND t.title_id = v.title_id),"
     " (SELECT COALESCE('/covers/' || h.image_path, h.image_url) FROM version_hltb vh"
     "  JOIN hltb_entries h ON h.hltb_id = vh.hltb_id"
@@ -467,7 +468,7 @@ _HOME_SECTIONS = (
         "Achievement lists (the bot's)",
         (
             (
-                "titles",
+                "achievement_list_connectors",
                 "/titles",
                 "an achievement list on one platform that somebody here has",
                 None,
@@ -526,7 +527,8 @@ async def titles(request: web.Request) -> web.Response:
             "   AND v.title_id = t.title_id) AS versions,"
             "  (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = t.platform"
             "   AND a.title_id = t.title_id AND a.listed = 1) AS achievements"
-            " FROM titles t WHERE ? = '' OR t.name LIKE ? OR t.name_ru LIKE ? OR t.title_id = ?"
+            " FROM achievement_list_connectors t WHERE ? = '' OR t.name LIKE ? OR t.name_ru LIKE "
+            "? OR t.title_id = ?"
             " ORDER BY versions DESC, t.updated_at DESC LIMIT ?",
             (q, f"%{q}%", f"%{q}%", q, PAGE_SIZE),
         ).fetchall()
@@ -549,7 +551,8 @@ async def title(request: web.Request) -> web.Response:
     platform, title_id = request.match_info["platform"], request.match_info["title_id"]
     with _db(request) as conn:
         row = conn.execute(
-            "SELECT * FROM titles WHERE platform = ? AND title_id = ?", (platform, title_id)
+            "SELECT * FROM achievement_list_connectors WHERE platform = ? AND title_id = ?",
+            (platform, title_id),
         ).fetchone()
         versions = conn.execute(
             "SELECT version_id, name, store, product_id, stand_in, on_sale,"
@@ -681,9 +684,10 @@ async def version(request: web.Request) -> web.Response:
         ).fetchone()
         pictures = conn.execute(
             "SELECT v.media,"
-            " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
+            " (SELECT t.icon_url FROM achievement_list_connectors t WHERE t.platform = v.platform"
             "  AND t.title_id = v.title_id) AS list_icon,"
-            " (SELECT '/covers/' || t.cover_path FROM titles t WHERE t.platform = v.platform"
+            " (SELECT '/covers/' || t.cover_path FROM achievement_list_connectors t WHERE "
+            "t.platform = v.platform"
             "  AND t.title_id = v.title_id) AS list_cover,"
             " (SELECT COALESCE('/covers/' || h.image_path, h.image_url)"
             "  FROM version_hltb vh JOIN hltb_entries h"
@@ -1072,7 +1076,8 @@ async def hltb_entry(request: web.Request) -> web.Response:
         titles_ = conn.execute(
             "SELECT DISTINCT t.platform, t.title_id, t.name FROM version_hltb vh"
             " JOIN versions v ON v.version_id = vh.version_id"
-            " JOIN titles t ON t.platform = v.platform AND t.title_id = v.title_id"
+            " JOIN achievement_list_connectors t ON t.platform = v.platform AND t.title_id = "
+            "v.title_id"
             " WHERE vh.hltb_id = ? AND vh.source <> 'rejected'",
             (hltb_id,),
         ).fetchall()
@@ -1567,7 +1572,8 @@ async def achievement_list(request: web.Request) -> web.Response:
             (platform, title_id),
         ).fetchall()
         title = conn.execute(
-            "SELECT name FROM titles WHERE platform = ? AND title_id = ?", (platform, title_id)
+            "SELECT name FROM achievement_list_connectors WHERE platform = ? AND title_id = ?",
+            (platform, title_id),
         ).fetchone()
     listed = sum(1 for r in rows if r["listed"])
     name = title["name"] if title else title_id

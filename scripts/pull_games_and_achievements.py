@@ -457,7 +457,7 @@ async def run_sync(cfg: SyncConfig) -> None:
     catalog_results = {"success": 0, "failed": 0, "achievements": 0}
     if not cfg.skip_catalog:
         cursor = await database.conn.execute(
-            "SELECT title_id, platform, name FROM titles ORDER BY name"
+            "SELECT title_id, platform, name FROM achievement_list_connectors ORDER BY name"
         )
         all_titles = await cursor.fetchall()
 
@@ -547,7 +547,9 @@ async def run_sync(cfg: SyncConfig) -> None:
     acc_rows = await cur.fetchall()
     acc_summary = ", ".join(f"{r[0]}: {r[1]}" for r in acc_rows) or "0"
 
-    cur = await database.conn.execute("SELECT platform, COUNT(*) FROM titles GROUP BY platform")
+    cur = await database.conn.execute(
+        "SELECT platform, COUNT(*) FROM achievement_list_connectors GROUP BY platform"
+    )
     title_rows = await cur.fetchall()
     titles_summary = ", ".join(f"{r[0]}: {r[1]}" for r in title_rows) or "0"
 

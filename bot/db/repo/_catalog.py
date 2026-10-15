@@ -220,7 +220,8 @@ class _CatalogRepo:
         """When this title's achievement catalog was last verified against the platform API."""
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            f"SELECT achievements_checked_at FROM titles WHERE {where} AND title_id = ?",
+            f"SELECT achievements_checked_at FROM achievement_list_connectors WHERE {where} AND "
+            f"title_id = ?",
             (*params, title_id),
         )
         row = await cursor.fetchone()
@@ -233,7 +234,8 @@ class _CatalogRepo:
         ts = checked_at or utcnow_iso()
         where, params = platform_is(platform)
         await self._conn.execute(
-            f"UPDATE titles SET achievements_checked_at = ? WHERE {where} AND title_id = ?",
+            f"UPDATE achievement_list_connectors SET achievements_checked_at = ? WHERE {where} "
+            f"AND title_id = ?",
             (ts, *params, title_id),
         )
         await self._conn.commit()
@@ -244,7 +246,7 @@ class _CatalogRepo:
         cursor = await self._conn.execute(
             "SELECT title_id, name, name_ru, name_en, platform, platforms, "
             "       icon_url, achievements_total, cover_path, achievements_checked_at "
-            f"FROM titles WHERE {where} AND title_id = ?",
+            f"FROM achievement_list_connectors WHERE {where} AND title_id = ?",
             (*params, title_id),
         )
         row = await cursor.fetchone()
@@ -315,7 +317,7 @@ class _CatalogRepo:
             await self._move_title_rows(title_id, old_plat, new_plat)
             if new_plat == "xbox_360":
                 await self._conn.execute(
-                    "UPDATE titles SET platforms = '[\"Xbox360\"]'"
+                    "UPDATE achievement_list_connectors SET platforms = '[\"Xbox360\"]'"
                     " WHERE platform = 'xbox_360' AND title_id = ?",
                     (title_id,),
                 )
@@ -343,21 +345,24 @@ class _CatalogRepo:
         generation already has, it fills what that one lacks and goes. No
         commit — the caller's."""
         merged = ", ".join(
-            f"{column} = COALESCE(titles.{column}, o.{column})"
+            f"{column} = COALESCE(achievement_list_connectors.{column}, o.{column})"
             for column in self._MERGED_TITLE_COLUMNS
         )
         await self._conn.execute(
-            f"UPDATE titles SET {merged} FROM titles o "
-            "WHERE titles.platform = ? AND titles.title_id = ?"
-            "  AND o.platform = ? AND o.title_id = titles.title_id",
+            f"UPDATE achievement_list_connectors SET {merged} FROM achievement_list_connectors o "
+            "WHERE achievement_list_connectors.platform = ? AND "
+            "achievement_list_connectors.title_id = ?"
+            "  AND o.platform = ? AND o.title_id = achievement_list_connectors.title_id",
             (new_plat, title_id, old_plat),
         )
         await self._conn.execute(
-            "UPDATE OR IGNORE titles SET platform = ? WHERE platform = ? AND title_id = ?",
+            "UPDATE OR IGNORE achievement_list_connectors SET platform = ? WHERE platform = ? AND "
+            "title_id = ?",
             (new_plat, old_plat, title_id),
         )
         await self._conn.execute(
-            "DELETE FROM titles WHERE platform = ? AND title_id = ?", (old_plat, title_id)
+            "DELETE FROM achievement_list_connectors WHERE platform = ? AND title_id = ?",
+            (old_plat, title_id),
         )
         # When its HLTB entry was last asked about is the list's too.
         await self._conn.execute(

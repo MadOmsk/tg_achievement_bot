@@ -2,7 +2,7 @@
 
 The Mini App shows a game's art beside every achievement and on every row of
 its feed. On production, of 2544 stored titles exactly **two** had any —
-`titles.icon_url` was only ever filled for the handful of Xbox 360 games
+`achievement_list_connectors.icon_url` was only ever filled for the handful of Xbox 360 games
 whose achievement messages borrow the box art for want of an icon of their
 own.
 

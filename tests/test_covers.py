@@ -209,7 +209,7 @@ async def _xbox_owner_with(repo: Repo, cipher, *, tg_id: int = 7) -> None:
 
 async def _checked_at(repo: Repo, title_id: str) -> str | None:
     cursor = await repo._conn.execute(
-        "SELECT cover_checked_at FROM titles WHERE title_id = ?", (title_id,)
+        "SELECT cover_checked_at FROM achievement_list_connectors WHERE title_id = ?", (title_id,)
     )
     row = await cursor.fetchone()
     return row["cover_checked_at"] if row else None

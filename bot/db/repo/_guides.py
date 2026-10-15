@@ -176,7 +176,8 @@ class _GuidesRepo:
         """Every name a game goes by here."""
         where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            f"SELECT name, name_en, name_ru FROM titles WHERE {where} AND title_id = ?",
+            f"SELECT name, name_en, name_ru FROM achievement_list_connectors WHERE {where} AND "
+            f"title_id = ?",
             (*params, title_id),
         )
         row = await cursor.fetchone()

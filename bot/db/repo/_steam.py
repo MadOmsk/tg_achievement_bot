@@ -1,7 +1,7 @@
 """What Steam knows about a game beyond its achievements (migration 069): the
 Steam app it is, its community guides' tips, and its developer's patch notes.
 
-A game's Steam app is found once, like its HLTB entry (`titles.hltb_*`): three
+A game's Steam app is found once, like its HLTB entry (`achievement_list_connectors.hltb_*`): three
 failed attempts an hour apart, then it is known to have none. Guides and patches
 belong to the Steam app, not to our title — an Xbox, a PlayStation and a Steam
 version of one game share them — so their read times live on `steam_apps`.
@@ -80,7 +80,7 @@ class _SteamRepo:
         where, params = platform_is(platform, "t.platform")
         cursor = await self._conn.execute(
             f"SELECT t.title_id, t.platform, t.name, t.name_en, t.tips_checked_at,"
-            f" {STEAM_APP_OF_TITLE} AS steam_appid FROM titles t"
+            f" {STEAM_APP_OF_TITLE} AS steam_appid FROM achievement_list_connectors t"
             f" WHERE {where} AND t.title_id = ?",
             (*params, title_id),
         )
@@ -205,7 +205,8 @@ class _SteamRepo:
             )
         if complete:
             await self._conn.execute(
-                "UPDATE titles SET tips_checked_at = ? WHERE platform = ? AND title_id = ?",
+                "UPDATE achievement_list_connectors SET tips_checked_at = ? WHERE platform = ? "
+                "AND title_id = ?",
                 (utcnow_iso(), platform, title_id),
             )
         await self._conn.commit()
@@ -276,7 +277,8 @@ class _SteamRepo:
             "  AND al.external_id = s.xuid AND al.is_active = 1"
             # An excluded person is told nothing (CLAUDE.md, Statistics rules).
             " JOIN users u ON u.id = al.person_id AND u.is_excluded = 0"
-            " JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id"
+            " JOIN achievement_list_connectors t ON t.platform = s.platform AND t.title_id = "
+            "s.title_id"
             f" WHERE {STEAM_APP_OF_TITLE} = ?"
             f"  AND {earned_date_is_real('s.')} AND {earned_at('s.')} >= ?"
             " GROUP BY al.person_id"
@@ -321,7 +323,8 @@ class _SteamRepo:
             "), apps AS ("
             "  SELECT p.title_id, p.platform, t.name, t.name_ru, t.name_en, t.icon_url,"
             f"         {STEAM_APP_OF_TITLE} AS appid"
-            "  FROM played p JOIN titles t ON t.platform = p.platform AND t.title_id = p.title_id"
+            "  FROM played p JOIN achievement_list_connectors t ON t.platform = p.platform AND "
+            "t.title_id = p.title_id"
             ") "
             "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
             "       gp.text_en, gp.image_url, a.platform, a.title_id,"
@@ -404,7 +407,7 @@ class _SteamRepo:
         the longest-waiting first. A game never worked out is a visit's or a
         first achievement's job, not the schedule's."""
         cursor = await self._conn.execute(
-            "SELECT t.platform, t.title_id FROM titles t"
+            "SELECT t.platform, t.title_id FROM achievement_list_connectors t"
             f" WHERE {STEAM_APP_OF_TITLE} IS NOT NULL"
             "   AND t.tips_checked_at IS NOT NULL AND t.tips_checked_at < ?"
             "   AND EXISTS (SELECT 1 FROM seen_achievements s"
@@ -423,7 +426,7 @@ class _SteamRepo:
         cursor = await self._conn.execute(
             "WITH active AS ("
             f"  SELECT DISTINCT {STEAM_APP_OF_TITLE} AS appid"
-            "  FROM titles t"
+            "  FROM achievement_list_connectors t"
             "  WHERE EXISTS (SELECT 1 FROM seen_achievements s"
             f"               WHERE {titles_on()} AND {earned_since('s.')})"
             ") "

@@ -128,7 +128,7 @@ def title_ref(
     title_name: str | None = None,
     title_icon_url: str | None = None,
 ) -> TitleRef:
-    """A game by id and its stored `titles.platforms`. The platform picks
+    """A game by id and its stored `achievement_list_connectors.platforms`. The platform picks
     Sony's trophy service (PS5 lives on a different one than PS3/PS4/Vita),
     so it is the game's own newest console, not a default."""
     known = {item.value: item for item in PlatformType}
@@ -498,7 +498,7 @@ async def trophies_for_title(
                     # per DLC, and 'default' is *only the base game* — so
                     # every DLC trophy anyone ever earned was invisible to
                     # this bot: never published, never counted in /stats,
-                    # while the game's own total (titles.achievements_total)
+                    # while the game's own total (achievement_list_connectors.achievements_total)
                     # has always included them. One request either way.
                     trophy_group_id="all",
                     include_progress=True,

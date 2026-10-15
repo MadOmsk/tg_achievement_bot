@@ -93,7 +93,7 @@ async def test_every_page_of_the_viewer_answers(tmp_path: Path, settings, monkey
         await GameLinker(repo).link_versions([version])
         game = await repo.linked_game_of(version)
         await repo._conn.execute(
-            "INSERT INTO titles (platform, title_id, name, updated_at)"
+            "INSERT INTO achievement_list_connectors (platform, title_id, name, updated_at)"
             " VALUES ('xbox_modern', '77', 'Control', '2026-10-15T00:00:00')"
         )
         await repo._conn.commit()

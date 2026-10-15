@@ -33,7 +33,7 @@ class _GamesRepo:
             "  (SELECT GROUP_CONCAT(h.game_type) FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "   AND vh.source <> 'rejected') AS hltb_types"
-            " FROM versions v LEFT JOIN titles t ON t.platform = v.platform"
+            " FROM versions v LEFT JOIN achievement_list_connectors t ON t.platform = v.platform"
             "  AND t.title_id = v.title_id"
         )
         return [dict(row) for row in await cursor.fetchall()]

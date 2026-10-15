@@ -457,7 +457,7 @@ every column. History: #106.
   known from the game (#114). Steam stays `NULL` (PC or Steam Deck cannot be told
   apart). Presence codenames (`Scarlett`, `Durango`, `Web`, `PS5`) —
   `services/platform_format.py` normalizes them.
-- **A game's platforms (`titles.platforms`) are what it was released on** — from
+- **A game's platforms (`achievement_list_connectors.platforms`) are what it was released on** — from
   Xbox titlehub or PSN's title listing, never from presence. Presence codenames
   found there (`Scarlett`, `Durango`, `WindowsOneCore`, `Web`, …) were device
   guesses and were cleared by migration 059 for titlehub to refill. An Xbox game
@@ -496,7 +496,15 @@ every column. History: #106.
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
   `steam_rarity_cache`. HLTB: the mirror (`hltb_entries`, #147). Steam guides and patches: `steam_apps`,
   `game_patches`, `title_guide_reads` (see Steam guides and patches).
-- **`titles`** — one row per version (one achievement list on one platform),
+- **`achievement_list_connectors`** (formerly `titles`, migration 117; owner,
+  2026-10-15) **is not a game**: it links a game's versions to one achievement
+  list on one platform and keeps that list's own facts — the platform's name
+  for it, its size, platforms, when it was checked. A game's name, cover and
+  description are `games` and `versions`; a screen never presents a row of it
+  as a game. A stand-in version's name follows its list's (a trigger).
+  The code says `titles` in places (variables, `title_id`, `titles_on`): the
+  name of the thing before it was renamed, not another table.
+- One row per list (one achievement list on one platform),
   **keyed by `(platform, title_id)`** like `seen_achievements` and
   `title_achievements` (#147, migration 090): Steam appids and Xbox title ids
   overlap. Join on both (`_sql.titles_on`). An Xbox id is one game, so a
@@ -506,7 +514,7 @@ every column. History: #106.
   achievements and catalog together (`update_title_platform` /
   `_move_title_rows`), and a 360 game stays 360 (`stored_xbox_generation`).
   `title_guide_reads` is keyed the same way; `title_groups` stays by id (PSN
-  only). No foreign keys point at `titles`. Its columns: names (`name`, `name_ru`, `name_en`),
+  only). No foreign keys point at `achievement_list_connectors`. Its columns: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
   `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at` and
   `tips_checked_at`. **Which Steam app a list is** is not a column of it either
@@ -516,7 +524,7 @@ every column. History: #106.
   `_sql.STEAM_APP_OF_TITLE`, and when it was last looked for is `fetch_state`
   (`steam_app`).
   **Which HLTB entry a list is has one home, the links of its versions**
-  (`version_hltb`, migration 110; owner, 2026-10-14): `titles.hltb_id` and its
+  (`version_hltb`, migration 110; owner, 2026-10-14): `achievement_list_connectors.hltb_id` and its
   three companions were a copy that the Mini App read and the operator's links
   never reached. Every list is at least one version (a stand-in made from the
   list, `stores.stand_in_for`), so it has somewhere to be linked;
@@ -544,7 +552,7 @@ every column. History: #106.
   a fact one side learned was invisible to the other. Keyed by the achievement,
   never by who earned it, so a translation is paid for once.
   - `TitleCatalogService` refreshes a title's full list at most every 24h
-    (`titles.achievements_checked_at`); those rows, and Steam's per-game response,
+    (`achievement_list_connectors.achievements_checked_at`); those rows, and Steam's per-game response,
     are the whole list and are written `complete=True` → `listed = 1`. Everything
     else — a percentage, a name, a description, a live Xbox/PSN poll's earned-only
     rows, the seed migration 053 took from what people had earned — leaves
@@ -720,7 +728,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   (a live-service game keeps being asked). A failure is retried in an hour, given
   up on for 30 days after three. **No whole-library walk** (owner, 2026-10-09).
 - **Raw answers** are kept in `source_payloads`, zlib JSON, the latest only, not
-  rewritten when the hash is the same — never as columns on `titles`.
+  rewritten when the hash is the same — never as columns on `achievement_list_connectors`.
   **Prices are not kept** (owner, 2026-10-12): each store module drops its
   price fields (`PRICE_KEYS`: Steam's `price_overview` and package prices,
   Xbox's `Price`, price history and price offers, PSN's SKU prices and
@@ -748,7 +756,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   genres.
 - **Every achievement list is at least one version**: when no store describes it
   (a 360 game, an Xbox card the catalog dropped, a PSN list not proved) a
-  stand-in (`store = 'list'`) is made from `titles`, and goes once a store
+  stand-in (`store = 'list'`) is made from `achievement_list_connectors`, and goes once a store
   product is found. A version's first proved list stays its list; another one
   (a regional twin) is kept beside it, as every list is, in `versions.store_ids`
   (`list`, `platform:title_id`).
@@ -1003,7 +1011,7 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
   played for a while; these do not. Backfill uses them (game by game through titlehub
   only if refused), and linked accounts are topped up once at startup
   (`Fetcher.fill_x360_gaps_once`, marked in `app_settings`). A forgotten game's total
-  on `titles.achievements_total` is what lets a finished one count as 🌀.
+  on `achievement_list_connectors.achievements_total` is what lets a finished one count as 🌀.
 - **Descriptions.** The contract-2 backfill brings the whole library in one request
   but in no language, so `poller/description_backfill.py` fills the bilingual cache
   a few titles per tick — a poller rather than a script because of the one-process
@@ -1021,7 +1029,7 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   stats must be public — only they can change that.
 - Presence comes in batches of up to 100 SteamIDs (`GetPlayerSummaries`).
 - **Every stored achievement carries its game's name** (#70): `fetch_unlocked`
-  takes `title_name` so the `titles` upsert has something to write — without it a
+  takes `title_name` so the `achievement_list_connectors` upsert has something to write — without it a
   game that arrived by backfill or catch-up stayed "без названия" forever.
 - **Schema and rarity.** The schema is cached per app with no expiry but
   **re-fetched when an unlocked achievement is missing from it** (#49) — games add
@@ -1848,7 +1856,7 @@ History: #110.
 - **Game line**, italic: game, the version played (below), and the person's progress `47/50` when the
   total is known (#46). Totals: Xbox 360 from `title_history`; modern Xbox from
   titlehub or, when titlehub says 0, the size of the per-title response stored in
-  `titles.achievements_total` (Microsoft's count wins where it exists); Steam from the
+  `achievement_list_connectors.achievements_total` (Microsoft's count wins where it exists); Steam from the
   schema; PSN from `defined_trophies` for every listed title (#60), **DLC included**.
   A count, never Sony's tier-weighted percentage. No known total: no counter.
 - **PSN group line** (#46), only when the game has more than one group: the group

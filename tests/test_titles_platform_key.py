@@ -27,7 +27,8 @@ async def test_a_game_found_to_be_360_moves_and_keeps_what_was_learned(repo: Rep
     await repo.update_title_platform("360", Platform.XBOX_360)
 
     cursor = await repo._conn.execute(
-        "SELECT platform, icon_url, platforms FROM titles WHERE title_id = '360'"
+        "SELECT platform, icon_url, platforms FROM achievement_list_connectors WHERE title_id = "
+        "'360'"
     )
     rows = [tuple(row) for row in await cursor.fetchall()]
     assert rows == [("xbox_360", "https://art", '["Xbox360"]')]
@@ -43,7 +44,7 @@ async def test_a_game_found_to_be_360_moves_and_keeps_what_was_learned(repo: Rep
 async def test_a_move_onto_an_existing_row_fills_its_gaps(repo: Repo) -> None:
     await repo.upsert_title("360", "Fable II", Platform.XBOX_360)
     await repo._conn.execute(
-        "INSERT INTO titles (platform, title_id, name, icon_url, updated_at)"
+        "INSERT INTO achievement_list_connectors (platform, title_id, name, icon_url, updated_at)"
         " VALUES ('xbox_modern', '360', 'Fable II', 'https://art', '')"
     )
     await repo._conn.commit()
@@ -51,7 +52,7 @@ async def test_a_move_onto_an_existing_row_fills_its_gaps(repo: Repo) -> None:
     await repo.update_title_platform("360", Platform.XBOX_360)
 
     cursor = await repo._conn.execute(
-        "SELECT platform, icon_url FROM titles WHERE title_id = '360'"
+        "SELECT platform, icon_url FROM achievement_list_connectors WHERE title_id = '360'"
     )
     assert [tuple(row) for row in await cursor.fetchall()] == [("xbox_360", "https://art")]
 
@@ -83,7 +84,8 @@ async def test_a_360_game_named_through_the_modern_contract_stays_360(repo: Repo
     await repo.upsert_title("360", "Fable II", Platform.XBOX_MODERN, achievements_total=50)
 
     cursor = await repo._conn.execute(
-        "SELECT platform, achievements_total FROM titles WHERE title_id = '360'"
+        "SELECT platform, achievements_total FROM achievement_list_connectors WHERE title_id = "
+        "'360'"
     )
     assert [tuple(row) for row in await cursor.fetchall()] == [("xbox_360", 50)]
 

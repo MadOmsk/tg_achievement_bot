@@ -539,7 +539,8 @@ class _Titlehub:
 
 async def _age_last_lookup(repo: Repo, title_id: str) -> None:
     await repo._conn.execute(
-        "UPDATE titles SET platforms_checked_at = '2000-01-01T00:00:00+00:00' WHERE title_id = ?",
+        "UPDATE achievement_list_connectors SET platforms_checked_at = "
+        "'2000-01-01T00:00:00+00:00' WHERE title_id = ?",
         (title_id,),
     )
     await repo._conn.commit()

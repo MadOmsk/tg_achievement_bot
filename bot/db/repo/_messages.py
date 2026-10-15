@@ -348,7 +348,8 @@ class _MessagesRepo:
             "       MAX(" + earned_at() + ") AS last_earned "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
-            + "LEFT JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id "
+            + "LEFT JOIN achievement_list_connectors t ON t.platform = s.platform "
+            + "AND t.title_id = s.title_id "
             + rarity_cache_join()
             + f"WHERE al.person_id IN ({owners}) {date_bound} "
             "GROUP BY s.title_id, s.platform "
@@ -386,7 +387,7 @@ class _MessagesRepo:
         cursor = await self._conn.execute(
             "SELECT t.name AS name, MAX(th.last_played_at) AS last_played "
             "FROM title_history th "
-            "JOIN titles t ON t.platform IN ('xbox_modern', 'xbox_360')"
+            "JOIN achievement_list_connectors t ON t.platform IN ('xbox_modern', 'xbox_360')"
             "  AND t.title_id = th.title_id "
             "WHERE th.xuid IN ("
             "  SELECT xb.external_id FROM users u "
@@ -574,9 +575,8 @@ _RECENT_JOINS = (
     + "JOIN account_links al ON al.person_id = u.id AND al.is_active = 1 "
     "JOIN seen_achievements s ON s.account_platform = al.platform"
     "   AND s.xuid = al.external_id "
-    "LEFT JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id "
-    + NAME_CACHE_JOIN
-    + rarity_cache_join()
+    "LEFT JOIN achievement_list_connectors t ON t.platform = s.platform AND t.title_id = "
+    "s.title_id " + NAME_CACHE_JOIN + rarity_cache_join()
 )
 
 

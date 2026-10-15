@@ -295,7 +295,9 @@ async def test_a_visit_never_rereads_old_tips_but_the_schedule_does(
     reads = steam["guides"]
 
     await repo._conn.execute(
-        "UPDATE titles SET tips_checked_at = '2020-01-01T00:00:00' WHERE title_id = ?", (TITLE,)
+        "UPDATE achievement_list_connectors SET tips_checked_at = '2020-01-01T00:00:00'"
+        " WHERE title_id = ?",
+        (TITLE,),
     )
     await repo._conn.commit()
     assert not await extras.tips_due("xbox", TITLE)
@@ -527,12 +529,13 @@ async def test_the_app_found_for_a_list_is_a_steam_twin_id_of_its_versions(repo:
     assert ("steam_twin", "553850") in await repo.store_ids_of(version["version_id"])
     # The one SQL reading (news, tips and patches use it) says the same.
     cursor = await repo._conn.execute(
-        f"SELECT {STEAM_APP_OF_TITLE} FROM titles t WHERE t.title_id = ?", (TITLE,)
+        f"SELECT {STEAM_APP_OF_TITLE} FROM achievement_list_connectors t WHERE t.title_id = ?",
+        (TITLE,),
     )
     assert (await cursor.fetchone())[0] == 553850
     await _seed(repo, platform="steam", title_id="2100")
     cursor = await repo._conn.execute(
-        f"SELECT {STEAM_APP_OF_TITLE} FROM titles t WHERE t.platform = 'steam'"
+        f"SELECT {STEAM_APP_OF_TITLE} FROM achievement_list_connectors t WHERE t.platform = 'steam'"
     )
     assert (await cursor.fetchone())[0] == 2100  # a Steam list is its own app
 

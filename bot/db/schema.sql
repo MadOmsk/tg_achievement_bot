@@ -395,8 +395,13 @@ CREATE TABLE IF NOT EXISTS title_history (
     PRIMARY KEY (xuid, title_id)
 );
 
-CREATE TABLE IF NOT EXISTS titles (
-    -- One row per version: one achievement list on one platform (#147),
+-- NOT a game (117; formerly `titles`): the link between a game's versions and
+-- one achievement list on one platform, with that list's own facts (the
+-- platform's name for it, its size, when it was checked). A game, its name,
+-- cover and description are `games` and `versions`; never show a row of this
+-- as a game.
+CREATE TABLE IF NOT EXISTS achievement_list_connectors (
+    -- One row per list: one achievement list on one platform (#147),
     -- keyed by the platform and its own id as seen_achievements and
     -- title_achievements are — the id spaces overlap (Steam appids run to
     -- ~3.5M, Xbox title ids start below 1M). An Xbox game found to be the
@@ -1396,6 +1401,17 @@ CREATE TABLE IF NOT EXISTS game_series (
     PRIMARY KEY (game_id, series_id)
 );
 CREATE INDEX IF NOT EXISTS idx_game_series_series ON game_series(series_id);
+
+-- A stand-in version is named by its list (117): the name follows the list's.
+CREATE TRIGGER IF NOT EXISTS list_name_reaches_its_stand_ins
+AFTER UPDATE OF name, name_ru, name_en ON achievement_list_connectors
+BEGIN
+    UPDATE versions SET
+        name = CASE WHEN NEW.name IS NOT NULL AND NEW.name NOT IN ('', '?')
+                    THEN NEW.name ELSE COALESCE(NEW.name_en, name) END,
+        name_ru = NEW.name_ru
+    WHERE stand_in = 1 AND platform = NEW.platform AND title_id = NEW.title_id;
+END;
 
 -- Editions as a store sells them: a pack of a game and its add-ons, not a
 -- re-release (094).

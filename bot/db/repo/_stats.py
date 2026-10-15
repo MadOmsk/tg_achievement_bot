@@ -82,13 +82,15 @@ class _StatsRepo:
                     effective_entry_plat or "xbox_modern", entry.title_id
                 )
                 await self._conn.execute(
-                    "INSERT INTO titles (platform, title_id, name, platforms, updated_at) "
+                    "INSERT INTO achievement_list_connectors (platform, title_id, name, "
+                    "platforms, updated_at) "
                     "VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT(platform, title_id) DO UPDATE SET name = excluded.name,"
                     " platforms = CASE "
-                    "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                    "   WHEN achievement_list_connectors.platforms = '[\"Xbox360\"]' "
+                    "THEN '[\"Xbox360\"]' "
                     "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
-                    "   ELSE COALESCE(excluded.platforms, titles.platforms) "
+                    "   ELSE COALESCE(excluded.platforms, achievement_list_connectors.platforms) "
                     " END,"
                     " updated_at = excluded.updated_at",
                     (stored_plat, entry.title_id, entry.name, platforms_json, now),
@@ -368,7 +370,7 @@ class _StatsRepo:
         achievements_total, but Microsoft's titlehub API returns total=0 for
         nearly all Xbox One / Series games (#77). We now check against the
         global title_achievements catalog, falling back to title_history or
-        titles.achievements_total for games not yet in the catalog.
+        achievement_list_connectors.achievements_total for games not yet in the catalog.
         """
         cursor = await self._conn.execute(
             """
@@ -388,7 +390,8 @@ class _StatsRepo:
             completed_from_titles AS (
                 SELECT s.title_id
                 FROM seen_achievements s
-                JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id
+                JOIN achievement_list_connectors t ON t.platform = s.platform
+                 AND t.title_id = s.title_id
                 WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
                   AND t.achievements_total > 0
                 GROUP BY s.title_id, t.achievements_total

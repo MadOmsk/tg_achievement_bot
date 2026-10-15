@@ -418,7 +418,7 @@ async def _hltb_questions(
     for r in await _rows(
         conn,
         "SELECT t.platform, t.title_id, COALESCE(t.name_en, t.name) AS name, b.hltb_id,"
-        " b.score AS hltb_match_score FROM titles t JOIN ("
+        " b.score AS hltb_match_score FROM achievement_list_connectors t JOIN ("
         "  SELECT v.platform, v.title_id, vh.hltb_id, MAX(vh.score) AS score"
         "  FROM versions v JOIN version_hltb vh ON vh.version_id = v.version_id"
         "  WHERE vh.source = 'auto' GROUP BY v.platform, v.title_id, vh.hltb_id) b"

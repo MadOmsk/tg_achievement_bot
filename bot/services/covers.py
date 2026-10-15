@@ -1,8 +1,8 @@
 """Where a downloaded game cover goes (owner request, 2026-09-18).
 
 The same shape `services/avatars.py` gives faces, for the art the Mini App
-shows beside every achievement: the URL is kept in `titles.icon_url`, the
-downloaded copy lands in `data/covers/`, and `titles.cover_path` maps the
+shows beside every achievement: the URL is kept in `achievement_list_connectors.icon_url`, the
+downloaded copy lands in `data/covers/`, and `achievement_list_connectors.cover_path` maps the
 row to the file.
 
 Files rather than rows, for the reason the avatars have: the database is
