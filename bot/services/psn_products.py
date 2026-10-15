@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass, field
 
 from bot.db.repo import Repo
+from bot.services import edition_media
 from bot.services.stores import StoreDlc, edition_kind
 from bot.services.stores import psn_product as page
 
@@ -119,7 +120,11 @@ async def put_in_place(repo: Repo, origin: str | None) -> Report:
             report.dlcs += 1
         elif category in EDITION_CATEGORIES:
             edition_id = await repo.save_edition(
-                "psn", product_id, product.name, edition_kind(product.name)
+                "psn",
+                product_id,
+                product.name,
+                edition_kind(product.name),
+                media=edition_media.psn(page._products(payload)),
             )
             await repo.save_edition_item(
                 edition_id, product_id, product.name, "game", is_primary=True, version_id=version_id

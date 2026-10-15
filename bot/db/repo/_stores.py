@@ -933,16 +933,29 @@ class _StoresRepo:
         name: str | None,
         kind: str | None,
         on_sale: bool | None = None,
+        media: dict | None = None,
     ) -> int:
-        """An edition seen on its store now: kept, its last sighting stamped."""
+        """An edition seen on its store now: kept, its last sighting stamped;
+        its pictures (`services/edition_media`) when the answer had any."""
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO editions (store, store_id, name, kind, first_seen_at, last_seen_at,"
-            " on_sale) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(store, store_id) DO UPDATE SET"
+            " on_sale, media) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(store, store_id) DO UPDATE SET"
             "  name = COALESCE(excluded.name, editions.name),"
             "  kind = COALESCE(excluded.kind, editions.kind), last_seen_at = excluded.last_seen_at,"
-            "  on_sale = COALESCE(excluded.on_sale, editions.on_sale)",
-            (store, store_id, name, kind, now, now, None if on_sale is None else int(on_sale)),
+            "  on_sale = COALESCE(excluded.on_sale, editions.on_sale),"
+            "  media = COALESCE(excluded.media, editions.media)",
+            (
+                store,
+                store_id,
+                name,
+                kind,
+                now,
+                now,
+                None if on_sale is None else int(on_sale),
+                json.dumps(media, ensure_ascii=False) if media else None,
+            ),
         )
         cursor = await self._conn.execute(
             "SELECT edition_id FROM editions WHERE store = ? AND store_id = ?", (store, store_id)
@@ -950,6 +963,40 @@ class _StoresRepo:
         edition_id = int((await cursor.fetchone())["edition_id"])
         await self._conn.commit()
         return edition_id
+
+    async def set_edition_media(self, store: str, store_id: str, media: dict) -> bool:
+        """An edition's pictures read again from a kept answer. True when it
+        is one of ours."""
+        cursor = await self._conn.execute(
+            "UPDATE editions SET media = ? WHERE store = ? AND store_id = ?",
+            (json.dumps(media, ensure_ascii=False) if media else None, store, store_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
+    async def edition_ids(self, store: str) -> set[str]:
+        cursor = await self._conn.execute("SELECT store_id FROM editions WHERE store = ?", (store,))
+        return {str(r[0]) for r in await cursor.fetchall()}
+
+    async def edition_covers_to_fetch(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """Editions with pictures and no cover on disk, never asked before."""
+        cursor = await self._conn.execute(
+            "SELECT edition_id, store, store_id, media FROM editions"
+            " WHERE media IS NOT NULL AND image_path IS NULL AND image_checked_at IS NULL"
+            " ORDER BY edition_id" + (f" LIMIT {int(limit)}" if limit else "")
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def set_edition_cover(
+        self, edition_id: int, path: str | None, digest: str | None
+    ) -> None:
+        """One visit's answer, stamped found or not."""
+        await self._conn.execute(
+            "UPDATE editions SET image_path = ?, image_hash = ?,"
+            " image_checked_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') WHERE edition_id = ?",
+            (path, digest, edition_id),
+        )
+        await self._conn.commit()
 
     async def save_edition_item(
         self,

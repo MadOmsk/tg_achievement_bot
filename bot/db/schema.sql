@@ -1425,6 +1425,12 @@ CREATE TABLE IF NOT EXISTS editions (
     first_seen_at TEXT NOT NULL,
     last_seen_at  TEXT NOT NULL,
     on_sale       INTEGER,          -- 095: 1 / 0, NULL when not known
+    -- 120: its pictures (roles, and every picture with its store's tag), and
+    -- its cover on disk (data/covers/<image_path>).
+    media         TEXT,
+    image_path    TEXT,
+    image_hash    TEXT,
+    image_checked_at TEXT,
     UNIQUE (store, store_id)
 );
 

@@ -650,6 +650,14 @@ What the stores and HLTB say about a game, collected but not shown yet
   `name:<…>`) and `found_at`. Set when the version is made and never rewritten
   by a later look (`save_version(found=…)`); a stand-in that becomes its
   store's product turns `played`.
+- **An edition's pictures** (migration 120, owner, 2026-10-15): `editions.media`
+  in the versions' shape — the roles we use (`cover`, `poster`, `background`,
+  Steam's `header`) and `images`, every picture with the tag its store gave it
+  (Xbox's `ImagePurpose`, PSN's `role`, Steam's field) —, read by
+  `services/edition_media.py` from Xbox's bundle product, PSN's product page,
+  Steam's package (whose answer is kept now, `steam_package`); the cover on disk
+  (`editions.image_path`, `data/covers/editions/`). `scripts/edition_media.py`
+  fills it from what is kept and downloads the covers.
 - **Kinds of link**: see Games below — a remaster, a remake, a compilation, a
   VR version are games of their own (2026-10-11); a demo, a tool (a
   Creation Kit, an editor — owner, 2026-10-10) and a mode (owner, 2026-10-12:

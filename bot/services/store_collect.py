@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from bot.services import edition_media
 from bot.services.game_link import GameLinker
 from bot.services.game_match import is_part, name_key
 from bot.services.hltb import ensure_title_match
@@ -229,9 +230,15 @@ class StoreCollector:
                 return
             if package is None:
                 continue
+            await self._repo.save_payload(f"steam_package:{package_id}", "steam_package", package)
             name = str(package.get("name") or "") or None
             edition_id = await self._repo.save_edition(
-                "steam", package_id, name, edition_kind(name), package_id in sold
+                "steam",
+                package_id,
+                name,
+                edition_kind(name),
+                package_id in sold,
+                media=edition_media.steam(package),
             )
             for app in package.get("apps") or []:
                 app_id = str(app.get("id") or "")
@@ -393,6 +400,7 @@ class StoreCollector:
                 name,
                 edition_kind(name) if primary else "bundle",
                 xbox_catalog.sold(edition),
+                media=edition_media.xbox(edition),
             )
             for big_id, is_primary in contents:
                 item = by_id.get(big_id, {})
