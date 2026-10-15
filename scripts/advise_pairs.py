@@ -891,8 +891,13 @@ async def conflicts(args: argparse.Namespace) -> None:
         await database.close()
     claude, gemini = store.answers("claude"), store.answers("gemini")
     proposals, lines, other = [], [], []
+    applied = store.applied()
     for q, state, _answer, _by, reason in states(store, facts):
-        if state != "conflict":
+        # Under the rule that the model, Claude and Gemini must all agree
+        # (owner, 2026-10-15) a pair the advisers decided against the model
+        # is the operator's again, as a conflict is.
+        overruled = (applied.get(q["pair_id"]) or {}).get("decided_by") == BOTH
+        if state != "conflict" and not overruled:
             continue
         pid = q["pair_id"]
         c, g = claude[pid], gemini[pid]
@@ -945,12 +950,46 @@ async def conflicts(args: argparse.Namespace) -> None:
         review_path.parent.mkdir(parents=True, exist_ok=True)
         review_path.write_text(json.dumps(items, ensure_ascii=False, indent=1), "utf-8")
         print(f"{len(items)} pairs to re-check → {review_path}")
+    if args.into_proposals:
+        added = add_to_proposals(
+            Path(args.into_proposals), Path(args.into_gemini), proposals, lines
+        )
+        print(f"{added} game pairs added to {args.into_proposals}")
+        return
     gemini_dir, other_path = write_conflicts(out, proposals, lines, other)
     print(f"{len(proposals)} game pairs → {out}; {len(other)} other pairs → {other_path}")
     print(
         "viewer: .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer"
         f" --db {args.db} --proposals {out} --gemini {gemini_dir}"
     )
+
+
+def add_to_proposals(path: Path, gemini_dir: Path, proposals: list[dict], lines: list[str]) -> int:
+    """The game pairs not in the viewer's proposals yet, appended (numbered on from
+    the last) with Gemini's line for each in a file of its own; what is there is
+    left as it is, so the numbers the viewer already holds keep their meaning."""
+    existing = json.loads(path.read_text("utf-8")) if path.exists() else []
+    seen = {frozenset((p["game_a"], p["game_b"])) for p in existing}
+    by_number = {int(line.split("|", 1)[0]): line for line in lines}
+    fresh, fresh_lines = [], []
+    for n, proposal in enumerate(proposals, 1):
+        key = frozenset((proposal["game_a"], proposal["game_b"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        fresh.append(proposal)
+        line = by_number.get(n)
+        if line is not None:
+            number = len(existing) + len(fresh)
+            fresh_lines.append(f"{number}|{line.split('|', 1)[1]}")
+    if fresh:
+        lf = "\n"
+        path.write_text(
+            json.dumps([*existing, *fresh], ensure_ascii=False, indent=1), "utf-8", newline=lf
+        )
+        gemini_dir.mkdir(parents=True, exist_ok=True)
+        (gemini_dir / "overruled.txt").write_text(lf.join(fresh_lines) + lf, "utf-8", newline=lf)
+    return len(fresh)
 
 
 def review_items(store: AdviceStore, facts: Facts) -> list[dict[str, Any]]:
@@ -1066,6 +1105,11 @@ def main() -> None:
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("conflicts", help="the disputed pairs, for the viewer's /proposals")
     p.add_argument("--out", required=True)
+    p.add_argument(
+        "--into-proposals",
+        help="add the game pairs not in this proposals file yet to it, instead of writing --out",
+    )
+    p.add_argument("--into-gemini", help="the folder of Gemini's lines beside that file")
     p.add_argument(
         "--review",
         action="store_true",
