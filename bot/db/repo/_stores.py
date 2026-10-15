@@ -358,6 +358,26 @@ class _StoresRepo:
         )
         await self._conn.commit()
 
+    async def psn_concept_versions(
+        self, origin: str | None = None
+    ) -> dict[str, list[tuple[int, str]]]:
+        """`{concept id: [(version id, console)]}` of the PlayStation versions
+        a store concept names; only those of this `origin` when it is given
+        (`played`: a list somebody here has)."""
+        cursor = await self._conn.execute(
+            "SELECT version_id, console, store_ids FROM versions WHERE store = 'psn'"
+            + (" AND origin = ?" if origin else ""),
+            (origin,) if origin else (),
+        )
+        found: dict[str, list[tuple[int, str]]] = {}
+        for row in await cursor.fetchall():
+            for kind, concept_id in json.loads(row["store_ids"] or "[]"):
+                if kind == "psn_concept":
+                    found.setdefault(str(concept_id), []).append(
+                        (int(row["version_id"]), str(row["console"]))
+                    )
+        return found
+
     async def delete_dlcs(self, version_id: int, store_ids: list[str]) -> None:
         """These add-ons are not this version's (another game's, an edition
         of several bundled): their rows here go, with their HLTB links."""

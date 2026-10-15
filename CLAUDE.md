@@ -683,6 +683,18 @@ What the stores and HLTB say about a game, collected but not shown yet
     http Smooth Streaming, unplayable); links only, nothing downloaded.
     Its cross-gen set (`versions.cross_gen_set`, 098) is one game on One and
     Series; its product group (`store_group`) can hold a whole series;
+  - PSN products (owner, 2026-10-15; `stores/psn_product.py`,
+    `services/psn_products.py`, `scripts/collect_psn_products.py`): a concept
+    lists the ids of everything sold under it by category (`ADD_ON`, `GAME`,
+    `PVU_GAME`, `DEMO`, `AVATAR`, `THEME`, `APPLICATION`) and names none; the
+    product's own public page (`store.playstation.com/en-us/product/<id>`, one
+    every two seconds) names it. The page's embedded JSON is kept (`psn_product`
+    in `source_payloads`, prices dropped); an add-on becomes a DLC of the version
+    of its console (`CUSA` PS4, `PPSA` PS5) with its name, day and description, a
+    game-category product an edition. A trophy group names no store product, so
+    the DLC of a group (`dlcs.trophy_group_id`) and the DLC of a page
+    (`dlcs.store_id`) are two rows until the link between them is made.
+    Scope so far: the games we have (`--scope played`).
   - PSN: the store is searched by name and a concept is accepted **only when
     Sony's trophy API says one of its title ids has our `NPWR…` list**, asked as
     an account that played it (`psn/client.trophy_lists_of`); never by name
