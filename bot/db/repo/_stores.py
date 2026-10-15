@@ -607,6 +607,27 @@ class _StoresRepo:
         )
         await self._conn.commit()
 
+    async def psn_account_with_title(self, np_communication_id: str) -> str | None:
+        """A PSN account that has earned something in this list."""
+        cursor = await self._conn.execute(
+            "SELECT xuid FROM seen_achievements WHERE platform = 'psn' AND title_id = ?"
+            " GROUP BY xuid ORDER BY COUNT(*) DESC LIMIT 1",
+            (np_communication_id,),
+        )
+        row = await cursor.fetchone()
+        return str(row[0]) if row else None
+
+    async def lists_without_whole_list(self, platform: str) -> list[str]:
+        """The lists of a platform whose whole list of achievements was never
+        read (no `listed` row in the catalog)."""
+        cursor = await self._conn.execute(
+            "SELECT t.title_id FROM achievement_list_connectors t WHERE t.platform = ?"
+            " AND NOT EXISTS (SELECT 1 FROM title_achievements a WHERE a.platform = t.platform"
+            "  AND a.title_id = t.title_id AND a.listed = 1) ORDER BY t.title_id",
+            (platform,),
+        )
+        return [str(r[0]) for r in await cursor.fetchall()]
+
     async def achievement_list_ids(self, platform: str) -> list[str]:
         """Every achievement list of a platform, by id."""
         cursor = await self._conn.execute(

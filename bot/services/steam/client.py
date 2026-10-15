@@ -503,9 +503,14 @@ async def get_global_percentages(appid: str) -> dict[str, float]:
     """No API key at all — this endpoint is public (SPEC 9, M-Steam-2b).
     Real percentages drift over time, unlike the schema above, so the
     caching layer (services/steam/achievements.py) expires this one."""
-    payload = await _get(
-        "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/", "", {"gameid": appid}
-    )
+    try:
+        payload = await _get(
+            "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/", "", {"gameid": appid}
+        )
+    except SteamKeyDeadError:
+        # No key is sent here, so a 403 is no verdict on the key: the app has
+        # no achievement stats (2026-10-16, Counter-Strike's app 10).
+        return {}
     await raw_answers.keep(f"global_percentages:{appid}", "steam_achievements", payload)
     achievements = (payload.get("achievementpercentages") or {}).get("achievements") or []
     result: dict[str, float] = {}

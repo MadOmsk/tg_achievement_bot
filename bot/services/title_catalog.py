@@ -242,6 +242,10 @@ class TitleCatalogService:
                 account_id = link.external_id
 
         if not account_id:
+            # An account that played it: Sony answers about a list only for
+            # an account that has it (2026-10-16: any account found none).
+            account_id = await self._repo.psn_account_with_title(np_communication_id)
+        if not account_id:
             # Fall back to any active PSN link
             account_id = await self._repo.any_active_external_id("psn")
 
