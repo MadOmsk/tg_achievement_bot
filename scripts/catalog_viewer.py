@@ -224,6 +224,74 @@ def _hours(main: object, plus: object = None, hundred: object = None) -> str:
     return " · ".join(parts)
 
 
+def _entry_hours(row: dict | sqlite3.Row) -> str:
+    return _hours(row["comp_main"], row["comp_plus"], row["comp_100"])
+
+
+def _platform_hours_html(got: dict | None) -> str:
+    """What HLTB says of a version or a DLC: its entry, and the row of its
+    platform (or the group of platforms that has it)."""
+    if got is None:
+        return "<p>(no HLTB entry linked)</p>"
+    entry = got["entry"]
+    html = (
+        f'<p>entry <a href="/hltb/{entry["hltb_id"]}">{escape(entry["name"])}</a>'
+        f" ({escape(entry['game_type'] or '?')}, {escape(str(entry['link_source']))}):"
+        f" {escape(_entry_hours(entry) or 'no hours')}</p>"
+    )
+    platform = got["platform"]
+    if platform is None:
+        return html + "<p>HLTB has no platform for this console</p>"
+    if got["row"]:
+        row = got["row"]
+        return html + (
+            f"<p><b>{escape(platform)}</b>: {escape(_entry_hours(row) or 'no hours')}"
+            f" · {row['count_comp'] or 0} finished it</p>"
+        )
+    if got["group"]:
+        group = got["group"]
+        return html + (
+            f"<p><b>{escape(platform)}</b> (the group {escape(group['platforms'])}):"
+            f" {escape(_entry_hours(group) or 'no hours')}</p>"
+        )
+    return html + f"<p>no row for {escape(platform)} on this entry</p>"
+
+
+async def _game_hltb_html(repo: Repo, game_id: int, members: list) -> str:
+    """A game's HLTB: its main game's entry, and each version's platform row."""
+    found = await repo.game_hltb(game_id)
+    if found is None:
+        return "<p>(no HLTB entry linked)</p>"
+    entry = found["entry"]
+    html = (
+        f'<p>main game: <a href="/hltb/{entry["hltb_id"]}">{escape(entry["name"])}</a>'
+        f" ({escape(entry['game_type'] or '?')}): {escape(_entry_hours(entry) or 'no hours')}</p>"
+    )
+    if found["others"]:
+        html += "<p>other entries: " + ", ".join(
+            f'<a href="/hltb/{e["hltb_id"]}">{escape(e["name"])}</a>' for e in found["others"]
+        )
+        html += "</p>"
+    rows = []
+    for m in members:
+        got = await repo.version_hltb_platform(int(m["version_id"]))
+        if got is None:
+            continue
+        part = got["row"] or got["group"]
+        rows.append(
+            f'<tr><td><a href="/version/{m["version_id"]}">{m["version_id"]}</a></td>'
+            f"<td>{escape(m['console'])}</td><td>{escape(got['platform'] or '—')}</td>"
+            f"<td>{escape(_entry_hours(part) if part else '')}</td>"
+            f"<td>{escape(got['entry']['name'])}</td></tr>"
+        )
+    if rows:
+        html += (
+            "<table><tr><th>version</th><th>console</th><th>HLTB platform</th><th>hours</th>"
+            "<th>entry</th></tr>" + "".join(rows) + "</table>"
+        )
+    return html
+
+
 # A version's picture: its store's cover, else its achievement list's, else
 # the picture of the HLTB entry it is linked to.
 COVER = (
@@ -592,6 +660,7 @@ async def version(request: web.Request) -> web.Response:
         + _dlc_table(dlcs)
         + "<h2>HLTB</h2>"
         + _table(hltb, {"hltb_id": _hltb_href, "name": _hltb_href})
+        + _platform_hours_html(await _repo(request).version_hltb_platform(version_id))
         + unlinks
         + "<h2>Raw answers</h2>"
         + _table(payloads, {"subject": _payload_href})
@@ -715,6 +784,7 @@ async def dlc(request: web.Request) -> web.Response:
             )
             or "<p>(no HLTB entry linked)</p>"
         )
+        + _platform_hours_html(await _repo(request).dlc_hltb_platform(dlc_id))
         + "<h2>The same add-on on the store's other versions</h2>"
         + _dlc_table(twins)
     )
@@ -1315,6 +1385,8 @@ async def game(request: web.Request) -> web.Response:
         + _record(row, {"merged_into": lambda r: f"/game/{r['merged_into']}"})
         + "<h2>Versions</h2>"
         + _version_cards(members)
+        + "<h2>HowLongToBeat</h2>"
+        + await _game_hltb_html(_repo(request), game_id, members)
         + parts
         + "<h2>Family: related games</h2>"
         + _table(relations, {"game_id": _game_href, "name": _game_href})

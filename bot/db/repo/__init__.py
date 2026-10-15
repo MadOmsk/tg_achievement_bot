@@ -87,6 +87,7 @@ from bot.db.repo._follows import FollowTooSoon, PersonRow, _FollowsRepo
 from bot.db.repo._games import _GamesRepo
 from bot.db.repo._guides import GuideChannel, GuideMoment, GuideVideoRow, _GuidesRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
+from bot.db.repo._hltb_read import _HltbReadRepo
 from bot.db.repo._invites import InviteRow, _InvitesRepo
 from bot.db.repo._logins import EmailCode, LoginTaken, _LoginsRepo
 from bot.db.repo._merge import MergeChoices, MergeSide, _MergeRepo
@@ -229,6 +230,7 @@ class Repo(
     _PasskeysRepo,
     _GuidesRepo,
     _StoresRepo,
+    _HltbReadRepo,
     _GamesRepo,
     _SeriesRepo,
 ):

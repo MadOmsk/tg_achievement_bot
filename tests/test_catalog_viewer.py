@@ -99,3 +99,68 @@ async def test_every_page_of_the_viewer_answers(tmp_path: Path, settings, monkey
         for page in (*PAGES, f"/game/{game}", f"/version/{version}"):
             response = await client.get(page)
             assert response.status == 200, page
+
+
+async def test_the_pages_show_what_hltb_says_of_a_game_a_version_and_a_dlc(
+    tmp_path: Path, settings, monkeypatch
+) -> None:
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from bot.db.repo import Database, Repo
+    from bot.services.stores import StoreDlc, StoreVersion, hltb_page
+    from scripts.catalog_viewer import build
+
+    monkeypatch.setattr("bot.config.get_settings", lambda: settings)
+    path = tmp_path / "games.db"
+    database = await Database(path).connect()
+    try:
+        repo = Repo(database)
+        game = await repo.create_game("Control", 2019)
+        version = await repo.save_version(
+            StoreVersion(store="xbox", product_id="P1", console="series", name="Control"),
+            platform=None,
+            title_id=None,
+        )
+        await repo._conn.execute(
+            "UPDATE versions SET game_id = ?, role = 'version' WHERE version_id = ?",
+            (game, version),
+        )
+        await repo.save_dlc(version, StoreDlc(store_id="D1", name="The Foundation"))
+        cursor = await repo._conn.execute(
+            "SELECT dlc_id FROM dlcs WHERE version_id = ?", (version,)
+        )
+        dlc = int((await cursor.fetchone())[0])
+        main = {
+            "game": [
+                {"game_id": 10, "game_name": "Control", "game_type": "game", "comp_main": 36000}
+            ],
+            "platformData": [{"platform": "Xbox Series X/S", "comp_main": 30600, "count_comp": 9}],
+        }
+        add_on = {
+            "game": [
+                {
+                    "game_id": 20,
+                    "game_name": "Control: The Foundation",
+                    "game_type": "dlc",
+                    "game_parent": 10,
+                    "comp_main": 3600,
+                }
+            ],
+            "platformData": [{"platform": "Xbox Series X/S", "comp_main": 3300, "count_comp": 4}],
+        }
+        for page in (main, add_on):
+            await repo.save_hltb_page(hltb_page.parse_page(page))  # type: ignore[arg-type]
+        await repo.link_version_hltb(version, 10, "auto", 0.9)
+        await repo.link_dlc_hltb(dlc, 20)
+    finally:
+        await database.close()
+
+    async with TestClient(TestServer(build(path))) as client:
+        for page, needle in (
+            (f"/game/{game}", "Xbox Series X/S"),
+            (f"/version/{version}", "<b>Xbox Series X/S</b>: main 8.5h"),
+            (f"/dlc/{dlc}", "<b>Xbox Series X/S</b>: main 0.9h"),
+        ):
+            response = await client.get(page)
+            assert response.status == 200, page
+            assert needle in await response.text(), page

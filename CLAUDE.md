@@ -2060,6 +2060,17 @@ History: #112.
   entry no page was read for and overwrites nothing. The raw page stays in
   `source_payloads`, so every field is read again from it with no request
   (`scripts/reparse_store_payloads.py`).
+- **What a game, a version and a DLC take from the mirror** (owner, 2026-10-15,
+  `db/repo/_hltb_read.py`, `services/hltb_platforms.py`) — read through the
+  links, never copied: a **game** takes the hours of its main game's entry
+  (`repo.game_hltb`: the entries its versions are linked to that are not
+  additional content; the operator's link first, then the surer score, then the
+  entry most versions share); a **version** takes the row HLTB keeps for its
+  platform (`repo.version_hltb_platform`: our console → HLTB's name,
+  `hltb_platforms.HLTB_PLATFORM` — a PC of any store is "PC" —, its row in
+  `hltb_platform_times`, else the group in `hltb_platform_groups` that names
+  it); a **DLC** takes its entry's own hours and the row of its version's
+  platform (`repo.dlc_hltb_platform`). The viewer shows all three.
 - **The same page read also keeps the rest of it** (`hltb_cache.details`, one
   JSON object, migration 064): rating, developer/publisher, alias, release dates,
   play modes, co-op/multiplayer hours, each time bucket's median/fastest/slowest,
