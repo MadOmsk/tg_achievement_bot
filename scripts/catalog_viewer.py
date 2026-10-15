@@ -85,7 +85,7 @@ PAGES = {
     "/games": "Games",
     "/review": "Review",
     "/rules": "Rules",
-    "/titles": "Titles",
+    "/titles": "Achievement lists",
     "/versions": "Versions",
     "/dlcs": "DLC",
     "/hltb": "HLTB",
@@ -523,7 +523,9 @@ async def titles(request: web.Request) -> web.Response:
             "   ORDER BY vh.source = 'manual' DESC, vh.score IS NULL, vh.score DESC, vh.hltb_id"
             "   LIMIT 1) AS hltb_id, " + STEAM_APP_OF_TITLE + " AS steam_appid,"
             "  (SELECT COUNT(*) FROM versions v WHERE v.platform = t.platform"
-            "   AND v.title_id = t.title_id) AS versions"
+            "   AND v.title_id = t.title_id) AS versions,"
+            "  (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = t.platform"
+            "   AND a.title_id = t.title_id AND a.listed = 1) AS achievements"
             " FROM titles t WHERE ? = '' OR t.name LIKE ? OR t.name_ru LIKE ? OR t.title_id = ?"
             " ORDER BY versions DESC, t.updated_at DESC LIMIT ?",
             (q, f"%{q}%", f"%{q}%", q, PAGE_SIZE),
@@ -531,7 +533,15 @@ async def titles(request: web.Request) -> web.Response:
     return _page(
         PAGES["/titles"],
         _search_form("/titles", q)
-        + _table(rows, {"title_id": _title_href, "name": _title_href, "hltb_id": _hltb_href}),
+        + _table(
+            rows,
+            {
+                "title_id": _title_href,
+                "name": _title_href,
+                "hltb_id": _hltb_href,
+                "achievements": _list_href,
+            },
+        ),
     )
 
 
@@ -554,8 +564,20 @@ async def title(request: web.Request) -> web.Response:
         ).fetchall()
         prefix = {"steam": "steam:", "xbox_modern": "xbox_title:", "psn": "psn_list:"}.get(platform)
         subjects = [f"{prefix}{title_id}"] if prefix else []
-        if row is not None and row["hltb_id"]:
-            subjects.append(f"hltb:{row['hltb_id']}")
+        entry = conn.execute(
+            "SELECT vh.hltb_id FROM versions v JOIN version_hltb vh ON vh.version_id = v.version_id"
+            " WHERE v.platform = ? AND v.title_id = ? AND vh.source <> 'rejected'"
+            " ORDER BY vh.source = 'manual' DESC, vh.score IS NULL, vh.score DESC, vh.hltb_id"
+            " LIMIT 1",
+            (platform, title_id),
+        ).fetchone()
+        if entry is not None:
+            subjects.append(f"hltb:{entry['hltb_id']}")
+        listed = conn.execute(
+            "SELECT COUNT(*) FROM title_achievements WHERE platform = ? AND title_id = ?"
+            " AND listed = 1",
+            (platform, title_id),
+        ).fetchone()[0]
         state = (
             conn.execute(
                 f"SELECT * FROM fetch_state WHERE subject IN ({','.join('?' * len(subjects))})",
@@ -585,7 +607,13 @@ async def title(request: web.Request) -> web.Response:
     body = (
         _flash(request)
         + controls
-        + _record(row, {"hltb_id": _hltb_href})
+        + _record(row, {})
+        + (
+            f'<p>HLTB entry: <a href="/hltb/{entry["hltb_id"]}">{entry["hltb_id"]}</a></p>'
+            if entry
+            else ""
+        )
+        + f'<p><a href="{here.replace("/title/", "/list/", 1)}">its achievements ({listed})</a></p>'
         + "<h2>Versions (store products on one console)</h2>"
         + _table(_with_store(versions), {"version_id": _version_href, "name": _version_href})
         + "<h2>PSN trophy groups</h2>"
