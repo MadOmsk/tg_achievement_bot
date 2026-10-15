@@ -1234,6 +1234,9 @@ def test_a_360_list_is_base_up_to_its_release_gamerscore() -> None:
     assert is_x360_arcade(str(0x584108FB)) and not is_x360_arcade("1297287449")
     arcade = [("1", 100), ("2", 100), ("3", 50)]
     assert x360_groups(str(0x584108FB), arcade) == {"1": "base", "2": "base", "3": "non_base"}
+    # Stopping at 200 on the way to 400 is a coincidence: 400.
+    both = [("1", 100), ("2", 100), ("3", 200), ("4", 50)]
+    assert x360_groups(str(0x584108FB), both)["3"] == "base"
     # A later Arcade game: 400 G, never stopping at 200 on the way.
     later = [("1", 150), ("2", 100), ("3", 150), ("4", 50)]
     assert x360_groups(str(0x584108FB), later) == {

@@ -77,19 +77,18 @@ X360_ARCADE_LATER_GAMERSCORE = 400
 
 def arcade_release_gamerscore(gamerscores: list[int]) -> int:
     """An Arcade game's gamerscore at release, from its achievements' G in id
-    order: 400 when the running sum passes 200 without stopping there but
-    stops at 400 (Spelunky), or never stops at either in a list worth 400 or
-    more; else 200 — a list that stops at 200 had its base there, what came
-    after it was added (and a list that stops at both is taken as 200)."""
+    order: 400 when the running sum stops at 400 (a stop at 200 on the way is
+    a coincidence, owner, 2026-10-16), or never stops at 200 in a list worth
+    400 or more; else 200 — the base stopped there, what came after was added."""
     running, stops = 0, set()
     for gamerscore in gamerscores:
         running += gamerscore
         stops.add(running)
-    if X360_ARCADE_GAMERSCORE in stops:
-        return X360_ARCADE_GAMERSCORE
-    if X360_ARCADE_LATER_GAMERSCORE in stops or running >= X360_ARCADE_LATER_GAMERSCORE:
+    if X360_ARCADE_LATER_GAMERSCORE in stops:
         return X360_ARCADE_LATER_GAMERSCORE
-    return X360_ARCADE_GAMERSCORE
+    if X360_ARCADE_GAMERSCORE in stops or running < X360_ARCADE_LATER_GAMERSCORE:
+        return X360_ARCADE_GAMERSCORE
+    return X360_ARCADE_LATER_GAMERSCORE
 
 
 def is_x360_arcade(title_id: str) -> bool:

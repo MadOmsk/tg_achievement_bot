@@ -457,7 +457,8 @@ every column. History: #106.
   they are derived — in id order, base while the running gamerscore stays within
   the release's, 200 G for an Arcade game (title id 0x5841…), 1000 G otherwise
   (`xbox.models.x360_groups`, owner, 2026-10-15; an Arcade game's 400 G when its
-  running sum stops at 400 and never at 200); **such a group is marked
+  running sum stops at 400 — a stop at 200 on the way is a coincidence —, 200 G
+  when it stops only at 200); **such a group is marked
   `group_source = 'derived'`** (migration 122) — provisional: a group the
   platform gives later (`'platform'`) replaces it, and a derivation never
   overwrites the platform's; `NULL` until a
