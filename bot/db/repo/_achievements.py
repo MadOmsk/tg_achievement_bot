@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from bot.constants import AccountPlatform, Platform, achievement_group
+from bot.constants import MAIN_GAME_GROUP, AccountPlatform, Platform, achievement_group
 from bot.db.repo._models import AchievementRow
 from bot.db.repo._sql import OWNED_BY_PERSON, rarity, rarity_cache_join
 from bot.util import utcnow_iso
@@ -133,8 +133,8 @@ class _AchievementsRepo:
                     "INSERT OR IGNORE INTO seen_achievements "
                     "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                     " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
-                    " trophy_group_id, device, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " trophy_group_id, device, created_at, group_source) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         external_id,
                         item.title_id,
@@ -152,6 +152,10 @@ class _AchievementsRepo:
                         achievement_group(item.platform, item.trophy_group_id),
                         None if is_backfill else (item.device or device_default),
                         now,
+                        "platform"
+                        if achievement_group(item.platform, item.trophy_group_id)
+                        not in (None, MAIN_GAME_GROUP)
+                        else None,
                     ),
                 )
                 if cursor.rowcount:

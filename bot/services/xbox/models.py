@@ -71,6 +71,25 @@ def xbox_group(group_ids: list[str] | None) -> str | None:
 # retail one; a game worth no more than that is all base.
 X360_RETAIL_GAMERSCORE = 1000
 X360_ARCADE_GAMERSCORE = 200
+# Later Arcade games shipped with 400 G (owner, 2026-10-15: 200 or 400).
+X360_ARCADE_LATER_GAMERSCORE = 400
+
+
+def arcade_release_gamerscore(gamerscores: list[int]) -> int:
+    """An Arcade game's gamerscore at release, from its achievements' G in id
+    order: 400 when the running sum passes 200 without stopping there but
+    stops at 400 (Spelunky), or never stops at either in a list worth 400 or
+    more; else 200 — a list that stops at 200 had its base there, what came
+    after it was added (and a list that stops at both is taken as 200)."""
+    running, stops = 0, set()
+    for gamerscore in gamerscores:
+        running += gamerscore
+        stops.add(running)
+    if X360_ARCADE_GAMERSCORE in stops:
+        return X360_ARCADE_GAMERSCORE
+    if X360_ARCADE_LATER_GAMERSCORE in stops or running >= X360_ARCADE_LATER_GAMERSCORE:
+        return X360_ARCADE_LATER_GAMERSCORE
+    return X360_ARCADE_GAMERSCORE
 
 
 def is_x360_arcade(title_id: str) -> bool:
@@ -84,14 +103,19 @@ def x360_groups(title_id: str, achievements: list[tuple[str, int]]) -> dict[str,
     """`{achievement id: base | non_base}` for a 360 list read whole
     (`(id, gamerscore)` pairs): the ids in order, base while the running
     gamerscore stays within the release's."""
-    limit = X360_ARCADE_GAMERSCORE if is_x360_arcade(title_id) else X360_RETAIL_GAMERSCORE
 
     def order(item: tuple[str, int]) -> tuple[int, str]:
         return (int(item[0]) if str(item[0]).isdigit() else 1 << 62, str(item[0]))
 
+    ordered = sorted(achievements, key=order)
+    limit = (
+        arcade_release_gamerscore([int(g or 0) for _id, g in ordered])
+        if is_x360_arcade(title_id)
+        else X360_RETAIL_GAMERSCORE
+    )
     groups: dict[str, str] = {}
     running = 0
-    for achievement_id, gamerscore in sorted(achievements, key=order):
+    for achievement_id, gamerscore in ordered:
         running += int(gamerscore or 0)
         groups[str(achievement_id)] = BASE_GROUP if running <= limit else NON_BASE_GROUP
     return groups

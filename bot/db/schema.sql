@@ -262,6 +262,8 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     -- trophy_type below is. The trophy itself reports it, so it costs
     -- nothing to keep and is what makes "3/7 in this DLC" answerable.
     trophy_group_id TEXT,
+    -- 122: platform (it said so) / derived (worked out by us, provisional).
+    group_source TEXT,
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
@@ -662,6 +664,8 @@ CREATE TABLE IF NOT EXISTS title_achievements (
     gamerscore      INTEGER,
     trophy_type     TEXT,
     trophy_group_id TEXT,
+    -- 122: platform (it said so) / derived (worked out by us, provisional).
+    group_source TEXT,
     rarity_percent  REAL,
     updated_at      TEXT NOT NULL,
     -- How the two descriptions were obtained, once they went through

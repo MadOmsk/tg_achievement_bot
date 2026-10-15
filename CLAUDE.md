@@ -456,7 +456,11 @@ every column. History: #106.
   list says nothing of its groups** (no `groupIds`, `sequence` 0, `flags` mixed):
   they are derived — in id order, base while the running gamerscore stays within
   the release's, 200 G for an Arcade game (title id 0x5841…), 1000 G otherwise
-  (`xbox.models.x360_groups`, owner, 2026-10-15); `NULL` until a
+  (`xbox.models.x360_groups`, owner, 2026-10-15; an Arcade game's 400 G when its
+  running sum stops at 400 and never at 200); **such a group is marked
+  `group_source = 'derived'`** (migration 122) — provisional: a group the
+  platform gives later (`'platform'`) replaces it, and a derivation never
+  overwrites the platform's; `NULL` until a
   contract-6 read (the catalog's) says, and an earned row takes its group from
   the catalog when the list is read whole —; **`main_game` on Steam**, which has
   no groups (`constants.achievement_group`, applied where `seen_achievements`

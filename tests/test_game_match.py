@@ -1234,5 +1234,42 @@ def test_a_360_list_is_base_up_to_its_release_gamerscore() -> None:
     assert is_x360_arcade(str(0x584108FB)) and not is_x360_arcade("1297287449")
     arcade = [("1", 100), ("2", 100), ("3", 50)]
     assert x360_groups(str(0x584108FB), arcade) == {"1": "base", "2": "base", "3": "non_base"}
+    # A later Arcade game: 400 G, never stopping at 200 on the way.
+    later = [("1", 150), ("2", 100), ("3", 150), ("4", 50)]
+    assert x360_groups(str(0x584108FB), later) == {
+        "1": "base",
+        "2": "base",
+        "3": "base",
+        "4": "non_base",
+    }
     # Worth less than its limit: all base.
     assert set(x360_groups("1297287449", [("1", 300), ("2", 200)]).values()) == {"base"}
+
+
+async def test_a_derived_group_is_marked_so_and_the_platforms_replaces_it(repo: Repo) -> None:
+    from bot.db.repo import TitleAchievementRow
+
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_360", title_id="1297287449", achievement_id=i, gamerscore=g
+            )
+            for i, g in (("1", 1000), ("2", 50))
+        ],
+        complete=True,
+    )
+    cursor = await repo._conn.execute(
+        "SELECT achievement_id, trophy_group_id, group_source FROM title_achievements"
+        " ORDER BY achievement_id"
+    )
+    assert [tuple(r) for r in await cursor.fetchall()] == [
+        ("1", "base", "derived"),
+        ("2", "non_base", "derived"),
+    ]
+    # Should Microsoft say it one day, its word replaces ours, and stays.
+    await repo.set_achievement_groups("xbox_360", "1297287449", {"2": "base"})
+    await repo.derive_x360_groups("1297287449")
+    cursor = await repo._conn.execute(
+        "SELECT trophy_group_id, group_source FROM title_achievements WHERE achievement_id = '2'"
+    )
+    assert tuple(await cursor.fetchone()) == ("base", "platform")

@@ -6,10 +6,17 @@ import json
 
 import aiosqlite
 
-from bot.constants import achievement_group
+from bot.constants import MAIN_GAME_GROUP, achievement_group
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
 from bot.db.repo._sql import platform_is
 from bot.util import looks_russian, utcnow_iso
+
+
+def _group_source(platform: str, group_id: str | None) -> str | None:
+    """A group a platform's answer carried is the platform's; Steam's is our
+    stand-in (`main_game`), no source."""
+    group = achievement_group(platform, group_id)
+    return "platform" if group and group != MAIN_GAME_GROUP else None
 
 
 class _CatalogRepo:
@@ -41,8 +48,8 @@ class _CatalogRepo:
                 "  platform, title_id, achievement_id, name_ru, name_en,"
                 "  description_ru, description_en, icon_url, is_secret,"
                 "  gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at,"
-                "  listed"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "  listed, group_source"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(platform, title_id, achievement_id) DO UPDATE SET "
                 "  name_ru = COALESCE(excluded.name_ru, title_achievements.name_ru),"
                 "  name_en = COALESCE(excluded.name_en, title_achievements.name_en),"
@@ -63,6 +70,9 @@ class _CatalogRepo:
                 "  trophy_type = COALESCE(excluded.trophy_type, title_achievements.trophy_type),"
                 "  trophy_group_id = COALESCE(excluded.trophy_group_id, "
                 "                             title_achievements.trophy_group_id),"
+                # The platform's own group replaces one we derived.
+                "  group_source = CASE WHEN excluded.trophy_group_id IS NOT NULL"
+                "   THEN excluded.group_source ELSE title_achievements.group_source END,"
                 "  rarity_percent = COALESCE(excluded.rarity_percent, "
                 "                            title_achievements.rarity_percent),"
                 "  updated_at = excluded.updated_at,"
@@ -83,6 +93,7 @@ class _CatalogRepo:
                     r.rarity_percent,
                     updated_at,
                     1 if complete else 0,
+                    _group_source(r.platform, r.trophy_group_id),
                 ),
             )
         # A 360 list read whole is grouped by its ids and gamerscore (it says
@@ -117,14 +128,17 @@ class _CatalogRepo:
         )
         listed = [(str(r[0]), int(r[1] or 0)) for r in await cursor.fetchall()]
         for achievement_id, group in x360_groups(title_id, listed).items():
+            # Derived, never over what the platform said itself.
             await self._conn.execute(
-                "UPDATE title_achievements SET trophy_group_id = ?"
-                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?",
+                "UPDATE title_achievements SET trophy_group_id = ?, group_source = 'derived'"
+                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?"
+                " AND group_source IS NOT 'platform'",
                 (group, title_id, achievement_id),
             )
             await self._conn.execute(
-                "UPDATE seen_achievements SET trophy_group_id = ?"
-                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?",
+                "UPDATE seen_achievements SET trophy_group_id = ?, group_source = 'derived'"
+                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?"
+                " AND group_source IS NOT 'platform'",
                 (group, title_id, achievement_id),
             )
         if commit:
@@ -141,13 +155,13 @@ class _CatalogRepo:
         async with self.transaction():
             for achievement_id, group in groups.items():
                 cursor = await self._conn.execute(
-                    "UPDATE title_achievements SET trophy_group_id = ?"
+                    "UPDATE title_achievements SET trophy_group_id = ?, group_source = 'platform'"
                     " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
                     (group, platform, title_id, achievement_id),
                 )
                 changed += cursor.rowcount
                 await self._conn.execute(
-                    "UPDATE seen_achievements SET trophy_group_id = ?"
+                    "UPDATE seen_achievements SET trophy_group_id = ?, group_source = 'platform'"
                     " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
                     (group, platform, title_id, achievement_id),
                 )
