@@ -348,6 +348,10 @@ every column. History: #106.
   retried for ~2 minutes because Telegram is sometimes briefly unreachable.
 - **A database ahead of the code refuses to start** (`SchemaTooNewError`, #56) —
   that is how an older build learns a newer one already migrated its file.
+- **The games-db release (#147) is rehearsed by the plan in #201** — a copy of
+  production, the bring-up, agents per area. A change on that branch that adds a
+  migration, a table, a column or a script writing the database adds its check
+  to #201 in the same change.
 - **Rehearse a migration on a copy of production before the release that carries
   it** — copy with `sqlite3`'s `backup()`, run the real `Database.connect()`, count
   rows on both sides. Production's particular history breaks migrations no test can.
