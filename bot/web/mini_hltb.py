@@ -7,7 +7,7 @@ from typing import Any
 from aiohttp import web
 
 from bot.db.repo import Repo
-from bot.services.hltb import HltbError, HltbResult, overlay_cache, resolve, search
+from bot.services.hltb import HltbError, HltbResult, overlay_mirror, resolve, search
 from bot.services.translate.auth import AnthropicAuth
 
 DESCRIPTION_LIMIT = 800
@@ -51,7 +51,7 @@ async def handle_hltb_search(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text="query too short")
     locale = await repo.user_locale(user.person_id)
     try:
-        results = await overlay_cache(repo, await search(query))
+        results = await overlay_mirror(repo, await search(query))
     except HltbError as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=502)
     return web.json_response({"results": [hltb_payload(item, locale=locale) for item in results]})

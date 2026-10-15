@@ -248,6 +248,15 @@ def _related(child: dict, page_id: int) -> HltbEntry:
     return item
 
 
+def summary_hash(text: str | None) -> str | None:
+    """What a translation is of: the English summary it was made from, so an
+    unchanged summary keeps its translation and a changed one is translated
+    again."""
+    import hashlib
+
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else None
+
+
 def hours(seconds: object) -> float | None:
     """HLTB's seconds as hours, to a tenth; None when it has none."""
     value = _int(seconds)

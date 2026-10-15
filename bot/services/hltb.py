@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 from howlongtobeatpy import HowLongToBeat
 
-from bot.db.repo import HltbCacheRow, Repo
+from bot.db.repo import Repo
 from bot.services.translate.auth import AnthropicAuth, AnthropicNotConfiguredError
 from bot.services.translate.client import translate_game_description
 from bot.util import utcnow
@@ -116,7 +116,7 @@ class HltbResult:
     genre: str | None
     description_en: str | None = None
     description_ru: str | None = None
-    # The rest of the game's page — see `_extras_of` for the shape. None
+    # The rest of the game's page — see `details_of_entry` for the shape. None
     # until the page has been read for it.
     details: dict | None = None
     # What the game-page matcher weighs (#131) — search results only, never
@@ -294,54 +294,40 @@ def _pick_fallback_word(cleaned_query: str) -> str | None:
 async def resolve(
     repo: Repo, hltb_id: int, *, anthropic_auth: AnthropicAuth | None = None
 ) -> HltbResult:
-    """Cached once a person picks a result (or the game is matched), and read
-    again only when stale (`is_stale`): a new game's times fill in over its
+    """An entry from the mirror (`hltb_entries`), its page read when it never
+    was and again when stale (`is_stale`): a new game's times fill in over its
     first weeks — Gears of War: E-Day was cached on its release week with
-    multiplayer hours only and never asked again. A failed re-read keeps
-    what is stored.
+    multiplayer hours only and never asked again. A failed re-read keeps what
+    is stored.
 
-    `anthropic_auth`, when given, also lets a freshly-fetched (or an
-    older, description-less) entry pick up its Russian summary (#2) — one
-    Haiku call per game, ever, the first time somebody looks it up.
+    `anthropic_auth`, when given, also gives an entry its Russian summary (#2) —
+    one Haiku call per summary, ever, the first time somebody looks it up; the
+    same English text keeps its translation.
     """
-    cached = await repo.hltb_get_cached(hltb_id)
-    if cached is not None and not is_stale(cached):
-        result = await _top_up_details(repo, _from_cache_row(cached))
-        return await _top_up_translation(repo, result, anthropic_auth)
+    from bot.services.stores import hltb_page
 
-    try:
-        entry = await HowLongToBeat().async_search_from_id(hltb_id)
-    except Exception as exc:
-        if cached is not None:
-            log.info("HLTB re-read for id=%s failed, keeping the stored one: %r", hltb_id, exc)
-            return await _top_up_translation(repo, _from_cache_row(cached), anthropic_auth)
-        raise HltbError(f"HLTB lookup failed for id={hltb_id}: {exc}") from None
-    if entry is None:
-        if cached is not None:
-            return await _top_up_translation(repo, _from_cache_row(cached), anthropic_auth)
-        raise HltbError(f"HLTB has no entry for id={hltb_id}")
-
-    result = _as_result(entry)
-    if result.game_url:
-        # Only for the one game someone actually picked, not every candidate
-        # in a 20-result search list — genre and description are both
-        # nice-to-haves, one extra request per newly-cached game is fine,
-        # one per search is not. All of it comes out of the same single fetch.
-        game = await _fetch_page_game(result.game_url)
-        if game is not None:
-            result.genre, result.description_en = _details_of(game)
-            result.details = _extras_of(game)
-    if (
-        cached is not None
-        and cached.description_ru
-        and cached.description_en == result.description_en
-    ):
-        # The same summary: its translation is kept, not paid for again.
-        result.description_ru = cached.description_ru
-    else:
-        result.description_ru = await _translate(result.description_en, anthropic_auth)
-    await _cache(repo, result)
-    return result
+    row = await repo.hltb_entry(hltb_id)
+    if row is None or row["page_read_at"] is None or is_stale(row):
+        try:
+            data = await hltb_page.fetch_page(hltb_id)
+        except Exception as exc:
+            if row is not None:
+                log.info("HLTB re-read for id=%s failed, keeping the stored one: %r", hltb_id, exc)
+                return await _with_translation(repo, row, anthropic_auth)
+            raise HltbError(f"HLTB lookup failed for id={hltb_id}: {exc}") from None
+        entry = hltb_page.parse_page(data) if data else None
+        if entry is None:
+            if row is not None:
+                return await _with_translation(repo, row, anthropic_auth)
+            raise HltbError(f"HLTB has no entry for id={hltb_id}")
+        subject = f"hltb:{hltb_id}"
+        changed = await repo.save_payload(subject, "hltb_page", data)
+        await repo.save_hltb_page(entry)
+        await repo.record_fetch(subject, "hltb_page", status="ok", changed=changed)
+        row = await repo.hltb_entry(hltb_id)
+        if row is None:
+            raise HltbError(f"HLTB entry id={hltb_id} could not be stored")
+    return await _with_translation(repo, row, anthropic_auth)
 
 
 # How long a stored HLTB entry is trusted: a game of this year or last, or one
@@ -350,70 +336,50 @@ FRESH_GAME_DAYS = 3
 SETTLED_GAME_DAYS = 90
 
 
-def is_stale(row: HltbCacheRow) -> bool:
-    if not row.cached_at:
+def is_stale(row: dict) -> bool:
+    """Whether an entry's page is due to be read again (its own page only: an
+    entry known from another page's row has none, and is read at once)."""
+    read = row.get("page_read_at")
+    if not read:
         return True
     try:
-        cached = datetime.fromisoformat(row.cached_at)
+        at = datetime.fromisoformat(read)
     except ValueError:
         return True
-    if cached.tzinfo is None:
-        cached = cached.replace(tzinfo=UTC)
-    young = row.main_hours is None or (
-        row.release_year is not None and row.release_year >= utcnow().year - 1
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    young = not row.get("comp_main") or (
+        row.get("release_year") is not None and row["release_year"] >= utcnow().year - 1
     )
     days = FRESH_GAME_DAYS if young else SETTLED_GAME_DAYS
-    return utcnow() - cached > timedelta(days=days)
+    return utcnow() - at > timedelta(days=days)
 
 
-async def _top_up_details(repo: Repo, result: HltbResult) -> HltbResult:
-    """A row cached before migration 064 has everything but the page's
-    extras — read the page once more for them, then never again. A page
-    that can't be read leaves `details` None and is tried on the next
-    lookup, the same as a missing translation."""
-    if result.details is not None or not result.game_url:
-        return result
-    game = await _fetch_page_game(result.game_url)
-    if game is None:
-        return result
-    result.details = _extras_of(game)
-    genre, description = _details_of(game)
-    result.genre = result.genre or genre
-    result.description_en = result.description_en or description
-    await _cache(repo, result)
-    return result
-
-
-async def _top_up_translation(
-    repo: Repo, result: HltbResult, anthropic_auth: AnthropicAuth | None
+async def _with_translation(
+    repo: Repo, row: dict, anthropic_auth: AnthropicAuth | None
 ) -> HltbResult:
-    """Self-healing for a row cached before descriptions existed at all, or
-    cached while no Anthropic key was configured (#2): the English side is
-    already there, the Russian one is filled in on the next lookup rather
-    than being stuck missing forever behind a cache that never expires.
+    """The entry as a result, with its Russian summary: the one already paid
+    for when it is of this very English text; else one Haiku call, kept. No
+    summary, no key or a failing call leave it English, to be tried again on
+    the next lookup."""
+    from bot.services.stores.hltb_page import summary_hash
 
-    Deliberately does NOT re-fetch the HLTB page for a row whose English
-    side is missing too — that is either a game HLTB has no summary for
-    (most of them: verified live, obscure entries return an empty
-    profile_summary) or a row from before migration 035, and re-fetching
-    every such card forever to find out is not worth one extra request per
-    lookup. `scripts/backfill_hltb_descriptions.py` is the one-off that
-    covers those.
-    """
-    if result.description_ru or not result.description_en:
+    result = result_from_entry(row)
+    english = row.get("summary_en")
+    if not english or result.description_ru:
         return result
-    translated = await _translate(result.description_en, anthropic_auth)
+    translated = await _translate(english, anthropic_auth)
     if translated is None:
         return result
+    await repo.set_hltb_summary_ru(row["hltb_id"], translated, summary_hash(english))
     result.description_ru = translated
-    await _cache(repo, result)
     return result
 
 
 async def _translate(text: str | None, anthropic_auth: AnthropicAuth | None) -> str | None:
     """None whenever a translation can't be had — no text, no key, or the
-    call itself failing. The caller stores that None and tries again on the
-    next lookup, exactly like a platform description the LLM couldn't reach
+    call itself failing. The caller tries again on the next lookup, exactly
+    like a platform description the LLM couldn't reach
     (services/translate/descriptions.py's own "left untranslated, will retry
     later")."""
     if not text or anthropic_auth is None:
@@ -423,33 +389,6 @@ async def _translate(text: str | None, anthropic_auth: AnthropicAuth | None) -> 
     except AnthropicNotConfiguredError:
         return None
     return await translate_game_description(api_key, text, target_language="ru")
-
-
-async def _cache(repo: Repo, result: HltbResult) -> None:
-    await repo.hltb_cache_result(
-        HltbCacheRow(
-            hltb_id=result.hltb_id,
-            name=result.name,
-            release_year=result.release_year,
-            main_hours=result.main_hours,
-            extra_hours=result.extra_hours,
-            completionist_hours=result.completionist_hours,
-            platforms=result.platforms,
-            game_url=result.game_url,
-            image_url=result.image_url,
-            genre=result.genre,
-            description_en=result.description_en,
-            description_ru=result.description_ru,
-            details=result.details,
-        )
-    )
-
-
-async def _fetch_page_details(game_url: str) -> tuple[str | None, str | None]:
-    """(genre, description) alone, best-effort — for the description backfill
-    script."""
-    game = await _fetch_page_game(game_url)
-    return _details_of(game) if game is not None else (None, None)
 
 
 async def _fetch_page_game(game_url: str) -> dict | None:
@@ -464,11 +403,6 @@ async def _fetch_page_game(game_url: str) -> dict | None:
     except Exception as exc:
         log.info("could not fetch HLTB page %s: %s", game_url, exc)
         return None
-
-
-def _extract_details(html_page: str) -> tuple[str | None, str | None]:
-    game = _page_game(html_page)
-    return _details_of(game) if game is not None else (None, None)
 
 
 def _page_game(html_page: str) -> dict | None:
@@ -491,109 +425,6 @@ def _page_game(html_page: str) -> dict | None:
     data = json.loads(match.group(1))
     games = data["props"]["pageProps"]["game"]["data"]["game"]
     return games[0] if games else None
-
-
-def _details_of(game: dict) -> tuple[str | None, str | None]:
-    genre = game.get("profile_genre") or None
-    # HLTB returns an empty string, not a missing key, for an entry it has
-    # no summary for — common for obscure games (verified live). Internal
-    # line breaks are collapsed: some summaries are several short paragraphs
-    # (Onimusha's is three), and the card shows this collapsed to about three
-    # lines, where a blank line costs a third of what is visible.
-    summary = " ".join((game.get("profile_summary") or "").split()) or None
-    return genre, summary
-
-
-# HLTB's own time buckets on a game page and the keys our payload names them
-# by. Each has an average (`<prefix>`), a median (`_med`), and the fastest
-# and slowest submissions (`_l`, `_h`), all in seconds.
-_TIME_BUCKETS = (
-    ("main", "comp_main"),
-    ("extra", "comp_plus"),
-    ("completionist", "comp_100"),
-    ("all", "comp_all"),
-    ("coop", "invested_co"),
-    ("multi", "invested_mp"),
-)
-
-
-def _extras_of(game: dict) -> dict:
-    """Everything else worth showing from the page: rating, studio, other
-    names, release dates, play modes, the spread of each time bucket and
-    the speedrun records. HLTB's counts of *who* played it (completions,
-    backlogs, retirements…) are left out on purpose — they describe HLTB's
-    own users, not the game. Hours come out as hours, rounded to a tenth;
-    anything HLTB left empty or zero is dropped rather than sent as 0."""
-    modes = [
-        mode
-        for mode, key in (
-            ("single", "comp_lvl_sp"),
-            ("coop", "comp_lvl_co"),
-            ("multi", "comp_lvl_mp"),
-        )
-        if _as_int(game.get(key))
-    ]
-    times: dict[str, dict[str, float]] = {}
-    for name, prefix in _TIME_BUCKETS:
-        # Co-op/multiplayer hours only count when the game is played that
-        # way — Hollow Knight has three stray "co-op" submissions.
-        if name in ("coop", "multi") and name not in modes:
-            continue
-        bucket = {
-            label: hours
-            for label, suffix in (
-                ("average", ""),
-                ("median", "_med"),
-                ("fastest", "_l"),
-                ("slowest", "_h"),
-            )
-            if (hours := _hours(game.get(prefix + suffix))) is not None
-        }
-        if bucket:
-            times[name] = bucket
-    speedrun = {
-        name: record
-        for name, prefix in (("any", "comp_speed"), ("full", "comp_speed100"))
-        if (
-            record := {
-                label: hours
-                for label, suffix in (("best", "_min"), ("median", "_med"))
-                if (hours := _hours(game.get(prefix + suffix))) is not None
-            }
-        )
-    }
-    releases = {
-        region: date
-        for region in ("world", "na", "eu", "jp")
-        if (date := _text(game.get(f"release_{region}"))) and not date.startswith("0000")
-    }
-    details = {
-        "review_score": _as_int(game.get("review_score")) or None,
-        "developer": _text(game.get("profile_dev")),
-        "publisher": _text(game.get("profile_pub")),
-        "alias": _text(game.get("game_alias")),
-        "releases": releases,
-        "modes": modes,
-        "times": times,
-        "speedrun": speedrun,
-    }
-    return {key: value for key, value in details.items() if value}
-
-
-def _as_int(value: object) -> int:
-    try:
-        return int(value or 0)  # type: ignore[call-overload]
-    except (TypeError, ValueError):
-        return 0
-
-
-def _hours(seconds: object) -> float | None:
-    value = _as_int(seconds)
-    return round(value / 3600, 1) if value > 0 else None
-
-
-def _text(value: object) -> str | None:
-    return value.strip() or None if isinstance(value, str) else None
 
 
 def _as_result(entry: object) -> HltbResult:
@@ -624,32 +455,120 @@ def _popularity(entry: object) -> int:
         return 0
 
 
-async def overlay_cache(repo: Repo, results: list[HltbResult]) -> list[HltbResult]:
-    """Search JSON has no description/genre — if we already resolved this
-    game once, reuse the cached card so the Mini App isn't empty then jumps."""
+async def overlay_mirror(repo: Repo, results: list[HltbResult]) -> list[HltbResult]:
+    """Search JSON has no description/genre — if the mirror already has this
+    entry's page, reuse it so the Mini App isn't empty then jumps."""
     out: list[HltbResult] = []
     for item in results:
-        cached = await repo.hltb_get_cached(item.hltb_id)
-        out.append(_from_cache_row(cached) if cached is not None else item)
+        row = await repo.hltb_entry(item.hltb_id)
+        out.append(result_from_entry(row) if row is not None and row["page_read_at"] else item)
     return out
 
 
-def _from_cache_row(row: HltbCacheRow) -> HltbResult:
+def result_from_entry(row: dict) -> HltbResult:
+    """An entry of the mirror as the result the cards and the Mini App take.
+    Its translation counts only while it is of the English summary there now."""
+    from bot.services.stores.hltb_page import hours, summary_hash
+
+    english = row.get("summary_en")
+    translated = row.get("summary_ru")
+    if translated and row.get("summary_ru_of") not in (None, summary_hash(english)):
+        translated = None
     return HltbResult(
-        hltb_id=row.hltb_id,
-        name=row.name,
-        release_year=row.release_year,
-        main_hours=row.main_hours,
-        extra_hours=row.extra_hours,
-        completionist_hours=row.completionist_hours,
-        platforms=row.platforms,
-        game_url=row.game_url,
-        image_url=row.image_url,
-        genre=row.genre,
-        description_en=row.description_en,
-        description_ru=row.description_ru,
-        details=row.details,
+        hltb_id=row["hltb_id"],
+        name=row["name"],
+        release_year=row.get("release_year"),
+        main_hours=hours(row.get("comp_main")),
+        extra_hours=hours(row.get("comp_plus")),
+        completionist_hours=hours(row.get("comp_100")),
+        platforms=list(row.get("platforms") or []),
+        game_url=f"https://howlongtobeat.com/game/{row['hltb_id']}",
+        image_url=row.get("image_url"),
+        genre=row.get("genres"),
+        description_en=english,
+        description_ru=translated,
+        details=details_of_entry(row),
+        alias=row.get("alias"),
+        game_type=row.get("game_type"),
     )
+
+
+# HLTB's own time buckets and the keys a payload names them by. Each has an
+# average (`<prefix>`), a median (`_med`), and the fastest and slowest
+# submissions (`_l`, `_h`), all in seconds.
+_TIME_BUCKETS = (
+    ("main", "comp_main"),
+    ("extra", "comp_plus"),
+    ("completionist", "comp_100"),
+    ("all", "comp_all"),
+    ("coop", "invested_co"),
+    ("multi", "invested_mp"),
+)
+
+
+def details_of_entry(row: dict) -> dict:
+    """What the Mini App shows beyond the hours — rating, studio, other names,
+    release dates, play modes, the spread of each time bucket and the speedrun
+    records — read from the entry's columns when asked, kept nowhere. HLTB's
+    counts of its own users stay in the mirror and are not sent (the Mini
+    App's decision, 2026-09-29). Hours come out as hours, to a tenth; what
+    HLTB left empty or zero is dropped."""
+    from bot.services.stores.hltb_page import hours
+
+    modes = [
+        mode
+        for mode, key in (
+            ("single", "comp_lvl_sp"),
+            ("coop", "comp_lvl_co"),
+            ("multi", "comp_lvl_mp"),
+        )
+        if row.get(key)
+    ]
+    times: dict[str, dict[str, float]] = {}
+    for name, prefix in _TIME_BUCKETS:
+        # Co-op/multiplayer hours only count when the game is played that
+        # way — Hollow Knight has three stray "co-op" submissions.
+        if name in ("coop", "multi") and name not in modes:
+            continue
+        bucket = {
+            label: value
+            for label, suffix in (
+                ("average", ""),
+                ("median", "_med"),
+                ("fastest", "_l"),
+                ("slowest", "_h"),
+            )
+            if (value := hours(row.get(prefix + suffix))) is not None
+        }
+        if bucket:
+            times[name] = bucket
+    speedrun = {
+        name: record
+        for name, prefix in (("any", "comp_speed"), ("full", "comp_speed100"))
+        if (
+            record := {
+                label: value
+                for label, suffix in (("best", "_min"), ("median", "_med"))
+                if (value := hours(row.get(prefix + suffix))) is not None
+            }
+        )
+    }
+    releases = {
+        region: row[f"release_{region}"]
+        for region in ("world", "na", "eu", "jp")
+        if row.get(f"release_{region}")
+    }
+    details = {
+        "review_score": row.get("review_score") or None,
+        "developer": row.get("developer"),
+        "publisher": row.get("publisher"),
+        "alias": row.get("alias"),
+        "releases": releases,
+        "modes": modes,
+        "times": times,
+        "speedrun": speedrun,
+    }
+    return {key: value for key, value in details.items() if value}
 
 
 def _clean(hours: float | None) -> float | None:

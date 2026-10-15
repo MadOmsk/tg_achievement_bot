@@ -397,6 +397,21 @@ class _StoresRepo:
         row = {k: v for k, v in entry.row.items() if k != "hltb_id"}
         columns = ["hltb_id", *row, "checked_at", "page_read_at"]
         async with self.transaction():
+            # A translation made before `summary_ru_of` knew its English text is
+            # of the text that was there: a changed summary is translated again.
+            from bot.services.stores.hltb_page import summary_hash
+
+            cursor = await self._conn.execute(
+                "SELECT summary_en FROM hltb_entries WHERE hltb_id = ?"
+                " AND summary_ru IS NOT NULL AND summary_ru_of IS NULL",
+                (entry.hltb_id,),
+            )
+            old = await cursor.fetchone()
+            if old is not None and old[0]:
+                await self._conn.execute(
+                    "UPDATE hltb_entries SET summary_ru_of = ? WHERE hltb_id = ?",
+                    (summary_hash(old[0]), entry.hltb_id),
+                )
             await self._conn.execute(
                 f"INSERT INTO hltb_entries ({', '.join(columns)})"
                 f" VALUES ({', '.join('?' * len(columns))})"
@@ -505,13 +520,6 @@ class _StoresRepo:
                         entry.hltb_id,
                     ),
                 )
-            # The Russian summary already paid for in the legacy store is kept.
-            await self._conn.execute(
-                "UPDATE hltb_entries SET summary_ru = (SELECT description_ru FROM hltb_cache c"
-                "  WHERE c.hltb_id = hltb_entries.hltb_id)"
-                " WHERE hltb_id = ? AND summary_ru IS NULL",
-                (entry.hltb_id,),
-            )
 
     async def hltb_pages_to_read(self, limit: int | None = None) -> list[int]:
         """The entries whose own page was never read and that something of ours

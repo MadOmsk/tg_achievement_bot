@@ -122,7 +122,7 @@ class RawAchievement:
 @dataclass(slots=True)
 class RawSchemaAchievement:
     """One entry from GetSchemaForGame — about the game, not the person, so
-    cached forever like hltb_cache (SPEC 9, M-Steam-2b). Steam calls the
+    cached forever like the HLTB mirror (SPEC 9, M-Steam-2b). Steam calls the
     identifier `name` here and `apiname` in GetPlayerAchievements above —
     normalized to `apiname` on this side so both endpoints stitch on the
     same field name."""

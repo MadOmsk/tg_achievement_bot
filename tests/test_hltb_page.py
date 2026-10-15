@@ -352,3 +352,50 @@ async def test_migration_112_brings_the_old_rows_over_as_columns(tmp_path) -> No
         (2, "Its DLC", "dlc", 1, None, None, None, None, 7200, None, None, None),
     ]
     assert gone == []
+
+
+async def test_migration_113_brings_the_old_caches_summaries_over(tmp_path) -> None:
+    import aiosqlite
+
+    from bot.db.repo import MIGRATIONS_DIR
+    from bot.db.repo._database import SCHEMA_PATH
+
+    sql = (MIGRATIONS_DIR / "113_hltb_cache_goes.sql").read_text(encoding="utf-8")
+    async with aiosqlite.connect(tmp_path / "m112.db") as conn:
+        await conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        await conn.executescript(
+            """
+            CREATE TABLE hltb_cache (
+                hltb_id INTEGER PRIMARY KEY, name TEXT NOT NULL, release_year INTEGER,
+                main_hours REAL, extra_hours REAL, completionist_hours REAL,
+                platforms TEXT NOT NULL DEFAULT '[]', game_url TEXT, image_url TEXT, genre TEXT,
+                description_en TEXT, description_ru TEXT, details TEXT, cached_at TEXT NOT NULL);
+            INSERT INTO hltb_cache VALUES
+              (1, 'In both', 2020, 5, NULL, NULL, '[]', NULL, NULL, 'RPG', 'English.', 'Русский.',
+               NULL, '2026-01-01'),
+              (2, 'Only cached', 2019, 2.5, 5, 10, '[]', NULL, NULL, 'Action', 'Only.', 'Только.',
+               NULL, '2026-01-02');
+            INSERT INTO hltb_entries (hltb_id, name, checked_at, page_read_at)
+              VALUES (1, 'In both', '2026-02-01', '2026-02-01');
+            """
+        )
+        await conn.executescript(sql)
+        cursor = await conn.execute(
+            "SELECT hltb_id, summary_en, summary_ru, comp_main, genres, page_read_at"
+            " FROM hltb_entries ORDER BY hltb_id"
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+        cursor = await conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'hltb_cache'")
+        gone = await cursor.fetchall()
+    assert rows == [
+        (
+            1,
+            "English.",
+            "Русский.",
+            None,
+            None,
+            "2026-02-01",
+        ),  # the mirror's own row keeps its page
+        (2, "Only.", "Только.", 9000, "Action", None),  # known only from the cache: page unread
+    ]
+    assert gone == []

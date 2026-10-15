@@ -14,7 +14,6 @@ from bot.db.repo._models import (
     AdminPanelRefreshRow,
     AdminUserRow,
     ChatTarget,
-    HltbCacheRow,
     TitleCoverRow,
     TitleHltbRow,
 )
@@ -610,69 +609,5 @@ class _AdminRepo:
             "  cover_checked_at = ? "
             "WHERE platform = ? AND title_id = ?",
             (icon_url, cover_path, cover_hash, utcnow_iso(), platform, title_id),
-        )
-        await self._conn.commit()
-
-    async def hltb_all_ids(self) -> list[int]:
-        """For the one-off platforms backfill (scripts/backfill_hltb_platforms.py)
-        — every id already cached, so it can be re-resolved with the field
-        that didn't exist when it was first cached."""
-        cursor = await self._conn.execute("SELECT hltb_id FROM hltb_cache")
-        return [row[0] for row in await cursor.fetchall()]
-
-    async def hltb_get_cached(self, hltb_id: int) -> HltbCacheRow | None:
-        cursor = await self._conn.execute(
-            "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
-            " completionist_hours, platforms, game_url, image_url, genre,"
-            " description_en, description_ru, details, cached_at "
-            "FROM hltb_cache WHERE hltb_id = ?",
-            (hltb_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return HltbCacheRow(
-            hltb_id=row["hltb_id"],
-            name=row["name"],
-            release_year=row["release_year"],
-            main_hours=row["main_hours"],
-            extra_hours=row["extra_hours"],
-            completionist_hours=row["completionist_hours"],
-            platforms=json.loads(row["platforms"] or "[]"),
-            game_url=row["game_url"],
-            image_url=row["image_url"],
-            genre=row["genre"],
-            description_en=row["description_en"],
-            description_ru=row["description_ru"],
-            details=json.loads(row["details"]) if row["details"] else None,
-            cached_at=row["cached_at"],
-        )
-
-    async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
-        """Stored once someone picks a search result (or a game is matched),
-        never for the rest of the candidate list; read again when it goes stale
-        (services/hltb.py::is_stale)."""
-        await self._conn.execute(
-            "INSERT OR REPLACE INTO hltb_cache "
-            "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"
-            " platforms, game_url, image_url, genre, description_en, description_ru,"
-            " details, cached_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                entry.hltb_id,
-                entry.name,
-                entry.release_year,
-                entry.main_hours,
-                entry.extra_hours,
-                entry.completionist_hours,
-                json.dumps(entry.platforms),
-                entry.game_url,
-                entry.image_url,
-                entry.genre,
-                entry.description_en,
-                entry.description_ru,
-                json.dumps(entry.details) if entry.details is not None else None,
-                utcnow_iso(),
-            ),
         )
         await self._conn.commit()

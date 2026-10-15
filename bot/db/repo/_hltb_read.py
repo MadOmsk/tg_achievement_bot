@@ -15,6 +15,31 @@ _ADDITIONAL = "('dlc', 'expansion', 'hack', 'mod')"
 
 
 class _HltbReadRepo:
+    async def hltb_entry(self, hltb_id: int) -> dict[str, Any] | None:
+        """An entry as the mirror holds it, with the platforms it is on."""
+        cursor = await self._conn.execute(
+            "SELECT * FROM hltb_entries WHERE hltb_id = ?", (hltb_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        found = dict(row)
+        cursor = await self._conn.execute(
+            "SELECT platform FROM hltb_entry_platforms WHERE hltb_id = ? ORDER BY platform",
+            (hltb_id,),
+        )
+        found["platforms"] = [r[0] for r in await cursor.fetchall()]
+        return found
+
+    async def set_hltb_summary_ru(self, hltb_id: int, summary_ru: str, of: str | None) -> None:
+        """Our translation of an entry's summary, and which English text it
+        was made from."""
+        await self._conn.execute(
+            "UPDATE hltb_entries SET summary_ru = ?, summary_ru_of = ? WHERE hltb_id = ?",
+            (summary_ru, of, hltb_id),
+        )
+        await self._conn.commit()
+
     async def game_hltb(self, game_id: int) -> dict[str, Any] | None:
         """The HLTB entry of a game's main game: the entries its versions are
         linked to that are not additional content, the operator's link before

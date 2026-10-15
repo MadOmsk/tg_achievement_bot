@@ -457,31 +457,8 @@ CREATE TABLE IF NOT EXISTS titles (
     PRIMARY KEY (platform, title_id)
 );
 
--- HowLongToBeat lookups (SPEC 6.6), keyed by HLTB's own game id — cached
--- forever once someone actually picks a search result.
-CREATE TABLE IF NOT EXISTS hltb_cache (
-    hltb_id             INTEGER PRIMARY KEY,
-    name                TEXT NOT NULL,
-    release_year        INTEGER,
-    main_hours          REAL,
-    extra_hours         REAL,
-    completionist_hours REAL,
-    platforms           TEXT NOT NULL DEFAULT '[]',  -- JSON list, HLTB's profile_platforms
-    game_url            TEXT,  -- game_web_link — the HLTB page itself
-    image_url           TEXT,  -- game_image_url — HLTB's own cover art
-    genre               TEXT,  -- HLTB's own profile_genre, comma-separated as HLTB writes it
-    -- The game's own summary, HLTB's profile_summary (#2). English is what
-    -- HLTB actually publishes; the Russian side is a one-off LLM translation
-    -- of it, kept beside the original so a locale switch never re-pays for
-    -- the same game. Either may be NULL: HLTB has no summary for every entry,
-    -- and the translation is skipped entirely when no Anthropic key is set.
-    description_en      TEXT,
-    description_ru      TEXT,
-    -- The rest of the HLTB page (rating, studio, modes, spreads, speedruns),
-    -- one JSON object; NULL until the page has been read for it (064).
-    details             TEXT,
-    cached_at           TEXT NOT NULL
-);
+-- HowLongToBeat lookups (SPEC 6.6) are read from the mirror (`hltb_entries`,
+-- 112); the old cache table `hltb_cache` is gone (113).
 
 -- A PlayStation trophy list is split into groups: the base game plus one per
 -- DLC (#46). A trophy says which group it came from, so a notification can

@@ -656,25 +656,6 @@ class TitleHltbRow:
 
 
 @dataclass(slots=True)
-class HltbCacheRow:
-    hltb_id: int
-    name: str
-    release_year: int | None
-    main_hours: float | None
-    extra_hours: float | None
-    completionist_hours: float | None
-    platforms: list[str] = field(default_factory=list)
-    game_url: str | None = None
-    image_url: str | None = None
-    genre: str | None = None
-    description_en: str | None = None
-    description_ru: str | None = None
-    details: dict | None = None
-    # When it was read from HLTB (set on reading; ignored on writing).
-    cached_at: str | None = None
-
-
-@dataclass(slots=True)
 class PlatformLink:
     tg_id: int
     platform: str

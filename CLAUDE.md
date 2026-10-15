@@ -172,7 +172,7 @@ name, or when the tree goes stale.
 │   │   ├── notifier.py           the app's own notifications: list, push, Telegram DM (#164)
 │   │   ├── webpush.py            Web Push: RFC 8291 encryption and VAPID, on `cryptography` (#164)
 │   │   ├── mini_app.py           Mini App open-button URLs
-│   │   ├── hltb.py               howlongtobeatpy wrapper, cached in hltb_cache; ensure_title_match
+│   │   ├── hltb.py               howlongtobeatpy search and resolve over the mirror; ensure_title_match
 │   │   │                         is the lazy trigger for hltb_match.py below
 │   │   ├── hltb_match.py         which HLTB entry a game is, scored automatically (no DB access)
 │   │   ├── steam_extras.py       a game's Steam side: its app, achievement tips, patches — stored
@@ -494,7 +494,7 @@ every column. History: #106.
 - **Presence**: `presence_state` (Xbox), `steam_presence_state`, `psn_presence_state`
   (#1, unrelated to the trophy scan). PSN scan progress: `psn_title_progress`,
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
-  `steam_rarity_cache`. HLTB: `hltb_cache`. Steam guides and patches: `steam_apps`,
+  `steam_rarity_cache`. HLTB: the mirror (`hltb_entries`, #147). Steam guides and patches: `steam_apps`,
   `game_patches`, `title_guide_reads` (see Steam guides and patches).
 - **`titles`** — one row per version (one achievement list on one platform),
   **keyed by `(platform, title_id)`** like `seen_achievements` and
@@ -682,8 +682,7 @@ What the stores and HLTB say about a game, collected but not shown yet
     the entry's children against the DLC of the versions that entry stands
     for — by the Steam app a child's page names, else by the name with the
     game's taken off the front; a name two entries share, or one entry on two
-    products of one store, stays unlinked. Never a store search. `hltb_cache`
-    stays for `/hltb`'s search until it is switched off. The consoles HLTB
+    products of one store, stays unlinked. Never a store search. The consoles HLTB
     names are **not** versions (2026-10-11, 098: HLTB is matched by name, and a
     version nobody sells is no version); the game page shows them as "also
     released on" (#194).
@@ -2071,28 +2070,37 @@ History: #112.
   `hltb_platform_times`, else the group in `hltb_platform_groups` that names
   it); a **DLC** takes its entry's own hours and the row of its version's
   platform (`repo.dlc_hltb_platform`). The viewer shows all three.
-- **The same page read also keeps the rest of it** (`hltb_cache.details`, one
-  JSON object, migration 064): rating, developer/publisher, alias, release dates,
-  play modes, co-op/multiplayer hours, each time bucket's median/fastest/slowest,
-  speedrun records. The "Об игре" tab shows a table of genre, release, publisher,
-  developer, modes, score and the average hours; the alias, the spreads and the
-  speedruns are kept in `details` but not shown (owner, 2026-09-29). **HLTB's counts
-  of its own users** (completed, playing, backlog, retired) **are left out on
-  purpose** (owner, 2026-09-29): they describe HLTB's audience, not the game. A
-  row cached before 064 reads the page once more on its next lookup.
-- HLTB is English-only, so the Russian side is always Haiku's
-  (`hltb_cache.description_ru`), **lazily** — once per game, the first time someone
-  looks it up. No Anthropic key: the English text is shown.
+- **`/hltb` and the Mini App read the mirror** (owner, 2026-10-15; the old cache
+  `hltb_cache` is gone, migration 113): `services/hltb.resolve` gives the entry
+  a person picked — its page read when it never was and again when stale
+  (`is_stale`: 3 days for a game of this year or last, or one with no main-story
+  time yet, else 90), a failed re-read keeping what is stored — as the
+  `HltbResult` the cards and the Mini App take (`result_from_entry`); what the Mini
+  App shows beyond the hours (rating, studio, alias, release dates, modes, each
+  bucket's spread, speedruns: `details_of_entry`) is read from the columns when
+  asked, kept nowhere. **HLTB's counts of its own users stay in the mirror and
+  are not sent** (the Mini App's decision, 2026-09-29). The Mini App's "Об игре"
+  tab shows genre, release, publisher, developer, modes, score and the average
+  hours.
+- HLTB is English-only, so the Russian side is Haiku's (`hltb_entries.summary_ru`),
+  **lazily** — once per summary, the first time someone looks it up; the same
+  English text keeps its translation (`summary_ru_of`, a hash of the text it was
+  made from; a changed summary is translated again). No Anthropic key: the
+  English text is shown.
 - The card shows it as a collapsed blockquote capped at `DESCRIPTION_LIMIT` — the card
   is usually a photo caption (1024 characters).
+- **Reading the pages that are missing** (`scripts/poll_hltb.py`, owner,
+  2026-10-15: a full poll first, lazy reading later): every entry whose own page
+  was never read and that something of ours reaches — one linked to a version
+  or a DLC, or the DLC of a game we have —, one page at a time at the site's
+  limit, the database copied first, the bot stopped.
 
 ### Automatic title matching
 
 **Every game gets its HLTB entry matched for it, without a person ever searching**
 (`bot/services/hltb_match.py`, a link of the list's versions, `repo.list_hltb_match`) — the Mini App's
 game page shows HLTB's hours and description straight away. `/hltb` above is
-unrelated: it stays a person picking from a candidate list, cached by the id they
-picked.
+unrelated: it stays a person picking from a candidate list.
 
 - **A match is asked for lazily, never by a walker**: once from each platform's
   fetcher, right after it publishes a game's *first* new achievement
