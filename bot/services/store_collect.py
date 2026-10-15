@@ -111,7 +111,9 @@ class StoreCollector:
             log.exception("store collection failed for %s %s", platform, title_id)
             return CollectReport(platform, title_id, errors=["crashed"])
 
-    async def collect(self, platform: str, title_id: str, *, force: bool = False) -> CollectReport:
+    async def collect(
+        self, platform: str, title_id: str, *, force: bool = False, link: bool = True
+    ) -> CollectReport:
         platform = str(platform)
         report = CollectReport(platform, title_id)
         async with self._locks.setdefault((platform, title_id), asyncio.Lock()):
@@ -128,7 +130,7 @@ class StoreCollector:
             # which the HLTB step then links to every version of this list.
             await self._siblings(platform, title_id, report, force)
             await self._hltb(platform, title_id, report, force)
-            if report.asked or report.versions:
+            if link and (report.asked or report.versions):
                 # What it is now known to be, put into games (stage 3).
                 linked = await GameLinker(self._repo).link_title(platform, title_id)
                 report.games = sorted(linked.games)
