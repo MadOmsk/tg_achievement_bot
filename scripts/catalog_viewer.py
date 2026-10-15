@@ -544,7 +544,7 @@ async def title(request: web.Request) -> web.Response:
         versions = conn.execute(
             "SELECT version_id, name, store, product_id, stand_in, on_sale,"
             f" {_console_sql('store', 'console')} AS console, kind, developer, publisher,"
-            " release_date, also_on, store_group, origin FROM versions"
+            " release_date, also_on, store_group, origin, found_how, found_via FROM versions"
             " WHERE platform = ? AND title_id = ? ORDER BY console",
             (platform, title_id),
         ).fetchall()
@@ -603,7 +603,7 @@ async def versions(request: web.Request) -> web.Response:
         rows = conn.execute(
             "SELECT v.version_id, v.name, v.store, v.product_id, v.stand_in, v.on_sale,"
             f" {_console_sql()} AS console, v.platform, v.title_id, v.kind, v.release_date,"
-            " v.origin FROM versions v"
+            " v.origin, v.found_how, v.found_via FROM versions v"
             " WHERE ? = '' OR name LIKE ? OR product_id = ? OR store_group = ?"
             " ORDER BY updated_at DESC LIMIT ?",
             (q, f"%{q}%", q, q, PAGE_SIZE),

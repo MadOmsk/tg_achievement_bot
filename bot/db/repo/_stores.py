@@ -163,15 +163,20 @@ class _StoresRepo:
         platform: str | None,
         title_id: str | None,
         origin: str = "played",
+        found: tuple[str, str] | None = None,
     ) -> int:
         """Store a version as its store describes it, and every id that names
-        it; its achievement list is kept once known, never blanked."""
+        it; its achievement list is kept once known, never blanked. `found`
+        is how it came here and what found it (migration 116), kept from the
+        first time."""
+        found_how, found_via = found or (None, None)
         now = utcnow_iso()
         if platform and title_id and not version.stand_in:
             # The list's stand-in becomes this product, row and id alike, so
             # what was decided about it (`match_decisions`) stays with it.
             await self._conn.execute(
-                "UPDATE versions SET store = ?, product_id = ?, console = ?, stand_in = 0"
+                "UPDATE versions SET store = ?, product_id = ?, console = ?, stand_in = 0,"
+                " found_how = 'played', found_via = ? || ':' || ?, found_at = ?"
                 " WHERE version_id = (SELECT version_id FROM versions WHERE platform = ?"
                 "  AND title_id = ? AND stand_in = 1 ORDER BY version_id LIMIT 1)"
                 " AND NOT EXISTS (SELECT 1 FROM versions WHERE store = ? AND product_id = ?"
@@ -180,6 +185,9 @@ class _StoresRepo:
                     version.store,
                     version.product_id,
                     version.console,
+                    platform,
+                    title_id,
+                    now,
                     platform,
                     title_id,
                     version.store,
@@ -191,8 +199,8 @@ class _StoresRepo:
             "INSERT INTO versions (store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, developer, publisher, release_date, genres, also_on, store_group,"
             "  description_en, description_ru, media, live_service, origin, updated_at, stand_in,"
-            "  on_sale, cross_gen_set)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "  on_sale, cross_gen_set, found_how, found_via, found_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(store, product_id, console) DO UPDATE SET"
             # The first list proved stays the version's; another (a
             # regional twin) is kept beside it as an id, never in its place.
@@ -214,7 +222,11 @@ class _StoresRepo:
             "   ELSE excluded.origin END,"
             "  updated_at = excluded.updated_at,"
             "  on_sale = COALESCE(excluded.on_sale, versions.on_sale),"
-            "  cross_gen_set = COALESCE(excluded.cross_gen_set, versions.cross_gen_set)",
+            "  cross_gen_set = COALESCE(excluded.cross_gen_set, versions.cross_gen_set),"
+            # How it was found is the first way, never a later look's.
+            "  found_how = COALESCE(versions.found_how, excluded.found_how),"
+            "  found_via = COALESCE(versions.found_via, excluded.found_via),"
+            "  found_at = COALESCE(versions.found_at, excluded.found_at)",
             (
                 version.store,
                 version.product_id,
@@ -239,6 +251,9 @@ class _StoresRepo:
                 1 if version.stand_in else 0,
                 None if version.on_sale is None else int(version.on_sale),
                 version.cross_gen_set,
+                found_how,
+                found_via,
+                now if found_how else None,
             ),
         )
         cursor = await self._conn.execute(
@@ -698,7 +713,14 @@ class _StoresRepo:
             await self.add_store_ids(int(row[0]), [("list", f"{platform}:{title_id}")])
             await self._conn.commit()
             return [int(row[0])]
-        return [await self.save_version(stand_in, platform=platform, title_id=title_id)]
+        return [
+            await self.save_version(
+                stand_in,
+                platform=platform,
+                title_id=title_id,
+                found=("list", f"{platform}:{title_id}"),
+            )
+        ]
 
     async def record_hltb_match(
         self,

@@ -1039,6 +1039,11 @@ CREATE TABLE IF NOT EXISTS versions (
     -- steam_app, and `list` for each achievement list proved to be this
     -- version ("platform:title_id").
     store_ids     TEXT,
+    -- How it came into the database (116): list / played / sibling / hltb /
+    -- search / earlier, what found it, and when; never rewritten.
+    found_how     TEXT,
+    found_via     TEXT,
+    found_at      TEXT,
     UNIQUE (store, product_id, console)
 );
 CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);

@@ -1085,3 +1085,19 @@ def test_the_word_remake_marks_a_remake_and_intergrade_does_not() -> None:
     # "Intergrade", "Director's Cut" alone mark nothing of a remake.
     assert "remake_word" not in features(director, base)
     assert "remake_word" not in features(_c(6, "Final Fantasy VII Intergrade", year=2021), ff7)
+
+
+async def test_a_version_keeps_how_it_was_first_found(repo: Repo) -> None:
+    from bot.services.stores import StoreVersion
+
+    version = StoreVersion(store="steam", product_id="10", console="steam", name="A Game")
+    first = await repo.save_version(
+        version, platform=None, title_id=None, origin="store", found=("hltb", "hltb:42")
+    )
+    again = await repo.save_version(
+        version, platform=None, title_id=None, origin="store", found=("search", "name:a game")
+    )
+    row = await repo.version_row(first)
+    assert again == first
+    assert (row["found_how"], row["found_via"]) == ("hltb", "hltb:42")
+    assert row["found_at"]

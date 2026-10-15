@@ -145,7 +145,13 @@ class StoreCollector:
     # ------------------------------------------------------------ Steam
 
     async def _steam(
-        self, appid: str, report: CollectReport, force: bool, *, ours: bool = True
+        self,
+        appid: str,
+        report: CollectReport,
+        force: bool,
+        *,
+        ours: bool = True,
+        found: tuple[str, str] | None = None,
     ) -> None:
         """A Steam app: ours (a list somebody here has) or found for another
         platform's game (`ours=False`: stored with no list, as `store`)."""
@@ -177,6 +183,7 @@ class StoreCollector:
             platform="steam" if ours else None,
             title_id=appid if ours else None,
             origin="played" if ours else "store",
+            found=("played", f"steam:{appid}") if ours else found,
         )
         report.versions.append(version_id)
         more = await self._steam_dlcs(version_id, version, report)
@@ -273,7 +280,9 @@ class StoreCollector:
         owners = {str(p.get("ProductId")) for p in found if p.get("ProductId")}
         for product in games:
             versions = xbox_catalog.parse_product(product)
-            ids = await self._save_xbox_versions(versions, "xbox_modern", title_id, "played")
+            ids = await self._save_xbox_versions(
+                versions, "xbox_modern", title_id, "played", ("played", f"xbox_modern:{title_id}")
+            )
             report.versions += ids
             if versions:
                 changed |= await self._xbox_addons(
@@ -284,13 +293,20 @@ class StoreCollector:
         await self._repo.record_fetch(subject, source, status="ok", changed=changed or patched)
 
     async def _save_xbox_versions(
-        self, versions: list[StoreVersion], platform: str | None, title_id: str | None, origin: str
+        self,
+        versions: list[StoreVersion],
+        platform: str | None,
+        title_id: str | None,
+        origin: str,
+        found: tuple[str, str],
     ) -> list[int]:
         """A product's versions, one per console it is made for; a version
         stored before on a console it is not made for (a One game's phantom
         "Series" version) goes into the kept one."""
         ids = [
-            await self._repo.save_version(v, platform=platform, title_id=title_id, origin=origin)
+            await self._repo.save_version(
+                v, platform=platform, title_id=title_id, origin=origin, found=found
+            )
             for v in versions
         ]
         if versions:
@@ -416,12 +432,12 @@ class StoreCollector:
                     continue
                 appid = str(item["id"])
                 held = await self._repo.title_record("steam", appid) is not None
-                await self._steam(appid, report, True, ours=held)
+                await self._steam(appid, report, True, ours=held, found=("search", f"name:{name}"))
                 await self._steam_schema(appid)
         except Exception as exc:
             report.errors.append(f"steam search: {exc!r}")
         try:
-            await self._psn_siblings([name], report)
+            await self._psn_siblings([name], report, ("search", f"name:{name}"))
         except Exception as exc:
             report.errors.append(f"psn search: {exc!r}")
         try:
@@ -474,7 +490,9 @@ class StoreCollector:
         for appid in dict.fromkeys(a for a in (entry.steam_appid, entry.steam_alt) if a):
             if await self._repo.version_of_product("steam", str(appid)) is None:
                 held = await self._repo.title_record("steam", str(appid)) is not None
-                await self._steam(str(appid), report, False, ours=held)
+                await self._steam(
+                    str(appid), report, False, ours=held, found=("hltb", f"hltb:{entry.hltb_id}")
+                )
                 await self._steam_schema(str(appid))
 
     async def _xbox_by_name(self, name: str, ours: str, report: CollectReport) -> None:
@@ -511,7 +529,11 @@ class StoreCollector:
                     break
             versions = xbox_catalog.parse_product(product)
             ids = await self._save_xbox_versions(
-                versions, "xbox_modern" if held else None, held, "played" if held else "store"
+                versions,
+                "xbox_modern" if held else None,
+                held,
+                "played" if held else "store",
+                ("played", f"xbox_modern:{held}") if held else ("search", f"name:{name}"),
             )
             report.versions += ids
             if versions:
@@ -544,7 +566,7 @@ class StoreCollector:
             if platform != "steam":
                 await self._steam_sibling(platform, title_id, names, report, force)
             if platform != "psn":
-                await self._psn_siblings(names, report)
+                await self._psn_siblings(names, report, ("sibling", f"{platform}:{title_id}"))
         except Exception as exc:
             report.errors.append(f"{source}: {exc!r}")
             await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
@@ -565,7 +587,9 @@ class StoreCollector:
         if appid is None:
             return
         ours = await self._repo.title_record("steam", str(appid)) is not None
-        await self._steam(str(appid), report, force, ours=ours)
+        await self._steam(
+            str(appid), report, force, ours=ours, found=("sibling", f"{platform}:{title_id}")
+        )
         await self._steam_schema(str(appid))
 
     async def _steam_schema(self, appid: str) -> None:
@@ -586,7 +610,9 @@ class StoreCollector:
         changed = await self._repo.save_payload(subject, source, names)
         await self._repo.record_fetch(subject, source, status="ok", changed=changed)
 
-    async def _psn_siblings(self, names: list[str], report: CollectReport) -> None:
+    async def _psn_siblings(
+        self, names: list[str], report: CollectReport, found: tuple[str, str]
+    ) -> None:
         """PSN's concepts for the name, the closest few, stored as `store`
         versions with no list (none of ours was proved for them)."""
         from bot.services.psn import client as psn
@@ -623,7 +649,7 @@ class StoreCollector:
             for version in psn_store.parse_concept(concept):
                 report.versions.append(
                     await self._repo.save_version(
-                        version, platform=None, title_id=None, origin="store"
+                        version, platform=None, title_id=None, origin="store", found=found
                     )
                 )
             if len(seen) >= SIBLING_CONCEPTS:
@@ -676,7 +702,13 @@ class StoreCollector:
                 ) or xbox_catalog.bundle_items(product):
                     continue
                 versions = xbox_catalog.parse_product(product)
-                ids = await self._save_xbox_versions(versions, "xbox_modern", title_id, "played")
+                ids = await self._save_xbox_versions(
+                    versions,
+                    "xbox_modern",
+                    title_id,
+                    "played",
+                    ("played", f"xbox_modern:{title_id}"),
+                )
                 count("xbox versions")
                 if versions:
                     addons_done.add(versions[0].product_id)
@@ -847,7 +879,9 @@ class StoreCollector:
             version.publisher = said.get("publisher")
             version.release_date = said.get("release_date")
             version.genres = list(said.get("genres") or [])
-        version_id = await self._repo.save_version(version, platform=platform, title_id=title_id)
+        version_id = await self._repo.save_version(
+            version, platform=platform, title_id=title_id, found=("list", f"{platform}:{title_id}")
+        )
         report.versions.append(version_id)
 
     # ------------------------------------------------------------ PSN
@@ -879,6 +913,7 @@ class StoreCollector:
                 platform="psn" if mine else None,
                 title_id=npwr if mine else None,
                 origin="played" if mine else "store",
+                found=("played", f"psn:{npwr}") if mine else ("sibling", f"psn:{npwr}"),
             )
             report.versions.append(version_id)
             if mine:
