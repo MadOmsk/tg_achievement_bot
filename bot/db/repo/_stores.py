@@ -584,6 +584,14 @@ class _StoresRepo:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def achievement_list_ids(self, platform: str) -> list[str]:
+        """Every achievement list of a platform, by id."""
+        cursor = await self._conn.execute(
+            "SELECT title_id FROM achievement_list_connectors WHERE platform = ? ORDER BY title_id",
+            (platform,),
+        )
+        return [str(r[0]) for r in await cursor.fetchall()]
+
     async def stand_in_lists(self, platform: str) -> list[str]:
         """The achievement lists of a platform that only stand in for
         themselves: no store product describes them yet."""

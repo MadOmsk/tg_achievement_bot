@@ -108,7 +108,20 @@ def _page(title: str, body: str) -> web.Response:
         "table{border-collapse:collapse;font-size:13px}"
         "td,th{border:1px solid #ccc;padding:3px 5px;vertical-align:middle;text-align:left}"
         "table.versions td:nth-child(2){min-width:140px}"
-        "table.versions img{max-width:64px;height:auto;max-height:40px}</style>"
+        "table.versions img{max-width:64px;height:auto;max-height:40px}"
+        # A press shows at once (owner, 2026-10-15): the button sinks while
+        # held, and once its form is sent it turns green and says so, every
+        # button of that form locked until the next page comes.
+        "button{transition:transform .06s,background .1s}"
+        "button:active{transform:scale(.94);background:#bbb}"
+        "button.sent{background:#2e7d32;color:#fff;border-color:#2e7d32}"
+        "form.sending button:not(.sent){opacity:.45}</style>"
+        "<script>document.addEventListener('submit',function(e){"
+        "if(e.defaultPrevented)return;var f=e.target,b=e.submitter;if(f.classList.contains('sending')){"
+        "e.preventDefault();return}f.classList.add('sending');"
+        "if(b){b.classList.add('sent');b.textContent='✓ '+b.textContent}"
+        "setTimeout(function(){f.querySelectorAll('button').forEach("
+        "function(x){x.disabled=true})},0)})</script>"
         f"<title>{escape(title)}</title>"
         f"<p>{nav}</p><h1>{escape(title)}</h1>{body}"
     )
