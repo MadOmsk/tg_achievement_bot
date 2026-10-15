@@ -21,6 +21,8 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+import aiosqlite
+
 from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.lock import AlreadyRunningError, single_instance
@@ -43,10 +45,23 @@ def _backup(db_path: Path) -> Path:
     return target
 
 
+async def _open_as_is(path: Path) -> Database:
+    """The login's database as it is: no schema, no migration. It belongs to
+    another bot, maybe on older code — `Database.connect` once migrated the
+    dev bot's file to this branch's schema and the dev bot refused to start
+    (2026-10-15). Writable: a refreshed token is stored back."""
+    database = Database(path)
+    conn = await aiosqlite.connect(path)
+    conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA busy_timeout = 30000")
+    database._conn = conn
+    return database
+
+
 async def run(args: argparse.Namespace) -> int:
     settings = get_settings()
     games = await Database(Path(args.db)).connect()
-    auth_db = await Database(Path(args.auth_db)).connect()
+    auth_db = await _open_as_is(Path(args.auth_db))
     try:
         repo, auth_repo = Repo(games), Repo(auth_db)
         todo = await repo.unnamed_lists(("xbox_modern", "xbox_360"))
