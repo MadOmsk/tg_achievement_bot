@@ -160,6 +160,11 @@ async def test_the_pages_show_what_hltb_says_of_a_game_a_version_and_a_dlc(
             (f"/game/{game}", "Xbox Series X/S"),
             (f"/version/{version}", "<b>Xbox Series X/S</b>: main 8.5h"),
             (f"/dlc/{dlc}", "<b>Xbox Series X/S</b>: main 0.9h"),
+            ("/", "HowLongToBeat (the mirror)"),
+            ("/hltb", "Control: The Foundation"),
+            ("/hltb?q=foundation&type=dlc&read=yes", "Control: The Foundation"),
+            ("/hltb/10", "By platform (HLTB's own row)"),
+            ("/hltb/20", "Control"),
         ):
             response = await client.get(page)
             assert response.status == 200, page

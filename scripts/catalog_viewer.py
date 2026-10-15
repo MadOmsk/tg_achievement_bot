@@ -373,48 +373,142 @@ def _search_form(action: str, q: str) -> str:
     )
 
 
-# The home page's tables: the page each is seen on, and what it holds.
-_HOME_TABLES = (
-    ("games", "/games", "games: what the model built over the versions, merged ones included"),
-    ("match_pairs", "/review", "the pairs the model is unsure of: its review queue"),
+# The home page: every table of the games database, in the groups the model
+# has (owner, 2026-10-15: one row each, the current model only). `count` is
+# what is counted when it is not every row.
+_HOME_SECTIONS = (
     (
-        "match_decisions",
-        "/decisions",
-        "every answer on a pair of versions: yours and the advisers'",
+        "Games",
+        (
+            (
+                "games",
+                "/games",
+                "what the model built over the versions (a game merged into another is not counted)",  # noqa: E501
+                "merged_into IS NULL",
+            ),
+            (
+                "versions",
+                "/versions",
+                "a store product on one console, or a stand-in made from an achievement list; each is in one game",  # noqa: E501
+                None,
+            ),
+            ("dlcs", "/dlcs", "add-ons the stores list for each version", None),
+            ("editions", "/games", "bundles and editions the stores sell around a version", None),
+            ("edition_items", "/games", "what each edition holds", None),
+            (
+                "game_relations",
+                "/games",
+                "remaster, remake, VR version, compilation: how games relate",
+                None,
+            ),
+            (
+                "series",
+                "/series",
+                "series; a game is in several (its franchise's, a local one, LEGO)",
+                "merged_into IS NULL",
+            ),
+            ("game_series", "/series", "which game is in which series, how sure and why", None),
+        ),
     ),
-    ("titles", "/titles", "achievement lists people here have: Xbox, Steam, PSN"),
     (
-        "title_achievements",
-        "/titles",
-        "every achievement of those lists: names, descriptions, rarity",
+        "Answers",
+        (
+            (
+                "match_decisions",
+                "/decisions",
+                "every answer on a pair of versions: yours and the advisers'",
+                None,
+            ),
+            ("match_pairs", "/review", "the pairs the model is unsure of: its review queue", None),
+        ),
     ),
-    ("seen_achievements", "/titles", "what each account earned, achievement by achievement"),
     (
-        "versions",
-        "/versions",
-        "a store product on one console (or a stand-in made from a list), and the game it is in",
+        "HowLongToBeat (the mirror)",
+        (
+            (
+                "hltb_entries",
+                "/hltb",
+                "a game or additional content HLTB has a page for, every field the page gives (hours in seconds)",  # noqa: E501
+                None,
+            ),
+            ("hltb_platform_times", "/hltb", "an entry's own row for a platform", None),
+            ("hltb_platform_groups", "/hltb", "platforms HLTB gives one set of hours", None),
+            ("hltb_entry_platforms", "/hltb", "the platforms an entry is on", None),
+            ("hltb_review_scores", "/hltb", "how many of HLTB's users gave each score", None),
+            (
+                "hltb_related",
+                "/hltb",
+                "entries a page names that are not its additional content",
+                None,
+            ),
+            (
+                "version_hltb",
+                "/hltb",
+                "which entry each version is (auto, manual or rejected)",
+                None,
+            ),
+            ("dlc_hltb", "/hltb", "which entry each DLC is (auto, manual or rejected)", None),
+        ),
     ),
-    ("dlcs", "/dlcs", "add-ons the stores list for each version"),
-    ("hltb_entries", "/hltb", "HowLongToBeat entries: games and DLC, their times"),
-    ("version_hltb", "/hltb", "which HLTB entry each version is"),
-    ("source_payloads", "/payloads", "each store's last answer, kept as it came"),
-    ("fetch_state", "/fetch", "when each source was asked for each game, and when it is due again"),
+    (
+        "Sources",
+        (
+            ("source_payloads", "/payloads", "each store's last answer, kept as it came", None),
+            (
+                "fetch_state",
+                "/fetch",
+                "when each source was asked for each game, and when it is due again",
+                None,
+            ),
+        ),
+    ),
+    (
+        "Achievement lists (the bot's)",
+        (
+            (
+                "titles",
+                "/titles",
+                "an achievement list on one platform that somebody here has",
+                None,
+            ),
+            (
+                "title_achievements",
+                "/titles",
+                "every achievement of those lists: names, descriptions, rarity",
+                None,
+            ),
+            (
+                "seen_achievements",
+                "/titles",
+                "what each account earned, achievement by achievement",
+                None,
+            ),
+        ),
+    ),
 )
 
 
 async def home(request: web.Request) -> web.Response:
+    rows = []
     with _db(request) as conn:
-        counts = {
-            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            for table, _, _ in _HOME_TABLES
-        }
-    rows = "".join(
-        f"<tr><td>{table}</td><td align=right>{counts[table]}</td>"
-        f'<td><a href="{path}">{escape(PAGES[path])}</a></td><td>{escape(what)}</td></tr>'
-        for table, path, what in _HOME_TABLES
-    )
+        for section, tables in _HOME_SECTIONS:
+            rows.append(f"<tr><th colspan=4 style='background:#eee'>{escape(section)}</th></tr>")
+            for table, path, what, where in tables:
+                sql = f"SELECT COUNT(*) FROM {table}" + (f" WHERE {where}" if where else "")
+                count = conn.execute(sql).fetchone()[0]
+                extra = ""
+                if table == "hltb_entries":
+                    read = conn.execute(
+                        "SELECT COUNT(*) FROM hltb_entries WHERE page_read_at IS NOT NULL"
+                    ).fetchone()[0]
+                    extra = f" · its own page read for {read}"
+                rows.append(
+                    f"<tr><td>{table}</td><td align=right>{count}</td>"
+                    f'<td><a href="{path}">{escape(PAGES[path])}</a></td>'
+                    f"<td>{escape(what)}{extra}</td></tr>"
+                )
     head = "<tr><th>table</th><th>rows</th><th>page</th><th>what it holds</th></tr>"
-    return _page(PAGES["/"], _search_form("/titles", "") + f"<table>{head}{rows}</table>")
+    return _page(PAGES["/"], _search_form("/titles", "") + f"<table>{head}{''.join(rows)}</table>")
 
 
 async def titles(request: web.Request) -> web.Response:
@@ -792,28 +886,147 @@ async def dlc(request: web.Request) -> web.Response:
     return _page(f"DLC: {row['name'] or dlc_id}", body)
 
 
+def _hours1(seconds: object) -> str:
+    return f"{round(seconds / 3600, 1)}" if isinstance(seconds, int) and seconds > 0 else ""
+
+
 async def hltb_list(request: web.Request) -> web.Response:
+    """The mirror's entries: searchable, by type, read or not, a hundred a page."""
+    q = request.query.get("q", "").strip()
+    kind = request.query.get("type", "")
+    read = request.query.get("read", "")
+    page = max(0, int(request.query.get("page", "0") or 0))
+    where, params = ["1 = 1"], []
+    if q:
+        where.append("(e.name LIKE ? OR e.alias LIKE ? OR CAST(e.hltb_id AS TEXT) = ?)")
+        params += [f"%{q}%", f"%{q}%", q]
+    if kind:
+        where.append("e.game_type = ?")
+        params.append(kind)
+    if read in ("yes", "no"):
+        where.append("e.page_read_at IS " + ("NOT NULL" if read == "yes" else "NULL"))
+    clause = " AND ".join(where)
     with _db(request) as conn:
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM hltb_entries e WHERE {clause}", params
+        ).fetchone()[0]
         rows = conn.execute(
-            "SELECT hltb_id, name, game_type, parent_hltb_id, developer, release_year, checked_at"
-            " FROM hltb_entries ORDER BY checked_at DESC LIMIT ?",
-            (PAGE_SIZE,),
+            "SELECT e.hltb_id, e.name, e.game_type AS type, p.name AS main_game, e.release_year AS year,"  # noqa: E501
+            " e.comp_main, e.comp_plus, e.comp_100,"
+            " (SELECT COUNT(*) FROM hltb_entry_platforms x WHERE x.hltb_id = e.hltb_id) AS platforms,"  # noqa: E501
+            " e.count_comp AS finished, e.review_score AS score,"
+            " (SELECT COUNT(*) FROM version_hltb vh WHERE vh.hltb_id = e.hltb_id"
+            "  AND vh.source <> 'rejected') AS versions,"
+            " (SELECT COUNT(*) FROM dlc_hltb dh WHERE dh.hltb_id = e.hltb_id"
+            "  AND dh.source <> 'rejected') AS dlcs,"
+            " e.page_read_at IS NOT NULL AS page_read"
+            f" FROM hltb_entries e LEFT JOIN hltb_entries p ON p.hltb_id = e.parent_hltb_id"
+            f" WHERE {clause} ORDER BY e.name LIMIT ? OFFSET ?",
+            (*params, PAGE_SIZE, page * PAGE_SIZE),
         ).fetchall()
-    return _page(PAGES["/hltb"], _table(rows, {"hltb_id": _hltb_href, "name": _hltb_href}))
+        types = conn.execute(
+            "SELECT game_type, COUNT(*) FROM hltb_entries GROUP BY 1 ORDER BY 2 DESC"
+        ).fetchall()
+        reads = dict(
+            conn.execute(
+                "SELECT page_read_at IS NOT NULL, COUNT(*) FROM hltb_entries GROUP BY 1"
+            ).fetchall()
+        )
+    shown = [
+        {
+            "hltb_id": r["hltb_id"],
+            "name": r["name"],
+            "type": r["type"],
+            "main game": r["main_game"],
+            "year": r["year"],
+            "main h": _hours1(r["comp_main"]),
+            "extra h": _hours1(r["comp_plus"]),
+            "100% h": _hours1(r["comp_100"]),
+            "platforms": r["platforms"],
+            "finished it": r["finished"],
+            "score": r["score"],
+            "versions": r["versions"],
+            "dlc": r["dlcs"],
+            "page read": "yes" if r["page_read"] else "no",
+        }
+        for r in rows
+    ]
+
+    def link(label: str, **query: str) -> str:
+        merged = {"q": q, "type": kind, "read": read, **query}
+        return f'<a href="/hltb?{urlencode({k: v for k, v in merged.items() if v})}">{escape(label)}</a>'  # noqa: E501
+
+    filters = (
+        "<p>type: "
+        + link("all", type="")
+        + " · "
+        + " · ".join(link(f"{t or '?'} ({n})", type=t or "") for t, n in types)
+        + "</p><p>page read: "
+        + link("all", read="")
+        + f" · {link(f'yes ({reads.get(1, 0)})', read='yes')}"
+        + f" · {link(f'no ({reads.get(0, 0)})', read='no')}</p>"
+    )
+    pager = (
+        f"<p>{total} entries"
+        + (f" · {link('‹ previous', page=str(page - 1))}" if page else "")
+        + (f" · {link('next ›', page=str(page + 1))}" if (page + 1) * PAGE_SIZE < total else "")
+        + "</p>"
+    )
+    form = (
+        f'<form action="/hltb"><input name=q value="{escape(q)}" size=40 placeholder="name, alias or id">'  # noqa: E501
+        f'<input type=hidden name=type value="{escape(kind)}">'
+        f'<input type=hidden name=read value="{escape(read)}"> <button>search</button></form>'
+    )
+    table = _table(shown, {"hltb_id": _hltb_href, "name": _hltb_href})  # type: ignore[arg-type]
+    return _page(PAGES["/hltb"], form + filters + pager + table)
 
 
 async def hltb_entry(request: web.Request) -> web.Response:
     hltb_id = int(request.match_info["hltb_id"])
     with _db(request) as conn:
         row = conn.execute("SELECT * FROM hltb_entries WHERE hltb_id = ?", (hltb_id,)).fetchone()
+        parent = (
+            conn.execute(
+                "SELECT hltb_id, name, game_type FROM hltb_entries WHERE hltb_id = ?",
+                (row["parent_hltb_id"],),
+            ).fetchone()
+            if row is not None and row["parent_hltb_id"]
+            else None
+        )
         children = conn.execute(
-            "SELECT hltb_id, name, game_type, comp_main, comp_plus, comp_100 FROM hltb_entries"
-            " WHERE parent_hltb_id = ?",
+            "SELECT hltb_id, name, game_type, comp_main, comp_plus, comp_100, page_read_at"
+            " FROM hltb_entries WHERE parent_hltb_id = ? ORDER BY name",
+            (hltb_id,),
+        ).fetchall()
+        platform_rows = conn.execute(
+            "SELECT platform, comp_main, comp_plus, comp_100, comp_low, comp_high, count_comp,"
+            " count_total FROM hltb_platform_times WHERE hltb_id = ? ORDER BY count_total DESC",
+            (hltb_id,),
+        ).fetchall()
+        groups = conn.execute(
+            "SELECT platforms, comp_main, comp_plus, comp_100, comp_all, compare, count_comp"
+            " FROM hltb_platform_groups WHERE hltb_id = ? ORDER BY count_comp DESC",
+            (hltb_id,),
+        ).fetchall()
+        platforms = [
+            r[0]
+            for r in conn.execute(
+                "SELECT platform FROM hltb_entry_platforms WHERE hltb_id = ? ORDER BY platform",
+                (hltb_id,),
+            )
+        ]
+        reviews = conn.execute(
+            "SELECT score, votes FROM hltb_review_scores WHERE hltb_id = ? ORDER BY score",
+            (hltb_id,),
+        ).fetchall()
+        related = conn.execute(
+            "SELECT e.hltb_id, e.name, e.game_type FROM hltb_related r"
+            " JOIN hltb_entries e ON e.hltb_id = r.related_id WHERE r.hltb_id = ?",
             (hltb_id,),
         ).fetchall()
         linked = conn.execute(
             "SELECT v.version_id, v.name, v.store, v.product_id, v.stand_in, v.on_sale,"
-            f" {_console_sql()} AS console, v.platform, v.title_id, vh.source"
+            f" {_console_sql()} AS console, v.platform, v.title_id, vh.source, vh.score"
             " FROM version_hltb vh JOIN versions v ON v.version_id = vh.version_id"
             " WHERE vh.hltb_id = ?",
             (hltb_id,),
@@ -833,26 +1046,127 @@ async def hltb_entry(request: web.Request) -> web.Response:
             " WHERE vh.hltb_id = ? AND vh.source <> 'rejected'",
             (hltb_id,),
         ).fetchall()
-    body = (
-        _record(row, {"parent_hltb_id": lambda r: f"/hltb/{r['parent_hltb_id']}"})
-        + (
-            f"<p>times: {escape(_hours(row['comp_main'], row['comp_plus'], row['comp_100']))}</p>"
-            if row is not None
-            else ""
-        )
-        + "<h2>DLC and expansions</h2>"
-        + _table(
+    if row is None:
+        return _page(f"HLTB {hltb_id}", "<p>(not found)</p>")
+
+    def hours_table(rows_: list[tuple]) -> str:
+        return _table(
             [
                 {
-                    "hltb_id": c["hltb_id"],
-                    "name": c["name"],
-                    "game_type": c["game_type"],
-                    "times": _hours(c["comp_main"], c["comp_plus"], c["comp_100"]),
+                    "kind": name,
+                    "headline": _hours1(row[prefix]),
+                    "average": _hours1(row[f"{prefix}_avg"])
+                    if f"{prefix}_avg" in row.keys()
+                    else "",
+                    "median": _hours1(row[f"{prefix}_med"])
+                    if f"{prefix}_med" in row.keys()
+                    else "",
+                    "fastest": _hours1(
+                        row[f"{prefix}_l"] if f"{prefix}_l" in row.keys() else row[f"{prefix}_min"]
+                    ),
+                    "slowest": _hours1(
+                        row[f"{prefix}_h"] if f"{prefix}_h" in row.keys() else row[f"{prefix}_max"]
+                    ),
+                    "people": row[f"{prefix}_count"],
                 }
-                for c in children
-            ],
-            {"hltb_id": _hltb_href, "name": _hltb_href},
+                for name, prefix in rows_
+                if row[prefix] or row[f"{prefix}_count"]
+            ]
         )
+
+    def plat(r: sqlite3.Row) -> dict:
+        return {
+            "platform": r["platform"],
+            "main h": _hours1(r["comp_main"]),
+            "extra h": _hours1(r["comp_plus"]),
+            "100% h": _hours1(r["comp_100"]),
+            "fastest": _hours1(r["comp_low"]),
+            "slowest": _hours1(r["comp_high"]),
+            "finished": r["count_comp"],
+            "all players": r["count_total"],
+        }
+
+    def grp(r: sqlite3.Row) -> dict:
+        return {
+            "platforms": r["platforms"],
+            "main h": _hours1(r["comp_main"]),
+            "extra h": _hours1(r["comp_plus"]),
+            "100% h": _hours1(r["comp_100"]),
+            "all h": _hours1(r["comp_all"]),
+            "compare": r["compare"],
+            "finished": r["count_comp"],
+        }
+
+    def kids(r: sqlite3.Row) -> dict:
+        return {
+            "hltb_id": r["hltb_id"],
+            "name": r["name"],
+            "type": r["game_type"],
+            "main h": _hours1(r["comp_main"]),
+            "extra h": _hours1(r["comp_plus"]),
+            "100% h": _hours1(r["comp_100"]),
+            "page read": "yes" if r["page_read_at"] else "no",
+        }
+
+    bar = "".join(
+        f"<tr><td align=right>{r['score']}</td><td>{'▇' * max(1, round(40 * r['votes'] / max(x['votes'] for x in reviews)))}"  # noqa: E501
+        f" {r['votes']}</td></tr>"
+        for r in reviews
+    )
+    modes = [
+        w
+        for w, key in (
+            ("single", "comp_lvl_sp"),
+            ("co-op", "comp_lvl_co"),
+            ("multiplayer", "comp_lvl_mp"),
+            ("speedrun", "comp_lvl_spd"),
+        )
+        if row[key]
+    ]
+    body = (
+        _img(row["image_url"], 160)
+        + f"<p><b>{escape(row['name'])}</b> · {escape(row['game_type'] or '?')}"
+        + (
+            f' · of <a href="/hltb/{parent["hltb_id"]}">{escape(parent["name"])}</a>'
+            if parent is not None
+            else ""
+        )
+        + f' · <a href="https://howlongtobeat.com/game/{hltb_id}">on HowLongToBeat</a>'
+        + f' · <a href="/payload?subject=hltb:{hltb_id}&source=hltb_page">raw page</a></p>'
+        + (
+            "<p><i>its own page was never read: only what another page says of it is here</i></p>"
+            if not row["page_read_at"]
+            else ""
+        )
+        + f"<p>platforms: {escape(', '.join(platforms) or '—')} · modes: {escape(', '.join(modes) or '—')}"  # noqa: E501
+        + f" · score {row['review_score'] or '—'} ({row['review_count'] or 0} votes)</p>"
+        + f"<p>released: world {escape(str(row['release_world'] or '—'))}, NA {escape(str(row['release_na'] or '—'))},"  # noqa: E501
+        + f" EU {escape(str(row['release_eu'] or '—'))}, JP {escape(str(row['release_jp'] or '—'))}</p>"  # noqa: E501
+        + "<h2>Hours (all platforms)</h2>"
+        + hours_table(
+            [
+                ("main story", "comp_main"),
+                ("main + extras", "comp_plus"),
+                ("completionist", "comp_100"),
+                ("all styles", "comp_all"),
+                ("speedrun", "comp_speed"),
+                ("speedrun 100%", "comp_speed100"),
+                ("co-op", "invested_co"),
+                ("multiplayer", "invested_mp"),
+            ]
+        )
+        + "<h2>By platform (HLTB's own row)</h2>"
+        + _table([plat(r) for r in platform_rows])
+        + "<h2>Groups of platforms with one set of hours</h2>"
+        + _table([grp(r) for r in groups])
+        + "<h2>HLTB's users</h2>"
+        + f"<p>finished {row['count_comp'] or 0} · playing {row['count_playing'] or 0} · backlog {row['count_backlog'] or 0}"  # noqa: E501
+        + f" · replays {row['count_replay'] or 0} · retired {row['count_retired'] or 0} · total {row['count_total'] or 0}</p>"  # noqa: E501
+        + (f"<table>{bar}</table>" if reviews else "<p>(no scores)</p>")
+        + "<h2>DLC and additional content</h2>"
+        + _table([kids(c) for c in children], {"hltb_id": _hltb_href, "name": _hltb_href})  # type: ignore[arg-type]
+        + "<h2>Other entries it names</h2>"
+        + _table(related, {"hltb_id": _hltb_href, "name": _hltb_href})
         + "<h2>Versions linked</h2>"
         + _table(
             _with_store(linked),
@@ -862,9 +1176,10 @@ async def hltb_entry(request: web.Request) -> web.Response:
         + _dlc_table(dlcs_)
         + "<h2>Achievement lists of those versions</h2>"
         + _table(titles_, {"title_id": _title_href, "name": _title_href})
-        + f'<p><a href="/payload?subject=hltb:{hltb_id}&source=hltb_page">raw page</a></p>'
+        + "<h2>Every field</h2>"
+        + _record(row, {"parent_hltb_id": lambda r: f"/hltb/{r['parent_hltb_id']}"})
     )
-    return _page(f"HLTB {hltb_id}", body)
+    return _page(f"HLTB {hltb_id}: {row['name']}", body)
 
 
 async def fetch(request: web.Request) -> web.Response:
@@ -2534,7 +2849,7 @@ async def series_list(request: web.Request) -> web.Response:
     q = request.query.get("q", "")
     with _db(request) as conn:
         rows = conn.execute(
-            "SELECT s.series_id, s.name, s.name_source,"
+            "SELECT s.series_id, s.name, s.name_source, s.rule_key AS named_by_rule,"
             " (SELECT COUNT(*) FROM game_series gs WHERE gs.series_id = s.series_id"
             "  AND gs.member = 1) AS games,"
             " (SELECT COUNT(*) FROM game_series gs WHERE gs.series_id = s.series_id"
@@ -2556,7 +2871,8 @@ async def series_list(request: web.Request) -> web.Response:
     body = (
         _flash(request)
         + f"<p>{total[0]} series, {total[1]} memberships. A game may be in several (a"
-        " crossover). <i>auto</i> rows are the linker's proposals, made again after every"
+        " crossover, LEGO, a local series inside a franchise: <i>named_by_rule</i> says"
+        " which rule). <i>auto</i> rows are the linker's proposals, made again after every"
         " linking; the operator's (<i>manual</i>) and the advisers' rows stand."
         f" <i>unsure</i>: proposals under {SURE_P:.0%}.</p>"
         + _button("/series/rebuild", "propose the series again")
