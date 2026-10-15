@@ -452,7 +452,11 @@ every column. History: #106.
   DLC trophies were never fetched —; **Xbox's own: `base`** (the list
   a game shipped with) **or `non_base`** (added later: a DLC, an update), from
   contract 6's `groupIds` (`["0"]` / `[]`; migration 121, owner, 2026-10-15) —
-  what a Mythic achievement counts; Xbox has no group per DLC; `NULL` until a
+  what a Mythic achievement counts; Xbox has no group per DLC; **an Xbox 360
+  list says nothing of its groups** (no `groupIds`, `sequence` 0, `flags` mixed):
+  they are derived — in id order, base while the running gamerscore stays within
+  the release's, 200 G for an Arcade game (title id 0x5841…), 1000 G otherwise
+  (`xbox.models.x360_groups`, owner, 2026-10-15); `NULL` until a
   contract-6 read (the catalog's) says, and an earned row takes its group from
   the catalog when the list is read whole —; **`main_game` on Steam**, which has
   no groups (`constants.achievement_group`, applied where `seen_achievements`

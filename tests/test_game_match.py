@@ -1216,3 +1216,23 @@ async def test_an_xbox_list_read_whole_gives_the_earned_rows_their_group(repo: R
     )
     cursor = await repo._conn.execute("SELECT trophy_group_id FROM seen_achievements")
     assert (await cursor.fetchone())[0] == "non_base"
+
+
+def test_a_360_list_is_base_up_to_its_release_gamerscore() -> None:
+    from bot.services.xbox.models import is_x360_arcade, x360_groups
+
+    # A retail game: 1000 G by id order, then two DLC achievements.
+    retail = [("2", 500), ("1", 500), ("10", 25), ("3", 0), ("11", 25)]
+    assert x360_groups("1297287449", retail) == {
+        "1": "base",
+        "2": "base",
+        "3": "base",  # 0 G keeps it within the release's 1000
+        "10": "non_base",
+        "11": "non_base",
+    }
+    # An Arcade game ("XA…" title id): 200 G.
+    assert is_x360_arcade(str(0x584108FB)) and not is_x360_arcade("1297287449")
+    arcade = [("1", 100), ("2", 100), ("3", 50)]
+    assert x360_groups(str(0x584108FB), arcade) == {"1": "base", "2": "base", "3": "non_base"}
+    # Worth less than its limit: all base.
+    assert set(x360_groups("1297287449", [("1", 300), ("2", 200)]).values()) == {"base"}

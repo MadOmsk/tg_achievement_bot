@@ -85,6 +85,11 @@ class _CatalogRepo:
                     1 if complete else 0,
                 ),
             )
+        # A 360 list read whole is grouped by its ids and gamerscore (it says
+        # nothing of its groups itself; `xbox_models.x360_groups`).
+        if complete:
+            for title_id in {r.title_id for r in rows if r.platform == "xbox_360"}:
+                await self.derive_x360_groups(title_id, commit=False)
         # An Xbox list read whole gives each achievement its group (base or
         # non_base, 2026-10-15); the rows people earned take it from here.
         for platform, title_id in {
@@ -99,6 +104,32 @@ class _CatalogRepo:
                 (platform, title_id),
             )
         await self._conn.commit()
+
+    async def derive_x360_groups(self, title_id: str, *, commit: bool = True) -> int:
+        """A 360 list's groups, derived from its listed achievements' ids and
+        gamerscore. The number of achievements grouped."""
+        from bot.services.xbox.models import x360_groups
+
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, gamerscore FROM title_achievements"
+            " WHERE platform = 'xbox_360' AND title_id = ? AND listed = 1",
+            (title_id,),
+        )
+        listed = [(str(r[0]), int(r[1] or 0)) for r in await cursor.fetchall()]
+        for achievement_id, group in x360_groups(title_id, listed).items():
+            await self._conn.execute(
+                "UPDATE title_achievements SET trophy_group_id = ?"
+                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?",
+                (group, title_id, achievement_id),
+            )
+            await self._conn.execute(
+                "UPDATE seen_achievements SET trophy_group_id = ?"
+                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?",
+                (group, title_id, achievement_id),
+            )
+        if commit:
+            await self._conn.commit()
+        return len(listed)
 
     async def set_achievement_groups(
         self, platform: str, title_id: str, groups: dict[str, str]
