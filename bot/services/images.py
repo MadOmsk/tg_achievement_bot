@@ -43,7 +43,9 @@ async def fetch(url: str) -> bytes | None:
     return payload
 
 
-async def download(url: str, name: str, directory: Path) -> tuple[str, str] | None:
+async def download(
+    url: str, name: str, directory: Path, *, headers: dict[str, str] | None = None
+) -> tuple[str, str] | None:
     """Fetch one picture and write it as `name` inside `directory`.
 
     Returns `(name, sha256)`, or `None` when the fetch failed — which is an
@@ -52,7 +54,7 @@ async def download(url: str, name: str, directory: Path) -> tuple[str, str] | No
     """
     try:
         async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as c:
-            response = await c.get(url)
+            response = await c.get(url, headers=headers)
             response.raise_for_status()
             payload = response.content
     except Exception as exc:

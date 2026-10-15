@@ -123,3 +123,26 @@ class _HltbReadRepo:
                 if platform in platforms_of_group(group["platforms"]):
                     return {"entry": entry, "platform": platform, "row": None, "group": dict(group)}
         return {"entry": entries[0], "platform": platform, "row": None, "group": None}
+
+    async def hltb_covers_to_fetch(self, limit: int | None = None) -> list[tuple[int, str]]:
+        """Entries with a picture address and no file, never asked before;
+        the ones something of ours reaches first."""
+        cursor = await self._conn.execute(
+            "SELECT e.hltb_id, e.image_url FROM hltb_entries e"
+            " WHERE e.image_url IS NOT NULL AND e.image_path IS NULL"
+            "  AND e.image_checked_at IS NULL"
+            " ORDER BY (e.hltb_id IN (SELECT hltb_id FROM version_hltb"
+            "  WHERE source <> 'rejected')) DESC, e.hltb_id"
+            + (f" LIMIT {int(limit)}" if limit else "")
+        )
+        return [(int(r[0]), str(r[1])) for r in await cursor.fetchall()]
+
+    async def set_hltb_cover(self, hltb_id: int, path: str | None, digest: str | None) -> None:
+        """One visit's answer; stamped found or not, so a missing picture
+        leaves the queue."""
+        await self._conn.execute(
+            "UPDATE hltb_entries SET image_path = ?, image_hash = ?,"
+            " image_checked_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') WHERE hltb_id = ?",
+            (path, digest, hltb_id),
+        )
+        await self._conn.commit()

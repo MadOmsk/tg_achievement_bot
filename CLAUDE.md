@@ -2093,6 +2093,11 @@ History: #112.
   English text is shown.
 - The card shows it as a collapsed blockquote capped at `DESCRIPTION_LIMIT` — the card
   is usually a photo caption (1024 characters).
+- **An entry's picture is kept on disk** (migration 115, owner, 2026-10-15):
+  `hltb_entries.image_path`/`image_hash`/`image_checked_at`, files under
+  `data/covers/hltb/`, fetched by `scripts/download_hltb_covers.py` (the site
+  refuses a client with no browser headers); stamped found or not, so a missing
+  picture is not asked for again.
 - **Reading the pages that are missing** (`scripts/poll_hltb.py`, owner,
   2026-10-15: a full poll first, lazy reading later): every entry whose own page
   was never read and that something of ours reaches — one linked to a version

@@ -303,7 +303,8 @@ COVER = (
     "  AND t.title_id = v.title_id AND t.cover_path IS NOT NULL),"
     " (SELECT t.icon_url FROM titles t WHERE t.platform = v.platform"
     "  AND t.title_id = v.title_id),"
-    " (SELECT h.image_url FROM version_hltb vh JOIN hltb_entries h ON h.hltb_id = vh.hltb_id"
+    " (SELECT COALESCE('/covers/' || h.image_path, h.image_url) FROM version_hltb vh"
+    "  JOIN hltb_entries h ON h.hltb_id = vh.hltb_id"
     "  WHERE vh.version_id = v.version_id AND vh.source <> 'rejected'"
     "  AND h.image_url IS NOT NULL LIMIT 1)) AS cover"
 )
@@ -656,7 +657,8 @@ async def version(request: web.Request) -> web.Response:
             "  AND t.title_id = v.title_id) AS list_icon,"
             " (SELECT '/covers/' || t.cover_path FROM titles t WHERE t.platform = v.platform"
             "  AND t.title_id = v.title_id) AS list_cover,"
-            " (SELECT h.image_url FROM version_hltb vh JOIN hltb_entries h"
+            " (SELECT COALESCE('/covers/' || h.image_path, h.image_url)"
+            "  FROM version_hltb vh JOIN hltb_entries h"
             "  ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "  AND vh.source <> 'rejected' AND h.image_url IS NOT NULL LIMIT 1) AS hltb_image"
             " FROM versions v WHERE v.version_id = ?",
@@ -1124,7 +1126,7 @@ async def hltb_entry(request: web.Request) -> web.Response:
         if row[key]
     ]
     body = (
-        _img(row["image_url"], 160)
+        _img("/covers/" + row["image_path"] if row["image_path"] else row["image_url"], 160)
         + f"<p><b>{escape(row['name'])}</b> · {escape(row['game_type'] or '?')}"
         + (
             f' · of <a href="/hltb/{parent["hltb_id"]}">{escape(parent["name"])}</a>'

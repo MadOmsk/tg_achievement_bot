@@ -1165,6 +1165,10 @@ CREATE TABLE IF NOT EXISTS hltb_entries (
     summary_ru_of TEXT,
     checked_at TEXT NOT NULL,
     page_read_at TEXT,
+    -- The picture on disk (115): data/covers/<image_path>, when it was asked.
+    image_path TEXT,
+    image_hash TEXT,
+    image_checked_at TEXT,
     release_year INTEGER GENERATED ALWAYS AS (
         CASE WHEN substr(release_world, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
                   AND substr(release_world, 1, 4) <> '0000'

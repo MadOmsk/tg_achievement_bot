@@ -580,3 +580,14 @@ def test_an_entry_is_a_result_and_its_details_come_from_its_columns() -> None:
         "speedrun": {"any": {"best": 2.0}},
     }
     assert details_of_entry({"name": "Obscure"}) == {}
+
+
+async def test_a_cover_is_asked_for_once_found_or_not(repo: Repo) -> None:
+    from bot.services.stores import hltb_page
+
+    await repo.save_hltb_page(
+        hltb_page.parse_page(_page(7, game_image="7_Game.png"))  # type: ignore[arg-type]
+    )
+    assert await repo.hltb_covers_to_fetch() == [(7, "https://howlongtobeat.com/games/7_Game.png")]
+    await repo.set_hltb_cover(7, None, None)  # not there: stamped all the same
+    assert await repo.hltb_covers_to_fetch() == []
