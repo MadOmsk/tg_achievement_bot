@@ -128,8 +128,9 @@ class _CatalogRepo:
         2026-10-16): once every achievement of its base list is earned, the
         last of them earned is marked `mythic`; once every achievement of its
         whole list is, the last is marked `completes`. Only a list read whole
-        (`listed`) counts, the base list only where its groups are known;
-        each mark is made once and kept."""
+        (`listed`) counts, the base list only where its groups are known.
+        A Mythic is kept for good; a completion is taken back when the list
+        grows past what was earned, and marked again on its new last one."""
         cursor = await self._conn.execute(
             "SELECT achievement_id, trophy_group_id FROM title_achievements"
             " WHERE platform = ? AND title_id = ? AND listed = 1",
@@ -156,8 +157,19 @@ class _CatalogRepo:
         base = {a for a, group in listed.items() if group == "base"}
         if base and base <= earned.keys() and not any(v[1] for v in earned.values()):
             marks.append(("mythic", last_of(base)))
-        if listed.keys() <= earned.keys() and not any(v[2] for v in earned.values()):
+        complete = listed.keys() <= earned.keys()
+        if complete and not any(v[2] for v in earned.values()):
             marks.append(("completes", last_of(set(listed))))
+        if not complete and any(v[2] for v in earned.values()):
+            # The list grew (a DLC, an update): the game is not complete any
+            # more, until its new last achievement is earned. A Mythic stays —
+            # its base list never grows (owner, 2026-10-16).
+            await self._conn.execute(
+                "UPDATE seen_achievements SET completes = 0"
+                " WHERE platform = ? AND xuid = ? AND title_id = ? AND completes = 1",
+                (platform, xuid, title_id),
+            )
+            await self._conn.commit()
         for column, achievement_id in marks:
             await self._conn.execute(
                 f"UPDATE seen_achievements SET {column} = 1"

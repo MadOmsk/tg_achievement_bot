@@ -470,7 +470,9 @@ every column. History: #106.
   (migration 123, owner, 2026-10-16; Xbox, both generations): `mythic` on the
   last of the game's base list to be earned, `completes` on the last of its whole
   list — set by `repo.mark_xbox_completions` after each new unlock and when a list
-  is read whole, once per account and game, kept when the list grows. Only a
+  is read whole. A Mythic is kept for good (a base list never grows); a
+  completion is taken back when the list grows past what was earned, and marked
+  again on its new last achievement (owner, 2026-10-16). Only a
   list read whole (`listed`) counts; no Mythic where the groups are unknown. Not
   announced as achievements yet. The completion counters (🌀, `/stats`) still
   count as before. **A PSN trophy group past the base game is a

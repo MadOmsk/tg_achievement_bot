@@ -1317,3 +1317,15 @@ async def test_the_last_base_unlock_is_the_mythic_and_the_last_of_all_completes(
     assert await marks() == [("1", 1, 1), ("2", 0, 0), ("3", 0, 0)]
     await repo.mark_xbox_completions("xbox_modern", "x", "9")  # marked once
     assert await marks() == [("1", 1, 1), ("2", 0, 0), ("3", 0, 0)]
+    # A DLC adds an achievement: no longer complete; the Mythic stays.
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern", title_id="9", achievement_id="4", trophy_group_id="non_base"
+            )
+        ],
+        complete=True,
+    )
+    assert await marks() == [("1", 1, 0), ("2", 0, 0), ("3", 0, 0)]
+    await earn("4", "2026-02-01")
+    assert await marks() == [("1", 1, 0), ("2", 0, 0), ("3", 0, 0), ("4", 0, 1)]
