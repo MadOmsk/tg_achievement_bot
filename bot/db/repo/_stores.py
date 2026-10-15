@@ -513,6 +513,21 @@ class _StoresRepo:
                 (entry.hltb_id,),
             )
 
+    async def hltb_pages_to_read(self, limit: int | None = None) -> list[int]:
+        """The entries whose own page was never read and that something of ours
+        reaches: linked to one of our versions or DLC, or additional content of an
+        entry linked to a version (the DLC of a game we have). The pages a full
+        poll reads (`scripts/poll_hltb.py`)."""
+        cursor = await self._conn.execute(
+            "SELECT e.hltb_id FROM hltb_entries e WHERE e.page_read_at IS NULL AND ("
+            " e.hltb_id IN (SELECT hltb_id FROM version_hltb WHERE source <> 'rejected')"
+            " OR e.hltb_id IN (SELECT hltb_id FROM dlc_hltb WHERE source <> 'rejected')"
+            " OR e.parent_hltb_id IN (SELECT hltb_id FROM version_hltb"
+            "  WHERE source <> 'rejected')) ORDER BY e.hltb_id"
+            + (f" LIMIT {int(limit)}" if limit else "")
+        )
+        return [int(r[0]) for r in await cursor.fetchall()]
+
     async def hltb_game_row(self, hltb_id: int) -> dict | None:
         cursor = await self._conn.execute(
             "SELECT * FROM hltb_entries WHERE hltb_id = ?", (hltb_id,)

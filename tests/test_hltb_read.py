@@ -156,3 +156,59 @@ def test_the_repo_and_the_matcher_agree_on_what_is_additional_content() -> None:
     from bot.services.hltb_match import NOT_A_GAME
 
     assert {t.strip("' ") for t in _ADDITIONAL.strip("()").split(",")} == set(NOT_A_GAME)
+
+
+async def test_the_full_poll_reads_the_pages_something_of_ours_reaches(
+    repo: Repo, monkeypatch
+) -> None:
+    from scripts.poll_hltb import poll
+
+    game = await repo.create_game("Control", 2019)
+    version = await _version(repo, "X", "series", game)
+    main = await _entry(repo, 10, "Control", "game", 36000)
+    await repo.link_version_hltb(version, main, "auto", 0.9)
+    # Its DLC entries are known from the game's page only (no page read), one is
+    # ours; an entry nothing of ours reaches is left alone.
+    page = _page(10, "Control", "game", 36000)
+    page["relationships"] = [
+        {"game_id": 21, "game_name": "The Foundation", "game_type": "dlc", "comp_main": 3600},
+        {"game_id": 22, "game_name": "AWE", "game_type": "dlc", "comp_main": 7200},
+    ]
+    await repo.save_hltb_page(hltb_page.parse_page(page))  # type: ignore[arg-type]
+    await repo._conn.execute(
+        "INSERT INTO hltb_entries (hltb_id, name, game_type, checked_at)"
+        " VALUES (99, 'Elsewhere', 'dlc', 'x')"
+    )
+    await repo._conn.commit()
+
+    assert await repo.hltb_pages_to_read() == [21, 22]  # additional content of a game we have
+    assert await repo.hltb_pages_to_read(limit=1) == [21]
+
+    pages = {
+        21: _page(21, "Control: The Foundation", "dlc", 3600, platforms=[("PC", 3000)], parent=10),
+        22: None,  # HLTB has no such page
+    }
+
+    async def fake_fetch(hltb_id: int):
+        if hltb_id == 22:
+            return None
+        return pages[hltb_id]
+
+    monkeypatch.setattr(hltb_page, "fetch_page", fake_fetch)
+    done = await poll(repo, [21, 22], stop_after=3)
+
+    assert done == {"read": 1, "gone": 1, "failed": 0}
+    assert await repo.hltb_pages_to_read() == []  # the page that is not there is not asked again
+    cursor = await repo._conn.execute("SELECT COUNT(*) FROM hltb_platform_times WHERE hltb_id = 21")
+    assert (await cursor.fetchone())[0] == 1
+
+
+async def test_the_poll_stops_when_the_site_keeps_refusing(repo: Repo, monkeypatch) -> None:
+    from scripts.poll_hltb import poll
+
+    async def refuse(hltb_id: int):
+        raise RuntimeError("429")
+
+    monkeypatch.setattr(hltb_page, "fetch_page", refuse)
+    done = await poll(repo, [1, 2, 3, 4, 5], stop_after=2)
+    assert done == {"read": 0, "gone": 0, "failed": 2}
