@@ -883,6 +883,8 @@ class StoreCollector:
             version, platform=platform, title_id=title_id, found=("list", f"{platform}:{title_id}")
         )
         report.versions.append(version_id)
+        if platform == "psn":
+            report.dlcs += await self._repo.save_trophy_group_dlcs(version_id, title_id)
 
     # ------------------------------------------------------------ PSN
 

@@ -70,7 +70,7 @@ async def test_person_recent_and_chat_unlock_months(repo: Repo) -> None:
     assert feed[0].icon_url == "https://example/a1.png"
     assert feed[0].title_id == "440"
     assert feed[0].xuid == "76561190000000010"
-    assert feed[0].trophy_group_id is None
+    assert feed[0].trophy_group_id == "main_game"
 
     since = now - timedelta(days=7)
     recent = await repo.person_recent(await repo.person_id(10), 10, since=since)

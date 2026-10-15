@@ -446,9 +446,16 @@ every column. History: #106.
   both Xbox values onto `xbox`. `xuid` is the generic external-account id (a
   SteamID64 or PSN `account_id` on other platforms). `is_backfill` means "never
   publish" — not "did not happen" (Statistics rules). `is_secret` renders behind a
-  spoiler. `trophy_type` is the PSN tier; `trophy_group_id` is the PSN group
-  (`default`, `001`…), `NULL` elsewhere and on PSN rows stored before #46 — which is
-  how the poller knows a game's DLC trophies were never fetched.
+  spoiler. `trophy_type` is the PSN tier; `trophy_group_id` is the achievement's
+  group (migration 118, owner, 2026-10-15): PSN's own (`default`, `001`…) —
+  `NULL` there on rows stored before #46, which is how the poller knows a game's
+  DLC trophies were never fetched —, and **`main_game` on Xbox and Steam**, every
+  achievement, ready for the Xbox update that brings an analogue of the platinum
+  (`constants.achievement_group`, applied where `seen_achievements` and
+  `title_achievements` are written). **A PSN trophy group past the base game is a
+  DLC row (`dlcs.trophy_group_id`) of every version of its list**, stand-ins
+  included, made whenever the groups are saved (`save_title_groups`); Sony names no
+  store product for a group, so the link to a store's own DLC is by name, if ever.
 - **`device` — what an achievement was earned on — is a fact or `NULL`, never a
   guess** (#79; owner, 2026-09-24; migration 059). Its sources: Xbox presence while
   that game is being played (the exit poll uses the device presence last reported);

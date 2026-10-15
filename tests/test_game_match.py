@@ -1120,3 +1120,32 @@ async def test_a_stand_ins_name_follows_its_lists(repo: Repo) -> None:
     await repo._conn.commit()
     row = await repo.version_row(version)
     assert (row["name"], row["name_ru"]) == ("New Name", "Новое")
+
+
+async def test_xbox_and_steam_achievements_are_the_main_games_and_psn_keeps_sonys(
+    repo: Repo,
+) -> None:
+    from bot.constants import achievement_group
+
+    assert achievement_group("steam", None) == "main_game"
+    assert achievement_group("xbox_modern", None) == "main_game"
+    assert achievement_group("xbox_360", "x") == "x"
+    assert achievement_group("psn", None) is None  # not fetched with its groups yet
+    assert achievement_group("psn", "001") == "001"
+
+
+async def test_a_psn_groups_become_dlc_of_every_version_of_its_list(repo: Repo) -> None:
+    await repo._conn.execute(
+        "INSERT INTO achievement_list_connectors (platform, title_id, name, updated_at)"
+        " VALUES ('psn', 'NPWR1_00', 'A Game', '2026-10-15T00:00:00')"
+    )
+    await repo._conn.commit()
+    (version,) = await repo.ensure_list_version("psn", "NPWR1_00")  # a stand-in
+    await repo.save_title_groups(
+        "NPWR1_00",
+        [("default", "A Game", 10, None, None), ("001", "The DLC", 5, "Допы", "The DLC")],
+    )
+    cursor = await repo._conn.execute(
+        "SELECT trophy_group_id, name FROM dlcs WHERE version_id = ?", (version,)
+    )
+    assert [tuple(r) for r in await cursor.fetchall()] == [("001", "The DLC")]

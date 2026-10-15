@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from bot.constants import AccountPlatform, Platform
+from bot.constants import AccountPlatform, Platform, achievement_group
 from bot.db.repo._models import AchievementRow
 from bot.db.repo._sql import OWNED_BY_PERSON, rarity, rarity_cache_join
 from bot.util import utcnow_iso
@@ -149,7 +149,7 @@ class _AchievementsRepo:
                         1 if is_backfill else 0,
                         1 if item.is_secret else 0,
                         item.trophy_type,
-                        item.trophy_group_id,
+                        achievement_group(item.platform, item.trophy_group_id),
                         None if is_backfill else (item.device or device_default),
                         now,
                     ),

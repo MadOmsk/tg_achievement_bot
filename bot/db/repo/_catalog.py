@@ -6,6 +6,7 @@ import json
 
 import aiosqlite
 
+from bot.constants import achievement_group
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
 from bot.db.repo._sql import platform_is
 from bot.util import looks_russian, utcnow_iso
@@ -78,7 +79,7 @@ class _CatalogRepo:
                     1 if r.is_secret else 0,
                     r.gamerscore,
                     r.trophy_type,
-                    r.trophy_group_id,
+                    achievement_group(r.platform, r.trophy_group_id),
                     r.rarity_percent,
                     updated_at,
                     1 if complete else 0,

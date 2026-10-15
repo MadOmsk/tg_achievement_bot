@@ -417,6 +417,9 @@ class _PlatformLinksRepo:
                 (title_id, group_id, name, total, name_ru, name_en, now),
             )
         await self._conn.commit()
+        # A group past the base game is a DLC of every version of this list.
+        for version_id in await self.versions_of_list("psn", title_id):
+            await self.save_trophy_group_dlcs(version_id, title_id)
 
     async def has_title_groups(self, title_id: str) -> bool:
         """Whether this game's trophy structure is stored **in both

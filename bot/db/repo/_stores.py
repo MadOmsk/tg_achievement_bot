@@ -713,14 +713,15 @@ class _StoresRepo:
             await self.add_store_ids(int(row[0]), [("list", f"{platform}:{title_id}")])
             await self._conn.commit()
             return [int(row[0])]
-        return [
-            await self.save_version(
-                stand_in,
-                platform=platform,
-                title_id=title_id,
-                found=("list", f"{platform}:{title_id}"),
-            )
-        ]
+        version_id = await self.save_version(
+            stand_in,
+            platform=platform,
+            title_id=title_id,
+            found=("list", f"{platform}:{title_id}"),
+        )
+        if platform == "psn":
+            await self.save_trophy_group_dlcs(version_id, title_id)
+        return [version_id]
 
     async def record_hltb_match(
         self,
