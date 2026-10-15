@@ -332,8 +332,6 @@ class _CatalogRepo:
         "cover_hash",
         "cover_checked_at",
         "achievements_checked_at",
-        "steam_appid",
-        "steam_appid_checked_at",
         "tips_checked_at",
     )
 
@@ -369,6 +367,15 @@ class _CatalogRepo:
         )
         await self._conn.execute(
             "DELETE FROM fetch_state WHERE source = 'hltb_match' AND subject = ?",
+            (f"{old_plat}:{title_id}",),
+        )
+        await self._conn.execute(
+            "UPDATE OR IGNORE fetch_state SET subject = ?"
+            " WHERE source = 'steam_app' AND subject = ?",
+            (f"{new_plat}:{title_id}", f"{old_plat}:{title_id}"),
+        )
+        await self._conn.execute(
+            "DELETE FROM fetch_state WHERE source = 'steam_app' AND subject = ?",
             (f"{old_plat}:{title_id}",),
         )
         # The versions whose list it is follow it (2026-10-14: they used to be

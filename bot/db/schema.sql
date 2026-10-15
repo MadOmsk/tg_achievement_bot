@@ -443,13 +443,10 @@ CREATE TABLE IF NOT EXISTS titles (
     -- Which HowLongToBeat entry this list is is not here (110): it is a
     -- link of the list's versions (`version_hltb`, `repo.list_hltb_match`),
     -- and when it was last asked, `fetch_state` ('hltb_match').
-    -- The Steam app this game is (migration 069): a Steam game's own title_id,
-    -- else looked up once — HLTB's page first, then Steam's store search — and
-    -- given up on after three failed attempts, like the HLTB entry above. NULL
-    -- also means "has no Steam page" once the attempts are spent.
-    steam_appid INTEGER,
-    steam_appid_attempts INTEGER NOT NULL DEFAULT 0,
-    steam_appid_checked_at TEXT,
+    -- The Steam app this list is is not here (114): a Steam list is its own
+    -- app, any other is known by a `steam_twin` id on the versions of the list
+    -- (`versions.store_ids`; `_sql.STEAM_APP_OF_TITLE`), and when it was last
+    -- looked for, `fetch_state` ('steam_app').
     -- When the achievements' tips (title_achievements.tip_*) were last worked
     -- out from the Steam app's guides.
     tips_checked_at TEXT,

@@ -531,8 +531,14 @@ class _StoresRepo:
             " e.hltb_id IN (SELECT hltb_id FROM version_hltb WHERE source <> 'rejected')"
             " OR e.hltb_id IN (SELECT hltb_id FROM dlc_hltb WHERE source <> 'rejected')"
             " OR e.parent_hltb_id IN (SELECT hltb_id FROM version_hltb"
-            "  WHERE source <> 'rejected')) ORDER BY e.hltb_id"
-            + (f" LIMIT {int(limit)}" if limit else "")
+            "  WHERE source <> 'rejected'))"
+            # A link to an entry nothing read yet has no row at all (a database
+            # that has the links and not the mirror, as production first does).
+            " UNION SELECT hltb_id FROM version_hltb WHERE source <> 'rejected'"
+            "  AND hltb_id NOT IN (SELECT hltb_id FROM hltb_entries)"
+            " UNION SELECT hltb_id FROM dlc_hltb WHERE source <> 'rejected'"
+            "  AND hltb_id NOT IN (SELECT hltb_id FROM hltb_entries)"
+            " ORDER BY 1" + (f" LIMIT {int(limit)}" if limit else "")
         )
         return [int(r[0]) for r in await cursor.fetchall()]
 

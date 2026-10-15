@@ -508,9 +508,13 @@ every column. History: #106.
   `title_guide_reads` is keyed the same way; `title_groups` stays by id (PSN
   only). No foreign keys point at `titles`. Its columns: names (`name`, `name_ru`, `name_en`),
   `achievements_total`, `platform`, `platforms` (#79), cover art (`icon_url` +
-  `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at`, and which
-  Steam app it is
-  (`steam_appid`/`steam_appid_attempts`/`steam_appid_checked_at`, `tips_checked_at`).
+  `cover_path`/`cover_hash`/`cover_checked_at`), `achievements_checked_at` and
+  `tips_checked_at`. **Which Steam app a list is** is not a column of it either
+  (migration 114, owner, 2026-10-15): a Steam list is its own app, any other is
+  known by the app found for it — HLTB's page, or Steam's store search — kept as
+  a `steam_twin` id on the versions of the list (`versions.store_ids`), read by
+  `_sql.STEAM_APP_OF_TITLE`, and when it was last looked for is `fetch_state`
+  (`steam_app`).
   **Which HLTB entry a list is has one home, the links of its versions**
   (`version_hltb`, migration 110; owner, 2026-10-14): `titles.hltb_id` and its
   three companions were a copy that the Mini App read and the operator's links
@@ -2136,11 +2140,12 @@ page (owner, 2026-09-30): a tip for each achievement from the Steam community's
 guides, and the developer's patch notes in an "Обновления" tab. Nothing of it is
 sent to a chat.
 
-- **Which Steam app a game is** (`titles.steam_appid`): a Steam game's own `title_id`;
-  otherwise found once, like its HLTB entry — the appid HLTB's page lists (exact),
-  else Steam's store search by name (`steam_news.pick_appid`, a confident match only:
-  store "apps" include a game's DLC and sets). Three failed attempts an hour apart,
-  then known to have none. Console exclusives have none, so no tips and no tab.
+- **Which Steam app a game is** (a `steam_twin` id of its versions, see the data
+  model): a Steam game's own `title_id`; otherwise found once, like its HLTB entry —
+  the appid HLTB's page lists (exact), else Steam's store search by name
+  (`steam_news.pick_appid`, a confident match only: store "apps" include a game's
+  DLC and sets). Three failed attempts an hour apart, then none for a month.
+  Console exclusives have none, so no tips and no tab.
 - **Filled like HLTB** (`services/steam_extras.py`): right after a game's first new
   achievement is published — the fetchers call `SteamExtras.ensure_title` after
   `ensure_title_match`, since the appid comes from the HLTB page — in a background

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import aiosqlite
 
 from bot.db.repo._sql import (
+    STEAM_APP_OF_TITLE,
     earned_at,
     earned_date_is_real,
     earned_since,
@@ -76,16 +77,11 @@ class _SteamRepo:
     STEAM_APPID_ATTEMPTS = 3
 
     async def title_steam(self, platform: str, title_id: str) -> TitleSteam | None:
-        where, params = platform_is(platform)
+        where, params = platform_is(platform, "t.platform")
         cursor = await self._conn.execute(
-            "SELECT title_id, platform, name, name_en, steam_appid,"
-            "  tips_checked_at,"
-            "  (steam_appid IS NULL"
-            f"   AND steam_appid_attempts < {self.STEAM_APPID_ATTEMPTS}"
-            "   AND (steam_appid_checked_at IS NULL"
-            "        OR steam_appid_checked_at < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour'))"
-            "  ) AS appid_due "
-            f"FROM titles WHERE {where} AND title_id = ?",
+            f"SELECT t.title_id, t.platform, t.name, t.name_en, t.tips_checked_at,"
+            f" {STEAM_APP_OF_TITLE} AS steam_appid FROM titles t"
+            f" WHERE {where} AND t.title_id = ?",
             (*params, title_id),
         )
         row = await cursor.fetchone()
@@ -93,9 +89,6 @@ class _SteamRepo:
             return None
         platform = row["platform"]
         appid = row["steam_appid"]
-        # A Steam game is its own Steam app.
-        if platform == "steam" and str(row["title_id"]).isdigit():
-            appid = int(row["title_id"])
         match = await self.list_hltb_match(platform, row["title_id"])
         return TitleSteam(
             platform=platform,
@@ -103,26 +96,24 @@ class _SteamRepo:
             names=tuple(dict.fromkeys(str(n) for n in (row["name_en"], row["name"]) if n)),
             hltb_id=match[0] if match else None,
             steam_appid=appid,
-            appid_due=appid is None and bool(row["appid_due"]),
+            appid_due=appid is None
+            and await self.fetch_due(f"{platform}:{row['title_id']}", "steam_app"),
             tips_checked_at=row["tips_checked_at"],
         )
 
     async def record_steam_appid(self, platform: str, title_id: str, appid: int | None) -> None:
-        """One lookup's answer; `None` counts as a failed attempt."""
-        if appid is not None:
-            await self._conn.execute(
-                "UPDATE titles SET steam_appid = ?, steam_appid_checked_at = ?,"
-                " steam_appid_attempts = steam_appid_attempts + 1"
-                " WHERE platform = ? AND title_id = ?",
-                (appid, utcnow_iso(), platform, title_id),
-            )
-        else:
-            await self._conn.execute(
-                "UPDATE titles SET steam_appid_attempts = steam_appid_attempts + 1,"
-                " steam_appid_checked_at = ? WHERE platform = ? AND title_id = ?",
-                (utcnow_iso(), platform, title_id),
-            )
+        """One lookup's answer: the app found is kept as a `steam_twin` id on
+        each version of the list (`versions.store_ids`), when it was last asked
+        is `fetch_state` ('steam_app'); `None` counts as a failed attempt —
+        after the third the list leaves the queue for a month."""
+        subject = f"{platform}:{title_id}"
+        if appid is None:
+            await self.record_fetch(subject, "steam_app", status="error", error="no app")
+            return
+        for version_id in await self.ensure_list_version(platform, title_id):
+            await self.add_store_ids(version_id, [("steam_twin", str(appid))])
         await self._conn.commit()
+        await self.record_fetch(subject, "steam_app", status="ok")
 
     async def steam_app_checked(self, appid: int) -> tuple[str | None, str | None]:
         """(guides_checked_at, patches_checked_at) — both None for an app never read."""
@@ -286,8 +277,7 @@ class _SteamRepo:
             # An excluded person is told nothing (CLAUDE.md, Statistics rules).
             " JOIN users u ON u.id = al.person_id AND u.is_excluded = 0"
             " JOIN titles t ON t.platform = s.platform AND t.title_id = s.title_id"
-            " WHERE (CASE WHEN s.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-            "        ELSE t.steam_appid END) = ?"
+            f" WHERE {STEAM_APP_OF_TITLE} = ?"
             f"  AND {earned_date_is_real('s.')} AND {earned_at('s.')} >= ?"
             " GROUP BY al.person_id"
             " ORDER BY al.person_id",
@@ -330,8 +320,7 @@ class _SteamRepo:
             "  GROUP BY s.platform, s.title_id"
             "), apps AS ("
             "  SELECT p.title_id, p.platform, t.name, t.name_ru, t.name_en, t.icon_url,"
-            "         CASE WHEN p.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-            "              ELSE t.steam_appid END AS appid"
+            f"         {STEAM_APP_OF_TITLE} AS appid"
             "  FROM played p JOIN titles t ON t.platform = p.platform AND t.title_id = p.title_id"
             ") "
             "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
@@ -416,7 +405,7 @@ class _SteamRepo:
         first achievement's job, not the schedule's."""
         cursor = await self._conn.execute(
             "SELECT t.platform, t.title_id FROM titles t"
-            " WHERE (t.steam_appid IS NOT NULL OR t.platform = 'steam')"
+            f" WHERE {STEAM_APP_OF_TITLE} IS NOT NULL"
             "   AND t.tips_checked_at IS NOT NULL AND t.tips_checked_at < ?"
             "   AND EXISTS (SELECT 1 FROM seen_achievements s"
             f"               WHERE {titles_on()} AND {earned_since('s.')})"
@@ -433,8 +422,7 @@ class _SteamRepo:
         longest-waiting first."""
         cursor = await self._conn.execute(
             "WITH active AS ("
-            "  SELECT DISTINCT CASE WHEN t.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-            "                       ELSE t.steam_appid END AS appid"
+            f"  SELECT DISTINCT {STEAM_APP_OF_TITLE} AS appid"
             "  FROM titles t"
             "  WHERE EXISTS (SELECT 1 FROM seen_achievements s"
             f"               WHERE {titles_on()} AND {earned_since('s.')})"

@@ -156,10 +156,12 @@ async def test_a_game_with_no_steam_page_is_given_up_on(
 
     monkeypatch.setattr(se, "find_appid", find_appid)
     extras = se.SteamExtras(repo, steam_auth, _Key())  # type: ignore[arg-type]
-    for _ in range(3):
+    for attempt in range(3):
         await extras.fill_title("xbox", TITLE)
-        # The next attempt waits an hour; pretend it has passed.
-        await repo._conn.execute("UPDATE titles SET steam_appid_checked_at = NULL")
+        if attempt < 2:
+            # The next attempt waits an hour; pretend it has passed.
+            await repo.make_fetch_due(f"xbox_modern:{TITLE}", "steam_app")
+    # Three in a row: the list waits a month, whatever is asked meanwhile.
     await extras.fill_title("xbox", TITLE)
     assert looked == 3
     assert not await extras.tips_due("xbox", TITLE)
@@ -509,3 +511,79 @@ async def test_a_translation_filled_in_later_does_not_buy_the_guide_again(
     await repo._conn.commit()
     await se.SteamExtras(repo, steam_auth, _Key()).refresh_tips("xbox", TITLE)  # type: ignore[arg-type]
     assert asked["n"] == 1
+
+
+async def test_the_app_found_for_a_list_is_a_steam_twin_id_of_its_versions(repo: Repo) -> None:
+    from bot.db.repo._sql import STEAM_APP_OF_TITLE
+
+    await _seed(repo)
+    assert (await repo.title_steam("xbox", TITLE)).steam_appid is None  # type: ignore[union-attr]
+
+    await repo.record_steam_appid("xbox_modern", TITLE, 553850)
+
+    got = await repo.title_steam("xbox", TITLE)
+    assert got is not None and got.steam_appid == 553850 and not got.appid_due
+    (version,) = await repo.versions_of_title("xbox_modern", TITLE)
+    assert ("steam_twin", "553850") in await repo.store_ids_of(version["version_id"])
+    # The one SQL reading (news, tips and patches use it) says the same.
+    cursor = await repo._conn.execute(
+        f"SELECT {STEAM_APP_OF_TITLE} FROM titles t WHERE t.title_id = ?", (TITLE,)
+    )
+    assert (await cursor.fetchone())[0] == 553850
+    await _seed(repo, platform="steam", title_id="2100")
+    cursor = await repo._conn.execute(
+        f"SELECT {STEAM_APP_OF_TITLE} FROM titles t WHERE t.platform = 'steam'"
+    )
+    assert (await cursor.fetchone())[0] == 2100  # a Steam list is its own app
+
+
+async def test_migration_114_keeps_the_app_found_as_a_twin_id(tmp_path) -> None:
+    import json
+
+    import aiosqlite
+
+    from bot.db.repo import MIGRATIONS_DIR
+
+    sql = (MIGRATIONS_DIR / "114_steam_app_is_a_version_id.sql").read_text(encoding="utf-8")
+    async with aiosqlite.connect(tmp_path / "m113.db") as conn:
+        await conn.executescript(
+            """
+            CREATE TABLE titles (
+                platform TEXT NOT NULL, title_id TEXT NOT NULL, name TEXT NOT NULL,
+                steam_appid INTEGER, steam_appid_attempts INTEGER NOT NULL DEFAULT 0,
+                steam_appid_checked_at TEXT, updated_at TEXT NOT NULL,
+                PRIMARY KEY (platform, title_id));
+            CREATE TABLE versions (
+                version_id INTEGER PRIMARY KEY, platform TEXT, title_id TEXT, store_ids TEXT);
+            CREATE TABLE fetch_state (
+                subject TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0, interval_days INTEGER NOT NULL DEFAULT 7,
+                checked_at TEXT NOT NULL, next_check_at TEXT NOT NULL, last_error TEXT,
+                PRIMARY KEY (subject, source)) WITHOUT ROWID;
+            INSERT INTO titles VALUES
+              ('xbox_modern', '1', 'Found', 553850, 1, '2026-02-02T10:00:00+00:00', 'x'),
+              ('xbox_modern', '2', 'Given up', NULL, 3, '2026-02-02T10:00:00+00:00', 'x'),
+              ('xbox_modern', '3', 'Never asked', NULL, 0, NULL, 'x'),
+              ('steam', '2100', 'Its own', NULL, 0, NULL, 'x');
+            INSERT INTO versions VALUES
+              (1, 'xbox_modern', '1', '[["list", "xbox_modern:1"]]'),
+              (2, 'xbox_modern', '2', NULL), (3, 'xbox_modern', '3', NULL),
+              (4, 'steam', '2100', NULL);
+            """
+        )
+        await conn.executescript(sql)
+        cursor = await conn.execute("SELECT version_id, store_ids FROM versions ORDER BY 1")
+        ids = {r[0]: r[1] for r in await cursor.fetchall()}
+        cursor = await conn.execute(
+            "SELECT subject, status, attempts, next_check_at FROM fetch_state ORDER BY subject"
+        )
+        state = [tuple(r) for r in await cursor.fetchall()]
+        cursor = await conn.execute("PRAGMA table_info(titles)")
+        columns = {r[1] for r in await cursor.fetchall()}
+    assert json.loads(ids[1]) == [["list", "xbox_modern:1"], ["steam_twin", "553850"]]
+    assert ids[2] is None and ids[3] is None and ids[4] is None
+    assert state == [
+        ("xbox_modern:1", "ok", 0, "2026-02-09T10:00:00+00:00"),
+        ("xbox_modern:2", "gave_up", 3, "2026-03-04T10:00:00+00:00"),
+    ]
+    assert not columns & {"steam_appid", "steam_appid_attempts", "steam_appid_checked_at"}

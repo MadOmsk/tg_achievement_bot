@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 from bot.db.repo import Database, Repo
+from bot.db.repo._sql import STEAM_APP_OF_TITLE
 from bot.services.advice import (
     ADVISER_SOURCES,
     AdviceStore,
@@ -425,7 +426,7 @@ async def titles(request: web.Request) -> web.Response:
             "   ON vh.version_id = v.version_id WHERE v.platform = t.platform"
             "   AND v.title_id = t.title_id AND vh.source <> 'rejected'"
             "   ORDER BY vh.source = 'manual' DESC, vh.score IS NULL, vh.score DESC, vh.hltb_id"
-            "   LIMIT 1) AS hltb_id, t.steam_appid,"
+            "   LIMIT 1) AS hltb_id, " + STEAM_APP_OF_TITLE + " AS steam_appid,"
             "  (SELECT COUNT(*) FROM versions v WHERE v.platform = t.platform"
             "   AND v.title_id = t.title_id) AS versions"
             " FROM titles t WHERE ? = '' OR t.name LIKE ? OR t.name_ru LIKE ? OR t.title_id = ?"

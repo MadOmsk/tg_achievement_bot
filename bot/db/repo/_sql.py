@@ -224,6 +224,19 @@ def platform_is(platform: str, column: str = "platform") -> tuple[str, list[str]
     return f"{column} = ?", [platform]
 
 
+# The Steam app an achievement list is (`titles` aliased `t`; owner, 2026-10-15):
+# a Steam list is its own app; any other list is known by the app found for it —
+# HLTB's page, or Steam's store search — kept as a `steam_twin` id on the
+# versions of the list (`versions.store_ids`), not as a column of the list.
+STEAM_APP_OF_TITLE = (
+    "(CASE WHEN t.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
+    " ELSE (SELECT CAST(json_extract(j.value, '$[1]') AS INTEGER)"
+    "  FROM versions v, json_each(v.store_ids) j"
+    "  WHERE v.platform = t.platform AND v.title_id = t.title_id"
+    "   AND json_extract(j.value, '$[0]') = 'steam_twin' LIMIT 1) END)"
+)
+
+
 # --------------------------------------------------------------- names (#61)
 
 # The catalog row holding an achievement's name in both languages (#61, #119),
