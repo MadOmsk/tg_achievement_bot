@@ -626,6 +626,15 @@ What the stores and HLTB say about a game, collected but not shown yet
   (`unknown_pc_namesake`, a strong "same" sign: the very same release name,
   any store) and stands alone only when nothing here has that name. HLTB's
   "PC" is no version (it names no product, see below).
+- **How a version came into the database is recorded** (migration 116, owner,
+  2026-10-15): `versions.found_how` — `list` (a stand-in made from the list),
+  `played` (the store product of a list somebody here has), `sibling` (another
+  store's product found for a list), `hltb` (a Steam app an HLTB entry names),
+  `search` (a store searched by name), `earlier` (made before this was
+  recorded) —, `found_via` (what found it: `platform:title_id`, `hltb:<id>`,
+  `name:<…>`) and `found_at`. Set when the version is made and never rewritten
+  by a later look (`save_version(found=…)`); a stand-in that becomes its
+  store's product turns `played`.
 - **Kinds of link**: see Games below — a remaster, a remake, a compilation, a
   VR version are games of their own (2026-10-11); a demo, a tool (a
   Creation Kit, an editor — owner, 2026-10-10) and a mode (owner, 2026-10-12:
