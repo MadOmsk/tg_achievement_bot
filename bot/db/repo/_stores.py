@@ -584,6 +584,18 @@ class _StoresRepo:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def stand_in_lists(self, platform: str) -> list[str]:
+        """The achievement lists of a platform that only stand in for
+        themselves: no store product describes them yet."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT title_id FROM versions WHERE platform = ? AND stand_in = 1"
+            " AND title_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM versions o"
+            "  WHERE o.platform = versions.platform AND o.title_id = versions.title_id"
+            "  AND o.stand_in = 0) ORDER BY title_id",
+            (platform,),
+        )
+        return [str(r[0]) for r in await cursor.fetchall()]
+
     async def steam_versions_with_hltb_by_app(self) -> list[dict[str, Any]]:
         """Steam versions with no HLTB link at all (not even a refusal) beside
         every entry whose page names their app: `steam_appid` first, `steam_alt`

@@ -1149,3 +1149,43 @@ async def test_a_psn_groups_become_dlc_of_every_version_of_its_list(repo: Repo) 
         "SELECT trophy_group_id, name FROM dlcs WHERE version_id = ?", (version,)
     )
     assert [tuple(r) for r in await cursor.fetchall()] == [("001", "The DLC")]
+
+
+async def test_a_360_list_takes_the_product_its_fission_mark_names(repo: Repo, monkeypatch) -> None:
+    from bot.services.store_collect import StoreCollector
+    from bot.services.stores import xbox_catalog
+
+    await repo._conn.execute(
+        "INSERT INTO achievement_list_connectors (platform, title_id, name, updated_at)"
+        " VALUES ('xbox_360', '1297287122', 'Kameo®', '2026-10-15T00:00:00')"
+    )
+    await repo._conn.commit()
+    (stand_in,) = await repo.ensure_list_version("xbox_360", "1297287122")
+    asked: list[str] = []
+
+    async def search(name):
+        asked.append(name)
+        return [{"ProductId": "BV83", "Type": "Game"}, {"ProductId": "OTHER", "Type": "Game"}]
+
+    def product(big_id, group):
+        return {
+            "ProductId": big_id,
+            "ProductType": "Game",
+            "Properties": {"ProductGroupName": group},
+            "LocalizedProperties": [{"ProductTitle": "Kameo"}],
+            "DisplaySkuAvailabilities": [
+                {"Sku": {}, "Availabilities": [{"Actions": ["Purchase"]}]}
+            ],
+        }
+
+    async def products(ids):
+        # 1297287122 is 4D5307D2: the mark names our list; the other names none.
+        return [product("BV83", "[Fission] Kameo (4D5307D2)"), product("OTHER", "Another")]
+
+    monkeypatch.setattr(xbox_catalog, "search", search)
+    monkeypatch.setattr(xbox_catalog, "products", products)
+    assert await StoreCollector(repo).x360_by_name("1297287122", force=True)
+    assert asked == ["Kameo"]  # the name without its mark
+    row = await repo.version_row(stand_in)
+    assert (row["product_id"], row["stand_in"], row["console"]) == ("BV83", 0, "360")
+    assert await repo.stand_in_lists("xbox_360") == []

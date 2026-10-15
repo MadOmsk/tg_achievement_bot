@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -119,6 +120,8 @@ class StoreCollector:
                 await self._xbox(title_id, report, force)
             elif platform == "psn":
                 await self._psn(title_id, report, force)
+            elif platform == "xbox_360":
+                await self.x360_by_name(title_id, force=force)
             await self._list_version(platform, title_id, report)
             # Before HLTB: looking for the other stores finds the HLTB entry,
             # which the HLTB step then links to every version of this list.
@@ -793,7 +796,8 @@ class StoreCollector:
         edition's, a bundle's) is kept under its 360 title id
         (`x360:<title id>`), and the 360 list, when somebody here has it,
         takes it as its store page. The product's own `[Fission] … (hex)`
-        mark is the proof; nothing is searched for by name."""
+        mark is the proof: a search by name (`x360_by_name`) only finds the
+        candidates."""
         by_title: dict[str, list[dict]] = {}
         for product in products:
             if (title_id := xbox_catalog.fission_title_id(product)) is not None:
@@ -807,6 +811,39 @@ class StoreCollector:
             kept.update({str(p.get("ProductId")): p for p in found})
             await self._repo.save_payload(subject, "xbox_catalog", [kept[k] for k in sorted(kept)])
             await link_x360_product(self._repo, title_id)
+
+    async def x360_by_name(self, title_id: str, *, force: bool = False) -> bool:
+        """A 360 list's store page looked for by the list's names (owner,
+        2026-10-15: 451 of 458 360 lists had none — the catalog's lookup by
+        title id knows no 360 game, and a page was only found in passing). The
+        catalog's games for each name are read and kept when their
+        `[Fission]` mark names a 360 list (`_remember_x360`), this one or
+        another; a game never made backward compatible has none. True when the
+        list has its page now."""
+        subject, source = f"x360:{title_id}", "x360_search"
+        if not force and not await self._repo.fetch_due(subject, source):
+            return False
+        record = await self._repo.title_record("xbox_360", title_id)
+        if not record:
+            return False
+        names = []
+        for raw in (record.get("name"), record.get("name_en")):
+            name = re.sub(r"[®™©]", "", str(raw or "")).strip()
+            if name and name != title_id and name != "?" and name not in names:
+                names.append(name)
+        try:
+            for name in names:
+                hits = [p for p in await xbox_catalog.search(name) if p.get("Type") == "Game"]
+                if hits:
+                    await self._remember_x360(
+                        await xbox_catalog.products([str(p["ProductId"]) for p in hits])
+                    )
+        except Exception as exc:
+            await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
+            return False
+        found = await link_x360_product(self._repo, title_id)
+        await self._repo.record_fetch(subject, source, status="ok" if found else "not_found")
+        return found is not None
 
     async def remember_title(self, entry: object) -> None:
         """What a titlehub answer said about a game (`XboxClient.resolve_title`),

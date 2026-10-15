@@ -2490,10 +2490,19 @@ async def proposals(request: web.Request) -> web.Response:
             # the game it went into; two that became one are answered.
             item["game_a"] = _current_game(conn, item["game_a"])
             item["game_b"] = _current_game(conn, item["game_b"])
+
+        def unanimous(i: dict) -> bool:
+            # The model, Claude and Gemini saying the same is an answer
+            # (owner, 2026-10-15): such a pair is not the operator's.
+            gemini = (request.app["gemini"].get(i["n"]) or {}).get("decision")
+            return _proposal_decision(i["answer"], i["model"]) == gemini == i["model"]
+
         open_items = [
             i
             for i in items
-            if i["game_a"] != i["game_b"] and not answered(i["game_a"], i["game_b"])
+            if i["game_a"] != i["game_b"]
+            and not answered(i["game_a"], i["game_b"])
+            and not unanimous(i)
         ]
         counts: dict[str, int] = {}
         for i in open_items:

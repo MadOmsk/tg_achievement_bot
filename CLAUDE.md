@@ -759,7 +759,11 @@ What the stores and HLTB say about a game, collected but not shown yet
   `[Fission] <name> (<hex 360 title id>)`, read only in exactly that form
   (`xbox_catalog.fission_title_id`; the hex found anywhere else matched
   picture numbers). A product seen in passing (an edition's, a bundle's
-  contents) is kept as `x360:<title id>`, and the 360 list's stand-in becomes
+  contents, or found by the list's names — the catalog's lookup by title id
+  knows no 360 game, so `StoreCollector.x360_by_name` searches the catalog by
+  name and keeps only what the mark proves; owner, 2026-10-15,
+  `scripts/collect_x360.py`) is kept as `x360:<title id>`, and the 360 list's
+  stand-in becomes
   the selling one (a `Purchase` ever offered, not its content twin) as its
   360 version — no release day, the product's being its comeback's
   (`link_x360_product`). `resolve_title` also asks titlehub for the
