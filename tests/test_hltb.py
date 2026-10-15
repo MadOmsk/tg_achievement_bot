@@ -591,3 +591,29 @@ async def test_a_cover_is_asked_for_once_found_or_not(repo: Repo) -> None:
     assert await repo.hltb_covers_to_fetch() == [(7, "https://howlongtobeat.com/games/7_Game.png")]
     await repo.set_hltb_cover(7, None, None)  # not there: stamped all the same
     assert await repo.hltb_covers_to_fetch() == []
+
+
+async def test_a_steam_version_is_the_entry_whose_page_names_its_app(repo: Repo) -> None:
+    from bot.services.store_collect import link_steam_apps_to_hltb
+    from bot.services.stores import StoreVersion, hltb_page
+
+    await repo.save_hltb_page(
+        hltb_page.parse_page(
+            _page(77, game_name="Portal", profile_steam=400, release_world="2007-10-10")
+        )  # type: ignore[arg-type]
+    )
+    version = await repo.save_version(
+        StoreVersion(store="steam", product_id="400", console="steam", name="Portal"),
+        platform=None,
+        title_id=None,
+    )
+    other = await repo.save_version(
+        StoreVersion(store="steam", product_id="999", console="steam", name="Another"),
+        platform=None,
+        title_id=None,
+    )
+    assert (await link_steam_apps_to_hltb(repo))["linked"] == 1
+    assert (await repo.versions_of_hltb(77))[0]["version_id"] == version
+    assert not await repo.versions_of_hltb(78) and other
+    # Run again: nothing is linked twice or over a refusal.
+    assert (await link_steam_apps_to_hltb(repo))["linked"] == 0

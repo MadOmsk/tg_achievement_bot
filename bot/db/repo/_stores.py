@@ -584,6 +584,23 @@ class _StoresRepo:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def steam_versions_with_hltb_by_app(self) -> list[dict[str, Any]]:
+        """Steam versions with no HLTB link at all (not even a refusal) beside
+        every entry whose page names their app: `steam_appid` first, `steam_alt`
+        second. The entry's own page is the evidence."""
+        cursor = await self._conn.execute(
+            "SELECT v.version_id, v.product_id, v.kind, v.role, v.name, v.name_ru,"
+            " v.release_date, h.hltb_id, h.name AS entry_name, h.game_type, h.release_year,"
+            " (h.steam_appid = CAST(v.product_id AS INTEGER)) AS is_main_app"
+            " FROM versions v JOIN hltb_entries h"
+            "  ON h.steam_appid = CAST(v.product_id AS INTEGER)"
+            "  OR h.steam_alt = CAST(v.product_id AS INTEGER)"
+            " WHERE v.store = 'steam' AND NOT EXISTS (SELECT 1 FROM version_hltb x"
+            "  WHERE x.version_id = v.version_id)"
+            " ORDER BY v.version_id, is_main_app DESC, h.hltb_id"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
     async def hltb_children(self, hltb_id: int) -> list[dict[str, Any]]:
         """An HLTB game's DLC and expansions as stored (its page's relations,
         their own pages where read)."""

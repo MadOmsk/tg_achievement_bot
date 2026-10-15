@@ -1096,3 +1096,45 @@ async def link_x360_product(repo: Repo, title_id: str) -> int | None:
     return await repo.save_version(
         xbox_catalog.parse_x360(product), platform="xbox_360", title_id=title_id
     )
+
+
+async def link_steam_apps_to_hltb(repo: Repo) -> dict[str, int]:
+    """A Steam version is the HLTB entry whose page names its app (owner,
+    2026-10-15): the surest evidence there is, and the lazy match never ran for
+    a Steam list nobody published in since. The same checks a stored link
+    passes (`entry_fits_version`, the demo rule); a game-type entry before a
+    DLC's, the page's main app before its second one. Links nothing that
+    already has a link, a refusal included."""
+    from bot.services.game_match import candidate_year
+
+    found: dict[int, list[dict]] = {}
+    for row in await repo.steam_versions_with_hltb_by_app():
+        found.setdefault(int(row["version_id"]), []).append(row)
+    linked = skipped = 0
+    for version_id, rows in found.items():
+        chosen = None
+        for row in rows:
+            fits = entry_fits_version(
+                game_type=row.get("game_type"),
+                steam_appids={int(row["product_id"])},
+                entry_year=row.get("release_year"),
+                version_store="steam",
+                version_product=str(row["product_id"]),
+                version_kind=row.get("kind"),
+                version_year=candidate_year(row),
+                version_episode=is_episode(row.get("name"), row.get("name_ru")),
+            )
+            part = is_part(
+                row.get("kind"),
+                row.get("role"),
+                [str(n) for n in (row.get("name"), row.get("name_ru")) if n],
+            ) and not is_part(None, None, [str(row["entry_name"])])
+            if fits and not part:
+                chosen = row
+                break
+        if chosen is None:
+            skipped += 1
+            continue
+        await repo.link_version_hltb(version_id, int(chosen["hltb_id"]), score=1.0)
+        linked += 1
+    return {"versions with a candidate": len(found), "linked": linked, "none fits": skipped}
