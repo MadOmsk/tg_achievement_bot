@@ -113,10 +113,17 @@ def _page(title: str, body: str) -> web.Response:
         # held, and once its form is sent it turns green and says so, every
         # button of that form locked until the next page comes.
         "button{transition:transform .06s,background .1s}"
-        "button:active{transform:scale(.94);background:#bbb}"
+        "button:active,button.down{transform:scale(.94);background:#bbb}"
         "button.sent{background:#2e7d32;color:#fff;border-color:#2e7d32}"
         "form.sending button:not(.sent){opacity:.45}</style>"
-        "<script>document.addEventListener('submit',function(e){"
+        # A phone shows :active late or not at all: the press is marked on
+        # the touch itself.
+        "<script>document.addEventListener('pointerdown',function(e){"
+        "var b=e.target.closest('button');if(b)b.classList.add('down')});"
+        "['pointerup','pointercancel','pointerleave'].forEach(function(t){"
+        "document.addEventListener(t,function(e){var b=e.target.closest&&"
+        "e.target.closest('button');if(b)b.classList.remove('down')})});"
+        "document.addEventListener('submit',function(e){"
         "if(e.defaultPrevented)return;var f=e.target,b=e.submitter;"
         "if(f.classList.contains('sending')){"
         "e.preventDefault();return}f.classList.add('sending');"

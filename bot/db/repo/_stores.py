@@ -584,6 +584,29 @@ class _StoresRepo:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def unnamed_lists(self, platforms: tuple[str, ...]) -> list[tuple[str, str]]:
+        """`(platform, title_id)` of the lists whose name was never learned:
+        none, "?", or the id itself."""
+        marks = ",".join("?" * len(platforms))
+        cursor = await self._conn.execute(
+            "SELECT platform, title_id FROM achievement_list_connectors"
+            f" WHERE platform IN ({marks}) AND (name IS NULL OR name = '' OR name = '?'"
+            "  OR name = title_id) ORDER BY platform, title_id",
+            platforms,
+        )
+        return [(str(r[0]), str(r[1])) for r in await cursor.fetchall()]
+
+    async def name_list(self, platform: str, title_id: str, name: str) -> None:
+        """A name for a list that had none (the stand-ins follow, 117's
+        trigger); a list with a name of its own keeps it."""
+        await self._conn.execute(
+            "UPDATE achievement_list_connectors SET name = ?,"
+            " name_en = COALESCE(name_en, ?) WHERE platform = ? AND title_id = ?"
+            " AND (name IS NULL OR name = '' OR name = '?' OR name = title_id)",
+            (name, name, platform, title_id),
+        )
+        await self._conn.commit()
+
     async def achievement_list_ids(self, platform: str) -> list[str]:
         """Every achievement list of a platform, by id."""
         cursor = await self._conn.execute(
