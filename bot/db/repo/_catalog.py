@@ -100,6 +100,28 @@ class _CatalogRepo:
             )
         await self._conn.commit()
 
+    async def set_achievement_groups(
+        self, platform: str, title_id: str, groups: dict[str, str]
+    ) -> int:
+        """Each achievement's group as its platform told it (Xbox's base /
+        non_base), on the list and on the rows people earned. The number of
+        list rows that took one."""
+        changed = 0
+        async with self.transaction():
+            for achievement_id, group in groups.items():
+                cursor = await self._conn.execute(
+                    "UPDATE title_achievements SET trophy_group_id = ?"
+                    " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
+                    (group, platform, title_id, achievement_id),
+                )
+                changed += cursor.rowcount
+                await self._conn.execute(
+                    "UPDATE seen_achievements SET trophy_group_id = ?"
+                    " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
+                    (group, platform, title_id, achievement_id),
+                )
+        return changed
+
     async def get_title_achievements(
         self, platform: str, title_id: str
     ) -> list[TitleAchievementRow]:

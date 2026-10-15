@@ -1,0 +1,128 @@
+"""Read each Xbox list once on contract 6 to learn its achievements' groups —
+`base`, the list it shipped with, or `non_base`, added later (#147; owner,
+2026-10-15) — through a login the operator gave the bot whose database
+`--auth-db` is (never production's: a refresh here logs that person out
+there). The answers are kept whole (`xbox_achievements`). **That bot must be
+stopped.** The games database is copied into `backups/` first.
+
+    BOT_ENV_FILE=.env.test .venv/Scripts/python.exe -X utf8 -m scripts.read_xbox_groups \
+        --auth-db data/test.db --db data/games.db --limit 5
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import sqlite3
+from datetime import UTC, datetime
+from pathlib import Path
+
+import aiosqlite
+
+from bot.config import get_settings
+from bot.db.repo import Database, Repo
+from bot.lock import AlreadyRunningError, single_instance
+from bot.services import raw_answers
+from bot.services.crypto import TokenCipher
+from bot.services.xbox.auth import XboxAuthService
+from bot.services.xbox.client import PAGE_SIZE, XboxApiError, XboxClient
+from bot.services.xbox.models import xbox_group
+
+
+def _backup(db_path: Path) -> Path:
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    Path("backups").mkdir(exist_ok=True)
+    target = Path("backups") / f"{db_path.stem}-pre-xbox-groups-{stamp}.db"
+    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+    copy = sqlite3.connect(target)
+    try:
+        source.backup(copy)
+    finally:
+        copy.close()
+        source.close()
+    return target
+
+
+async def _open_as_is(path: Path) -> Database:
+    """The login's database as it is: no schema, no migration."""
+    database = Database(path)
+    conn = await aiosqlite.connect(path)
+    conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA busy_timeout = 30000")
+    database._conn = conn
+    return database
+
+
+async def run(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    games = await Database(Path(args.db)).connect()
+    auth_db = await _open_as_is(Path(args.auth_db))
+    try:
+        repo = Repo(games)
+        todo = await repo.achievement_list_ids("xbox_modern")
+        if args.limit:
+            todo = todo[: args.limit]
+        person = await Repo(auth_db).any_active_xbox_person()
+        print(f"{len(todo)} Xbox lists; login of person {person}")
+        if person is None:
+            return 1
+        print("database copied to", _backup(Path(args.db)))
+        raw_answers.set_sink(repo.save_payload)
+        auth = XboxAuthService(
+            settings, Repo(auth_db), TokenCipher(settings.fernet_key.get_secret_value())
+        )
+        await auth.start()
+        client = XboxClient(auth)
+        grouped = empty = failed = 0
+        try:
+            for n, title_id in enumerate(todo, 1):
+                groups: dict[str, str] = {}
+                params = {"titleId": title_id, "maxItems": str(PAGE_SIZE)}
+                try:
+                    for _ in range(20):
+                        payload = await client._get_achievements(person, "6", params)
+                        for item in payload.get("achievements") or []:
+                            group = xbox_group(item.get("groupIds"))
+                            if group and item.get("id") is not None:
+                                groups[str(item["id"])] = group
+                        token = (payload.get("pagingInfo") or {}).get("continuationToken")
+                        if not token:
+                            break
+                        params = {**params, "continuationToken": token}
+                except XboxApiError as exc:
+                    failed += 1
+                    print(f"  {title_id}: {exc}")
+                    continue
+                if groups:
+                    await repo.set_achievement_groups("xbox_modern", title_id, groups)
+                    grouped += 1
+                else:
+                    empty += 1
+                if n % 50 == 0:
+                    print(f"  {n}/{len(todo)}, grouped {grouped}")
+        finally:
+            raw_answers.set_sink(None)
+            await auth.close()
+        print(f"grouped {grouped}, no achievements in the answer {empty}, failed {failed}")
+    finally:
+        await auth_db.close()
+        await games.close()
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--db", required=True)
+    parser.add_argument("--auth-db", required=True)
+    parser.add_argument("--limit", type=int, default=None)
+    args = parser.parse_args()
+    try:
+        with single_instance(Path(args.auth_db).parent / "bot.lock"):
+            return asyncio.run(run(args))
+    except AlreadyRunningError:
+        print("that bot is running: stop it first (manage.ps1 stop -Test)")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
