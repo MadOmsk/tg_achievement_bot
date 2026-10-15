@@ -102,7 +102,9 @@ class _CatalogRepo:
             for title_id in {r.title_id for r in rows if r.platform == "xbox_360"}:
                 await self.derive_x360_groups(title_id, commit=False)
         # An Xbox list read whole gives each achievement its group (base or
-        # non_base, 2026-10-15); the rows people earned take it from here.
+        # non_base, 2026-10-15); the rows people earned take it from here,
+        # and its Mythic and completion can be told (mark_xbox_completions,
+        # after the commit below).
         for platform, title_id in {
             (r.platform, r.title_id) for r in rows if r.platform in ("xbox_modern", "xbox_360")
         }:
@@ -115,6 +117,74 @@ class _CatalogRepo:
                 (platform, title_id),
             )
         await self._conn.commit()
+        if complete:
+            for platform, title_id in {
+                (r.platform, r.title_id) for r in rows if r.platform in ("xbox_modern", "xbox_360")
+            }:
+                await self.mark_xbox_completions_of_title(platform, title_id)
+
+    async def mark_xbox_completions(self, platform: str, xuid: str, title_id: str) -> None:
+        """An account's Mythic and completion of one Xbox game (owner,
+        2026-10-16): once every achievement of its base list is earned, the
+        last of them earned is marked `mythic`; once every achievement of its
+        whole list is, the last is marked `completes`. Only a list read whole
+        (`listed`) counts, the base list only where its groups are known;
+        each mark is made once and kept."""
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, trophy_group_id FROM title_achievements"
+            " WHERE platform = ? AND title_id = ? AND listed = 1",
+            (platform, title_id),
+        )
+        listed = {str(r[0]): r[1] for r in await cursor.fetchall()}
+        if not listed:
+            return
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, COALESCE(unlocked_at, created_at) AS at, mythic, completes"
+            " FROM seen_achievements WHERE platform = ? AND xuid = ? AND title_id = ?",
+            (platform, xuid, title_id),
+        )
+        earned = {
+            str(r[0]): (str(r[1] or ""), int(r[2]), int(r[3])) for r in await cursor.fetchall()
+        }
+        if not earned:
+            return
+
+        def last_of(ids: set[str]) -> str:
+            return max(ids, key=lambda a: (earned[a][0], a))
+
+        marks: list[tuple[str, str]] = []
+        base = {a for a, group in listed.items() if group == "base"}
+        if base and base <= earned.keys() and not any(v[1] for v in earned.values()):
+            marks.append(("mythic", last_of(base)))
+        if listed.keys() <= earned.keys() and not any(v[2] for v in earned.values()):
+            marks.append(("completes", last_of(set(listed))))
+        for column, achievement_id in marks:
+            await self._conn.execute(
+                f"UPDATE seen_achievements SET {column} = 1"
+                " WHERE platform = ? AND xuid = ? AND title_id = ? AND achievement_id = ?",
+                (platform, xuid, title_id, achievement_id),
+            )
+        if marks:
+            await self._conn.commit()
+
+    async def completion_marks(self) -> dict[str, int]:
+        """How many Mythics and completions are marked, per platform."""
+        cursor = await self._conn.execute(
+            "SELECT platform, SUM(mythic), SUM(completes) FROM seen_achievements GROUP BY platform"
+        )
+        return {
+            f"{r[0]} mythic/complete": f"{int(r[1] or 0)}/{int(r[2] or 0)}"  # type: ignore[misc]
+            for r in await cursor.fetchall()
+        }
+
+    async def mark_xbox_completions_of_title(self, platform: str, title_id: str) -> None:
+        """Every account's marks in one game — when its list was read whole."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT xuid FROM seen_achievements WHERE platform = ? AND title_id = ?",
+            (platform, title_id),
+        )
+        for row in await cursor.fetchall():
+            await self.mark_xbox_completions(platform, str(row[0]), title_id)
 
     async def derive_x360_groups(self, title_id: str, *, commit: bool = True) -> int:
         """A 360 list's groups, derived from its listed achievements' ids and

@@ -264,6 +264,10 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     trophy_group_id TEXT,
     -- 122: platform (it said so) / derived (worked out by us, provisional).
     group_source TEXT,
+    -- 123: this row brought the account's Mythic (the last of the base list) /
+    -- its completion (the last of the whole list); set once, when it happens.
+    mythic INTEGER NOT NULL DEFAULT 0,
+    completes INTEGER NOT NULL DEFAULT 0,
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2

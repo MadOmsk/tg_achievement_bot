@@ -465,7 +465,15 @@ every column. History: #106.
   contract-6 read (the catalog's) says, and an earned row takes its group from
   the catalog when the list is read whole —; **`main_game` on Steam**, which has
   no groups (`constants.achievement_group`, applied where `seen_achievements`
-  and `title_achievements` are written). **A PSN trophy group past the base game is a
+  and `title_achievements` are written).
+- **A Mythic and a completion are marks on the earned row that brought them**
+  (migration 123, owner, 2026-10-16; Xbox, both generations): `mythic` on the
+  last of the game's base list to be earned, `completes` on the last of its whole
+  list — set by `repo.mark_xbox_completions` after each new unlock and when a list
+  is read whole, once per account and game, kept when the list grows. Only a
+  list read whole (`listed`) counts; no Mythic where the groups are unknown. Not
+  announced as achievements yet. The completion counters (🌀, `/stats`) still
+  count as before. **A PSN trophy group past the base game is a
   DLC row (`dlcs.trophy_group_id`) of every version of its list**, stand-ins
   included, made whenever the groups are saved (`save_title_groups`); Sony names no
   store product for a group, so the link to a store's own DLC is by name, if ever.

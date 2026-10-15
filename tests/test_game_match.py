@@ -1276,3 +1276,44 @@ async def test_a_derived_group_is_marked_so_and_the_platforms_replaces_it(repo: 
         "SELECT trophy_group_id, group_source FROM title_achievements WHERE achievement_id = '2'"
     )
     assert tuple(await cursor.fetchone()) == ("base", "platform")
+
+
+async def test_the_last_base_unlock_is_the_mythic_and_the_last_of_all_completes(
+    repo: Repo,
+) -> None:
+    from bot.db.repo import TitleAchievementRow
+
+    await repo._conn.execute("PRAGMA foreign_keys = OFF")
+    await repo.upsert_title_achievements(
+        [
+            TitleAchievementRow(
+                platform="xbox_modern", title_id="9", achievement_id=a, trophy_group_id=g
+            )
+            for a, g in (("1", "base"), ("2", "base"), ("3", "non_base"))
+        ],
+        complete=True,
+    )
+
+    async def earn(achievement_id: str, at: str) -> None:
+        await repo._conn.execute(
+            "INSERT INTO seen_achievements (xuid, title_id, achievement_id, name, platform,"
+            " is_backfill, unlocked_at, created_at) VALUES ('x', '9', ?, 'A', 'xbox_modern', 0,"
+            " ?, ?)",
+            (achievement_id, at, at),
+        )
+        await repo._conn.commit()
+        await repo.mark_xbox_completions("xbox_modern", "x", "9")
+
+    async def marks() -> list[tuple]:
+        cursor = await repo._conn.execute(
+            "SELECT achievement_id, mythic, completes FROM seen_achievements ORDER BY 1"
+        )
+        return [tuple(r) for r in await cursor.fetchall()]
+
+    await earn("2", "2026-01-01")
+    await earn("3", "2026-01-02")
+    assert await marks() == [("2", 0, 0), ("3", 0, 0)]
+    await earn("1", "2026-01-03")  # the base list is whole, and so is the game
+    assert await marks() == [("1", 1, 1), ("2", 0, 0), ("3", 0, 0)]
+    await repo.mark_xbox_completions("xbox_modern", "x", "9")  # marked once
+    assert await marks() == [("1", 1, 1), ("2", 0, 0), ("3", 0, 0)]

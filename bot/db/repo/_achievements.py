@@ -178,7 +178,11 @@ class _AchievementsRepo:
             return []
         await self._ensure_account(AccountPlatform.XBOX, xuid)
 
-        return await self._insert_rows(xuid, achievements, is_backfill=is_backfill)
+        new_rows = await self._insert_rows(xuid, achievements, is_backfill=is_backfill)
+        # Each new unlock may be the one that brings a Mythic or a completion.
+        for platform, title_id in {(str(r.platform), r.title_id) for r in new_rows}:
+            await self.mark_xbox_completions(platform, xuid, title_id)
+        return new_rows
 
     async def insert_new_achievements_steam(
         self,
