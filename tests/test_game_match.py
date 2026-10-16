@@ -1368,3 +1368,20 @@ async def test_a_games_hltb_entry_reaches_its_other_releases(repo: Repo) -> None
     assert await spread_hltb(repo, [game]) == 2  # PS4 and PS5; HLTB lists no Series
     linked = {r["version_id"] for r in await repo.versions_of_hltb(5)}
     assert linked == {ids[0], ids[1], ids[2]}
+
+
+def test_a_game_is_not_called_by_an_id_when_a_release_has_a_name() -> None:
+    from bot.services.game_match import game_name
+
+    named = Candidate(
+        version_id=2, store="psn", product_id="1", console="ps4", names=["DAYS GONE"], year=2019
+    )
+    unnamed = Candidate(
+        version_id=1,
+        store="unknown",
+        product_id="1881441063",
+        console="pc",
+        names=["1881441063"],
+        year=2018,
+    )
+    assert game_name([unnamed, named]).lower() == "days gone"

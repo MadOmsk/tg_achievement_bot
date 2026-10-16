@@ -1014,7 +1014,15 @@ def game_name(members: list[Candidate], *, release: bool = False) -> str:
     nothing about its name."""
     games = [m for m in members if kind_of(m) not in ("demo", "tool", "mode", "extra")] or members
     plain = [m for m in games if kind_of(m) == "version"] or games
-    plain.sort(key=lambda m: (era(m) or 9999, len(m.names[0] if m.names else "")))
+    # A name that is only digits is an id we never learned the name of
+    # (2026-10-16: Days Gone was called "1881441063"): any real name first.
+    plain.sort(
+        key=lambda m: (
+            not m.names or str(m.names[0]).strip().isdigit(),
+            era(m) or 9999,
+            len(m.names[0] if m.names else ""),
+        )
+    )
     first = plain[0]
     if not first.names:
         return first.product_id
