@@ -75,6 +75,7 @@ a{color:#0b57d0}
 .pills input{display:none}
 .pills label:has(input:checked){background:#2e7d32;color:#fff;border-color:#2e7d32}
 .pills small{opacity:.7}
+.pills label.free{border-style:dashed;color:#666;font-size:12px}
 .other{width:100%;box-sizing:border-box;font-size:12px}
 .con{display:inline-block;background:#e3f2fd;border-radius:5px;padding:0 5px;font-size:12px}
 .done{color:#2e7d32;font-weight:bold}
@@ -213,6 +214,20 @@ class _Look:
 # 2026-10-16: no double negatives) shows its values turned round too; what is
 # stored stays the field's own value.
 VALUE_BY_KEY = {
+    "relation": {
+        "('same', None)": "одна игра",
+        "('series', None)": "одна серия",
+        "('not_related', None)": "не связаны",
+        "('unsure', None)": "не уверен",
+        "('remaster_of', 'first')": "1 — ремастер 2",
+        "('remaster_of', 'second')": "2 — ремастер 1",
+        "('remake_of', 'first')": "1 — ремейк 2",
+        "('remake_of', 'second')": "2 — ремейк 1",
+        "('contains', 'first')": "1 содержит 2",
+        "('contains', 'second')": "2 содержит 1",
+        "('vr_of', 'first')": "1 — VR-версия 2",
+        "('vr_of', 'second')": "2 — VR-версия 1",
+    },
     "facts_wrong": {"False": "да, верны", "True": "нет, есть ошибка"},
     "missing_hltb": {"False": "нет", "True": "да, есть"},
     "name_ok": {"True": "да", "False": "нет"},
@@ -278,17 +293,59 @@ def _head(qid: str, text: str, look: _Look) -> str:
     return f"<div class=subj><b>{first}</b></div>"
 
 
+YES_NO = ["yes", "no", "unsure"]
+VERDICT = ["same", "wrong", "unsure"]
+GAME_KINDS = [
+    "game", "edition", "compilation", "remaster", "remake", "dlc", "episode",
+    "demo", "tool", "mode", "soundtrack", "app", "other",
+]  # fmt: skip
+EDITION_KINDS = [
+    "standard", "deluxe", "premium", "ultimate", "gold", "goty", "complete",
+    "definitive", "anniversary", "collection", "bundle", "preorder", "other",
+]  # fmt: skip
+RELATIONS = [
+    "('same', None)", "('series', None)", "('not_related', None)",
+    "('remaster_of', 'first')", "('remaster_of', 'second')",
+    "('remake_of', 'first')", "('remake_of', 'second')",
+    "('contains', 'first')", "('contains', 'second')",
+    "('vr_of', 'first')", "('vr_of', 'second')", "('unsure', None)",
+]  # fmt: skip
+
+
+def _choices(key: str) -> list[str]:
+    """Every answer a decision can take (owner, 2026-10-16: a row where all the
+    advisers agree still needs a way to say they are wrong)."""
+    if key.endswith((".belongs", ".holds")) or re.fullmatch(r"g\d+", key):
+        return YES_NO
+    if ".hltb" in key or key == "verdict":
+        return VERDICT
+    if re.fullmatch(r"v\d+\.kind", key):
+        return GAME_KINDS
+    if re.fullmatch(r"e\d+\.kind", key):
+        return EDITION_KINDS
+    if key in ("facts_wrong", "missing_hltb"):
+        return ["False", "True"]
+    if key == "name_ok":
+        return ["True", "False"]
+    if key == "relation":
+        return RELATIONS
+    return []
+
+
 def _ask(
     qid: str, key: str, names: list[str], per: dict, labels: dict, ask: str
 ) -> tuple[str, bool]:
-    """One decision's pills, and whether the advisers agree on it."""
+    """One decision's pills — the advisers' answers, then every other answer
+    it can take, dashed — and whether the advisers agree on it."""
     said = {n: str(per[n].get(key, "—")) for n in names}
-    values = list(dict.fromkeys(said.values()))
+    values = list(dict.fromkeys([*said.values(), *_choices(key)]))
     current = labels.get(f"{qid}|{key}")
-    agreed = len(values) == 1
+    agreed = len(set(said.values())) == 1
+    first = said[names[0]] if names else None
     pills = "".join(
-        f'<label><input type=radio name="d:{escape(key)}" value="{escape(v)}"'
-        f"{' checked' if current == v or (current is None and agreed) else ''}>"
+        f'<label class="{"said" if v in said.values() else "free"}">'
+        f'<input type=radio name="d:{escape(key)}" value="{escape(v)}"'
+        f"{' checked' if current == v or (current is None and agreed and v == first) else ''}>"
         f"<span>{escape(_value(v, key))}</span> <small>"
         f"{escape(', '.join(n for n in names if said[n] == v))}</small></label>"
         for v in values
