@@ -430,9 +430,13 @@ def register(app: web.Application, trial: Path | None, page) -> None:
 
         kind = request.query.get("kind", "")
         only_open = request.query.get("open") == "1"
+        # Only what the advisers disagree on is the operator's (owner,
+        # 2026-10-16); a decision they all gave alike is taken as theirs.
+        show_all = request.query.get("all") == "1"
         advisers = _advisers(trial)
         names = list(advisers)
         labels = _labels(trial)
+        accepted: dict[str, str] = {}
         cards, total, done = [], 0, 0
         with _db(request) as conn:
             look = _Look(conn, _img, _store_href)
@@ -440,10 +444,20 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                 per = {
                     n: decisions(qid, advisers[n][qid]) if qid in advisers[n] else {} for n in names
                 }
-                keys = sorted(set().union(*(d.keys() for d in per.values())) if per else set())
+                every = sorted(set().union(*(d.keys() for d in per.values())) if per else set())
+                keys = []
+                for k in every:
+                    said = {str(per[n].get(k, "—")) for n in names}
+                    if len(said) == 1:
+                        accepted[f"{qid}|{k}"] = said.pop()
+                        if not show_all:
+                            continue
+                    keys.append(k)
                 total += len(keys)
                 labelled = sum(1 for k in keys if f"{qid}|{k}" in labels)
                 done += labelled
+                if not keys:
+                    continue
                 if kind and not qid.startswith(kind + ":"):
                     continue
                 if only_open and labelled == len(keys):
@@ -470,14 +484,20 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                     f"<pre style='white-space:pre-wrap;font-size:12px'>{escape(text)}</pre>"
                     "</details></div>"
                 )
+        path = trial / "compare" / "accepted.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(accepted, ensure_ascii=False, indent=1), "utf-8")
         nav = " · ".join(f'<a href="/trial?kind={k}">{escape(KIND_RU[k])}</a>' for k in KINDS)
+        scope = "все решения" if show_all else "только спорные решения"
         head = (
-            CSS + f"<p><b>{done}/{total}</b> решений размечено · модели: {escape(', '.join(names))}"
+            CSS
+            + f"<p><b>{done}/{total}</b> размечено ({scope}) · модели: {escape(', '.join(names))}"  # noqa: E501
+            f" · принято без проверки (все согласны): {len(accepted)}"
             f' · <a href="/trial?kind={quote(kind)}&open=1">только неразмеченные</a>'
-            f' · <a href="/trial">все</a></p><p>{nav}</p>'
-            "<p><small>Оранжевым — где модели расходятся. Отмеченный зелёным ответ сохранится"
-            " как твой; где все согласны, он уже отмечен — сохрани, чтобы подтвердить."
-            " «Свой ответ» важнее отмеченного.</small></p>"
+            f' · <a href="/trial">спорные</a> · <a href="/trial?all=1">все решения</a></p>'
+            f"<p>{nav}</p>"
+            "<p><small>Здесь только решения, где модели разошлись: выбери верный ответ или"
+            " впиши свой. Где все согласны, их ответ принят (compare/accepted.json).</small></p>"
         )
         return page("Trial", head + "".join(cards))
 
