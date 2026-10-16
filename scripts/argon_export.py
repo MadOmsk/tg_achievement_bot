@@ -74,8 +74,13 @@ THE RULES OF THIS DATABASE
   LEGO and in its licence's).
 
 HOW TO ANSWER
-Reply with JSON Lines only: one JSON object per line, one line per question, in the
-order asked, nothing else (no prose, no code fence). Copy each "id" exactly.
+Answer every question below, in the order asked. Put the answers in a FILE to
+download, named after this file with "_answers.jsonl" (01_games.txt →
+01_games_answers.jsonl): if you can create files (code execution, a canvas, an
+attachment), do so; if you cannot, reply with the same content as plain text.
+The content is JSON Lines only: one JSON object per line, one line per question,
+nothing else (no prose, no code fence). Copy each "id" exactly. If the answer is cut
+short, stop at a whole line: you will be told "continue" and go on from the next id.
 "confidence" is "high", "medium" or "low"; "why" is at most 25 words.
 
 For a G (game card) question:
