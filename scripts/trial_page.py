@@ -264,7 +264,7 @@ def _head(qid: str, text: str, look: _Look) -> str:
 
 def _ask(
     qid: str, key: str, names: list[str], per: dict, labels: dict, ask: str
-) -> tuple[str, bool]:  # noqa: E501
+) -> tuple[str, bool]:
     """One decision's pills, and whether the advisers agree on it."""
     said = {n: str(per[n].get(key, "—")) for n in names}
     values = list(dict.fromkeys(said.values()))
