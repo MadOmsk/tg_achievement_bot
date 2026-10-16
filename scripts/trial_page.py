@@ -57,21 +57,24 @@ a{color:#0b57d0}
  font-size:12px;margin-right:6px}
 .subj{display:flex;gap:10px;align-items:center;margin:6px 0}
 .subj img{border-radius:6px;object-fit:cover}
-.item{display:flex;gap:10px;align-items:center;padding:6px;border-radius:8px;margin:4px 0;
- background:#fff;border:1px solid #eee;flex-wrap:wrap}
+.item{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:10px;
+ align-items:center;padding:6px;border-radius:8px;margin:4px 0;background:#fff;border:1px solid #eee}
+@media (max-width:800px){.item{grid-template-columns:1fr}}
 .item.diff{background:#fff3e0;border-color:#ffb74d}
-.item .what{min-width:240px;flex:1;display:flex;gap:8px;align-items:center}
+.item .what{display:flex;gap:8px;align-items:center;min-width:0}
 .item .what small{color:#666}
-.ask{font-size:12px;color:#555;min-width:110px}
-.asks{display:flex;flex-direction:column;gap:4px;flex:2}
-.asks .one{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:3px;border-radius:6px}
+.ask{font-size:12px;color:#555}
+.asks{display:flex;flex-direction:column;gap:4px;min-width:0}
+.asks .one{display:grid;grid-template-columns:200px minmax(0,1fr) 140px;gap:8px;
+ align-items:center;padding:3px;border-radius:6px}
+@media (max-width:800px){.asks .one{grid-template-columns:1fr}}
 .asks .one.diff{background:#fff3e0}
 .pills label{display:inline-block;border:1px solid #bbb;border-radius:14px;padding:3px 9px;
  margin:2px;cursor:pointer;background:#fff;font-size:13px}
 .pills input{display:none}
 .pills label:has(input:checked){background:#2e7d32;color:#fff;border-color:#2e7d32}
 .pills small{opacity:.7}
-.other{width:130px;font-size:12px}
+.other{width:100%;box-sizing:border-box;font-size:12px}
 .con{display:inline-block;background:#e3f2fd;border-radius:5px;padding:0 5px;font-size:12px}
 .done{color:#2e7d32;font-weight:bold}
 .why div{font-size:12px;margin:2px 0}
@@ -322,7 +325,8 @@ def _rows(qid: str, keys: list[str], names: list[str], per: dict, labels: dict, 
             all_agree &= agreed
         out.append(
             f'<div class="item{"" if all_agree else " diff"}">'
-            + (f"<div class=what>{what}</div>" if what else "")
+            # An empty first column keeps every question in the same column.
+            + f"<div class=what>{what}</div>"
             + f"<div class=asks>{''.join(asks)}</div></div>"
         )
     return "".join(out)
