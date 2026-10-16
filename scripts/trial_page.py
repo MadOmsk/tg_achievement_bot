@@ -58,7 +58,8 @@ a{color:#0b57d0}
 .subj{display:flex;gap:10px;align-items:center;margin:6px 0}
 .subj img{border-radius:6px;object-fit:cover}
 .item{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:10px;
- align-items:center;padding:6px;border-radius:8px;margin:4px 0;background:#fff;border:1px solid #eee}
+ align-items:center;padding:6px;border-radius:8px;margin:4px 0;background:#fff;
+ border:1px solid #eee}
 @media (max-width:800px){.item{grid-template-columns:1fr}}
 .item.diff{background:#fff3e0;border-color:#ffb74d}
 .item .what{display:flex;gap:8px;align-items:center;min-width:0}
