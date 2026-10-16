@@ -91,7 +91,8 @@ For a G (game card) question:
    belongs elsewhere: null)}],
  "hltb": [{"v": 101, "hltb": 555, "verdict": "same"|"wrong"|"unsure"}],
  "dlc_hltb": [{"dlc": 77, "hltb": 888, "verdict": "same"|"wrong"|"unsure"}],
- "missing_hltb": "a HowLongToBeat game name you are sure this game has, or null",
+ "missing_hltb": "the name of this game's own HowLongToBeat entry (not a DLC's) when none
+   of the links shown is it and you are sure one exists, or null",
  "series": ["every series this game is in (franchise, sub-series, LEGO, …)"] or [],
  "facts": null, or the right {"year": first release year, "developer": "...",
    "publisher": "..."} when the GAME line's are wrong (only the wrong ones),
