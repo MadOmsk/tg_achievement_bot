@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
@@ -288,6 +289,13 @@ def main() -> int:
     parser.add_argument("--db", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--per-file", type=int, default=150)
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=0,
+        help="a trial: this many questions of each kind, chosen at random, in one file",
+    )
+    parser.add_argument("--seed", type=int, default=20261016)
     args = parser.parse_args()
     conn = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -299,6 +307,36 @@ def main() -> int:
     }
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    if args.sample:
+        # A trial to compare advisers on (owner, 2026-10-16): every kind, a few
+        # dozen each — the games half with several releases, half with one.
+        rng = random.Random(args.seed)
+        chosen: list[dict] = []
+        for part, questions in parts.items():
+            if part == "games":
+                many = [q for q in questions if q["text"].count("release v") > 1]
+                one = [q for q in questions if q["text"].count("release v") == 1]
+                half = args.sample // 2
+                picked = rng.sample(many, min(len(many), args.sample - half))
+                picked += rng.sample(one, min(len(one), half))
+            else:
+                picked = rng.sample(questions, min(len(questions), args.sample))
+            chosen += picked
+            print(f"{part}: {len(picked)} of {len(questions)}")
+        name = "trial.txt"
+        lf = "\n"
+        body = [INSTRUCTIONS, f"{lf}QUESTIONS ({len(chosen)}, file {name}):"]
+        body += [f"{lf}id: {q['id']}{lf}{q['text']}" for q in chosen]
+        (out / name).write_text(lf.join(body) + lf, encoding="utf-8", newline=lf)
+        (out / "trial_questions.json").write_text(
+            json.dumps(
+                [{k: v for k, v in q.items() if k != "text"} | {"file": name} for q in chosen],
+                ensure_ascii=False,
+            ),
+            "utf-8",
+        )
+        print(f"{len(chosen)} questions in {out / name}")
+        return 0
     index: list[dict] = []
     n = 0
     for part, questions in parts.items():
