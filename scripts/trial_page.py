@@ -429,7 +429,9 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         from scripts.catalog_viewer import _db, _img, _store_href
 
         kind = request.query.get("kind", "")
-        only_open = request.query.get("open") == "1"
+        # A question answered whole leaves the list (owner, 2026-10-16);
+        # `done=1` shows the answered ones as well.
+        only_open = request.query.get("done") != "1"
         # Only what the advisers disagree on is the operator's (owner,
         # 2026-10-16); a decision they all gave alike is taken as theirs.
         show_all = request.query.get("all") == "1"
@@ -469,7 +471,10 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                     f" {escape(str(advisers[n].get(qid, {}).get('why', '—')))}</div>"
                     for n in names
                 )
-                back = f"/trial?kind={quote(kind)}&open={'1' if only_open else ''}#{quote(qid)}"
+                back = (
+                    f"/trial?kind={quote(kind)}&done={'' if only_open else '1'}"
+                    f"&all={'1' if show_all else ''}#{quote(qid)}"
+                )
                 cards.append(
                     f'<div class=tq id="{escape(qid)}">'
                     f"<h3><span class=badge>{escape(KIND_RU.get(qid.split(':')[0], ''))}</span>"
@@ -493,8 +498,9 @@ def register(app: web.Application, trial: Path | None, page) -> None:
             CSS
             + f"<p><b>{done}/{total}</b> размечено ({scope}) · модели: {escape(', '.join(names))}"
             f" · принято без проверки (все согласны): {len(accepted)}"
-            f' · <a href="/trial?kind={quote(kind)}&open=1">только неразмеченные</a>'
-            f' · <a href="/trial">спорные</a> · <a href="/trial?all=1">все решения</a></p>'
+            f' · <a href="/trial?kind={quote(kind)}">неразмеченные</a>'
+            f' · <a href="/trial?kind={quote(kind)}&done=1">с размеченными</a>'
+            f' · <a href="/trial?all=1&done=1">все решения</a></p>'
             f"<p>{nav}</p>"
             "<p><small>Здесь только решения, где модели разошлись: выбери верный ответ или"
             " впиши свой. Где все согласны, их ответ принят (compare/accepted.json).</small></p>"
@@ -516,7 +522,12 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         path = _labels_path(trial)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(labels, ensure_ascii=False, indent=1), "utf-8")
-        raise web.HTTPFound(str(form.get("back") or "/trial"))
+        # Back where the list goes on: the question after this one (this one
+        # leaves the list once answered whole).
+        back = str(form.get("back") or "/trial").split("#", 1)[0]
+        order = [q for q, _text in _questions(trial)]
+        later = order[order.index(qid) + 1 :] if qid in order else []
+        raise web.HTTPFound(back + (f"#{quote(later[0])}" if later else ""))
 
     app.router.add_get("/trial", show)
     app.router.add_post("/trial/label", label)
