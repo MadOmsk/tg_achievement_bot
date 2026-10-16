@@ -205,7 +205,19 @@ class _Look:
         )
 
 
-def _value(v: str) -> str:
+# A question asked the other way round than the adviser's field (owner,
+# 2026-10-16: no double negatives) shows its values turned round too; what is
+# stored stays the field's own value.
+VALUE_BY_KEY = {
+    "facts_wrong": {"False": "да, верны", "True": "нет, есть ошибка"},
+    "missing_hltb": {"False": "нет", "True": "да, есть"},
+    "name_ok": {"True": "да", "False": "нет"},
+}
+
+
+def _value(v: str, key: str = "") -> str:
+    if v in VALUE_BY_KEY.get(key, {}):
+        return VALUE_BY_KEY[key][v]
     if v.startswith("(") and v.endswith(")") and v != "()":
         inner = [x.strip(" '\"") for x in v[1:-1].split(",") if x.strip(" '\"")]
         if inner and inner[-1] == "None":
@@ -215,9 +227,9 @@ def _value(v: str) -> str:
 
 
 ASK = {
-    "missing_hltb": "Есть HLTB, которой у нас нет?",
+    "missing_hltb": "У игры есть ещё запись HLTB, которой у нас нет?",
     "series": "В каких сериях игра",
-    "facts_wrong": "Год / студия / издатель неверны?",
+    "facts_wrong": "Год, студия и издатель верны?",
     "missing": "Каких версий в магазинах не хватает",
     "relation": "Как связаны",
     "name_ok": "Название серии верное?",
@@ -273,7 +285,7 @@ def _ask(
     pills = "".join(
         f'<label><input type=radio name="d:{escape(key)}" value="{escape(v)}"'
         f"{' checked' if current == v or (current is None and agreed) else ''}>"
-        f"<span>{escape(_value(v))}</span> <small>"
+        f"<span>{escape(_value(v, key))}</span> <small>"
         f"{escape(', '.join(n for n in names if said[n] == v))}</small></label>"
         for v in values
     )
@@ -324,7 +336,7 @@ def _row(qid: str, key: str, names: list[str], per: dict, labels: dict, look: _L
     pills = "".join(
         f'<label><input type=radio name="d:{escape(key)}" value="{escape(v)}"'
         f"{' checked' if current == v or (current is None and agreed) else ''}>"
-        f"<span>{escape(_value(v))}</span> <small>"
+        f"<span>{escape(_value(v, key))}</span> <small>"
         f"{escape(', '.join(n for n in names if said[n] == v))}</small></label>"
         for v in values
     )
