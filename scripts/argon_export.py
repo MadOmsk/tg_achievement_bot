@@ -10,6 +10,8 @@ Four kinds of question:
   compilation, a VR version) or the model thinks might be.
 - `S:<series>` a series and its games.
 - `P:<version>:<group>` a PSN trophy group against the add-ons sold for that game.
+- `M:<game>` the releases a game has in the stores that the database lacks
+  (another console, another store, a store page for a release that has none).
 
 Each file is whole on its own: the same instructions, then its questions. The
 questions are kept beside the files (`questions.json`) for the import.
@@ -95,6 +97,19 @@ For an S (series) question:
  "members": [{"g": 12, "belongs": "yes"|"no"|"unsure"}],
  "missing": ["names of games of ours shown elsewhere you know belong here"] or [],
  "confidence": "...", "why": "..."}
+
+For an M (missing releases) question: every release of this game in these stores
+that is NOT listed — Xbox (One, Series, PC on the Microsoft Store, 360), PlayStation
+(PS3, PS4, PS5, Vita), Steam — and a store page for a release marked "stand-in".
+Only real store products of this very game (no remasters, remakes, sequels or DLC:
+those are other games). Give the store's own title and its id when you know it
+(a Steam app id, an Xbox product id like 9NBLGGH4R315 or C3KLDKZBHNCZ, a PlayStation
+title id like CUSA00133 or PPSA01234, a PSN concept id).
+{"id": "M:12", "missing": [{"store": "steam"|"xbox"|"psn", "console": "steam"|"pc"|"one"
+   |"series"|"360"|"ps3"|"ps4"|"ps5"|"vita", "title": "...", "store_id": "..."|null,
+   "for_stand_in": the v of the stand-in it is the page of, or null}],
+ "confidence": "...", "why": "..."}
+"missing" is [] when nothing is missing.
 
 For a P (PSN trophy group) question: which add-on of the store (listed) brings this
 trophy group, if any (a free update, a season of content, a bundle, or none listed).
@@ -204,6 +219,19 @@ def _game_line(conn: sqlite3.Connection, game_id: int) -> str:
     return f'game {game_id} "{g["name"]}" ({g["year"] or "?"}) — releases: {releases or "none"}'
 
 
+def missing_questions(cards: list[dict]) -> list[dict]:
+    """The same game, asked what the stores sell of it that we lack."""
+    return [
+        {
+            "id": "M:" + card["id"].split(":", 1)[1],
+            "kind": "missing",
+            "game_id": card["game_id"],
+            "text": card["text"].split("\n HLTB links:")[0],
+        }
+        for card in cards
+    ]
+
+
 def relation_questions(conn: sqlite3.Connection) -> list[dict]:
     pairs: dict[tuple[int, int], str] = {}
     for r in _q(conn, "SELECT game_id, related_id, kind FROM game_relations"):
@@ -299,8 +327,10 @@ def main() -> int:
     args = parser.parse_args()
     conn = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
+    cards = game_cards(conn)
     parts = {
-        "games": game_cards(conn),
+        "games": cards,
+        "missing": missing_questions(cards),
         "relations": relation_questions(conn),
         "series": series_questions(conn),
         "psn_groups": psn_group_questions(conn),
@@ -313,7 +343,7 @@ def main() -> int:
         rng = random.Random(args.seed)
         chosen: list[dict] = []
         for part, questions in parts.items():
-            if part == "games":
+            if part in ("games", "missing"):
                 many = [q for q in questions if q["text"].count("release v") > 1]
                 one = [q for q in questions if q["text"].count("release v") == 1]
                 half = args.sample // 2
