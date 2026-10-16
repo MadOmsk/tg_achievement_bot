@@ -95,6 +95,7 @@ PAGES = {
     "/advised": "Advised",
     "/decisions": "Answers",
     "/series": "Series",
+    "/trial": "Trial",
 }
 
 
@@ -3121,6 +3122,7 @@ def build(
     proposals_path: Path | None = None,
     gemini_dir: Path | None = None,
     advised_path: Path | None = None,
+    trial_dir: Path | None = None,
 ) -> web.Application:
     app = web.Application()
     app["db_path"] = db_path.resolve().as_posix()
@@ -3165,6 +3167,9 @@ def build(
     app.router.add_get("/decisions", decisions)
     app.router.add_get("/proposals", proposals)
     app.router.add_get("/advised", advised)
+    from scripts import trial_page
+
+    trial_page.register(app, trial_dir, _page)
     app.router.add_post("/decision/undo", decision_undo)
     app.router.add_post("/decide-games", decide_games)
     app.router.add_post("/game/{game_id:\\d+}/unrelate", game_unrelate)
@@ -3199,6 +3204,7 @@ def build(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--db", help="database file (default: DB_PATH from the env file)")
+    parser.add_argument("--trial", help="a trial's folder (trial.txt, answers/), for /trial")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument(
         "--proposals", help="an adviser's proposals for the game pairs (JSON), shown at /proposals"
@@ -3224,7 +3230,7 @@ def main() -> None:
     gemini = Path(args.gemini) if args.gemini else None
     advised_path = Path(args.advised) if args.advised else None
     web.run_app(
-        build(db_path, proposals, gemini, advised_path),
+        build(db_path, proposals, gemini, advised_path, Path(args.trial) if args.trial else None),
         host="127.0.0.1",
         port=args.port,
         print=None,
