@@ -49,6 +49,8 @@ VALUE_RU = {
 
 CSS = """
 <style>
+body{background:#fff;color:#111}
+a{color:#0b57d0}
 .tq{border:1px solid #ddd;border-radius:10px;padding:12px;margin:14px 0;background:#fafafa}
 .tq h3{margin:0 0 6px;font-size:16px}
 .badge{display:inline-block;background:#333;color:#fff;border-radius:6px;padding:1px 7px;
@@ -61,6 +63,9 @@ CSS = """
 .item .what{min-width:240px;flex:1;display:flex;gap:8px;align-items:center}
 .item .what small{color:#666}
 .ask{font-size:12px;color:#555;min-width:110px}
+.asks{display:flex;flex-direction:column;gap:4px;flex:2}
+.asks .one{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:3px;border-radius:6px}
+.asks .one.diff{background:#fff3e0}
 .pills label{display:inline-block;border:1px solid #bbb;border-radius:14px;padding:3px 9px;
  margin:2px;cursor:pointer;background:#fff;font-size:13px}
 .pills input{display:none}
@@ -257,6 +262,60 @@ def _head(qid: str, text: str, look: _Look) -> str:
     return f"<div class=subj><b>{first}</b></div>"
 
 
+def _ask(
+    qid: str, key: str, names: list[str], per: dict, labels: dict, ask: str
+) -> tuple[str, bool]:  # noqa: E501
+    """One decision's pills, and whether the advisers agree on it."""
+    said = {n: str(per[n].get(key, "—")) for n in names}
+    values = list(dict.fromkeys(said.values()))
+    current = labels.get(f"{qid}|{key}")
+    agreed = len(values) == 1
+    pills = "".join(
+        f'<label><input type=radio name="d:{escape(key)}" value="{escape(v)}"'
+        f"{' checked' if current == v or (current is None and agreed) else ''}>"
+        f"<span>{escape(_value(v))}</span> <small>"
+        f"{escape(', '.join(n for n in names if said[n] == v))}</small></label>"
+        for v in values
+    )
+    other = current if current is not None and current not in values else ""
+    mark = " <span class=done>✓</span>" if f"{qid}|{key}" in labels else ""
+    html = (
+        f'<div class="one{"" if agreed else " diff"}"><div class=ask>{escape(ask)}{mark}</div>'
+        f"<div class=pills>{pills}</div>"
+        f"<input class=other name='o:{escape(key)}' placeholder='свой ответ'"
+        f" value='{escape(other)}'></div>"
+    )
+    return html, agreed
+
+
+def _subject_of(key: str) -> str:
+    """The item a decision is about: its release, edition or member."""
+    m = re.fullmatch(r"(v\d+|e\d+)\.(belongs|kind|holds)", key)
+    return m[1] if m else key
+
+
+def _rows(qid: str, keys: list[str], names: list[str], per: dict, labels: dict, look: _Look) -> str:
+    """Decisions grouped by the item they are about: a release's "belongs" and
+    "kind" sit beside one picture of it."""
+    groups: dict[str, list[str]] = {}
+    for key in keys:
+        groups.setdefault(_subject_of(key), []).append(key)
+    out = []
+    for group in groups.values():
+        what, _ask0 = _subject(group[0], look)
+        asks, all_agree = [], True
+        for key in group:
+            html, agreed = _ask(qid, key, names, per, labels, _subject(key, look)[1])
+            asks.append(html)
+            all_agree &= agreed
+        out.append(
+            f'<div class="item{"" if all_agree else " diff"}">'
+            + (f"<div class=what>{what}</div>" if what else "")
+            + f"<div class=asks>{''.join(asks)}</div></div>"
+        )
+    return "".join(out)
+
+
 def _row(qid: str, key: str, names: list[str], per: dict, labels: dict, look: _Look) -> str:
     said = {n: str(per[n].get(key, "—")) for n in names}
     values = list(dict.fromkeys(said.values()))
@@ -315,7 +374,7 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                     continue
                 if only_open and labelled == len(keys):
                     continue
-                rows = "".join(_row(qid, k, names, per, labels, look) for k in keys)
+                rows = _rows(qid, keys, names, per, labels, look)
                 whys = "".join(
                     f"<div><b>{escape(n)}</b>"
                     f" ({escape(str(advisers[n].get(qid, {}).get('confidence', '—')))}):"
