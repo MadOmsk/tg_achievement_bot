@@ -1329,3 +1329,42 @@ async def test_the_last_base_unlock_is_the_mythic_and_the_last_of_all_completes(
     assert await marks() == [("1", 1, 0), ("2", 0, 0), ("3", 0, 0)]
     await earn("4", "2026-02-01")
     assert await marks() == [("1", 1, 0), ("2", 0, 0), ("3", 0, 0), ("4", 0, 1)]
+
+
+async def test_a_games_hltb_entry_reaches_its_other_releases(repo: Repo) -> None:
+    from bot.services.game_link import spread_hltb
+    from bot.services.stores import StoreVersion, hltb_page
+
+    await repo.save_hltb_page(
+        hltb_page.parse_page(
+            {
+                "game": [
+                    {
+                        "game_id": 5,
+                        "game_name": "Motorfest",
+                        "game_type": "game",
+                        "profile_platform": "PC, PlayStation 4, PlayStation 5",
+                    }
+                ]
+            }
+        )  # type: ignore[arg-type]
+    )
+    ids = [
+        await repo.save_version(
+            StoreVersion(store=s, product_id=p, console=c, name="Motorfest"),
+            platform=None,
+            title_id=None,
+        )
+        for s, p, c in (
+            ("steam", "1", "steam"),
+            ("psn", "2", "ps4"),
+            ("psn", "3", "ps5"),
+            ("xbox", "4", "series"),
+        )
+    ]
+    game = await repo.create_game("Motorfest", 2023, ids[0])
+    await repo.write_members({v: (game, "version", None, None) for v in ids})
+    await repo.link_version_hltb(ids[0], 5, score=1.0)
+    assert await spread_hltb(repo, [game]) == 2  # PS4 and PS5; HLTB lists no Series
+    linked = {r["version_id"] for r in await repo.versions_of_hltb(5)}
+    assert linked == {ids[0], ids[1], ids[2]}

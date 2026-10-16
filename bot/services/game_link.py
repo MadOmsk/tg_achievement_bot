@@ -189,6 +189,8 @@ class GameLinker:
             report.review = [(v.subject, v.other, v.relation, v.p) for v in review]
         await self._repo.drop_empty_games()
         await self._repo.refresh_game_facts(sorted(set(game_of.values())))
+        # The game's HLTB entry, known for one release, for its others too.
+        await spread_hltb(self._repo, sorted(set(game_of.values())))
         try:
             # Series follow the games: a rebuild may merge, split or relate
             # them. Proposed again whole (a few thousand games: cheap); a
@@ -584,3 +586,51 @@ def _candidate(row: dict) -> Candidate:
         blurb=plain_text(row.get("description_en")),
         hltb_blurb=plain_text(row.get("hltb_summary")),
     )
+
+
+async def spread_hltb(repo: Repo, game_ids: list[int] | None = None) -> int:
+    """A game's HowLongToBeat entry, known for one of its releases, for its
+    other releases too (owner, 2026-10-16: the PC version is surely linked and
+    the entry lists the other platforms — the PS4 and PS5 versions are that
+    entry). Its releases are one work, so one entry times them all; a release
+    takes it only when HLTB lists its platform, it has no link of its own (nor
+    a refusal), and it is not a demo, a tool, a mode or an extra. A game whose
+    releases are linked to more than one game entry is left alone: which one
+    is the game's is not ours to guess. The number of links made."""
+    from bot.services.game_match import is_part
+    from bot.services.hltb_match import NOT_A_GAME
+    from bot.services.hltb_platforms import hltb_platform
+
+    by_game: dict[int, list[dict]] = {}
+    for row in await repo.hltb_spread_rows(game_ids):
+        by_game.setdefault(int(row["game_id"]), []).append(row)
+    made = 0
+    for rows in by_game.values():
+        linked = [
+            r
+            for r in rows
+            if r["hltb_id"] is not None
+            and r["source"] != "rejected"
+            and (r["game_type"] or "game") not in NOT_A_GAME
+        ]
+        entries = {int(r["hltb_id"]) for r in linked}
+        if len(entries) != 1:
+            continue
+        hltb_id = entries.pop()
+        platforms = set(str(linked[0]["entry_platforms"] or "").split("|")) - {""}
+        seen: set[int] = set()
+        for r in rows:
+            vid = int(r["version_id"])
+            if vid in seen:
+                continue
+            seen.add(vid)
+            if any(int(x["version_id"]) == vid and x["hltb_id"] is not None for x in rows):
+                continue  # linked already, or refused
+            if is_part(r["kind"], r["role"], [str(n) for n in (r["name"], r["name_ru"]) if n]):
+                continue
+            platform = hltb_platform(r["console"])
+            if platform is None or (platforms and platform not in platforms):
+                continue
+            await repo.link_version_hltb(vid, hltb_id, score=0.9)
+            made += 1
+    return made

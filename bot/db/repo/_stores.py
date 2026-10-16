@@ -648,6 +648,31 @@ class _StoresRepo:
         )
         return [str(r[0]) for r in await cursor.fetchall()]
 
+    async def hltb_spread_rows(self, game_ids: list[int] | None = None) -> list[dict[str, Any]]:
+        """Every version of these games (all games: None) with its HLTB links
+        (refusals included) and, per linked entry, the platforms HLTB lists
+        for it — what `game_link.spread_hltb` decides from."""
+        where = ""
+        args: tuple = ()
+        if game_ids is not None:
+            if not game_ids:
+                return []
+            where = f" AND v.game_id IN ({','.join('?' * len(game_ids))})"
+            args = tuple(game_ids)
+        cursor = await self._conn.execute(
+            "SELECT v.version_id, v.game_id, v.console, v.store, v.kind, v.role, v.name,"
+            " v.name_ru, vh.hltb_id, vh.source, vh.score, e.game_type,"
+            " (SELECT group_concat(platform, '|') FROM ("
+            "   SELECT platform FROM hltb_entry_platforms p WHERE p.hltb_id = vh.hltb_id"
+            "   UNION SELECT platform FROM hltb_platform_times t WHERE t.hltb_id = vh.hltb_id"
+            " )) AS entry_platforms"
+            " FROM versions v LEFT JOIN version_hltb vh ON vh.version_id = v.version_id"
+            " LEFT JOIN hltb_entries e ON e.hltb_id = vh.hltb_id"
+            f" WHERE v.game_id IS NOT NULL{where} ORDER BY v.game_id, v.version_id",
+            args,
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
     async def steam_versions_with_hltb_by_app(self) -> list[dict[str, Any]]:
         """Steam versions with no HLTB link at all (not even a refusal) beside
         every entry whose page names their app: `steam_appid` first, `steam_alt`
