@@ -491,7 +491,7 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         scope = "все решения" if show_all else "только спорные решения"
         head = (
             CSS
-            + f"<p><b>{done}/{total}</b> размечено ({scope}) · модели: {escape(', '.join(names))}"  # noqa: E501
+            + f"<p><b>{done}/{total}</b> размечено ({scope}) · модели: {escape(', '.join(names))}"
             f" · принято без проверки (все согласны): {len(accepted)}"
             f' · <a href="/trial?kind={quote(kind)}&open=1">только неразмеченные</a>'
             f' · <a href="/trial">спорные</a> · <a href="/trial?all=1">все решения</a></p>'
