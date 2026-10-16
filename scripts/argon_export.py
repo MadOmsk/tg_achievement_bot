@@ -12,6 +12,11 @@ Four kinds of question:
 - `P:<version>:<group>` a PSN trophy group against the add-ons sold for that game.
 - `M:<game>` the releases a game has in the stores that the database lacks
   (another console, another store, a store page for a release that has none).
+- `D:<game>:<game>` two games with alike names nothing relates yet: one game
+  stored twice, or related.
+- `E:<game>` a game's editions (store bundles and packages): their kind and contents.
+- `H:<game>` a game's DLC against its HowLongToBeat entry's additional content.
+- `X:<version>:<hltb>` a HowLongToBeat link that was refused, asked again.
 
 Each file is whole on its own: the same instructions, then its questions. The
 questions are kept beside the files (`questions.json`) for the import.
@@ -82,6 +87,9 @@ For a G (game card) question:
  "hltb": [{"v": 101, "hltb": 555, "verdict": "same"|"wrong"|"unsure"}],
  "dlc_hltb": [{"dlc": 77, "hltb": 888, "verdict": "same"|"wrong"|"unsure"}],
  "missing_hltb": "a HowLongToBeat game name you are sure this game has, or null",
+ "series": ["every series this game is in (franchise, sub-series, LEGO, …)"] or [],
+ "facts": null, or the right {"year": first release year, "developer": "...",
+   "publisher": "..."} when the GAME line's are wrong (only the wrong ones),
  "confidence": "...", "why": "..."}
 List every release and every HLTB link shown, each once.
 
@@ -110,6 +118,23 @@ title id like CUSA00133 or PPSA01234, a PSN concept id).
    "for_stand_in": the v of the stand-in it is the page of, or null}],
  "confidence": "...", "why": "..."}
 "missing" is [] when nothing is missing.
+
+For a D (two games alike) question: the same answer as for R —
+{"id": "D:12:34", "relation": "same"|"remaster_of"|"remake_of"|"contains"|"vr_of"
+   |"series"|"not_related"|"unsure", "direction": ..., "confidence": "...", "why": "..."}
+
+For an E (editions) question: for each edition shown, its kind and whether it holds
+this game (an edition of another game, or a bundle of several games, is "no").
+{"id": "E:12", "editions": [{"e": 501, "kind": "standard"|"deluxe"|"premium"|"ultimate"
+   |"gold"|"goty"|"complete"|"definitive"|"anniversary"|"collection"|"bundle"|"preorder"
+   |"other", "holds_game": "yes"|"no"|"unsure"}], "confidence": "...", "why": "..."}
+
+For an H (DLC and HowLongToBeat) question: which of our DLC (listed) is which of the
+entry's additional content (listed); a DLC with no entry is left out.
+{"id": "H:12", "links": [{"dlc": 77, "hltb": 888}], "confidence": "...", "why": "..."}
+
+For an X (refused HowLongToBeat link) question: is the entry this release after all?
+{"id": "X:101:555", "verdict": "same"|"wrong"|"unsure", "confidence": "...", "why": "..."}
 
 For a P (PSN trophy group) question: which add-on of the store (listed) brings this
 trophy group, if any (a free update, a season of content, a bundle, or none listed).
@@ -232,6 +257,140 @@ def missing_questions(cards: list[dict]) -> list[dict]:
     ]
 
 
+def _key(name: str) -> str:
+    from bot.services.hltb_match import core, normalize
+
+    return core(normalize(name or ""))
+
+
+def duplicate_questions(conn: sqlite3.Connection, related: set[frozenset]) -> list[dict]:
+    """Games whose names are alike (the same core name, or one the other's start
+    plus a word) and that nothing relates: one game stored twice, or a remaster,
+    a remake, a part of a series the matcher never put side by side."""
+    from bot.services.hltb_match import similarity
+
+    games = _q(
+        conn, "SELECT game_id, name FROM games WHERE merged_into IS NULL AND name IS NOT NULL"
+    )
+    by_word: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for g in games:
+        key = _key(g["name"])
+        if key:
+            by_word[key.split()[0]].append((g["game_id"], key))
+    seen: set[frozenset] = set()
+    out = []
+    for bucket in by_word.values():
+        if len(bucket) > 400:  # a word too common to pair on ("the")
+            continue
+        for i, (a, ka) in enumerate(bucket):
+            for b, kb in bucket[i + 1 :]:
+                pair = frozenset((a, b))
+                if pair in seen or pair in related:
+                    continue
+                if ka == kb or similarity(ka, kb) >= 0.85:
+                    seen.add(pair)
+                    out.append(
+                        {
+                            "id": f"D:{min(a, b)}:{max(a, b)}",
+                            "kind": "duplicate",
+                            "games": [min(a, b), max(a, b)],
+                            "text": f"FIRST: {_game_line(conn, min(a, b))}\n"
+                            f"SECOND: {_game_line(conn, max(a, b))}",
+                        }
+                    )
+    return out
+
+
+def edition_questions(conn: sqlite3.Connection) -> list[dict]:
+    rows = _q(
+        conn,
+        "SELECT DISTINCT v.game_id, e.edition_id, e.store, e.name, e.kind FROM editions e"
+        " JOIN edition_items i ON i.edition_id = e.edition_id"
+        " JOIN versions v ON v.version_id = i.version_id WHERE v.game_id IS NOT NULL"
+        " ORDER BY v.game_id, e.edition_id",
+    )
+    by_game: dict[int, list] = defaultdict(list)
+    for r in rows:
+        by_game[r["game_id"]].append(r)
+    out = []
+    for game_id, editions in by_game.items():
+        lines = [_game_line(conn, game_id), " editions:"]
+        for e in editions[:40]:
+            items = _q(
+                conn,
+                "SELECT name, item_kind FROM edition_items WHERE edition_id = ? ORDER BY is_primary DESC",  # noqa: E501
+                (e["edition_id"],),
+            )
+            holds = "; ".join(f"{i['name'] or '?'} ({i['item_kind']})" for i in items[:12])
+            lines.append(
+                f'  edition {e["edition_id"]}: {e["store"]} "{e["name"] or "?"}"'
+                f" · our kind {e['kind'] or '?'} · holds: {holds or '?'}"
+            )
+        out.append({"id": f"E:{game_id}", "kind": "editions", "text": "\n".join(lines)})
+    return out
+
+
+def dlc_hltb_questions(conn: sqlite3.Connection) -> list[dict]:
+    rows = _q(
+        conn,
+        "SELECT DISTINCT v.game_id, vh.hltb_id FROM version_hltb vh"
+        " JOIN versions v ON v.version_id = vh.version_id"
+        " WHERE vh.source <> 'rejected' AND v.game_id IS NOT NULL"
+        " AND EXISTS (SELECT 1 FROM hltb_entries c WHERE c.parent_hltb_id = vh.hltb_id)",
+    )
+    out = []
+    for r in rows:
+        children = _q(
+            conn,
+            "SELECT * FROM hltb_entries WHERE parent_hltb_id = ? ORDER BY release_world, name",
+            (r["hltb_id"],),
+        )
+        dlcs = _q(
+            conn,
+            "SELECT d.dlc_id, d.name, d.release_date FROM dlcs d JOIN versions v ON v.version_id = d.version_id"  # noqa: E501
+            " WHERE v.game_id = ? AND d.name IS NOT NULL AND COALESCE(d.kind, 'dlc') <> 'consumable'"  # noqa: E501
+            " AND NOT EXISTS (SELECT 1 FROM dlc_hltb dh WHERE dh.dlc_id = d.dlc_id)"
+            " ORDER BY d.release_date, d.name LIMIT 60",
+            (r["game_id"],),
+        )
+        if not dlcs:
+            continue
+        lines = [
+            _game_line(conn, r["game_id"]),
+            f" its HowLongToBeat entry {r['hltb_id']}'s additional content:",
+        ]
+        lines += [f"  {_hltb_label(c)}" for c in children[:40]]
+        lines.append(" our DLC with no entry yet:")
+        lines += [f'  dlc {d["dlc_id"]} "{d["name"]}" {d["release_date"] or "?"}' for d in dlcs]
+        out.append({"id": f"H:{r['game_id']}", "kind": "dlc_hltb", "text": "\n".join(lines)})
+    return out
+
+
+def refused_questions(conn: sqlite3.Connection) -> list[dict]:
+    out = []
+    for r in _q(
+        conn,
+        "SELECT vh.version_id, vh.hltb_id, v.game_id FROM version_hltb vh"
+        " JOIN versions v ON v.version_id = vh.version_id WHERE vh.source = 'rejected'",
+    ):
+        e = conn.execute("SELECT * FROM hltb_entries WHERE hltb_id = ?", (r["hltb_id"],)).fetchone()
+        v = conn.execute(
+            "SELECT * FROM versions WHERE version_id = ?", (r["version_id"],)
+        ).fetchone()
+        if e is None or v is None:
+            continue
+        out.append(
+            {
+                "id": f"X:{r['version_id']}:{r['hltb_id']}",
+                "kind": "refused_hltb",
+                "text": f"release v{v['version_id']}: {v['store']} {console_label(v['store'], v['console'])}"  # noqa: E501
+                f' "{v["name"]}" {v["release_date"] or "?"} (of {_game_line(conn, r["game_id"])})\n'
+                f"refused: {_hltb_label(e)}",
+            }
+        )
+    return out
+
+
 def relation_questions(conn: sqlite3.Connection) -> list[dict]:
     pairs: dict[tuple[int, int], str] = {}
     for r in _q(conn, "SELECT game_id, related_id, kind FROM game_relations"):
@@ -328,12 +487,17 @@ def main() -> int:
     conn = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     cards = game_cards(conn)
+    relations = relation_questions(conn)
     parts = {
         "games": cards,
         "missing": missing_questions(cards),
-        "relations": relation_questions(conn),
+        "relations": relations,
+        "duplicates": duplicate_questions(conn, {frozenset(q["games"]) for q in relations}),
         "series": series_questions(conn),
         "psn_groups": psn_group_questions(conn),
+        "editions": edition_questions(conn),
+        "dlc_hltb": dlc_hltb_questions(conn),
+        "refused_hltb": refused_questions(conn),
     }
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
