@@ -549,7 +549,9 @@ every column. History: #106.
   from calls the bot already makes (Xbox `GameDisplayPicRaw`, Steam `avatarfull`, PSN
   `avatars`); `poller/avatars.py` re-checks each subject weekly and skips unchanged
   ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait, else
-  `header.jpg` for games older than the library view, #117), PSN's
+  `header.jpg` for games older than the library view, #117; a game released
+  lately is at neither — its art sits in a hashed folder, so the store's
+  `header_image` is asked for then, one request, 2026-10-17), PSN's
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
 
@@ -623,6 +625,13 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   the catch-up while the flag is 0, starts `fill_library_gaps` in the
   background: every game with nothing stored, as history, never published;
   still hidden, it stops at its first game.
+- **Achievement icons moved off Akamai** (2026-10-17): the schema still hands
+  out `steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/…`, which has
+  no icon for a game released lately (a post went out as text only);
+  `shared.fastly.steamstatic.com/community_assets/images/apps/…` serves old
+  and new alike. `images.current_url` mends the address where it is used —
+  the schema (fresh and cached), the post, every bot download, the Mini App's
+  icon links — and stored rows keep what the platform said.
 - Presence comes in batches of up to 100 SteamIDs (`GetPlayerSummaries`).
 - **Every stored achievement carries its game's name** (#70): `fetch_unlocked`
   takes `title_name` so the `titles` upsert has something to write — without it a

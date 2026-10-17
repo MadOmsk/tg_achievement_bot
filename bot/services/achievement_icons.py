@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from bot.services import images
+
 if TYPE_CHECKING:
     from bot.db.repo import Repo
 
@@ -184,7 +186,7 @@ async def get_or_download_achievement_icon(
         async with httpx.AsyncClient(
             timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True
         ) as client:
-            resp = await client.get(url)
+            resp = await client.get(images.current_url(url))
             if resp.status_code == 200 and resp.content:
                 data = resp.content
                 if len(data) <= MAX_BYTES:
@@ -235,7 +237,7 @@ async def pre_cache_icon(
         async with httpx.AsyncClient(
             timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True
         ) as client:
-            resp = await client.get(icon_url)
+            resp = await client.get(images.current_url(icon_url))
             if resp.status_code == 200 and resp.content and len(resp.content) <= MAX_BYTES:
                 _mime, ext = detect_mime(resp.content)
                 save_path = g_dir / f"{safe_part(achievement_id)}{ext}"
@@ -267,4 +269,4 @@ def format_achievement_icon_url(
     # 3. Fallback: ensure https
     if raw_icon_url.startswith("http://"):
         return "https://" + raw_icon_url[len("http://") :]
-    return raw_icon_url
+    return images.current_url(raw_icon_url)
