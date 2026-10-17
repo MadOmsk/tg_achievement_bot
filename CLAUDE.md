@@ -828,6 +828,14 @@ What the stores and HLTB say about a game, collected but not shown yet
   far its versions spread (097: the latest year, other studios, other
   publishers), shown as «2006–2025», «Epic Games и другие»; companies compare
   by `game_match.company_key` ("CD PROJEKT S.A." is "CD Projekt").
+- **The advisers' full run** (owner, 2026-10-16/17): question files for every
+  game, link, series, edition (`scripts/argon_export.py`), answered by Gemini
+  Argon, GPT Pro and Sonnet; a decision two or three give alike is a label
+  (`adviser_labels`, migration 124; `scripts/argon_import.py`,
+  `services/advice_import.py`), weighed by `match_fit.label_weight`: the
+  operator 0.9, three advisers 0.8, two of three 0.4. Only what all three agree
+  on is written into the games (pairs of versions, refused HLTB links); the rest
+  teaches. `/trial` shows the operator what they disagree on.
 - **The octopus search** (#204, owner, 2026-10-16/17; `services/octopus.py`,
   `scripts/octopus.py`): one game looked for in every store and everything that
   belongs to it pulled, in the protocol's order — each achievement list's own
