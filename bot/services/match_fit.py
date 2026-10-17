@@ -8,10 +8,10 @@ descent on the log-loss, **pulled towards the current weights** (an L2 term
 around them, not around zero): with a few dozen labels the weights should
 move only where the operator's answers clearly disagree with them.
 
-**Labels weigh by who gave them** (owner, 2026-10-12): the operator's own
-count whole, the advisers' (`advice.ADVISER_SOURCES`: Claude and Gemini
-agreeing, with or without the model) count `ADVISER_WEIGHT` — two language
-models agreeing is evidence, not the operator's word.
+**Labels weigh by who gave them** (owner, 2026-10-17): the operator's 0.9
+(he errs too), the three advisers agreeing (Gemini Argon, GPT Pro, Sonnet —
+`UNANIMOUS`, or the older model + Claude + Gemini) 0.8, two of three
+(`MAJORITY`, or the older Claude + Gemini against the model) 0.4.
 """
 
 from __future__ import annotations
@@ -20,12 +20,17 @@ import math
 import random
 from dataclasses import dataclass
 
-from bot.services.advice import ADVISER_SOURCES
+from bot.services.advice import ADVISER_SOURCES, ALL_THREE, BOTH
 from bot.services.game_match import CLASSES, probabilities
 
-# What one adviser-made label weighs against one of the operator's (1.0).
-OPERATOR_WEIGHT = 1.0
-ADVISER_WEIGHT = 0.6
+# What a label teaches, by who gave it (owner, 2026-10-17).
+OPERATOR_WEIGHT = 0.9
+UNANIMOUS_WEIGHT = 0.8
+MAJORITY_WEIGHT = 0.4
+# Who gave a label in the full run: all three advisers, or two of the three.
+UNANIMOUS = "advisers:3/3"
+MAJORITY = "advisers:2/3"
+ADVISER_WEIGHT = MAJORITY_WEIGHT  # the older name, kept for its callers
 
 # What an operator's label teaches about the pair: its class.
 LABEL_CLASS = {
@@ -47,8 +52,14 @@ Weights = dict[str, dict[str, float]]
 
 
 def label_weight(decided_by: str | None) -> float:
-    """How much a label teaches: an adviser's less than the operator's."""
-    return ADVISER_WEIGHT if (decided_by or "") in ADVISER_SOURCES else OPERATOR_WEIGHT
+    """How much a label teaches: an adviser's less than the operator's, two
+    of three advisers less than all three."""
+    by = decided_by or ""
+    if by in (UNANIMOUS, ALL_THREE):
+        return UNANIMOUS_WEIGHT
+    if by in (MAJORITY, BOTH) or by in ADVISER_SOURCES:
+        return MAJORITY_WEIGHT
+    return OPERATOR_WEIGHT
 
 
 @dataclass(slots=True)

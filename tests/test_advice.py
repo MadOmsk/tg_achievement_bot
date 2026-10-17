@@ -260,8 +260,12 @@ async def test_an_advisers_label_may_be_answered_again() -> None:
 
 
 def test_the_operators_labels_outweigh_the_advisers() -> None:
-    assert label_weight("viewer") == 1.0
-    assert label_weight(BOTH) == label_weight(ALL_THREE) == ADVISER_WEIGHT < 1.0
+    from bot.services.match_fit import MAJORITY, UNANIMOUS
+
+    # Owner, 2026-10-17: the operator 0.9, three advisers 0.8, two of three 0.4.
+    assert label_weight("viewer") == 0.9
+    assert label_weight(UNANIMOUS) == label_weight(ALL_THREE) == 0.8
+    assert label_weight(MAJORITY) == label_weight(BOTH) == ADVISER_WEIGHT == 0.4
     f = {"bias": 1.0, "name": 0.1, "years_near": 1.0}
     examples = [Example(dict(f), "same", label_weight("viewer")) for _ in range(10)] + [
         Example(dict(f), "other", label_weight(BOTH)) for _ in range(10)

@@ -104,9 +104,10 @@ class OctopusCollector:
             linked = await GameLinker(self._repo).link_versions(everything)
             report.games_after = sorted(linked.games)
         report.hltb_spread = await spread_hltb(self._repo, report.games_after or [game_id])
-        report.versions_after = len(
-            await self._repo.versions_of_games(report.games_after or [game_id])
-        )
+        # The game's own size now: the game its first release is in.
+        now = await self._repo.version_row(versions[0]) if versions else None
+        home = int(now["game_id"]) if now and now["game_id"] else game_id
+        report.versions_after = len(await self._repo.versions_of_games([home]))
         await self._repo.record_fetch(
             f"game:{game_id}", SOURCE, status="error" if report.errors else "ok"
         )
