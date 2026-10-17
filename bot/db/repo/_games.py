@@ -154,6 +154,48 @@ class _GamesRepo:
             found.update({int(r["version_id"]): dict(r) for r in await cursor.fetchall()})
         return found
 
+    async def game_card(self, game_id: int) -> dict | None:
+        """A game's own row, following a merge to the game it went into."""
+        for _ in range(10):
+            cursor = await self._conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,))
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            if not row["merged_into"]:
+                return dict(row)
+            game_id = int(row["merged_into"])
+        return None
+
+    async def psn_concepts_of_game(self, game_id: int) -> set[str]:
+        """The PlayStation store concepts the versions of a game belong to."""
+        cursor = await self._conn.execute(
+            "SELECT store_ids FROM versions WHERE game_id = ? AND store = 'psn'", (game_id,)
+        )
+        found: set[str] = set()
+        for row in await cursor.fetchall():
+            for kind, value in json.loads(row[0] or "[]"):
+                if kind == "psn_concept":
+                    found.add(str(value))
+        return found
+
+    async def game_ids_for_sweep(self, which: str) -> list[int]:
+        """The games a sweep goes through: `all`, `singles` (one release) or
+        `stand-ins` (a release with no store page)."""
+        sql = {
+            "all": "SELECT game_id FROM games WHERE merged_into IS NULL",
+            "singles": "SELECT game_id FROM versions WHERE game_id IS NOT NULL"
+            " GROUP BY game_id HAVING COUNT(*) = 1",
+            "stand-ins": "SELECT DISTINCT game_id FROM versions WHERE stand_in = 1"
+            " AND game_id IS NOT NULL",
+        }[which]
+        cursor = await self._conn.execute(sql + " ORDER BY 1")
+        return [int(r[0]) for r in await cursor.fetchall()]
+
+    async def lone_versions(self) -> list[int]:
+        """Versions in no game — there should be none (#204, step 12)."""
+        cursor = await self._conn.execute("SELECT version_id FROM versions WHERE game_id IS NULL")
+        return [int(r[0]) for r in await cursor.fetchall()]
+
     async def versions_of_games(self, game_ids: list[int]) -> list[int]:
         ids = list(dict.fromkeys(game_ids))
         found: list[int] = []

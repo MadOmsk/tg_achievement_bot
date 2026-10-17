@@ -38,12 +38,16 @@ def console_of_product(product_id: str) -> str | None:
     return "ps5" if "PPSA" in product_id else "ps4" if "CUSA" in product_id else None
 
 
-async def products_of_concepts(repo: Repo, origin: str | None) -> list[tuple[str, str, str]]:
+async def products_of_concepts(
+    repo: Repo, origin: str | None, concepts: set[str] | None = None
+) -> list[tuple[str, str, str]]:
     """`(concept id, category, product id)` of every product the stored
     concepts of these versions name, each product once."""
     seen: set[str] = set()
     found: list[tuple[str, str, str]] = []
     for concept_id in sorted(await repo.psn_concept_versions(origin)):
+        if concepts is not None and concept_id not in concepts:
+            continue
         concept = await repo.payload(f"psn:{concept_id}", "psn_store") or {}
         for group in concept.get("categorizedProducts") or []:
             for product_id in group.get("ids") or []:
@@ -54,12 +58,17 @@ async def products_of_concepts(repo: Repo, origin: str | None) -> list[tuple[str
 
 
 async def read_pages(
-    repo: Repo, origin: str | None, *, limit: int | None = None, stop_after: int = 5
+    repo: Repo,
+    origin: str | None,
+    *,
+    limit: int | None = None,
+    stop_after: int = 5,
+    concepts: set[str] | None = None,
 ) -> Report:
     """Read the pages not read yet (or due again), keep each as it came."""
     report = Report()
     in_a_row = 0
-    for _concept, _category, product_id in await products_of_concepts(repo, origin):
+    for _concept, _category, product_id in await products_of_concepts(repo, origin, concepts):
         subject = f"psn_product:{product_id}"
         if not await repo.fetch_due(subject, SOURCE):
             continue
@@ -92,12 +101,12 @@ async def read_pages(
     return report
 
 
-async def put_in_place(repo: Repo, origin: str | None) -> Report:
+async def put_in_place(repo: Repo, origin: str | None, concepts: set[str] | None = None) -> Report:
     """Every kept product page, read into the DLC and editions of the
     versions of its concept. No request: it can be run again at any time."""
     report = Report()
     concepts = await repo.psn_concept_versions(origin)
-    for concept_id, category, product_id in await products_of_concepts(repo, origin):
+    for concept_id, category, product_id in await products_of_concepts(repo, origin, concepts):
         payload = await repo.payload(f"psn_product:{product_id}", SOURCE)
         versions = concepts.get(concept_id) or []
         if not payload or not versions:

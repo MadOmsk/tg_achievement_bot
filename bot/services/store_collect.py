@@ -426,7 +426,7 @@ class StoreCollector:
 
     # ------------------------------------------------------------ by name (#147)
 
-    async def collect_name(self, name: str) -> CollectReport:
+    async def collect_name(self, name: str, *, link: bool = True) -> CollectReport:
         """A game by its name, on every store, nobody here needing to have it
         (owner, 2026-10-10: seeding the matcher with games of many editions).
         What each store's search finds close to the name is stored (versions
@@ -457,7 +457,7 @@ class StoreCollector:
             await self._hltb_by_name(name, ours, report)
         except Exception as exc:
             report.errors.append(f"hltb search: {exc!r}")
-        if report.versions:
+        if link and report.versions:
             linked = await GameLinker(self._repo).link_versions(sorted(set(report.versions)))
             report.games = sorted(linked.games)
             report.review = len(linked.review)
