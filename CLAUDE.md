@@ -804,6 +804,9 @@ isn't muted there; it wasn't already published there.
   fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
+  A digest of several pictures sent as one photo — an album cannot carry
+  the Mini App button — shows the game's cover first, its first icon only
+  when there is no cover (owner, 2026-10-18).
 - **A low-resolution post picture is enlarged on a square** (owner,
   2026-10-10; `services/post_picture.py`). **The original is what is
   stored** (icon cache, cover, URLs); the square is drawn when a post is
@@ -1521,7 +1524,8 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   per game with the game's own counter, every item in the card's line format, the
   descriptions in italics (owner, 2026-09-25) and the block's version named by
   whichever item knows its device. A
-  `sendMediaGroup`, caption on the first image, images deduped.
+  `sendMediaGroup`, caption on the first image, images deduped — or, with the
+  Mini App button, one photo of the game's cover (Publication rules).
 - **The anti-flood digest is the same form**, named by the person like every post;
   two accounts of one platform name their blocks.
 - **A digest never names a trophy group** — one block is one game.
