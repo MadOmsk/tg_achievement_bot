@@ -24,7 +24,7 @@ from dataclasses import dataclass, replace
 import httpx
 
 from bot.constants import SteamCommunityVisibility
-from bot.services import api_usage
+from bot.services import api_usage, images
 from bot.services.rate_limiter import RateLimiter
 
 BASE_URL = "https://api.steampowered.com"
@@ -495,7 +495,7 @@ async def get_schema(
     return [
         RawSchemaAchievement(
             apiname=str(item["name"]),  # Steam's own key here, not `apiname`
-            icon=item.get("icon") or None,
+            icon=images.current_url(item["icon"]) if item.get("icon") else None,
             hidden=bool(item.get("hidden")),
             display_name=item.get("displayName") or None,
             description=item.get("description") or None,
