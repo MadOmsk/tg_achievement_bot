@@ -62,6 +62,11 @@ class ApplyReport:
     kept_operators: int = 0
     hltb_refused: int = 0
     dlc_hltb_refused: int = 0
+    series: int = 0
+    editions: int = 0
+    psn_groups: int = 0
+    dlc_links: int = 0
+    hltb_restored: int = 0
     skipped: Counter = field(default_factory=Counter)
 
 
@@ -102,7 +107,15 @@ async def apply(repo: Repo, labels: list[Consensus], run: str) -> ApplyReport:
             elif kind in ("R", "D"):
                 await _games_pair(repo, c, rest, report, touched)
             elif kind == "X":
-                report.skipped["X: kept only"] += 1
+                await _refused(repo, c, rest, report)
+            elif kind == "S":
+                await _series(repo, c, rest, report)
+            elif kind == "E":
+                await _edition(repo, c, rest, report)
+            elif kind == "P":
+                await _psn_group(repo, c, rest, report)
+            elif kind == "H":
+                await _dlc_hltb(repo, c, report)
             else:
                 report.skipped[f"{kind}: kept only"] += 1
         except Exception as exc:  # one label's trouble is not the run's
@@ -154,6 +167,9 @@ async def _game_card(
             await repo.unlink_version_hltb(int(m[1]), int(m[2]), only_auto=True)
             report.hltb_refused += 1
         return
+    if c.decision == "series":
+        await _game_series(repo, c, game_id, report)
+        return
     if m := re.fullmatch(r"dlc(\d+)\.hltb(\d+)", c.decision):
         if c.value == "wrong":
             await repo.reject_dlc_hltb(int(m[1]), int(m[2]))
@@ -177,3 +193,70 @@ async def _games_pair(
     if direction == "second":
         a, b = b, a
     await _pair(repo, a, b, relation, c, report, touched)
+
+
+def _names(value: str) -> list[str]:
+    value = value.strip()
+    if value.startswith("(") and value.endswith(")"):
+        value = value[1:-1]
+    return [x.strip(" '\"") for x in value.split(",") if x.strip(" '\"")]
+
+
+async def _game_series(repo: Repo, c: Consensus, game_id: int, report: ApplyReport) -> None:
+    """The series a game card says it is in: each one we have takes it."""
+    for name in _names(c.value):
+        series_id = await repo.series_by_name(name)
+        if series_id is None:
+            report.skipped["G series not in the database: kept only"] += 1
+            continue
+        await repo.set_series_member(
+            game_id, series_id, True, source="advisers", decided_by=c.source
+        )
+        report.series += 1
+
+
+async def _series(repo: Repo, c: Consensus, rest: str, report: ApplyReport) -> None:
+    if m := re.fullmatch(r"g(\d+)", c.decision):
+        if c.value in ("yes", "no"):
+            await repo.set_series_member(
+                int(m[1]), int(rest), c.value == "yes", source="advisers", decided_by=c.source
+            )
+            report.series += 1
+        return
+    report.skipped[f"S {c.decision}: kept only"] += 1
+
+
+async def _edition(repo: Repo, c: Consensus, rest: str, report: ApplyReport) -> None:
+    if m := re.fullmatch(r"e(\d+)\.kind", c.decision):
+        await repo.set_edition_kind(int(m[1]), c.value)
+        report.editions += 1
+    elif (m := re.fullmatch(r"e(\d+)\.holds", c.decision)) and c.value == "no":
+        await repo.detach_edition_from_game(int(m[1]), int(rest))
+        report.editions += 1
+
+
+async def _psn_group(repo: Repo, c: Consensus, rest: str, report: ApplyReport) -> None:
+    version_id, _, group_id = rest.partition(":")
+    if c.decision != "addon" or c.value in ("None", "", "—"):
+        return
+    if await repo.link_trophy_group_to_addon(int(version_id), group_id, c.value):
+        report.psn_groups += 1
+    else:
+        report.skipped["P add-on not a DLC of that version"] += 1
+
+
+async def _dlc_hltb(repo: Repo, c: Consensus, report: ApplyReport) -> None:
+    if c.decision != "links":
+        return
+    for pair in _names(c.value):
+        dlc, _, hltb = pair.partition("->")
+        if dlc.isdigit() and hltb.isdigit():
+            await repo.link_dlc_hltb(int(dlc), int(hltb))
+            report.dlc_links += 1
+
+
+async def _refused(repo: Repo, c: Consensus, rest: str, report: ApplyReport) -> None:
+    version_id, _, hltb_id = rest.partition(":")
+    if c.decision == "verdict" and c.value == "same":
+        await repo.restore_version_hltb(int(version_id), int(hltb_id))
+        report.hltb_restored += 1

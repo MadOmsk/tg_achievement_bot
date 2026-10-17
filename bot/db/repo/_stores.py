@@ -736,6 +736,58 @@ class _StoresRepo:
         )
         await self._conn.commit()
 
+    async def set_edition_kind(self, edition_id: int, kind: str) -> None:
+        await self._conn.execute(
+            "UPDATE editions SET kind = ? WHERE edition_id = ?", (kind, edition_id)
+        )
+        await self._conn.commit()
+
+    async def detach_edition_from_game(self, edition_id: int, game_id: int) -> int:
+        """An edition said not to hold this game: its items stop pointing at
+        the game's versions. The number of items let go."""
+        cursor = await self._conn.execute(
+            "UPDATE edition_items SET version_id = NULL WHERE edition_id = ?"
+            " AND version_id IN (SELECT version_id FROM versions WHERE game_id = ?)",
+            (edition_id, game_id),
+        )
+        await self._conn.commit()
+        return cursor.rowcount
+
+    async def link_trophy_group_to_addon(
+        self, version_id: int, group_id: str, store_id: str
+    ) -> bool:
+        """A PSN trophy group is the store add-on that brings it: the add-on's
+        DLC row takes the group, the group's own stand-in row goes. False when
+        the add-on is not a DLC of that version."""
+        async with self.transaction():
+            cursor = await self._conn.execute(
+                # The advisers' answers come lower-cased (compare_answers._norm).
+                "SELECT dlc_id FROM dlcs WHERE version_id = ? AND upper(store_id) = upper(?)",
+                (version_id, store_id),
+            )
+            row = await cursor.fetchone()
+            if row is None:
+                return False
+            await self._conn.execute(
+                "DELETE FROM dlcs WHERE version_id = ? AND trophy_group_id = ?"
+                " AND store_id IS NULL",
+                (version_id, group_id),
+            )
+            await self._conn.execute(
+                "UPDATE dlcs SET trophy_group_id = ? WHERE dlc_id = ?", (group_id, row[0])
+            )
+        return True
+
+    async def restore_version_hltb(self, version_id: int, hltb_id: int) -> None:
+        """A refused link the advisers all say is right after all: an
+        automatic link again (an operator's refusal is not touched by callers)."""
+        await self._conn.execute(
+            "UPDATE version_hltb SET source = 'auto', score = 0.9"
+            " WHERE version_id = ? AND hltb_id = ? AND source = 'rejected'",
+            (version_id, hltb_id),
+        )
+        await self._conn.commit()
+
     async def reject_dlc_hltb(self, dlc_id: int, hltb_id: int) -> None:
         """This DLC is not this HLTB entry: kept as a refusal (`rejected`), so
         the matcher never makes the link again."""

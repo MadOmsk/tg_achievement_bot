@@ -307,6 +307,15 @@ class _SeriesRepo:
         async with self.transaction():
             await self._merge_series_rows(series_id, into)
 
+    async def series_by_name(self, name: str) -> int | None:
+        cursor = await self._conn.execute(
+            "SELECT series_id FROM series WHERE merged_into IS NULL"
+            " AND (lower(name) = lower(?) OR lower(name_ru) = lower(?)) ORDER BY series_id LIMIT 1",
+            (name, name),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else None
+
     async def set_series_member(
         self,
         game_id: int,

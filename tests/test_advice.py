@@ -306,3 +306,26 @@ async def test_three_advisers_agreeing_write_a_pair_two_only_teach(repo) -> None
     assert report.labels == 2 and report.pairs == 1
     label = await repo.decision_of_pair(a, b)
     assert label["relation"] == "demo_of" and label["decided_by"] == UNANIMOUS
+
+
+async def test_a_psn_group_all_three_name_takes_its_add_on(repo) -> None:  # noqa: ANN001
+    from bot.services.advice_import import apply, consensus
+    from bot.services.stores import StoreDlc, StoreVersion
+
+    v = await repo.save_version(
+        StoreVersion(store="psn", product_id="9", console="ps4", name="Game"),
+        platform=None,
+        title_id=None,
+    )
+    await repo._conn.execute(
+        "INSERT INTO dlcs (version_id, trophy_group_id, name, kind, updated_at)"
+        " VALUES (?, '001', 'The Heist', 'dlc', 'now')",
+        (v,),
+    )
+    await repo._conn.commit()
+    await repo.save_dlc(v, StoreDlc(store_id="UP1-CUSA1_00-HEIST", name="The Heist"))
+    per = {n: {"addon": "up1-cusa1_00-heist"} for n in ("a", "b", "c")}  # lower-cased
+    report = await apply(repo, consensus(f"P:{v}:001", per), "test")
+    assert report.psn_groups == 1
+    cursor = await repo._conn.execute("SELECT store_id, trophy_group_id FROM dlcs")
+    assert [tuple(r) for r in await cursor.fetchall()] == [("UP1-CUSA1_00-HEIST", "001")]
