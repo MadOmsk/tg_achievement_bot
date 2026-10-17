@@ -101,6 +101,8 @@ a{color:#0b57d0}
 .con{display:inline-block;background:#e3f2fd;border-radius:5px;padding:0 5px;font-size:12px}
 .done{color:#2e7d32;font-weight:bold}
 .why div{font-size:12px;margin:2px 0}
+.have{margin:6px 0 6px 12px;padding:6px;border-left:3px solid #90caf9;background:#fff}
+.later{margin-left:10px;padding:6px 12px;font-size:13px}
 .save{padding:6px 18px;font-size:14px;margin-top:6px}
 </style>
 """
@@ -125,6 +127,17 @@ def _advisers(trial: Path) -> dict[str, dict[str, dict]]:
 
 def _labels_path(trial: Path) -> Path:
     return trial / "compare" / "labels.json"
+
+
+def _later_path(trial: Path) -> Path:
+    path = trial / "compare" / "later.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _later(trial: Path) -> dict[str, bool]:
+    path = _later_path(trial)
+    return json.loads(path.read_text("utf-8")) if path.exists() else {}
 
 
 def _labels(trial: Path) -> dict[str, str]:
@@ -212,6 +225,14 @@ class _Look:
             f"<br><small>{escape(str(g['year'] or '?'))} · {escape(g['developer'] or '?')}"
             f" / {escape(g['publisher'] or '?')}</small></span>"
         )
+
+    def releases(self, gid: int) -> str:
+        """Every release of a game, a line each, with its picture."""
+        rows = self.conn.execute(
+            "SELECT version_id FROM versions WHERE game_id = ? ORDER BY console, version_id",
+            (gid,),
+        ).fetchall()
+        return "".join(f"<div class=subj>{self.version(int(r[0]))}</div>" for r in rows)
 
     def edition(self, eid: int) -> str:
         e = self._one("SELECT * FROM editions WHERE edition_id = ?", (eid,))
@@ -301,7 +322,14 @@ def _subject(key: str, look: _Look) -> tuple[str, str]:
 def _head(qid: str, text: str, look: _Look) -> str:
     kind, _, rest = qid.partition(":")
     parts = rest.split(":")
-    if kind in ("G", "M", "E", "H"):
+    if kind == "M":
+        # What we have already (owner, 2026-10-17: the question is unanswerable
+        # without it): every release of the game, then the choice.
+        return (
+            f"<div class=subj>{look.game(int(parts[0]))}</div>"
+            f"<div class=have><b>Уже есть у нас:</b>{look.releases(int(parts[0]))}</div>"
+        )
+    if kind in ("G", "E", "H"):
         return f"<div class=subj>{look.game(int(parts[0]))}</div>"
     if kind in ("R", "D"):
         return (
@@ -456,6 +484,8 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         # Only what the advisers disagree on is the operator's (owner,
         # 2026-10-16); a decision they all gave alike is taken as theirs.
         show_all = request.query.get("all") == "1"
+        show_later = request.query.get("later") == "1"
+        deferred = _later(trial)
         advisers = _advisers(trial)
         names = list(advisers)
         labels = _labels(trial)
@@ -481,6 +511,8 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                 done += labelled
                 if not keys:
                     continue
+                if (qid in deferred) != show_later:
+                    continue
                 if kind and not qid.startswith(kind + ":"):
                     continue
                 if only_open and labelled == len(keys):
@@ -505,7 +537,8 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                     f'<form method=post action="/trial/label">'
                     f'<input type=hidden name=q value="{escape(qid)}">'
                     f'<input type=hidden name=back value="{escape(back)}">'
-                    f"{rows}<button class=save>сохранить</button></form>"
+                    f"{rows}<button class=save>сохранить</button>"
+                    f'<button class=later formaction="/trial/later">ответить позже</button></form>'
                     f"<details><summary>текст вопроса</summary>"
                     f"<pre style='white-space:pre-wrap;font-size:12px'>{escape(text)}</pre>"
                     "</details></div>"
@@ -521,7 +554,8 @@ def register(app: web.Application, trial: Path | None, page) -> None:
             f" · принято без проверки (все согласны): {len(accepted)}"
             f' · <a href="/trial?kind={quote(kind)}">неразмеченные</a>'
             f' · <a href="/trial?kind={quote(kind)}&done=1">с размеченными</a>'
-            f' · <a href="/trial?all=1&done=1">все решения</a></p>'
+            f' · <a href="/trial?all=1&done=1">все решения</a>'
+            f' · <a href="/trial?later=1&done=1">отложенные ({len(deferred)})</a></p>'
             f"<p>{nav}</p>"
             "<p><small>Здесь только решения, где модели разошлись: выбери верный ответ или"
             " впиши свой. Где все согласны, их ответ принят (compare/accepted.json).</small></p>"
@@ -553,3 +587,18 @@ def register(app: web.Application, trial: Path | None, page) -> None:
 
     app.router.add_get("/trial", show)
     app.router.add_post("/trial/label", label)
+
+    async def later(request: web.Request) -> web.Response:
+        """Put a question off (owner, 2026-10-17: a stand-in with no name is not
+        worth digging for now): it leaves the list until asked for."""
+        form = await request.post()
+        qid = str(form.get("q") or "")
+        deferred = _later(trial)
+        deferred[qid] = True
+        _later_path(trial).write_text(json.dumps(deferred, ensure_ascii=False, indent=1), "utf-8")
+        back = str(form.get("back") or "/trial").split("#", 1)[0]
+        order = [q for q, _text in _questions(trial)]
+        after = order[order.index(qid) + 1 :] if qid in order else []
+        raise web.HTTPFound(back + (f"#{quote(after[0])}" if after else ""))
+
+    app.router.add_post("/trial/later", later)
