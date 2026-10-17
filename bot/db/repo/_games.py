@@ -154,6 +154,48 @@ class _GamesRepo:
             found.update({int(r["version_id"]): dict(r) for r in await cursor.fetchall()})
         return found
 
+    async def save_adviser_label(
+        self, run: str, question: str, decision: str, value: str, source: str, said: dict
+    ) -> None:
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO adviser_labels"
+            " (run, question, decision, value, source, said, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                run,
+                question,
+                decision,
+                value,
+                source,
+                json.dumps(said, ensure_ascii=False),
+                utcnow_iso(),
+            ),
+        )
+        await self._conn.commit()
+
+    async def decision_of_pair(self, a: int, b: int) -> dict | None:
+        """The label on a pair of versions, whichever way round it was given."""
+        cursor = await self._conn.execute(
+            "SELECT * FROM match_decisions WHERE (version_id = ? AND other_id = ?)"
+            " OR (version_id = ? AND other_id = ?)",
+            (a, b, b, a),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def game_anchor(self, game_id: int) -> int | None:
+        """The version a game is anchored on (following a merge)."""
+        card = await self.game_card(game_id)
+        if card is None:
+            return None
+        if card.get("anchor_version_id"):
+            return int(card["anchor_version_id"])
+        cursor = await self._conn.execute(
+            "SELECT MIN(version_id) FROM versions WHERE game_id = ?", (card["game_id"],)
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row and row[0] else None
+
     async def game_card(self, game_id: int) -> dict | None:
         """A game's own row, following a merge to the game it went into."""
         for _ in range(10):

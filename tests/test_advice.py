@@ -273,3 +273,36 @@ def test_the_operators_labels_outweigh_the_advisers() -> None:
     fitted = fit(examples, WEIGHTS, strength=0.01, rate=0.2, epochs=400)
     probs = probabilities(f, fitted)
     assert probs["same"] > probs["other"]
+
+
+async def test_three_advisers_agreeing_write_a_pair_two_only_teach(repo) -> None:
+    from bot.services.advice_import import apply, consensus
+    from bot.services.match_fit import MAJORITY, UNANIMOUS
+    from bot.services.stores import StoreVersion
+
+    a = await repo.save_version(
+        StoreVersion(store="steam", product_id="1", console="steam", name="Game"),
+        platform=None,
+        title_id=None,
+    )
+    b = await repo.save_version(
+        StoreVersion(store="psn", product_id="2", console="ps4", name="Game Demo"),
+        platform=None,
+        title_id=None,
+    )
+    game = await repo.create_game("Game", 2020, a)
+    await repo.write_members({a: (game, "version", None, None), b: (game, "version", None, None)})
+    per = {
+        "argon": {f"v{b}.kind": "demo", f"v{b}.belongs": "yes"},
+        "gpt": {f"v{b}.kind": "demo", f"v{b}.belongs": "yes"},
+        "sonnet": {f"v{b}.kind": "demo", f"v{b}.belongs": "no"},
+    }
+    labels = consensus(f"G:{game}", per)
+    assert {(c.decision, c.value, c.source) for c in labels} == {
+        (f"v{b}.kind", "demo", UNANIMOUS),
+        (f"v{b}.belongs", "yes", MAJORITY),
+    }
+    report = await apply(repo, labels, "test")
+    assert report.labels == 2 and report.pairs == 1
+    label = await repo.decision_of_pair(a, b)
+    assert label["relation"] == "demo_of" and label["decided_by"] == UNANIMOUS

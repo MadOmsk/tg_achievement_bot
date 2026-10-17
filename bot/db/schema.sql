@@ -1454,3 +1454,15 @@ CREATE TABLE IF NOT EXISTS edition_items (
     PRIMARY KEY (edition_id, store_id)
 );
 CREATE INDEX IF NOT EXISTS idx_edition_items_version ON edition_items(version_id);
+
+-- The advisers' answers to a run, kept as labels (124; services/advice_import).
+CREATE TABLE IF NOT EXISTS adviser_labels (
+    run        TEXT NOT NULL,
+    question   TEXT NOT NULL,
+    decision   TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    source     TEXT NOT NULL,   -- advisers:3/3 / advisers:2/3
+    said       TEXT NOT NULL,   -- JSON {adviser: value}
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (run, question, decision)
+);
