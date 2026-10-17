@@ -36,8 +36,14 @@ KINDS = {
 
 
 def read_answers(path: Path) -> dict[str, dict]:
-    """An adviser's file, leniently: JSON Lines, or a JSON array, inside a code
+    """An adviser's file — or a folder of its files, one per question file
+    (the full run) — leniently: JSON Lines, or a JSON array, inside a code
     fence or not; a broken line is skipped (and counted as unanswered)."""
+    if path.is_dir():
+        merged: dict[str, dict] = {}
+        for part in sorted(path.glob("*.jsonl")) + sorted(path.glob("*.txt")):
+            merged.update(read_answers(part))
+        return merged
     text = path.read_text(encoding="utf-8-sig")
     text = re.sub(r"^```[a-z]*\s*$", "", text, flags=re.M)
     found: dict[str, dict] = {}
