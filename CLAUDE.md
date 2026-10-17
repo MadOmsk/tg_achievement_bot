@@ -549,7 +549,9 @@ every column. History: #106.
   from calls the bot already makes (Xbox `GameDisplayPicRaw`, Steam `avatarfull`, PSN
   `avatars`); `poller/avatars.py` re-checks each subject weekly and skips unchanged
   ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait, else
-  `header.jpg` for games older than the library view, #117), PSN's
+  `header.jpg` for games older than the library view, #117; a game released
+  lately is at neither — its art sits in a hashed folder, so the store's
+  `header_image` is asked for then, one request, 2026-10-17), PSN's
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
 

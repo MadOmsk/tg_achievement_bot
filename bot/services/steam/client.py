@@ -153,6 +153,22 @@ async def store_name(appid: str, language: str) -> str | None:
     rather than the Web API, it needs no key, and a failure costs nothing but
     a name that stays in whatever language the API already gave.
     """
+    name = (await _store_basic(appid, language) or {}).get("name")
+    return str(name) if name else None
+
+
+async def store_header_url(appid: str) -> str | None:
+    """The game's header picture as its store page links it, or None.
+
+    A game released lately has no art at the fixed CDN paths `cover_urls`
+    derives (2026-10-17: both 404): its pictures sit under a hashed folder
+    only the store names. Best-effort, as `store_name`."""
+    url = (await _store_basic(appid, "english") or {}).get("header_image")
+    return str(url) if url else None
+
+
+async def _store_basic(appid: str, language: str) -> dict | None:
+    """The store's `basic` block for one game, or None on any failure."""
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             response = await client.get(
@@ -162,12 +178,12 @@ async def store_name(appid: str, language: str) -> str | None:
             response.raise_for_status()
             body = response.json().get(appid) or {}
     except Exception:
-        log.info("steam store name for appid=%s unavailable", appid, exc_info=True)
+        log.info("steam store details for appid=%s unavailable", appid, exc_info=True)
         return None
     if not body.get("success"):
         return None
-    name = (body.get("data") or {}).get("name")
-    return str(name) if name else None
+    data = body.get("data")
+    return data if isinstance(data, dict) else None
 
 
 async def check_alive(api_key: str) -> bool:
