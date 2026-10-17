@@ -1389,8 +1389,8 @@ def test_a_game_is_not_called_by_an_id_when_a_release_has_a_name() -> None:
 
 async def test_the_octopus_runs_every_step_for_a_game(repo: Repo) -> None:
     from bot.services.octopus import OctopusCollector
-    from bot.services.stores import StoreVersion
     from bot.services.store_collect import CollectReport
+    from bot.services.stores import StoreVersion
 
     v = await repo.save_version(
         StoreVersion(store="steam", product_id="10", console="steam", name="A Game"),

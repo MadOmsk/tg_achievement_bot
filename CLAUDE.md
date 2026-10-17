@@ -828,6 +828,13 @@ What the stores and HLTB say about a game, collected but not shown yet
   far its versions spread (097: the latest year, other studios, other
   publishers), shown as «2006–2025», «Epic Games и другие»; companies compare
   by `game_match.company_key` ("CD PROJEKT S.A." is "CD Projekt").
+- **The octopus search** (#204, owner, 2026-10-16/17; `services/octopus.py`,
+  `scripts/octopus.py`): one game looked for in every store and everything that
+  belongs to it pulled, in the protocol's order — each achievement list's own
+  product, the other stores by its name, HLTB, whole lists, DLC, editions, PSN
+  products of its concepts, then the game rebuilt and its HLTB spread. Each piece
+  keeps its raw answers and `fetch_state`; the sweep stamps a game done
+  (`octopus`, `game:<id>`) and checks that no version is in no game.
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions
