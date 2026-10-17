@@ -117,9 +117,25 @@ def decisions(qid: str, answer: dict) -> dict[str, Any]:
 _SAME_WORK = {"game", "remake", "remaster"}
 
 
+_NONE_WORDS = {"", "()", "none", "нет", "ни в какой", "ни в какую", "—"}
+
+
+def _series_set(text: str) -> frozenset[str]:
+    """A series answer as a set of names, whether an adviser's tuple or the
+    operator's free text ("Wizarding World, LEGO, LEGO Harry Potter")."""
+    text = text.strip()
+    if text.lower() in _NONE_WORDS:
+        return frozenset()
+    if text.startswith("(") and text.endswith(")"):
+        text = text[1:-1]
+    return frozenset(part.strip(" '\"").lower() for part in text.split(",") if part.strip(" '\""))
+
+
 def _alike(key: str, said: str, label: str) -> bool:
     if key.endswith(".kind") and said in _SAME_WORK and label in _SAME_WORK:
         return True
+    if key == "series":
+        return _series_set(said) == _series_set(label)
     return said == label
 
 
