@@ -87,6 +87,9 @@ For a G (game card) question:
 {"id": "G:12", "releases": [{"v": 101, "belongs": "yes"|"no"|"unsure",
    "kind": "game"|"edition"|"compilation"|"remaster"|"remake"|"dlc"|"episode"|"demo"
            |"tool"|"mode"|"soundtrack"|"app"|"other",
+   ("kind" says what the game is, alike for all its releases: a release of a remake is
+   "remake", of a remaster "remaster", of an original "game"; which older game it remakes
+   is an R/D question)
    "same_game_as": null or the v of another release here this one really is (when it
    belongs elsewhere: null)}],
  "hltb": [{"v": 101, "hltb": 555, "verdict": "same"|"wrong"|"unsure"}],

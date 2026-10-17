@@ -111,6 +111,18 @@ def decisions(qid: str, answer: dict) -> dict[str, Any]:
     return out
 
 
+# A release's kind: "game", "remake" and "remaster" all say it is the game
+# itself (owner, 2026-10-17: which of them is the game's role against an older
+# one, asked elsewhere) — not counted as a mistake against each other.
+_SAME_WORK = {"game", "remake", "remaster"}
+
+
+def _alike(key: str, said: str, label: str) -> bool:
+    if key.endswith(".kind") and said in _SAME_WORK and label in _SAME_WORK:
+        return True
+    return said == label
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--questions", required=True)
@@ -172,7 +184,7 @@ def main() -> int:
             if label is not None:
                 for n in advisers:
                     scores[(kind, n)][1] += 1
-                    scores[(kind, n)][0] += str(said[n]) == str(label)
+                    scores[(kind, n)][0] += _alike(key, str(said[n]), str(label))
 
     lines += ["", "## Decisions all advisers agree on", "", "| kind | agree |", "|---|---|"]
     for kind, label in KINDS.items():

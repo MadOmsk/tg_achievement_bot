@@ -48,6 +48,26 @@ VALUE_RU = {
 }
 
 CSS = """
+<script>
+// "Свой ответ" and the pills are one choice (owner, 2026-10-17): typing in the
+// field clears the pills of that question, picking a pill clears the field.
+document.addEventListener('input', function (e) {
+  var t = e.target;
+  if (!t.classList || !t.classList.contains('other')) return;
+  var row = t.closest('.one');
+  t.classList.toggle('on', t.value.trim() !== '');
+  if (row && t.value.trim() !== '') {
+    row.querySelectorAll('input[type=radio]').forEach(function (r) { r.checked = false; });
+  }
+});
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (t.type !== 'radio') return;
+  var row = t.closest('.one');
+  var other = row && row.querySelector('.other');
+  if (other) { other.value = ''; other.classList.remove('on'); }
+});
+</script>
 <style>
 body{background:#fff;color:#111}
 a{color:#0b57d0}
@@ -77,6 +97,7 @@ a{color:#0b57d0}
 .pills small{opacity:.7}
 .pills label.free{border-style:dashed;color:#666;font-size:12px}
 .other{width:100%;box-sizing:border-box;font-size:12px}
+.other.on{background:#2e7d32;color:#fff;border:1px solid #2e7d32}
 .con{display:inline-block;background:#e3f2fd;border-radius:5px;padding:0 5px;font-size:12px}
 .done{color:#2e7d32;font-weight:bold}
 .why div{font-size:12px;margin:2px 0}
@@ -263,7 +284,7 @@ def _subject(key: str, look: _Look) -> tuple[str, str]:
     if m := re.fullmatch(r"v(\d+)\.belongs", key):
         return look.version(int(m[1])), "Относится к игре?"
     if m := re.fullmatch(r"v(\d+)\.kind", key):
-        return look.version(int(m[1])), "Что это?"
+        return look.version(int(m[1])), "Что это за игра? (у всех версий одной игры одинаково)"
     if m := re.fullmatch(r"v(\d+)\.hltb(\d+)", key):
         return look.version(int(m[1])) + " → " + look.hltb(int(m[2])), "HLTB верна?"
     if m := re.fullmatch(r"dlc(\d+)\.hltb(\d+)", key):
@@ -355,8 +376,8 @@ def _ask(
     html = (
         f'<div class="one{"" if agreed else " diff"}"><div class=ask>{escape(ask)}{mark}</div>'
         f"<div class=pills>{pills}</div>"
-        f"<input class=other name='o:{escape(key)}' placeholder='свой ответ'"
-        f" value='{escape(other)}'></div>"
+        f"<input class='other{' on' if other else ''}' name='o:{escape(key)}'"
+        f" placeholder='свой ответ' value='{escape(other)}'></div>"
     )
     return html, agreed
 
@@ -517,6 +538,7 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                 other = str(form.get(f"o:{key}") or "").strip()
                 labels[f"{qid}|{key}"] = other or str(value)
         for name, value in form.items():
+            # The own answer typed: the pills were cleared, it is the answer.
             if name.startswith("o:") and str(value).strip() and f"d:{name[2:]}" not in form:
                 labels[f"{qid}|{name[2:]}"] = str(value).strip()
         path = _labels_path(trial)
