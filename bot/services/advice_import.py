@@ -119,7 +119,7 @@ async def apply(repo: Repo, labels: list[Consensus], run: str) -> ApplyReport:
             else:
                 report.skipped[f"{kind}: kept only"] += 1
         except Exception as exc:  # one label's trouble is not the run's
-            report.skipped[f"error {type(exc).__name__}"] += 1
+            report.skipped[f"error {c.question} {c.decision}: {exc!r}"[:160]] += 1
     if touched:
         from bot.services.game_link import GameLinker
 
@@ -217,9 +217,15 @@ async def _game_series(repo: Repo, c: Consensus, game_id: int, report: ApplyRepo
 
 async def _series(repo: Repo, c: Consensus, rest: str, report: ApplyReport) -> None:
     if m := re.fullmatch(r"g(\d+)", c.decision):
-        if c.value in ("yes", "no"):
+        # The game may have gone into another since the question was asked.
+        card = await repo.game_card(int(m[1]))
+        if c.value in ("yes", "no") and card is not None and await repo.series_exists(int(rest)):
             await repo.set_series_member(
-                int(m[1]), int(rest), c.value == "yes", source="advisers", decided_by=c.source
+                int(card["game_id"]),
+                int(rest),
+                c.value == "yes",
+                source="advisers",
+                decided_by=c.source,
             )
             report.series += 1
         return

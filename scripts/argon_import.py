@@ -72,7 +72,9 @@ async def main() -> int:
         print(
             f"kept {report.labels}; pairs written {report.pairs}, operator's kept"
             f" {report.kept_operators}; HLTB refused {report.hltb_refused},"
-            f" DLC HLTB refused {report.dlc_hltb_refused}"
+            f" DLC HLTB refused {report.dlc_hltb_refused}; series {report.series},"
+            f" editions {report.editions}, PSN groups {report.psn_groups},"
+            f" DLC ↔ HLTB {report.dlc_links}, HLTB restored {report.hltb_restored}"
         )
         for reason, n in report.skipped.most_common():
             print(f"  {n:5d}  {reason}")

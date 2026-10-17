@@ -308,7 +308,7 @@ async def test_three_advisers_agreeing_write_a_pair_two_only_teach(repo) -> None
     assert label["relation"] == "demo_of" and label["decided_by"] == UNANIMOUS
 
 
-async def test_a_psn_group_all_three_name_takes_its_add_on(repo) -> None:  # noqa: ANN001
+async def test_a_psn_group_all_three_name_takes_its_add_on(repo) -> None:
     from bot.services.advice_import import apply, consensus
     from bot.services.stores import StoreDlc, StoreVersion
 

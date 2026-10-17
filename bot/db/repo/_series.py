@@ -307,6 +307,12 @@ class _SeriesRepo:
         async with self.transaction():
             await self._merge_series_rows(series_id, into)
 
+    async def series_exists(self, series_id: int) -> bool:
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM series WHERE series_id = ? AND merged_into IS NULL", (series_id,)
+        )
+        return await cursor.fetchone() is not None
+
     async def series_by_name(self, name: str) -> int | None:
         cursor = await self._conn.execute(
             "SELECT series_id FROM series WHERE merged_into IS NULL"
