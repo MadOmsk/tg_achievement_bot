@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 
 from bot.constants import Platform
 from bot.db.repo import Repo, SteamSchemaAchievement, TitleAchievementRow
+from bot.services import images
 from bot.services.models import ParsedAchievement
 from bot.services.steam.client import (
     RawAchievement,
@@ -319,7 +320,15 @@ async def _schema(
     else:
         cached = await repo.steam_schema_get_cached(appid)
         if cached is not None:
-            return cached[1]
+            # Cached before the image host moved: mended on the way out.
+            return [
+                SteamSchemaAchievement(
+                    apiname=item.apiname,
+                    icon=images.current_url(item.icon) if item.icon else None,
+                    hidden=item.hidden,
+                )
+                for item in cached[1]
+            ]
     raw = await get_schema(api_key, appid)
     achievements = [
         SteamSchemaAchievement(apiname=item.apiname, icon=item.icon, hidden=item.hidden)
