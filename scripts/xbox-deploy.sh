@@ -40,6 +40,7 @@ case "$TARGET" in
     BRANCH=main
     DB=data/bot.db
     WEB_ROOT=/var/www/xbox-mini
+    KEEP_BACKUPS=8
     ;;
   test)
     APP_DIR=/opt/xbox_bot_test
@@ -47,6 +48,7 @@ case "$TARGET" in
     BRANCH=prerelease
     DB=data/test.db
     WEB_ROOT=/var/www/xbox-mini-test
+    KEEP_BACKUPS=5
     ;;
   *)
     echo "unknown target: $TARGET (expected test or prod)" >&2
@@ -74,6 +76,17 @@ target.close()
 source.close()
 PY
 say "backup: $BACKUP"
+
+# Only the newest backups are kept (owner, 2026-10-23: every deploy's copy,
+# kept forever, had filled the disk to 96%). Only this script's own copies
+# (<db>-YYYYMMDD-HHMMSS.db) are pruned; a copy named by hand stays.
+ls -1t data/backups |
+  { grep -E "^$(basename "$DB" .db)-[0-9]{8}-[0-9]{6}\.db$" || true; } |
+  tail -n +$((KEEP_BACKUPS + 1)) |
+  while read -r old; do
+    sudo -u "$RUN_AS" rm -f -- "data/backups/$old"
+    say "pruned old backup: $old"
+  done
 
 BEFORE_PYPROJECT="$(sha256sum pyproject.toml | cut -d' ' -f1)"
 
