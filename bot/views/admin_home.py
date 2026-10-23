@@ -18,10 +18,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.constants import TokenStatus
 from bot.db.repo import Repo
 from bot.i18n import translator
-from bot.poller.fetcher import Fetcher
-from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.admin_credentials import AdminCredentials
-from bot.services.admin_status import admin_status
+from bot.services.admin_status import AdminStatus, admin_status
 from bot.services.stats import local_now
 from bot.util import humanize_ago
 
@@ -53,37 +51,73 @@ async def _key_status_line(
     )
 
 
-def format_api_usage(windows: list[tuple[int, int, float]], *, locale: str) -> str:
-    """A compact usage summary — how close the shared achievements
-    rate limiter is to Microsoft's own windows (SPEC 4), a diagnostic against
-    a bug in the poller, not a persisted budget."""
+def _number(value: float, locale: str) -> str:
+    """A count as the reader writes it: thousands apart, one decimal at most."""
+    if float(value).is_integer():
+        text = f"{int(value):,}".replace(",", "\u00a0")
+    else:
+        text = f"{value:,.1f}".replace(",", "\u00a0")
+        if locale == "ru":
+            text = text.replace(".", ",")
+    return text
+
+
+def _span(span: float, _) -> str:
+    return _(f"adminview-span-{int(span)}")
+
+
+def usage_rows(status: AdminStatus, *, locale: str) -> list[tuple[str, str]]:
+    """Each outside API's load and the sign-in emails, as (label, value) —
+    the one wording both admin panels show (owner, 2026-10-12): Xbox per
+    account (the median account / the busiest), Steam and PSN over 5 minutes,
+    an hour and a day, the model's tokens over an hour and a day."""
     _ = translator("adminview", locale)
-    parts = []
-    for used, limit, span in windows:
-        label = (
-            _("adminview-usage-min", span=f"{span / 60:g}")
-            if span >= 60
-            else _("adminview-usage-sec", span=f"{span:g}")
+
+    def n(value: float) -> str:
+        return _number(value, locale)
+
+    def counted(windows) -> str:
+        return " · ".join(
+            f"{_span(w.span, _)} {n(w.used)}" + (f"/{n(w.limit)}" if w.limit else "")
+            for w in windows
         )
-        parts.append(_("adminview-usage-part", used=used, limit=limit, label=label))
-    return " · ".join(parts) if parts else _("adminview-usage-none")
+
+    api = status.api
+    xbox = " · ".join(f"{_span(w.span, _)} {n(w.median)}/{n(w.most)}" for w in api.xbox)
+    anthropic = " · ".join(
+        f"{_span(w.span, _)} "
+        + _("adminview-api-tokens", requests=n(w.requests), tokens=n(w.tokens))
+        for w in api.anthropic
+    )
+    mail = status.mail
+    return [
+        (_("adminview-api-xbox"), xbox),
+        (_("adminview-api-steam"), counted(api.steam)),
+        (_("adminview-api-psn"), counted(api.psn)),
+        (_("adminview-api-anthropic"), anthropic),
+        (
+            _("adminview-mail-label", server=mail.server)
+            if mail.server
+            else _("adminview-mail-label-none"),
+            _(
+                "adminview-mail-usage",
+                hour=mail.hour,
+                hour_limit=mail.hour_limit,
+                day=mail.day,
+                day_limit=mail.day_limit,
+            ),
+        ),
+    ]
 
 
 async def render_admin_home(
     repo: Repo,
-    fetcher: Fetcher,
-    steam_fetcher: SteamFetcher,
     credentials: AdminCredentials,
     *,
     locale: str,
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("adminview", locale)
-    status = await admin_status(
-        repo,
-        credentials=credentials,
-        xbox_usage=fetcher.api_usage(),
-        steam_usage=steam_fetcher.api_usage(),
-    )
+    status = await admin_status(repo, credentials=credentials)
 
     async def key_line(name: str, not_configured: str) -> str:
         # Steam's key is admin-settable and can be genuinely "not configured"
@@ -103,7 +137,7 @@ async def render_admin_home(
     # (poller/admin_refresh.py), so a bare title alone would leave no way to
     # tell a fresh render from one that silently stopped updating.
     updated_label = local_now(_DEFAULT_TZ_OFFSET_MIN).strftime("%H:%M")
-    mail = status.mail
+    rows = usage_rows(status, locale=locale)
 
     text = _(
         "adminview-home",
@@ -116,18 +150,10 @@ async def render_admin_home(
         steam_linked=status.steam_linked,
         psn_linked=status.psn_linked,
         chats=status.chats,
-        xbox_usage=format_api_usage(status.xbox_usage, locale=locale),
-        steam_usage=format_api_usage(status.steam_usage, locale=locale),
+        api_lines="\n".join(f"{label}: {value}" for label, value in rows[:-1]),
         steam_key_line=await key_line("steam", "adminview-steam-not-configured"),
         psn_key_line=await key_line("psn", "adminview-psn-not-configured"),
-        psn_requests=status.psn_requests,
-        mail_usage=_(
-            "adminview-mail-usage",
-            hour=mail.hour,
-            hour_limit=mail.hour_limit,
-            day=mail.day,
-            day_limit=mail.day_limit,
-        ),
+        mail_line=f"{rows[-1][0]}: {rows[-1][1]}",
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[

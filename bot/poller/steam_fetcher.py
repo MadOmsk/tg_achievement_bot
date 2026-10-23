@@ -43,8 +43,9 @@ log = logging.getLogger(__name__)
 # the backfill never saw: free-to-play ones, left out of GetOwnedGames until
 # the flag that includes them was added (#120), and games Valve folded into
 # another (#123). A new name runs the top-up again for whatever a later fix
-# makes visible.
-LIBRARY_TOPUP_KEY = "steam_library_topup_123"
+# makes visible — renamed again for the libraries whose backfill met a
+# hidden profile and stored nothing (2026-10-12).
+LIBRARY_TOPUP_KEY = "steam_library_topup_private"
 
 
 # A backfill's per-game concurrency — Xbox never needed this second level
@@ -75,6 +76,7 @@ class SteamFetcher:
         self._anthropic_auth = anthropic_auth
         self._backfill_slots = asyncio.Semaphore(concurrency)  # people backfilling at once
         self._game_slots = asyncio.Semaphore(GAME_BACKFILL_CONCURRENCY)  # games within one
+        self._filling: dict[str, asyncio.Task[None]] = {}  # steam_id -> its history top-up
 
     def api_usage(self) -> list[tuple[int, int, float]]:
         """(used, limit, window_seconds) — the admin panel's Steam line,
@@ -93,14 +95,20 @@ class SteamFetcher:
     ) -> int:
         """Fetch one game's achievements, keep the new ones, publish them."""
         api_key = await self._steam_auth.require_key()
-        parsed = await fetch_unlocked(
-            self._repo, self._anthropic_auth, api_key, steam_id, appid, title_name=game_name
-        )
+        try:
+            parsed = await fetch_unlocked(
+                self._repo, self._anthropic_auth, api_key, steam_id, appid, title_name=game_name
+            )
+        except SteamGameDetailsPrivateError:
+            await self._achievements_hidden(person_id)
+            return 0
         rows = [to_achievement_row(item) for item in parsed]
         new_rows = await self._repo.insert_new_achievements_steam(
             person_id, steam_id, rows, is_backfill=False
         )
         await self._repo.mark_steam_achievements_polled(steam_id)
+        # After this game's rows are in, so the top-up does not ask for it again.
+        await self._achievements_readable(person_id, steam_id)
         if not new_rows:
             return 0
 
@@ -112,6 +120,52 @@ class SteamFetcher:
         )
         await self._ensure_hltb_match(appid)
         return len(new_rows)
+
+    # A profile can hide its achievements while its library shows (2026-10-12:
+    # a person linked first and opened "Game details" two hours later; the
+    # backfill met 403 on every game and the history was never asked again).
+    # `achievements_visible = 0` is then "the history waits": the first
+    # achievement read again proves the profile open, and the games with
+    # nothing stored are filled in as history.
+
+    async def _hidden(self, person_id: int) -> bool:
+        link = await self._repo.get_platform_link(person_id, Platform.STEAM)
+        return link is not None and link.achievements_visible is False
+
+    async def _achievements_hidden(self, person_id: int) -> None:
+        if not await self._hidden(person_id):
+            log.info("steam achievements of person_id=%s are hidden", person_id)
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
+
+    async def _achievements_readable(self, person_id: int, steam_id: str) -> None:
+        if await self._hidden(person_id):
+            log.info("steam achievements of person_id=%s readable again", person_id)
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
+            self.fill_in_background(person_id, steam_id)
+
+    async def _library_visible(self, person_id: int, steam_id: str) -> None:
+        """The library answered — which says nothing about the achievements
+        when they were hidden: the top-up finds out from its first game."""
+        if await self._hidden(person_id):
+            self.fill_in_background(person_id, steam_id)
+        else:
+            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
+
+    def fill_in_background(self, person_id: int, steam_id: str) -> None:
+        """`fill_library_gaps` off the polling path, one at a time per account."""
+        if steam_id in self._filling:
+            return
+        task = asyncio.create_task(self._fill_logged(person_id, steam_id))
+        self._filling[steam_id] = task
+        task.add_done_callback(lambda _t: self._filling.pop(steam_id, None))
+
+    async def _fill_logged(self, person_id: int, steam_id: str) -> None:
+        try:
+            await self.fill_library_gaps(person_id, steam_id)
+        except SteamGameDetailsPrivateError:
+            log.info("steam top-up for person_id=%s: achievements still hidden", person_id)
+        except Exception:
+            log.exception("steam top-up for person_id=%s failed", person_id)
 
     async def _ensure_hltb_match(self, title_id: str) -> None:
         """Which HowLongToBeat entry this game is (#131) — after publishing,
@@ -147,7 +201,7 @@ class SteamFetcher:
         except SteamApiError:
             pass  # transient failure — don't overwrite the last known-good status on a blip
         else:
-            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
+            await self._library_visible(person_id, steam_id)
 
         try:
             snapshots = await get_presence_batch(api_key, [steam_id])
@@ -201,7 +255,7 @@ class SteamFetcher:
             except SteamGameDetailsPrivateError:
                 await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
                 raise
-            await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
+            await self._library_visible(person_id, steam_id)
             candidates = [game for game in games if game.last_played > cutoff]
             log.info(
                 "steam catch-up for person_id=%s: %s of %s games played since %s",
@@ -230,12 +284,17 @@ class SteamFetcher:
         """Store, as history, the achievements of every played game this
         account has nothing stored for (#120) — one request per such game,
         not per game in the library. Publishes nothing: whatever is there was
-        earned before the bot could see it."""
+        earned before the bot could see it.
+
+        A hidden profile stops it at its first game, recorded as hidden
+        (`SteamGameDetailsPrivateError`): asking the rest would cost a
+        request each for the same answer."""
         api_key = await self._steam_auth.require_key()
         async with self._backfill_slots:
             games = await get_owned_games(api_key, steam_id)
             stored = await self._repo.steam_titles_with_achievements(steam_id)
             rows: list[AchievementRow] = []
+            answered = False
             for game in games:
                 if game.appid in stored or not game.has_stats:
                     continue
@@ -249,9 +308,18 @@ class SteamFetcher:
                             game.appid,
                             title_name=game.name,
                         )
+                    except SteamGameDetailsPrivateError:
+                        if answered:
+                            log.info("steam top-up of appid=%s skipped: hidden", game.appid)
+                            continue
+                        await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
+                        raise
                     except SteamApiError as exc:
                         log.info("steam top-up of appid=%s skipped: %s", game.appid, exc)
                         continue
+                if not answered:
+                    answered = True
+                    await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
                 rows.extend(to_achievement_row(item) for item in parsed)
             await self._repo.insert_new_achievements_steam(
                 person_id, steam_id, rows, is_backfill=True
@@ -304,11 +372,12 @@ class SteamFetcher:
             await self._repo.set_achievements_visible(person_id, Platform.STEAM, True)
             rows: list[AchievementRow] = []
             done = 0
+            hidden = answered = 0
             if progress is not None:
                 await progress(0, len(games), 0)
 
             async def one(game: OwnedGame) -> None:
-                nonlocal done
+                nonlocal done, hidden, answered
                 async with self._game_slots:
                     try:
                         parsed = await fetch_unlocked(
@@ -319,6 +388,10 @@ class SteamFetcher:
                             game.appid,
                             title_name=game.name,
                         )
+                        answered += 1
+                    except SteamGameDetailsPrivateError:
+                        hidden += 1
+                        parsed = []
                     except SteamApiError as exc:
                         log.info("steam backfill of appid=%s skipped: %s", game.appid, exc)
                         parsed = []
@@ -334,6 +407,12 @@ class SteamFetcher:
                         await progress(done, len(games), len(rows))
 
             await asyncio.gather(*(one(game) for game in games))
+            if hidden and not answered:
+                # The library shows, the achievements do not (2026-10-12):
+                # the person is told as for a hidden library, and the first
+                # achievement read later fills the history in.
+                await self._repo.set_achievements_visible(person_id, Platform.STEAM, False)
+                raise SteamGameDetailsPrivateError("achievements are hidden on every game")
             await self._repo.insert_new_achievements_steam(
                 person_id, steam_id, rows, is_backfill=True
             )

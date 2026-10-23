@@ -218,11 +218,6 @@ def test_icon_excluded_overrides_platform_dots() -> None:
     assert _icon(row) == "🚫"
 
 
-class _FakeUsageFetcher:
-    def api_usage(self) -> list[tuple[int, int, float]]:
-        return []
-
-
 async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
     repo: Repo, cipher: TokenCipher
 ) -> None:
@@ -235,11 +230,9 @@ async def test_home_does_not_count_a_steam_only_person_as_a_broken_xbox_login(
 
     text, _markup = await render_admin_home(
         repo,
-        _FakeUsageFetcher(),
-        _FakeUsageFetcher(),
         AdminCredentials(psn=PsnAuth(repo, cipher), steam=SteamAuth(repo, cipher)),
         locale="ru",
-    )  # type: ignore[arg-type]
+    )
 
     assert "XBOX:  0" in text
     assert "Steam: 1" in text

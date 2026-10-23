@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 import httpx
 
 from bot.constants import SteamCommunityVisibility
+from bot.services import api_usage, images
 from bot.services.rate_limiter import RateLimiter
 
 BASE_URL = "https://api.steampowered.com"
@@ -51,6 +52,11 @@ REQUEST_TIMEOUT = 10.0
 # goes through this one module-level function.
 RATE_WINDOWS: tuple[tuple[int, float], ...] = ((100_000, 86400.0),)
 _limiter = RateLimiter(RATE_WINDOWS)
+
+
+async def _acquire() -> None:
+    await _limiter.acquire()
+    api_usage.record(api_usage.STEAM)
 
 
 def rate_limit_usage() -> list[tuple[int, int, float]]:
@@ -147,6 +153,22 @@ async def store_name(appid: str, language: str) -> str | None:
     rather than the Web API, it needs no key, and a failure costs nothing but
     a name that stays in whatever language the API already gave.
     """
+    name = (await _store_basic(appid, language) or {}).get("name")
+    return str(name) if name else None
+
+
+async def store_header_url(appid: str) -> str | None:
+    """The game's header picture as its store page links it, or None.
+
+    A game released lately has no art at the fixed CDN paths `cover_urls`
+    derives (2026-10-17: both 404): its pictures sit under a hashed folder
+    only the store names. Best-effort, as `store_name`."""
+    url = (await _store_basic(appid, "english") or {}).get("header_image")
+    return str(url) if url else None
+
+
+async def _store_basic(appid: str, language: str) -> dict | None:
+    """The store's `basic` block for one game, or None on any failure."""
     try:
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
             response = await client.get(
@@ -156,12 +178,12 @@ async def store_name(appid: str, language: str) -> str | None:
             response.raise_for_status()
             body = response.json().get(appid) or {}
     except Exception:
-        log.info("steam store name for appid=%s unavailable", appid, exc_info=True)
+        log.info("steam store details for appid=%s unavailable", appid, exc_info=True)
         return None
     if not body.get("success"):
         return None
-    name = (body.get("data") or {}).get("name")
-    return str(name) if name else None
+    data = body.get("data")
+    return data if isinstance(data, dict) else None
 
 
 async def check_alive(api_key: str) -> bool:
@@ -448,7 +470,7 @@ async def community_descriptions(
     achievement keeps no description, as before.
     """
     try:
-        await _limiter.acquire()
+        await _acquire()
         # The language rides on Steam's own cookie: `?l=` is dropped by the
         # redirect to a vanity URL (`/id/<name>/…`), and the page then comes
         # back in English whatever was asked.
@@ -489,7 +511,7 @@ async def get_schema(
     return [
         RawSchemaAchievement(
             apiname=str(item["name"]),  # Steam's own key here, not `apiname`
-            icon=item.get("icon") or None,
+            icon=images.current_url(item["icon"]) if item.get("icon") else None,
             hidden=bool(item.get("hidden")),
             display_name=item.get("displayName") or None,
             description=item.get("description") or None,
@@ -526,7 +548,7 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
     query = {"format": "json", **params}
     if api_key:
         query["key"] = api_key
-    await _limiter.acquire()
+    await _acquire()
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
@@ -545,11 +567,29 @@ async def _get(path: str, api_key: str, params: dict[str, str]) -> dict:
                 return result if isinstance(result, dict) else {}
 
             if response.status_code in (401, 403):
+                if _private_profile(response):
+                    raise SteamGameDetailsPrivateError(
+                        "Game details privacy is not public (403: profile is not public)"
+                    )
                 raise SteamKeyDeadError("Steam rejected the API key")
             if attempt == MAX_ATTEMPTS:
                 raise SteamApiError(f"Steam returned {response.status_code}")
 
     raise SteamApiError("Steam request gave up")  # pragma: no cover — loop always returns/raises
+
+
+def _private_profile(response: httpx.Response) -> bool:
+    """A 403 about the person, not the key (2026-10-12): GetPlayerAchievements
+    answers a profile whose game details are hidden with 403 and a JSON body,
+    `{"playerstats": {"error": "Profile is not public", "success": false}}`;
+    a bad key gets 403 with an HTML page. Read as a dead key, a new link's
+    whole backfill was skipped in silence and never asked again."""
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    stats = body.get("playerstats") if isinstance(body, dict) else None
+    return isinstance(stats, dict) and not stats.get("success")
 
 
 _STEAM_APP_CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps"

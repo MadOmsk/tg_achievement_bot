@@ -55,6 +55,12 @@ class SmtpAuth:
         await self._store(*self._env, None)
         log.info("smtp login seeded from the environment into app_settings")
 
+    @property
+    def host(self) -> str | None:
+        """The mail server, as `.env` names it — shown beside the sign-in
+        emails' counts on the super-admin's home."""
+        return self._settings.smtp_host or None
+
     async def credentials(self) -> tuple[str, str] | None:
         """`(username, password)`, read from storage each time."""
         await self._seed_from_env_once()

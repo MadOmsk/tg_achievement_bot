@@ -37,6 +37,7 @@ from bot.constants import AccountPlatform, account_platform_of
 from bot.db.repo import Repo, TitleCoverRow
 from bot.services import covers
 from bot.services.steam.client import cover_urls as steam_cover_urls
+from bot.services.steam.client import store_header_url as steam_store_header
 from bot.services.xbox.auth import TokenRefreshError
 from bot.services.xbox.client import XboxApiError, XboxClient
 
@@ -87,6 +88,13 @@ class CoverRefresh:
             if saved is not None:
                 url = candidate
                 break
+        if saved is None and account_platform_of(title.platform or "") == AccountPlatform.STEAM:
+            # A game released lately is at neither fixed path (2026-10-17):
+            # only the store knows its hashed folder. One request, only then.
+            header = await steam_store_header(title.title_id)
+            if header:
+                url = header
+                saved = await covers.download(header, name)
         if saved is None:
             # The URL is worth keeping even when the download failed — the
             # Mini App can load it straight from the platform's CDN, and the

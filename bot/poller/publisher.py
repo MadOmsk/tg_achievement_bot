@@ -138,11 +138,13 @@ def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
     for item in achievements:
         if not item.icon_url:
             continue
-        if item.icon_url not in has_spoiler:
-            order.append(item.icon_url)
-            has_spoiler[item.icon_url] = item.is_secret
+        # The address Telegram fetches is the one that serves it now.
+        url = images.current_url(item.icon_url)
+        if url not in has_spoiler:
+            order.append(url)
+            has_spoiler[url] = item.is_secret
         elif item.is_secret:
-            has_spoiler[item.icon_url] = True
+            has_spoiler[url] = True
     return [(url, has_spoiler[url]) for url in order]
 
 

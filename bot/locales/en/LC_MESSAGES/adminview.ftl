@@ -6,10 +6,6 @@ adminview-key-alive-checked = ✅ alive, checked { $ago }
 adminview-key-alive = ✅ alive
 adminview-key-stale-checked = ⚠️ dead, checked { $ago }
 adminview-key-stale = ⚠️ dead
-adminview-usage-min = { $span } min
-adminview-usage-sec = { $span }s
-adminview-usage-part = { $used }/{ $limit } per { $label }
-adminview-usage-none = no data
 adminview-psn-not-configured = ⚠️ not configured — set it in “🔑 Platform keys”
 adminview-steam-not-configured = ⚠️ not configured — set it in “🔑 Platform keys”
 
@@ -22,13 +18,21 @@ adminview-home =
       PSN:   { $psn_linked }
       Steam: { $steam_linked }
     Chats:          { $chats }
-    XBOX API (achievements):  { $xbox_usage }
-    Steam API (achievements): { $steam_usage }
+    { $api_lines }
     PSN key:   { $psn_key_line }
     Steam key: { $steam_key_line }
-    PSN requests in the last 24h: { $psn_requests }
-    Sign-in emails: { $mail_usage }
+    { $mail_line }
 adminview-mail-usage = an hour { $hour }/{ $hour_limit } · a day { $day }/{ $day_limit }
+adminview-api-xbox = XBOX API (median/max per account)
+adminview-api-steam = Steam API
+adminview-api-psn = PSN API
+adminview-api-anthropic = Anthropic API
+adminview-api-tokens = { $requests } req. · { $tokens } tok.
+adminview-span-300 = 5 min
+adminview-span-3600 = hour
+adminview-span-86400 = day
+adminview-mail-label = Sign-in emails ({ $server })
+adminview-mail-label-none = Sign-in emails
 adminview-btn-users = Users ▸
 adminview-btn-chats = Chats ▸
 adminview-btn-keys = 🔑 Platform keys ▸
