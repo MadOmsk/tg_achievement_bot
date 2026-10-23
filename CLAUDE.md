@@ -532,7 +532,12 @@ every column. History: #106.
   - **Names**: the platform's own two strings, **never translated**, from the same
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.
-  - Icons are cached under `data/achievements/{platform}/{title_id}/`.
+  - Icons are cached under `data/achievements/{platform}/{title_id}/`, **at most
+    1280 px on the longer side** (owner, 2026-10-23; `achievement_icons.shrink`):
+    Xbox hands out 1920×1080 PNGs of 2–4 MB, which took 4 GB of the disk and
+    reached phones whole. A larger picture is scaled down on download — PNG
+    when see-through, JPEG otherwise; a smaller one is kept as it came. Icons
+    cached before were shrunk once at start-up (`shrink_cached_once`).
   - **Tips** (`tip_en`/`tip_ru`/`tip_source`/`tip_translation`): how to get it, from
     the Steam community's guides. The text sits in its own language's column; the
     other stays NULL until a translation fills it and says so (`tip_translation =
@@ -804,9 +809,12 @@ isn't muted there; it wasn't already published there.
   fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
+  A digest of several pictures sent as one photo — an album cannot carry
+  the Mini App button — shows the game's cover first, its first icon only
+  when there is no cover (owner, 2026-10-18).
 - **A low-resolution post picture is enlarged on a square** (owner,
-  2026-10-10; `services/post_picture.py`). **The original is what is
-  stored** (icon cache, cover, URLs); the square is drawn when a post is
+  2026-10-10; `services/post_picture.py`). **Nothing drawn is stored**
+  (the icon cache keeps the icon, at most 1280 px; cover; URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
   as it is** — unless more than a tenth of it is see-through (2026-10-12:
   Aniimo's white PSN trophies on nothing reached the chat as an empty
@@ -1521,7 +1529,8 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   per game with the game's own counter, every item in the card's line format, the
   descriptions in italics (owner, 2026-09-25) and the block's version named by
   whichever item knows its device. A
-  `sendMediaGroup`, caption on the first image, images deduped.
+  `sendMediaGroup`, caption on the first image, images deduped — or, with the
+  Mini App button, one photo of the game's cover (Publication rules).
 - **The anti-flood digest is the same form**, named by the person like every post;
   two accounts of one platform name their blocks.
 - **A digest never names a trophy group** — one block is one game.
