@@ -164,5 +164,8 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
         run: |
           TARGET=${{ github.ref == 'refs/heads/main' && 'prod' || 'test' }}
-          scp spa.tgz "$USER@$HOST:/tmp/spa-$TARGET.tgz"
-          ssh "$USER@$HOST" sudo /usr/local/bin/xbox-deploy "$TARGET" "/tmp/spa-$TARGET.tgz"
+          # Port 22022, so port 22 can be closed (owner, 2026-10-23). The host
+          # key is the same on both ports; HostKeyAlias finds it under the
+          # name DEPLOY_KNOWN_HOSTS already pins, so that secret stays as is.
+          scp -P 22022 -o HostKeyAlias="$HOST" spa.tgz "$USER@$HOST:/tmp/spa-$TARGET.tgz"
+          ssh -p 22022 -o HostKeyAlias="$HOST" "$USER@$HOST" sudo /usr/local/bin/xbox-deploy "$TARGET" "/tmp/spa-$TARGET.tgz"

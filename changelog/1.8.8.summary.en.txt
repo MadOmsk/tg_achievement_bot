@@ -1,0 +1,2 @@
+• The server keeps only recent database copies, so the disk will not fill up again
+• Updates go over the hardened port; signing in to the server is by key only
