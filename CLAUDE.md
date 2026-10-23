@@ -2061,7 +2061,9 @@ journalctl -u xbox-bot -f
 the checkout on every deploy) is the only thing the CI `deploy` user may run as root.
 It:
 
-1. backs up the database **every** time (`data/backups/`);
+1. backs up the database **every** time (`data/backups/`) and keeps only the
+   newest of its own copies — **8 on prod, 5 on the test server** (owner,
+   2026-10-23: kept forever they filled the disk); a copy named by hand stays;
 2. `git fetch --prune` and `git merge --ff-only` — never a robot's merge commit;
 3. reinstalls dependencies only when `pyproject.toml` changed;
 4. unpacks the Mini App CI built (built there, not on the 300 MB box);
