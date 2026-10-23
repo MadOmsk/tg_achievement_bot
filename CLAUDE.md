@@ -1958,6 +1958,10 @@ so a fresh clone does not have them. Never run the dev server on prod's `BOT_TOK
 A VPS at Spaceship (Namecheap), Ubuntu 24.04, nginx + systemd, dedicated user
 `botsvc`; nginx terminates TLS (Let's Encrypt, certbot timer) and proxies to the bots,
 whose ports are never exposed (`OAUTH_LISTEN_HOST=127.0.0.1`).
+**SSH is keys only, on port 22022** (owner, 2026-10-23: password login
+is off, root by key only). CI's deploy connects on 22022 too, with
+`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches;
+port 22 is to be closed once a deploy over 22022 has gone through.
 
 ```bash
 systemctl {start|stop|restart|status} xbox-bot        # xbox-bot-test for the test server
@@ -1988,7 +1992,9 @@ journalctl -u xbox-bot -f
 the checkout on every deploy) is the only thing the CI `deploy` user may run as root.
 It:
 
-1. backs up the database **every** time (`data/backups/`);
+1. backs up the database **every** time (`data/backups/`) and keeps only the
+   newest of its own copies — **8 on prod, 5 on the test server** (owner,
+   2026-10-23: kept forever they filled the disk); a copy named by hand stays;
 2. `git fetch --prune` and `git merge --ff-only` — never a robot's merge commit;
 3. reinstalls dependencies only when `pyproject.toml` changed;
 4. unpacks the Mini App CI built (built there, not on the 300 MB box);
