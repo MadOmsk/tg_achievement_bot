@@ -8,6 +8,13 @@ Laid out to be read (owner, 2026-10-16): each question shows what it is about
 — the game, its releases, the HowLongToBeat entries, the editions — with their
 pictures, and next to each item the choice to make, the advisers' answers on
 pills (orange where they differ). The question's raw text is one click away.
+
+**One tap is an answer** (owner, 2026-10-23): each adviser's answer is a
+button that records it, the other answers sit under «Свой ответ…», and there
+is no separate «сохранить». The cards are drawn inside the viewer's one review
+tab (`/review`); `/trial` only sends there. «Недостающие версии» (M) are not
+the operator's to dig for: they wait for the octopus (#204) and are shown only
+when asked for (`kind=M`).
 """
 
 from __future__ import annotations
@@ -48,26 +55,6 @@ VALUE_RU = {
 }
 
 CSS = """
-<script>
-// "Свой ответ" and the pills are one choice (owner, 2026-10-17): typing in the
-// field clears the pills of that question, picking a pill clears the field.
-document.addEventListener('input', function (e) {
-  var t = e.target;
-  if (!t.classList || !t.classList.contains('other')) return;
-  var row = t.closest('.one');
-  t.classList.toggle('on', t.value.trim() !== '');
-  if (row && t.value.trim() !== '') {
-    row.querySelectorAll('input[type=radio]').forEach(function (r) { r.checked = false; });
-  }
-});
-document.addEventListener('change', function (e) {
-  var t = e.target;
-  if (t.type !== 'radio') return;
-  var row = t.closest('.one');
-  var other = row && row.querySelector('.other');
-  if (other) { other.value = ''; other.classList.remove('on'); }
-});
-</script>
 <style>
 body{background:#fff;color:#111}
 a{color:#0b57d0}
@@ -102,8 +89,16 @@ a{color:#0b57d0}
 .done{color:#2e7d32;font-weight:bold}
 .why div{font-size:12px;margin:2px 0}
 .have{margin:6px 0 6px 12px;padding:6px;border-left:3px solid #90caf9;background:#fff}
-.later{margin-left:10px;padding:6px 12px;font-size:13px}
-.save{padding:6px 18px;font-size:14px;margin-top:6px}
+.later{padding:6px 12px;font-size:13px;margin-top:6px}
+.picks{display:flex;flex-direction:column;gap:4px}
+.picks button{text-align:left;border:1px solid #9ec5fe;background:#e7f1ff;border-radius:10px;
+ padding:6px 10px;font-size:14px;cursor:pointer}
+.picks button small{color:#555;margin-left:6px}
+.own summary{cursor:pointer;color:#0b57d0;font-size:13px;margin-top:4px}
+.own .more{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.own .more button{border:1px solid #bbb;background:#fff;border-radius:10px;padding:4px 9px;
+ font-size:13px;cursor:pointer}
+.own .free{display:flex;gap:4px;margin-top:4px}
 </style>
 """
 
@@ -384,28 +379,36 @@ def _choices(key: str) -> list[str]:
 def _ask(
     qid: str, key: str, names: list[str], per: dict, labels: dict, ask: str
 ) -> tuple[str, bool]:
-    """One decision's pills — the advisers' answers, then every other answer
-    it can take, dashed — and whether the advisers agree on it."""
+    """One decision: a button for each answer the advisers gave, saying who
+    gave it, then «Свой ответ…» with every other answer it can take and a field
+    for one typed — a tap records it (owner, 2026-10-23). Returns the html and
+    whether the advisers agree on it."""
     said = {n: str(per[n].get(key, "—")) for n in names}
-    values = list(dict.fromkeys([*said.values(), *_choices(key)]))
+    given = list(dict.fromkeys(said.values()))
+    others = [v for v in _choices(key) if v not in given]
     current = labels.get(f"{qid}|{key}")
-    agreed = len(set(said.values())) == 1
-    first = said[names[0]] if names else None
-    pills = "".join(
-        f'<label class="{"said" if v in said.values() else "free"}">'
-        f'<input type=radio name="d:{escape(key)}" value="{escape(v)}"'
-        f"{' checked' if current == v or (current is None and agreed and v == first) else ''}>"
-        f"<span>{escape(_value(v, key))}</span> <small>"
-        f"{escape(', '.join(n for n in names if said[n] == v))}</small></label>"
-        for v in values
+    agreed = len(given) == 1
+    picks = "".join(
+        f'<button name="d:{escape(key)}" value="{escape(v)}">{escape(_value(v, key))}'
+        f"<small>{escape(', '.join(n for n in names if said[n] == v))}</small></button>"
+        for v in given
     )
-    other = current if current is not None and current not in values else ""
-    mark = " <span class=done>✓</span>" if f"{qid}|{key}" in labels else ""
+    more = "".join(
+        f'<button name="d:{escape(key)}" value="{escape(v)}">{escape(_value(v, key))}</button>'
+        for v in others
+    )
+    own = (
+        "<details class=own><summary>Свой ответ…</summary>"
+        + (f"<div class=more>{more}</div>" if more else "")
+        + f"<div class=free><input class=other name='o:{escape(key)}' placeholder='вписать'>"
+        f'<button name="d:{escape(key)}" value="">ок</button></div></details>'
+    )
+    mark = (
+        f" <span class=done>✓ {escape(_value(current, key))}</span>" if current is not None else ""
+    )
     html = (
         f'<div class="one{"" if agreed else " diff"}"><div class=ask>{escape(ask)}{mark}</div>'
-        f"<div class=pills>{pills}</div>"
-        f"<input class='other{' on' if other else ''}' name='o:{escape(key)}'"
-        f" placeholder='свой ответ' value='{escape(other)}'></div>"
+        f"<div><div class=picks>{picks}</div>{own}</div></div>"
     )
     return html, agreed
 
@@ -439,128 +442,136 @@ def _rows(qid: str, keys: list[str], names: list[str], per: dict, labels: dict, 
     return "".join(out)
 
 
-def _row(qid: str, key: str, names: list[str], per: dict, labels: dict, look: _Look) -> str:
-    said = {n: str(per[n].get(key, "—")) for n in names}
-    values = list(dict.fromkeys(said.values()))
-    current = labels.get(f"{qid}|{key}")
-    agreed = len(values) == 1
-    pills = "".join(
-        f'<label><input type=radio name="d:{escape(key)}" value="{escape(v)}"'
-        f"{' checked' if current == v or (current is None and agreed) else ''}>"
-        f"<span>{escape(_value(v, key))}</span> <small>"
-        f"{escape(', '.join(n for n in names if said[n] == v))}</small></label>"
-        for v in values
+# Not the operator's to dig for (owner, 2026-10-23): what versions are missing
+# is a search of the stores, the octopus's (#204). Shown only when asked for.
+WAITING_FOR_OCTOPUS = ("M",)
+
+
+def _disputed(qid: str, per: dict, names: list[str]) -> tuple[list[str], dict[str, str]]:
+    """`(the decisions the advisers disagree on, those they all gave alike)`."""
+    every = sorted(set().union(*(d.keys() for d in per.values())) if per else set())
+    disputed, accepted = [], {}
+    for k in every:
+        said = {str(per[n].get(k, "—")) for n in names}
+        if len(said) == 1:
+            accepted[k] = said.pop()
+        else:
+            disputed.append(k)
+    return disputed, accepted
+
+
+def _per(qid: str, advisers: dict, names: list[str]) -> dict:
+    return {n: decisions(qid, advisers[n][qid]) if qid in advisers[n] else {} for n in names}
+
+
+def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, list[str], int]:
+    """The trial's questions as review cards: `(the line above them, the
+    cards, how many decisions are still open)`. `back_base` is the review
+    tab's own address, with its filters; a card's answer comes back there."""
+    from scripts.catalog_viewer import _db, _img, _store_href
+
+    kind = request.query.get("kind", "")
+    # A question answered whole leaves the list (owner, 2026-10-16);
+    # `done=1` shows the answered ones as well.
+    only_open = request.query.get("done") != "1"
+    # Only what the advisers disagree on is the operator's (owner,
+    # 2026-10-16); a decision they all gave alike is taken as theirs.
+    show_all = request.query.get("all") == "1"
+    show_later = request.query.get("later") == "1"
+    deferred = _later(trial)
+    advisers = _advisers(trial)
+    names = list(advisers)
+    labels = _labels(trial)
+    accepted: dict[str, str] = {}
+    out, total, done = [], 0, 0
+    with _db(request) as conn:
+        look = _Look(conn, _img, _store_href)
+        for qid, text in _questions(trial):
+            per = _per(qid, advisers, names)
+            disputed, alike = _disputed(qid, per, names)
+            accepted.update({f"{qid}|{k}": v for k, v in alike.items()})
+            keys = sorted(set(disputed) | set(alike)) if show_all else disputed
+            qkind = qid.split(":")[0]
+            if not keys or (qkind in WAITING_FOR_OCTOPUS and kind != qkind):
+                continue
+            labelled = sum(1 for k in keys if f"{qid}|{k}" in labels)
+            total += len(keys)
+            done += labelled
+            if (qid in deferred) != show_later:
+                continue
+            if kind and qkind != kind:
+                continue
+            if only_open and labelled == len(keys):
+                continue
+            rows = _rows(qid, keys, names, per, labels, look)
+            whys = "".join(
+                f"<div><b>{escape(n)}</b>"
+                f" ({escape(str(advisers[n].get(qid, {}).get('confidence', '—')))}):"
+                f" {escape(str(advisers[n].get(qid, {}).get('why', '—')))}</div>"
+                for n in names
+            )
+            out.append(
+                f'<div class=tq id="{escape(qid)}">'
+                f"<h3><span class=badge>{escape(KIND_RU.get(qkind, ''))}</span>"
+                f"<small>советники разошлись · {labelled}/{len(keys)} отвечено</small></h3>"
+                f"{_head(qid, text, look)}"
+                f'<form method=post action="/trial/label">'
+                f'<input type=hidden name=q value="{escape(qid)}">'
+                f'<input type=hidden name=back value="{escape(back_base)}">'
+                f"{rows}"
+                f'<button class=later formaction="/trial/later">Позже</button></form>'
+                f"<details class=why><summary>почему так ответили</summary>{whys}</details>"
+                f"<details><summary>текст вопроса</summary>"
+                f"<pre style='white-space:pre-wrap;font-size:12px'>{escape(text)}</pre>"
+                "</details></div>"
+            )
+    path = trial / "compare" / "accepted.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(accepted, ensure_ascii=False, indent=1), "utf-8")
+    line = (
+        CSS + f"<p><small>Советники: {escape(', '.join(names))} · отвечено {done}/{total}"
+        f" спорных · где все трое согласны, ответ принят без вас ({len(accepted)})"
+        f" · «Недостающие версии» ждут осьминога (#204)</small></p>"
     )
-    other = current if current is not None and current not in values else ""
-    what, ask = _subject(key, look)
-    mark = " <span class=done>✓</span>" if f"{qid}|{key}" in labels else ""
-    return (
-        f'<div class="item{"" if agreed else " diff"}">'
-        + (f"<div class=what>{what}</div>" if what else "")
-        + f"<div class=ask>{escape(ask)}{mark}</div>"
-        f"<div class=pills>{pills}</div>"
-        f"<input class=other name='o:{escape(key)}' placeholder='свой ответ'"
-        f" value='{escape(other)}'></div>"
-    )
+    return line, out, total - done
+
+
+def kinds() -> list[tuple[str, str]]:
+    """The kinds of question a review filter offers, as `(kind, name)`."""
+    return [(k, KIND_RU[k]) for k in KINDS if k in KIND_RU and k not in WAITING_FOR_OCTOPUS]
+
+
+def _open_keys(trial: Path, qid: str) -> list[str]:
+    advisers = _advisers(trial)
+    names = list(advisers)
+    disputed, _alike = _disputed(qid, _per(qid, advisers, names), names)
+    labels = _labels(trial)
+    return [k for k in disputed if f"{qid}|{k}" not in labels]
+
+
+def _back_after(trial: Path, qid: str, back: str) -> str:
+    """Where an answer lands: the same question while a decision of it is
+    still open, else the one after it (this one has left the list)."""
+    back = back.split("#", 1)[0] or "/review"
+    if _open_keys(trial, qid):
+        return back + f"#{quote(qid)}"
+    order = [q for q, _text in _questions(trial)]
+    after = order[order.index(qid) + 1 :] if qid in order else []
+    return back + (f"#{quote(after[0])}" if after else "")
 
 
 def register(app: web.Application, trial: Path | None, page) -> None:
-    """Mount the page; `page` is the viewer's own page wrapper."""
+    """Mount the answer routes; the cards themselves are drawn by the review
+    tab (`cards`). `/trial` is an old address of it."""
+    app["trial_dir"] = trial
+
+    async def old_address(request: web.Request) -> web.Response:
+        query = request.query_string
+        raise web.HTTPFound("/review?tab=advisers" + (f"&{query}" if query else ""))
+
+    app.router.add_get("/trial", old_address)
     if trial is None:
-
-        async def none(request: web.Request) -> web.Response:
-            return page("Trial", "<p>(no trial: start the viewer with --trial)</p>")
-
-        app.router.add_get("/trial", none)
         return
-
-    async def show(request: web.Request) -> web.Response:
-        from scripts.catalog_viewer import _db, _img, _store_href
-
-        kind = request.query.get("kind", "")
-        # A question answered whole leaves the list (owner, 2026-10-16);
-        # `done=1` shows the answered ones as well.
-        only_open = request.query.get("done") != "1"
-        # Only what the advisers disagree on is the operator's (owner,
-        # 2026-10-16); a decision they all gave alike is taken as theirs.
-        show_all = request.query.get("all") == "1"
-        show_later = request.query.get("later") == "1"
-        deferred = _later(trial)
-        advisers = _advisers(trial)
-        names = list(advisers)
-        labels = _labels(trial)
-        accepted: dict[str, str] = {}
-        cards, total, done = [], 0, 0
-        with _db(request) as conn:
-            look = _Look(conn, _img, _store_href)
-            for qid, text in _questions(trial):
-                per = {
-                    n: decisions(qid, advisers[n][qid]) if qid in advisers[n] else {} for n in names
-                }
-                every = sorted(set().union(*(d.keys() for d in per.values())) if per else set())
-                keys = []
-                for k in every:
-                    said = {str(per[n].get(k, "—")) for n in names}
-                    if len(said) == 1:
-                        accepted[f"{qid}|{k}"] = said.pop()
-                        if not show_all:
-                            continue
-                    keys.append(k)
-                total += len(keys)
-                labelled = sum(1 for k in keys if f"{qid}|{k}" in labels)
-                done += labelled
-                if not keys:
-                    continue
-                if (qid in deferred) != show_later:
-                    continue
-                if kind and not qid.startswith(kind + ":"):
-                    continue
-                if only_open and labelled == len(keys):
-                    continue
-                rows = _rows(qid, keys, names, per, labels, look)
-                whys = "".join(
-                    f"<div><b>{escape(n)}</b>"
-                    f" ({escape(str(advisers[n].get(qid, {}).get('confidence', '—')))}):"
-                    f" {escape(str(advisers[n].get(qid, {}).get('why', '—')))}</div>"
-                    for n in names
-                )
-                back = (
-                    f"/trial?kind={quote(kind)}&done={'' if only_open else '1'}"
-                    f"&all={'1' if show_all else ''}#{quote(qid)}"
-                )
-                cards.append(
-                    f'<div class=tq id="{escape(qid)}">'
-                    f"<h3><span class=badge>{escape(KIND_RU.get(qid.split(':')[0], ''))}</span>"
-                    f"{escape(qid)} · {labelled}/{len(keys)} размечено</h3>"
-                    f"{_head(qid, text, look)}"
-                    f"<details class=why><summary>почему так ответили</summary>{whys}</details>"
-                    f'<form method=post action="/trial/label">'
-                    f'<input type=hidden name=q value="{escape(qid)}">'
-                    f'<input type=hidden name=back value="{escape(back)}">'
-                    f"{rows}<button class=save>сохранить</button>"
-                    f'<button class=later formaction="/trial/later">ответить позже</button></form>'
-                    f"<details><summary>текст вопроса</summary>"
-                    f"<pre style='white-space:pre-wrap;font-size:12px'>{escape(text)}</pre>"
-                    "</details></div>"
-                )
-        path = trial / "compare" / "accepted.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(accepted, ensure_ascii=False, indent=1), "utf-8")
-        nav = " · ".join(f'<a href="/trial?kind={k}">{escape(KIND_RU[k])}</a>' for k in KINDS)
-        scope = "все решения" if show_all else "только спорные решения"
-        head = (
-            CSS
-            + f"<p><b>{done}/{total}</b> размечено ({scope}) · модели: {escape(', '.join(names))}"
-            f" · принято без проверки (все согласны): {len(accepted)}"
-            f' · <a href="/trial?kind={quote(kind)}">неразмеченные</a>'
-            f' · <a href="/trial?kind={quote(kind)}&done=1">с размеченными</a>'
-            f' · <a href="/trial?all=1&done=1">все решения</a>'
-            f' · <a href="/trial?later=1&done=1">отложенные ({len(deferred)})</a></p>'
-            f"<p>{nav}</p>"
-            "<p><small>Здесь только решения, где модели разошлись: выбери верный ответ или"
-            " впиши свой. Где все согласны, их ответ принят (compare/accepted.json).</small></p>"
-        )
-        return page("Trial", head + "".join(cards))
 
     async def label(request: web.Request) -> web.Response:
         form = await request.post()
@@ -569,23 +580,15 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         for name, value in form.items():
             if name.startswith("d:"):
                 key = name[2:]
-                other = str(form.get(f"o:{key}") or "").strip()
-                labels[f"{qid}|{key}"] = other or str(value)
-        for name, value in form.items():
-            # The own answer typed: the pills were cleared, it is the answer.
-            if name.startswith("o:") and str(value).strip() and f"d:{name[2:]}" not in form:
-                labels[f"{qid}|{name[2:]}"] = str(value).strip()
+                # «ок» beside the field carries no value: the typed one is it.
+                answer = str(value) or str(form.get(f"o:{key}") or "").strip()
+                if answer:
+                    labels[f"{qid}|{key}"] = answer
         path = _labels_path(trial)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(labels, ensure_ascii=False, indent=1), "utf-8")
-        # Back where the list goes on: the question after this one (this one
-        # leaves the list once answered whole).
-        back = str(form.get("back") or "/trial").split("#", 1)[0]
-        order = [q for q, _text in _questions(trial)]
-        later = order[order.index(qid) + 1 :] if qid in order else []
-        raise web.HTTPFound(back + (f"#{quote(later[0])}" if later else ""))
+        raise web.HTTPFound(_back_after(trial, qid, str(form.get("back") or "/review")))
 
-    app.router.add_get("/trial", show)
     app.router.add_post("/trial/label", label)
 
     async def later(request: web.Request) -> web.Response:
@@ -596,7 +599,7 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         deferred = _later(trial)
         deferred[qid] = True
         _later_path(trial).write_text(json.dumps(deferred, ensure_ascii=False, indent=1), "utf-8")
-        back = str(form.get("back") or "/trial").split("#", 1)[0]
+        back = str(form.get("back") or "/review").split("#", 1)[0] or "/review"
         order = [q for q, _text in _questions(trial)]
         after = order[order.index(qid) + 1 :] if qid in order else []
         raise web.HTTPFound(back + (f"#{quote(after[0])}" if after else ""))

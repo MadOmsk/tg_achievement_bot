@@ -835,7 +835,8 @@ What the stores and HLTB say about a game, collected but not shown yet
   `services/advice_import.py`), weighed by `match_fit.label_weight`: the
   operator 0.9, three advisers 0.8, two of three 0.4. Only what all three agree
   on is written into the games (pairs of versions, refused HLTB links); the rest
-  teaches. `/trial` shows the operator what they disagree on.
+  teaches. What they disagree on is the operator's, in the viewer's one
+  review tab (`/review`; `/trial` is an old address of it).
 - **The octopus search** (#204, owner, 2026-10-16/17; `services/octopus.py`,
   `scripts/octopus.py`): one game looked for in every store and everything that
   belongs to it pulled, in the protocol's order — each achievement list's own
@@ -959,7 +960,7 @@ What the stores and HLTB say about a game, collected but not shown yet
     a training example); Claude and Gemini agree against the model:
     `claude+gemini`; they disagree, or either is unsure or of low
     confidence: nothing is written, the pair is the operator's (`conflicts`
-    → the viewer's `/proposals`). "Another of the series", "not related"
+    → the viewer's review tab). "Another of the series", "not related"
     and "not a game" agree (Claude's word kept); a directed relation agrees
     only in one direction. **An operator's label is never overwritten**
     (anything not an adviser's `decided_by`). Labels are written as the
@@ -1026,7 +1027,15 @@ What the stores and HLTB say about a game, collected but not shown yet
   whether it is sold, its HLTB entry and times), an HLTB entry, an
   achievement list; a store page is always a separate small "↗" beside it,
   with «в продаже» / «снято с продажи» / «неизвестно», and never a search.
-  **The review list has two questions** (owner,
+  **One tab of manual review** (owner, 2026-10-23; `/review`): the advisers'
+  disputes (`scripts/trial_page.py::cards`) first, then the model's doubtful
+  pairs, filtered — never more tabs (Proposals, Advised, Trial left the
+  menu; answers already given are «История ответов», `/decisions`). An
+  adviser card is **one tap**: a button per answer the advisers gave, saying
+  who gave it; every other answer and a field for one typed under «Свой
+  ответ…»; «Позже». «Недостающие версии» (M) are not the operator's — the
+  octopus (#204) searches the stores; they show only with `kind=M`.
+  **The model's doubts have two questions** (owner,
   2026-10-11): version ↔ game (one game, an edition, a demo, a tool — or
   another game) and game ↔ game (a remaster, a remake, a compilation, a VR
   version — or not related), the latter answered game against game, as a

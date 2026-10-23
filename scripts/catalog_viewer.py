@@ -83,7 +83,10 @@ def _button(
 PAGES = {
     "/": "Home",
     "/games": "Games",
-    "/review": "Review",
+    # One tab of manual review (owner, 2026-10-23): the advisers' disputes and
+    # the model's doubts in one queue; Proposals, Advised and Trial are gone
+    # from the menu (their pages stay at their addresses for an old link).
+    "/review": "Ревью",
     "/rules": "Rules",
     "/titles": "Achievement lists",
     "/versions": "Versions",
@@ -91,11 +94,8 @@ PAGES = {
     "/hltb": "HLTB",
     "/fetch": "Fetch state",
     "/payloads": "Payloads",
-    "/proposals": "Proposals",
-    "/advised": "Advised",
-    "/decisions": "Answers",
+    "/decisions": "История ответов",
     "/series": "Series",
-    "/trial": "Trial",
 }
 
 
@@ -1963,11 +1963,16 @@ _GAME_RELATIONS = ("remaster_of", "remake_of", "contains", "vr_of")
 
 
 async def review(request: web.Request) -> web.Response:
-    """Two questions, two tabs (owner, 2026-10-11): is this version that game
-    (versions), and how do these two games relate (games)."""
-    tab = request.query.get("tab", "versions")
+    """The one tab of manual review (owner, 2026-10-23): what the advisers
+    disagree on (the trial's questions, `scripts/trial_page.py`), then the
+    pairs the model is unsure of — is this version that game, how do these two
+    games relate (owner, 2026-10-11). Filters, not tabs: `tab` is `all`,
+    `advisers`, `versions` or `games`; `kind` narrows the advisers' questions."""
+    from scripts import trial_page
+
+    tab = request.query.get("tab", "all")
+    trial = request.app.get("trial_dir")
     marks = ",".join("?" * len(_GAME_RELATIONS))
-    games_tab = tab == "games"
     # A pair is about two games only when its versions are in two games; a
     # doubt inside one game (is this version a remaster after all?) is a
     # version question: keep it here, or move it out as another game.
@@ -1977,7 +1982,18 @@ async def review(request: web.Request) -> web.Response:
     )
     games_where = f"mp.relation IN ({marks}) AND {two_games}"
     versions_where = f"NOT ({games_where})"
-    where = games_where if games_tab else versions_where
+    query = request.query_string
+    advisers_line, advisers_cards, advisers_open = (
+        trial_page.cards(request, trial, back_base="/review" + (f"?{query}" if query else ""))
+        if trial is not None
+        else ("", [], 0)
+    )
+    sections: list[str] = []
+    if tab in ("all", "advisers"):
+        if advisers_cards:
+            sections.append(advisers_line + "".join(advisers_cards))
+        elif tab == "advisers":
+            sections.append("<p>(советники ни в чём не расходятся)</p>")
     with _db(request) as conn:
         counts = {
             name: conn.execute(
@@ -1985,40 +2001,60 @@ async def review(request: web.Request) -> web.Response:
             ).fetchone()[0]
             for name, clause in (("versions", versions_where), ("games", games_where))
         }
-        everything = conn.execute(
-            "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
-            f" mp.features FROM match_pairs mp WHERE {where} ORDER BY mp.p DESC",
-            _GAME_RELATIONS,
-        ).fetchall()
+        advice = AdviceStore.for_db(Path(request.app["db_path"]))
         # A pair answered "skip" comes back, after the rest (this run of the
         # viewer remembers it; nothing is written).
         skipped = request.app["skipped"]
-        pairs = sorted(
-            everything,
-            key=lambda r: frozenset((r["subject"], r["other"])) in skipped,
-        )[:PAGE_SIZE]
         back = f"/review?tab={tab}"
-        advice = AdviceStore.for_db(Path(request.app["db_path"]))
-        cards = (
-            _game_pair_rows(conn, pairs, back, advice)
-            if games_tab
-            else _pair_rows(conn, pairs, back, advice)
-        )
-    tabs = " · ".join(
-        (
-            f"<b>{label} ({counts[name]})</b>"
-            if name == tab
-            else f'<a href="/review?tab={name}">{label} ({counts[name]})</a>'
-        )
-        for name, label in (("versions", "version ↔ game"), ("games", "game ↔ game"))
+        for name, where, title in (
+            ("versions", versions_where, "Версия ↔ игра — модель не уверена"),
+            ("games", games_where, "Связь игр — модель не уверена"),
+        ):
+            if tab not in ("all", name) or (tab == "all" and not counts[name]):
+                continue
+            everything = conn.execute(
+                "SELECT mp.version_id AS subject, mp.other_id AS other, mp.relation, mp.p,"
+                f" mp.features FROM match_pairs mp WHERE {where} ORDER BY mp.p DESC",
+                _GAME_RELATIONS,
+            ).fetchall()
+            pairs = sorted(
+                everything,
+                key=lambda r: frozenset((r["subject"], r["other"])) in skipped,
+            )[:PAGE_SIZE]
+            rows = (
+                _game_pair_rows(conn, pairs, back, advice)
+                if name == "games"
+                else _pair_rows(conn, pairs, back, advice)
+            )
+            sections.append(f"<h2>{title} ({counts[name]})</h2>{rows}")
+    total = advisers_open + counts["versions"] + counts["games"]
+
+    def chip(label: str, href: str, on: bool) -> str:
+        return f"<b>{escape(label)}</b>" if on else f'<a href="{href}">{escape(label)}</a>'
+
+    kind = request.query.get("kind", "")
+    later = request.query.get("later") == "1"
+    chips = [
+        chip(f"Все ({total})", "/review", tab == "all" and not kind and not later),
+        chip(
+            f"Советники разошлись ({advisers_open})",
+            "/review?tab=advisers",
+            tab == "advisers" and not kind and not later,
+        ),
+        chip(f"Версия ↔ игра ({counts['versions']})", "/review?tab=versions", tab == "versions"),
+        chip(f"Связь игр, модель ({counts['games']})", "/review?tab=games", tab == "games"),
+    ]
+    if trial is not None:
+        chips += [
+            chip(name, f"/review?tab=advisers&kind={k}", tab == "advisers" and kind == k)
+            for k, name in trial_page.kinds()
+        ]
+        chips.append(chip("Отложенные", "/review?tab=advisers&later=1&done=1", later))
+    head = (
+        f"<p>{' · '.join(chips)}</p>"
+        "<p><small>Одно нажатие — ответ записан. «Свой ответ…» — остальные варианты.</small></p>"
     )
-    note = (
-        "<p>How two games relate: a remaster, a remake, a compilation, a VR version — or"
-        " nothing. Each answer is a label between the two games' anchors.</p>"
-        if games_tab
-        else "<p>Is this version that game (or its edition, demo, tool) — or another game?</p>"
-    )
-    return _page(PAGES["/review"], _flash(request) + f"<p>{tabs}</p>" + note + cards)
+    return _page(PAGES["/review"], _flash(request) + head + "".join(sections))
 
 
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
@@ -2409,7 +2445,7 @@ async def advised(request: web.Request) -> web.Response:
     advisers'); an HLTB or DLC pair can only be looked at for now."""
     items = request.app["advised"]
     if not items:
-        return _page(PAGES["/advised"], "<p>(no file: start the viewer with --advised)</p>")
+        return _page("Advised", "<p>(no file: start the viewer with --advised)</p>")
     kind, why = request.query.get("type", ""), request.query.get("why", "")
     with _db(request) as conn:
         marks = ",".join("?" * len(ADVISERS))
@@ -2474,7 +2510,7 @@ async def advised(request: web.Request) -> web.Response:
         f"<p>{len(open_items)} open of {len(items)} · <a href='/advised'>all</a> · {filters}</p>"
         "<p><small>Your answer replaces the advisers' and leaves this list.</small></p>"
     )
-    return _page(PAGES["/advised"], _flash(request) + head + "".join(cards))
+    return _page("Advised", _flash(request) + head + "".join(cards))
 
 
 async def proposals(request: web.Request) -> web.Response:
@@ -2483,9 +2519,7 @@ async def proposals(request: web.Request) -> web.Response:
     the operator's answer — or the usual answers when it is wrong."""
     items = [dict(i) for i in request.app["proposals"]]
     if not items:
-        return _page(
-            PAGES["/proposals"], "<p>(no proposals file: start the viewer with --proposals)</p>"
-        )
+        return _page("Proposals", "<p>(no proposals file: start the viewer with --proposals)</p>")
     show = request.query.get("answer", "")
     order = {"high": 0, "medium": 1, "low": 2}
     with _db(request) as conn:
@@ -2616,7 +2650,7 @@ async def proposals(request: web.Request) -> web.Response:
         + "</p><p><small>Each button records the answer it spells out. Answered"
         " pairs leave the list. Showing 40 at a time, Claude's surest first.</small></p>"
     )
-    return _page(PAGES["/proposals"], _flash(request) + head + "".join(cards))
+    return _page("Proposals", _flash(request) + head + "".join(cards))
 
 
 async def decisions(request: web.Request) -> web.Response:
