@@ -67,6 +67,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
+from bot.services import achievement_icons
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -486,6 +487,8 @@ async def run(settings: Settings) -> None:
     await flood_flush.flush_all()
     scheduler.start()
     asyncio.create_task(startup_catch_up())  # noqa: RUF006
+    # Once per server: icons cached at full size before they were shrunk.
+    asyncio.create_task(achievement_icons.shrink_cached_logged(repo))  # noqa: RUF006
 
     await _publish_command_menu(bot)
     await _publish_mini_app_menu(bot, settings)

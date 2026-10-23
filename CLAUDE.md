@@ -547,7 +547,12 @@ every column. History: #106.
   - **Names**: the platform's own two strings, **never translated**, from the same
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.
-  - Icons are cached under `data/achievements/{platform}/{title_id}/`.
+  - Icons are cached under `data/achievements/{platform}/{title_id}/`, **at most
+    1280 px on the longer side** (owner, 2026-10-23; `achievement_icons.shrink`):
+    Xbox hands out 1920×1080 PNGs of 2–4 MB, which took 4 GB of the disk and
+    reached phones whole. A larger picture is scaled down on download — PNG
+    when see-through, JPEG otherwise; a smaller one is kept as it came. Icons
+    cached before were shrunk once at start-up (`shrink_cached_once`).
   - **Tips** (`tip_en`/`tip_ru`/`tip_source`/`tip_translation`): how to get it, from
     the Steam community's guides. The text sits in its own language's column; the
     other stays NULL until a translation fills it and says so (`tip_translation =
@@ -885,8 +890,8 @@ isn't muted there; it wasn't already published there.
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
 - **A low-resolution post picture is enlarged on a square** (owner,
-  2026-10-10; `services/post_picture.py`). **The original is what is
-  stored** (icon cache, cover, URLs); the square is drawn when a post is
+  2026-10-10; `services/post_picture.py`). **Nothing drawn is stored**
+  (the icon cache keeps the icon, at most 1280 px; cover; URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
   as it is** — unless more than a tenth of it is see-through (2026-10-12:
   Aniimo's white PSN trophies on nothing reached the chat as an empty
