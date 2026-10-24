@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from bot.db.repo._sql import NOT_SPREAD
 from bot.util import utcnow_iso
 
 # Who the operator is in `decided_by` (the catalog viewer)
@@ -18,7 +19,8 @@ OPERATOR = "viewer"
 class _GamesRepo:
     async def match_rows(self) -> list[dict[str, Any]]:
         """Every version as the matcher reads it: names, studio, year, store
-        group and cross-gen set, its HLTB entries. Read whole."""
+        group and cross-gen set, its HLTB entries (never a spread one:
+        `_sql.NOT_SPREAD`). Read whole."""
         cursor = await self._conn.execute(
             "SELECT v.version_id, v.store, v.product_id, v.console, v.platform, v.title_id,"
             "  v.name, v.name_ru, v.kind, v.developer, v.publisher, v.release_date,"
@@ -26,16 +28,17 @@ class _GamesRepo:
             "  v.genres, v.description_en,"
             "  (SELECT GROUP_CONCAT(h.summary_en, ' ') FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
-            "   AND vh.source <> 'rejected') AS hltb_summary,"
+            "   AND vh.source <> 'rejected' AND " + NOT_SPREAD + ") AS hltb_summary,"
             "  t.name_en AS list_name_en,"
             "  (SELECT GROUP_CONCAT(vh.hltb_id) FROM version_hltb vh"
-            "   WHERE vh.version_id = v.version_id AND vh.source <> 'rejected') AS hltb_ids,"
+            "   WHERE vh.version_id = v.version_id AND vh.source <> 'rejected'"
+            "   AND " + NOT_SPREAD + ") AS hltb_ids,"
             "  (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
-            "   AND vh.source <> 'rejected') AS hltb_year,"
+            "   AND vh.source <> 'rejected' AND " + NOT_SPREAD + ") AS hltb_year,"
             "  (SELECT GROUP_CONCAT(h.game_type) FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
-            "   AND vh.source <> 'rejected') AS hltb_types"
+            "   AND vh.source <> 'rejected' AND " + NOT_SPREAD + ") AS hltb_types"
             " FROM versions v LEFT JOIN achievement_list_connectors t ON t.platform = v.platform"
             "  AND t.title_id = v.title_id"
         )

@@ -324,3 +324,10 @@ GLOBAL_RARE_THRESHOLD = (
 GLOBAL_DIGEST_THRESHOLD = (
     "COALESCE((SELECT CAST(value AS INTEGER) FROM app_settings WHERE key = 'digest_threshold'), 3)"
 )
+
+# An HLTB link spread from a game's other release (`game_link.spread_hltb`)
+# carries this score. The matcher never reads one (the training audit,
+# 2026-10-24): it was made because the versions are in one game, and as
+# "one HLTB entry" it told the model they are — the answer as a sign.
+SPREAD_HLTB_SCORE = 0.9
+NOT_SPREAD = f"NOT (vh.source = 'auto' AND vh.score = {SPREAD_HLTB_SCORE})"

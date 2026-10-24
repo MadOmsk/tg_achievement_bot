@@ -1368,6 +1368,9 @@ async def test_a_games_hltb_entry_reaches_its_other_releases(repo: Repo) -> None
     assert await spread_hltb(repo, [game]) == 2  # PS4 and PS5; HLTB lists no Series
     linked = {r["version_id"] for r in await repo.versions_of_hltb(5)}
     assert linked == {ids[0], ids[1], ids[2]}
+    # Spread because they are one game: never read back as a sign they are.
+    hltb = {r["version_id"]: r["hltb_ids"] for r in await repo.match_rows()}
+    assert hltb[ids[0]] == "5" and hltb[ids[1]] is None and hltb[ids[2]] is None
 
 
 def test_a_game_is_not_called_by_an_id_when_a_release_has_a_name() -> None:

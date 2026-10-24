@@ -619,6 +619,7 @@ async def spread_hltb(repo: Repo, game_ids: list[int] | None = None) -> int:
     a refusal), and it is not a demo, a tool, a mode or an extra. A game whose
     releases are linked to more than one game entry is left alone: which one
     is the game's is not ours to guess. The number of links made."""
+    from bot.db.repo._sql import SPREAD_HLTB_SCORE
     from bot.services.game_match import is_part
     from bot.services.hltb_match import NOT_A_GAME
     from bot.services.hltb_platforms import hltb_platform
@@ -653,7 +654,7 @@ async def spread_hltb(repo: Repo, game_ids: list[int] | None = None) -> int:
             platform = hltb_platform(r["console"])
             if platform is None or (platforms and platform not in platforms):
                 continue
-            await repo.link_version_hltb(vid, hltb_id, score=0.9)
+            await repo.link_version_hltb(vid, hltb_id, score=SPREAD_HLTB_SCORE)
             made += 1
     return made
 
