@@ -1429,7 +1429,8 @@ def test_a_placeholder_date_is_no_year() -> None:
 def test_a_veto_needs_a_sign_the_two_differ() -> None:
     """Only a shared name and a near year, and the model says "other"
     (2026-10-24: Fortnite and Save the World): no veto, so the pairs that
-    join them still do. With a sign they differ (a sequel's number) it holds."""
+    join them still do. With a sign they differ (a sequel's number), or the
+    model's own answer a relation (a remaster), it holds."""
     from bot.services.game_link import _cluster
     from bot.services.game_match import Verdict
 
@@ -1446,13 +1447,17 @@ def test_a_veto_needs_a_sign_the_two_differ() -> None:
             dict.fromkeys(signs, 1.0),
         )
 
-    def groups(far_signs: set[str]) -> list[set[int]]:
+    def groups(far_signs: set[str], remaster: float = 0.0) -> list[set[int]]:
+        far = verdict(1, 3, 0.02, far_signs)
+        far.probs = {"same": 0.02, "remaster_of": remaster, "other": 0.98 - remaster}
         verdicts = {
             (1, 2): verdict(1, 2, 0.99, {"name"}),
             (2, 3): verdict(2, 3, 0.95, {"name", "same_hltb"}),
-            (1, 3): verdict(1, 3, 0.02, far_signs),
+            (1, 3): far,
         }
         return sorted(_cluster(members, verdicts, []), key=min)
 
     assert groups({"name", "years_near"}) == [{1, 2, 3}]
+    # The model sure it is a remaster: another game, whatever the signs.
+    assert groups({"name", "years_near"}, remaster=0.9) == [{1, 2}, {3}]
     assert groups({"name", "numbers_differ"}) == [{1, 2}, {3}]

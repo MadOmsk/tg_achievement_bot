@@ -301,11 +301,7 @@ def _cluster(
         # year split Fall Guys and Among Us); it may still join.
         if "name_unknown" in v.features:
             continue
-        if (
-            v.p_same < VETO_P
-            and "one_list" not in v.features
-            and not DIFFER_SIGNS.isdisjoint(v.features)
-        ):
+        if v.p_same < VETO_P and "one_list" not in v.features and _differ(v):
             forbidden[a].add(b)
             forbidden[b].add(a)
 
@@ -332,6 +328,16 @@ def _cluster(
     for g in group.values():
         unique[id(g)] = g
     return list(unique.values())
+
+
+def _differ(v: Verdict) -> bool:
+    """A sign the two versions are not one game: one of `DIFFER_SIGNS`, or
+    the model's likeliest answer is a relation of its own — a remaster, a
+    remake, a compilation, a VR version is another game (owner,
+    2026-10-24: BioShock Remastered is not BioShock)."""
+    if not DIFFER_SIGNS.isdisjoint(v.features):
+        return True
+    return max(v.probs, key=v.probs.__getitem__, default="other") in RELATIONS
 
 
 def _anchor(cluster: list[Candidate]) -> Candidate:

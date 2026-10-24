@@ -960,8 +960,8 @@ What the stores and HLTB say about a game, collected but not shown yet
     (`match_pairs`, one per pair of games). Versions join a game from the surest
     pair down, **never across a veto** (a pair under `VETO_P` "same" that
     also shows a sign the two differ — `DIFFER_SIGNS`: a number, subtitles,
-    the same name far apart, achievement lists apart, … — or a label saying
-    no; a shared name alone vetoes nothing; a demo, a tool or a mode vetoes nothing — a beta is far from its game's port
+    the same name far apart, achievement lists apart, … — or whose likeliest
+    answer is a relation: a remaster is another game; or a label saying no; a shared name alone vetoes nothing; a demo, a tool or a mode vetoes nothing — a beta is far from its game's port
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
