@@ -32,12 +32,13 @@ RELATIONS = {
     "remaster_of": "remaster_of",
     "remake_of": "remake_of",
     "demo_of": "demo_of",
+    "tool_of": "tool_of",
     "extra_of": "extra_of",
     "contains": "contains",
     "series": "series",
     "not_related": "other",
 }
-DIRECTED = {"enhanced_of", "remaster_of", "remake_of", "demo_of", "extra_of", "contains"}
+DIRECTED = {"enhanced_of", "remaster_of", "remake_of", "demo_of", "tool_of", "extra_of", "contains"}
 
 
 def label_of(answer: dict) -> tuple[int, int, str] | None:
