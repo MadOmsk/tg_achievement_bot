@@ -913,21 +913,20 @@ What the stores and HLTB say about a game, collected but not shown yet
     related to the original: `remaster_of` / `remake_of` / `vr_of` point at the
     **earliest** original (no chains through remasters), `contains` from a
     compilation to each part. **A remake is an original of its own** (owner,
-    2026-10-12): a remaster of a remake points at the remake — Gears of War:
-    Reloaded is a remaster of Ultimate Edition, a remake of Gears of War. Inside a game: the same product across platforms (PS4 and PS5, One and
-    Series released together under one name are one game, even with two lists —
-    not two games of one pack, Return to Arkham), demos (betas and tech tests too),
-    tools and modes, and **enhanced editions** (owner, 2026-10-24: they are many):
-    a product of its own that is the game made more of — GOTY, Complete, Ultimate,
-    Definitive, a Director's Cut, an HD or Enhanced release with its DLC or modest
-    improvements — stays in the game with the role `enhanced`, `of_version_id` the
-    plain version, by its name (`game_match.is_enhanced`) or by an `enhanced_of`
-    label (one game to a fit). A pack a store sells around one version is an
-    edition (`editions`), not a version. A remaster — reworked, marketed as one —
-    is a game of its own; a later product on a newer console with a list of its
-    own is one unless the labels call it enhanced (Ghost of Tsushima DC on PS5);
-    Witcher 3's next-gen products are a remaster, its Steam app the original.
-    Such a game is named by its own release ("Gears of War: Ultimate Edition").
+    2026-10-12): a remaster of a remake points at the remake. Inside a game:
+    the same product across platforms (PS4 and PS5, One and Series released
+    together under one name are one game, even with two lists), demos (betas
+    and tech tests too), tools and modes, and **enhanced editions** (role
+    `enhanced`, `of_version_id` the plain version; by its name,
+    `game_match.is_enhanced`, or an `enhanced_of` label — one game to a fit).
+    A pack a store sells around one version is an edition (`editions`), not a
+    version. Such a game is named by its own release.
+  - **Enhanced or remaster** (owner, 2026-10-25): an enhanced edition is the
+    same game with minimal changes but added content (its DLC, a Director's
+    Cut's chapter, modest resolution or frame-rate work); a remaster means
+    larger graphical changes. Which one a given game is, is the labels'
+    answer (the operator's, the web-checked ones), never a rule written here:
+    this file keeps principles, not per-game decisions.
   - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;
     `game_match.game_name`): the full release name, platform tails cut ("-
     Xbox Series X|S", "(PC)", "for Windows 10", "Windows 10 Edition"), when
