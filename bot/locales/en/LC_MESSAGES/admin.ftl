@@ -27,6 +27,7 @@ admin-setting-email-provider-daily = The mail service's daily limit
 admin-setting-email-sends-total = Email codes in total an hour
 admin-setting-email-checks-client = Code checks per IP in 10 minutes
 admin-setting-patch-refresh = Game patch refresh (hours)
+admin-setting-octopus-per-tick = Games the octopus assembles (a minute)
 
 # The settings registry (#176, services/admin_registry.py): one label per
 # setting, one title per group — the bot and the Mini App show the same ones.

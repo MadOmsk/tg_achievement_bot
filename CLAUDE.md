@@ -209,6 +209,7 @@ name, or when the tree goes stale.
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
 │   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
+│   │   ├── octopus.py            the octopus's queue, a few games assembled a minute (#215)
 │   │   ├── guide_videos.py       guide channels' YouTube videos: the newest page, the whole history weekly
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
@@ -879,8 +880,11 @@ What the stores and HLTB say about a game, collected but not shown yet
   the queue keeps keys only. The viewer's **«Осьминог»** (`/octopus`): links,
   keys or names one a line into the queue, a run in the background (one at a
   time), the queue, and the step-12 checks — versions in no game, stand-ins,
-  games with no HLTB; a game page has «собрать осьминогом». Triggers from the
-  bot: a later stage of #215.
+  games with no HLTB; a game page has «собрать осьминогом». **In the bot**
+  (stage 3, `poller/octopus.py`): a list published for the first time and a
+  game page opened in the Mini App queue `list:` beside `StoreCollector.ensure`
+  (reason `published` / `page`); a job takes `octopus_entries_per_tick` a
+  minute (1; 0 = off; /admin → Таймеры), one run at a time.
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions

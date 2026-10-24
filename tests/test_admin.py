@@ -79,6 +79,7 @@ def test_only_summary_stats_and_ttl_limits_allow_zero() -> None:
         ONLINE_REFRESH_INTERVAL_KEY,
         MONTHLY_DELAY_KEY,
         ACCOUNT_RESET_COOLDOWN_HOURS_KEY,
+        "octopus_entries_per_tick",  # 0 switches the octopus off (#215)
     }
 
 

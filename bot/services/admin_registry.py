@@ -116,6 +116,7 @@ _NUMERIC_GROUPS = {
     "service_health_interval_min": "timers",
     "monthly_summary_delay_minutes": "timers",
     "patch_refresh_hours": "timers",
+    "octopus_entries_per_tick": "timers",
     "email_codes_per_client_hour": "mail",
     "email_codes_total_hour": "mail",
     "email_checks_per_client_10min": "mail",

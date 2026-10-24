@@ -1100,7 +1100,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
     # What the stores say about the game (#147), when it is due.
     collector: StoreCollector | None = request.app.get("mini_store_collector")
     if collector is not None and title_info:
-        collector.ensure(str(title_info["platform"]), title_id)
+        collector.ensure(str(title_info["platform"]), title_id, reason="page")
 
     listed = len(checklist)
     unlocked = sum(1 for item in checklist if item.is_unlocked)

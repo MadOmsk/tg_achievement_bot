@@ -27,6 +27,7 @@ admin-setting-email-provider-daily = Лимит почтового сервис�
 admin-setting-email-sends-total = Кодов на почту всего в час
 admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
+admin-setting-octopus-per-tick = Сборка игр осьминогом (в минуту)
 
 # The settings registry (#176, services/admin_registry.py): one label per
 # setting, one title per group — the bot and the Mini App show the same ones.

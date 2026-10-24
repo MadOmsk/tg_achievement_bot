@@ -95,18 +95,25 @@ class StoreCollector:
         self._running: dict[tuple[str, str], asyncio.Task[CollectReport]] = {}
         self._background: set[asyncio.Task[None]] = set()
 
-    def ensure(self, platform: str, title_id: str) -> None:
+    def ensure(self, platform: str, title_id: str, *, reason: str = "published") -> None:
         """Collect the game in the background if anything about it is due —
-        never on the path that called it. A no-op while it is running."""
+        never on the path that called it — and put it in the octopus's queue,
+        which assembles the whole game later (#215). A no-op while it is
+        running."""
         key = (str(platform), title_id)
         if key in self._running:
             return
-        task = asyncio.create_task(self._collect_logged(*key))
+        task = asyncio.create_task(self._collect_logged(*key, reason=reason))
         self._running[key] = task
         task.add_done_callback(lambda _t: self._running.pop(key, None))
 
-    async def _collect_logged(self, platform: str, title_id: str) -> CollectReport:
+    async def _collect_logged(
+        self, platform: str, title_id: str, *, reason: str = "published"
+    ) -> CollectReport:
         try:
+            # The octopus's key for a list (`octopus.list_key`); a key in the
+            # queue already stays as it is.
+            await self._repo.octopus_enqueue(f"list:{platform}:{title_id}", reason)
             return await self.collect(platform, title_id)
         except Exception:
             log.exception("store collection failed for %s %s", platform, title_id)

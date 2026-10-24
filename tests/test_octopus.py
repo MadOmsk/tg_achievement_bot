@@ -223,3 +223,31 @@ async def test_a_bundle_series_and_account_spread_into_what_they_hold(repo: Repo
     await octopus.enqueue(f"series:{series}")
     report = await octopus.run(limit=1)
     assert report.spread == 1 and report.queued == 2 and not report.games
+
+
+async def test_the_bots_worker_takes_its_share_and_zero_is_off(repo: Repo) -> None:
+    from bot.poller.octopus import PER_TICK_KEY, OctopusWorker
+
+    await _halo(repo)
+    octopus = OctopusCollector(repo, Stub(repo), linker=_linker([]))  # type: ignore[arg-type]
+    for n in range(3):
+        await octopus.enqueue(game_key(999 + n))
+    await repo.set_app_setting(PER_TICK_KEY, "0")
+    await OctopusWorker(repo, octopus).tick()
+    assert await repo.octopus_waiting() == 3
+    await repo.set_app_setting(PER_TICK_KEY, "2")
+    await OctopusWorker(repo, octopus).tick()
+    assert await repo.octopus_waiting() == 1
+
+
+async def test_a_list_collected_for_the_bot_is_queued_for_the_octopus(repo: Repo) -> None:
+    from bot.services.store_collect import StoreCollector
+
+    collector = StoreCollector(repo)
+
+    async def collect(platform, title_id, *, force=False, link=True):
+        return CollectReport(platform, title_id)
+
+    collector.collect = collect  # type: ignore[method-assign]
+    await collector._collect_logged("psn", "NPWR1", reason="page")
+    assert await repo.octopus_due(5) == [(list_key("psn", "NPWR1"), "page")]

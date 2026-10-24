@@ -23,6 +23,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.guide_videos import GuideVideos
 from bot.poller.message_cleanup import MessageCleanup
+from bot.poller.octopus import OctopusWorker
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.patch_refresh import PatchRefresh
 from bot.poller.presence import PresencePoller
@@ -69,6 +70,7 @@ class PollerScheduler:
         psn_trophy_groups: PsnTrophyGroups,
         patch_refresh: PatchRefresh | None = None,
         guide_videos: GuideVideos | None = None,
+        octopus: OctopusWorker | None = None,
     ) -> None:
         self._poller = poller
         self._fetcher = fetcher
@@ -93,6 +95,7 @@ class PollerScheduler:
         self._psn_trophy_groups = psn_trophy_groups
         self._patch_refresh = patch_refresh
         self._guide_videos = guide_videos
+        self._octopus = octopus
         self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -164,6 +167,15 @@ class PollerScheduler:
                 self._patch_refresh.tick,
                 IntervalTrigger(seconds=TICK_SECONDS),
                 id="patch_refresh",
+                coalesce=True,
+                max_instances=1,
+            )
+        if self._octopus is not None:
+            # One run at a time: an entry may take minutes (#215).
+            self._scheduler.add_job(
+                self._octopus.tick,
+                IntervalTrigger(seconds=TICK_SECONDS),
+                id="octopus",
                 coalesce=True,
                 max_instances=1,
             )

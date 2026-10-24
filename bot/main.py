@@ -51,6 +51,7 @@ from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.guide_videos import GuideVideos
 from bot.poller.message_cleanup import MessageCleanup
+from bot.poller.octopus import OctopusWorker
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.patch_refresh import PatchRefresh
 from bot.poller.presence import PresencePoller
@@ -76,6 +77,7 @@ from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notifier import Notifier
 from bot.services.notify import SuperadminNotifier
+from bot.services.octopus import OctopusCollector
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.smtp_auth import SmtpAuth
@@ -278,6 +280,7 @@ async def run(settings: Settings) -> None:
         PsnTrophyGroups(repo, psn_auth),
         PatchRefresh(repo, steam_extras),
         GuideVideos(repo, youtube_auth),
+        OctopusWorker(repo, OctopusCollector(repo, store_collector)),
     )
 
     async def on_linked(

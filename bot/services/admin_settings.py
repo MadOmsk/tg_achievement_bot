@@ -16,6 +16,8 @@ from bot.constants import RarityMode, SettingKey, TokenStatus
 from bot.i18n import gettext
 from bot.poller.message_cleanup import DEFAULT_TTL_MINUTES as DEFAULT_SYSTEM_MESSAGE_TTL_MIN
 from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
+from bot.poller.octopus import DEFAULT_PER_TICK as DEFAULT_OCTOPUS_PER_TICK
+from bot.poller.octopus import PER_TICK_KEY as OCTOPUS_PER_TICK_KEY
 from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ONLINE_REFRESH_MIN
 from bot.poller.online_refresh import DEFAULT_TTL_HOURS as DEFAULT_ONLINE_REFRESH_TTL_HOURS
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
@@ -237,6 +239,14 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     ),
     PATCH_REFRESH_HOURS_KEY: NumericSetting(
         "admin-setting-patch-refresh", DEFAULT_PATCH_REFRESH_HOURS, min=1, max=168
+    ),
+    # How many queued games the octopus assembles a minute (poller/octopus.py).
+    OCTOPUS_PER_TICK_KEY: NumericSetting(
+        "admin-setting-octopus-per-tick",
+        DEFAULT_OCTOPUS_PER_TICK,
+        min=0,
+        max=10,
+        zero_label="admin-disabled",
     ),
 }
 
