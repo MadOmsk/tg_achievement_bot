@@ -724,10 +724,6 @@ class StoreCollector:
             done[key] = done.get(key, 0) + 1
 
         repo = self._repo
-        # What each kept edition is, read again from what it holds (owner,
-        # 2026-10-24): the rule `_xbox_editions` follows now.
-        for scope, n in (await classify_editions(repo)).items():
-            done[f"editions: {scope}"] = n
         for subject in await repo.payload_subjects("steam_store", "steam:"):
             data = steam_store.without_prices(await repo.payload(subject, "steam_store"))
             if not data:
@@ -806,6 +802,10 @@ class StoreCollector:
         for hltb_id in await repo.linked_hltb_ids():
             await link_hltb_entry(repo, hltb_id)
             count("hltb links checked")
+        # Last, after every step that saves an edition again: what each kept
+        # edition is, read from what it holds (owner, 2026-10-24).
+        for scope, n in (await classify_editions(repo)).items():
+            done[f"editions: {scope}"] = n
         return done
 
     async def _reparse_xbox_addons(

@@ -203,7 +203,9 @@ def classify_bundle(
       kind from its name (Monster Hunter Rise + Sunbreak: no primary flag, an
       edition all the same);
     - several games, one primary → `edition` of that one; the rest are
-      `bonus` (FIFA 16 Super Deluxe holds Plants vs. Zombies Garden Warfare);
+      `bonus` (FIFA 16 Super Deluxe holds Plants vs. Zombies Garden Warfare) —
+      unless its name says it is a set ("Bundle", "Collection", "Trilogy"):
+      the PopCap Bundle flags one game primary and is a bundle;
     - several games, none or many primary → a `bundle` of `part`s (the
       PopCap Bundle, games of different series);
     - no game → an `addon_pack` (add-ons, currency).
@@ -213,7 +215,11 @@ def classify_bundle(
     if not games:
         return "addon_pack", "addon_pack", roles
     primary = [n for n in games if items[n][1]]
-    if len(games) == 1 or len(primary) == 1:
+    # Several games under a name that says it is a set of them (the PopCap
+    # Bundle flags Garden Warfare as its primary game and holds Peggle 2):
+    # a bundle, whatever the flag.
+    named_a_set = edition_kind(name) in ("bundle", "collection")
+    if len(games) == 1 or (len(primary) == 1 and not named_a_set):
         main = games[0] if len(games) == 1 else primary[0]
         for n in games:
             roles[n] = "main" if n == main else "bonus"

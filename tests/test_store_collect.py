@@ -824,8 +824,15 @@ def test_a_bundle_is_read_from_what_it_holds() -> None:
     assert classify_bundle(
         "FIFA 16 Super Deluxe Edition", [("dlc", False), ("game", False), ("game", True)]
     ) == ("edition", "deluxe", [None, "bonus", "main"])
-    # The PopCap Bundle: several equal games.
-    assert classify_bundle("PopCap Bundle", [("game", False), ("game", False)]) == (
+    # The PopCap Bundle flags Garden Warfare primary, holds Peggle 2: its name
+    # says it is a set.
+    assert classify_bundle("PopCap Bundle", [("game", False), ("game", True)]) == (
+        "bundle",
+        "bundle",
+        ["part", "part"],
+    )
+    # Several equal games.
+    assert classify_bundle("EA Pack", [("game", False), ("game", False)]) == (
         "bundle",
         "bundle",
         ["part", "part"],
@@ -895,3 +902,12 @@ async def test_kept_editions_are_read_again_and_a_kind_set_by_hand_stays(repo: R
         ("GOTY", "edition", "complete", "main"),  # the advisers' kind kept
         ("MHR", "edition", "complete", "main"),  # "bundle" was wrong: the game complete
     ]
+
+
+async def test_saving_an_edition_again_keeps_what_it_was_read_to_be(repo: Repo) -> None:
+    """The re-parse saves editions again in later steps (Xbox add-ons): a
+    save that does not say its scope keeps the one read from its contents."""
+    edition = await repo.save_edition("xbox", "B", "A Bundle", "bundle", scope="bundle")
+    await repo.save_edition("xbox", "B", "A Bundle", None)
+    cursor = await repo._conn.execute("SELECT scope FROM editions WHERE edition_id = ?", (edition,))
+    assert (await cursor.fetchone())[0] == "bundle"

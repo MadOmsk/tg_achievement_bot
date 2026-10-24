@@ -1055,20 +1055,22 @@ class _StoresRepo:
         kind: str | None,
         on_sale: bool | None = None,
         media: dict | None = None,
-        scope: str = "edition",
+        scope: str | None = None,
     ) -> int:
         """An edition seen on its store now: kept, its last sighting stamped;
         its pictures (`services/edition_media`) when the answer had any.
-        `scope` is what it is by its contents (`stores.classify_bundle`)."""
+        `scope` is what it is by its contents (`stores.classify_bundle`);
+        None keeps what it was (a new one is an edition)."""
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO editions (store, store_id, name, kind, first_seen_at, last_seen_at,"
-            " on_sale, media, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " on_sale, media, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'edition'))"
             " ON CONFLICT(store, store_id) DO UPDATE SET"
             "  name = COALESCE(excluded.name, editions.name),"
             "  kind = COALESCE(excluded.kind, editions.kind), last_seen_at = excluded.last_seen_at,"
             "  on_sale = COALESCE(excluded.on_sale, editions.on_sale),"
-            "  media = COALESCE(excluded.media, editions.media), scope = excluded.scope",
+            "  media = COALESCE(excluded.media, editions.media),"
+            "  scope = COALESCE(?, editions.scope)",
             (
                 store,
                 store_id,
@@ -1078,6 +1080,7 @@ class _StoresRepo:
                 now,
                 None if on_sale is None else int(on_sale),
                 json.dumps(media, ensure_ascii=False) if media else None,
+                scope,
                 scope,
             ),
         )
