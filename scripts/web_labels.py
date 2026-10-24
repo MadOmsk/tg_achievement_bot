@@ -24,6 +24,7 @@ from pathlib import Path
 from bot.db.repo import Database, Repo
 from bot.services.game_link import GameLinker
 from bot.services.game_match import MODEL
+from scripts.catalog_viewer import _put_in_series
 
 SOURCE = "claude-web"
 RELATIONS = {
@@ -41,9 +42,9 @@ RELATIONS = {
 DIRECTED = {"enhanced_of", "remaster_of", "remake_of", "demo_of", "tool_of", "extra_of", "contains"}
 
 
-def label_of(answer: dict) -> tuple[int, int, str] | None:
-    """(subject, other, relation) of one answer, or None when it is not to
-    be written."""
+def label_of(answer: dict) -> tuple[int, int, str, str] | None:
+    """(subject, other, relation, the series it names) of one answer, or
+    None when it is not to be written."""
     if answer.get("confidence") not in ("high", "medium"):
         return None
     relation = RELATIONS.get(str(answer.get("relation")))
@@ -55,14 +56,15 @@ def label_of(answer: dict) -> tuple[int, int, str] | None:
             a, b = b, a
         elif answer.get("direction") != "a":
             return None
-    return a, b, relation
+    series = str(answer.get("series_name") or "").strip() if relation == "series" else ""
+    return a, b, relation, series
 
 
-async def write(db: Path, labels: list[tuple[int, int, str]]) -> None:
+async def write(db: Path, labels: list[tuple[int, int, str, str]]) -> None:
     database = await Database(db).connect()
     try:
         repo = Repo(database)
-        for a, b, relation in labels:
+        for a, b, relation, _series in labels:
             features, model = await repo.pair_features(a, b)
             await repo.save_decision(
                 a,
@@ -73,7 +75,11 @@ async def write(db: Path, labels: list[tuple[int, int, str]]) -> None:
                 decided_by=SOURCE,
                 overrule=True,
             )
-        await GameLinker(repo).link_versions(sorted({v for a, b, _ in labels for v in (a, b)}))
+        await GameLinker(repo).link_versions(sorted({v for a, b, *_ in labels for v in (a, b)}))
+        # "Another game of the series" says which, as the viewer's answer does.
+        for a, b, _relation, series in labels:
+            if series:
+                await _put_in_series(repo, "", [series], (a, b))
     finally:
         await database.close()
 
