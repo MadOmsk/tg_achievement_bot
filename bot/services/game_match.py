@@ -22,10 +22,14 @@ from bot.services.hltb_match import core, normalize, similarity
 from bot.services.stores import UNKNOWN_STORE
 
 # A name tail that says which release of the game this is.
-_REMASTER = re.compile(
-    r"\b(remaster(?:ed)?|definitive|anniversary|redux|hd|enhanced|director'?s cut)\b",
-    re.IGNORECASE,
-)
+_REMASTER = re.compile(r"\b(remaster(?:ed)?|warmastered|redux)\b", re.IGNORECASE)
+# The words of a release made better, which is now a remaster (Halo Wars:
+# Definitive Edition), now the same game with more in it (Sleeping Dogs:
+# Definitive Edition, a Director's Cut): a sign of its own, not
+# `remaster_word` (the training audit, 2026-10-24: the operator calls most
+# of these one game, and one sign for both taught the model that a
+# remaster is one game too).
+_ENHANCED = re.compile(r"\b(definitive|anniversary|hd|enhanced|director'?s cut)\b", re.IGNORECASE)
 _EDITION = re.compile(
     r"\b(game of the year|goty|complete|deluxe|ultimate|gold|premium|legendary|collector'?s"
     r"|special edition)\b",
@@ -241,6 +245,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "subtitle": -1.5,  # one name opens the other, which goes on
         "numbers_differ": -9.0,  # Halo and Halo 2
         "remaster_word": -1.0,
+        "enhanced_word": -1.0,  # as remaster_word until a fit splits them
         "remake_word": -2.0,
         "edition_word_near": 1.5,  # GOTY / Complete, close in years
         # A compilation is never one game with a single game (owner, 2026-10-12).
@@ -284,6 +289,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "subtitle": -1.0,
         "numbers_differ": -9.0,
         "remaster_word": 3.0,
+        "enhanced_word": 3.0,
         "remake_word": 0.5,
         "edition_word_near": -0.5,
         "vr_word": -4.0,
@@ -320,6 +326,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "subtitle": 0.5,
         "numbers_differ": -6.0,
         "remaster_word": -1.0,
+        "enhanced_word": -1.0,
         "remake_word": 4.0,
         "edition_word_near": -1.0,
         "compilation_word": -1.0,
@@ -630,6 +637,8 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
 
     if says(_REMASTER, s) and not says(_REMASTER, o):
         f["remaster_word"] = 1.0
+    if says(_ENHANCED, s) and not says(_ENHANCED, o):
+        f["enhanced_word"] = 1.0
     if says(_REMAKE, s) and not says(_REMAKE, o):
         f["remake_word"] = 1.0
     if says(_EDITION, s) and gap is not None and gap <= NEAR_YEARS:
@@ -878,7 +887,7 @@ def same_name(a: Candidate, b: Candidate) -> bool:
     (2005)", "Call of Duty: Modern Warfare" 2007 and 2019)."""
     if not any(x == y for x in a.cores for y in b.cores):
         return False
-    marked = (_REMASTER, _REMAKE, _EDITION, _COMPILATION, _VR, _DEMO, _TOOL)
+    marked = (_REMASTER, _ENHANCED, _REMAKE, _EDITION, _COMPILATION, _VR, _DEMO, _TOOL)
     return not any(pat.search(n) for c in (a, b) for n in c.names for pat in marked)
 
 
