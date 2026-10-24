@@ -181,3 +181,27 @@ async def test_the_pages_show_what_hltb_says_of_a_game_a_version_and_a_dlc(
             response = await client.get(page)
             assert response.status == 200, page
             assert needle in await response.text(), page
+
+
+def test_a_confirmation_names_the_game_behind_an_id() -> None:
+    """A merge typed by id asks first, naming what each id is (owner,
+    2026-10-24); an id merged away names the game it went into."""
+    import sqlite3
+
+    from scripts.catalog_viewer import _game_said
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        "CREATE TABLE games (game_id INTEGER PRIMARY KEY, name TEXT, year INTEGER,"
+        " last_year INTEGER, merged_into INTEGER);"
+        "CREATE TABLE versions (version_id INTEGER PRIMARY KEY, game_id INTEGER, console TEXT);"
+        "INSERT INTO games VALUES (1, 'LEGO Harry Potter <Collection>', 2016, 2018, NULL),"
+        " (2, 'Old', 2010, NULL, 1);"
+        "INSERT INTO versions VALUES (1, 1, 'ps4'), (2, 1, 'one');"
+    )
+    said = _game_said(conn, 1)
+    assert "LEGO Harry Potter &lt;Collection&gt;" in said
+    assert "(2016–2018)" in said and "2 versions: one, ps4" in said
+    assert "game 2 was merged into" in _game_said(conn, 2)
+    assert "no such game" in _game_said(conn, 99)

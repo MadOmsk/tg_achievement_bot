@@ -78,6 +78,65 @@ def _button(
     )
 
 
+def _confirm(request: web.Request, form, question: str, sides: list[str]) -> web.Response:
+    """A step before an action whose other side was typed as an id (owner,
+    2026-10-24: a merge went through with nothing saying what the id was):
+    what each id stands for, then a yes that posts the same form again with
+    `confirmed`, or back."""
+    fields = {k: v for k, v in form.items() if k != "confirmed"}
+    fields["confirmed"] = 1
+    back = str(form.get("back") or request.path.rsplit("/", 1)[0])
+    body = (
+        "".join(f"<p>{side}</p>" for side in sides)
+        + "<p>"
+        + _button(request.path, "да, выполнить", fields)
+        + f' <a href="{escape(back)}">отмена</a></p>'
+    )
+    return _page(question, body)
+
+
+def _game_said(conn: sqlite3.Connection, game_id: int) -> str:
+    """A game as a confirmation names it: id, name, years, its versions."""
+    row = conn.execute(
+        "SELECT name, year, last_year, merged_into FROM games WHERE game_id = ?", (game_id,)
+    ).fetchone()
+    if row is None:
+        return f"game {game_id}: <b>no such game</b>"
+    if row["merged_into"]:
+        now = _current_game(conn, game_id)
+        return f"game {game_id} was merged into — " + _game_said(conn, now)
+    years = row["year"] or "?"
+    if row["last_year"] and row["last_year"] != row["year"]:
+        years = f"{years}–{row['last_year']}"
+    consoles = conn.execute(
+        "SELECT group_concat(console, ', ') AS c, COUNT(*) AS n FROM"
+        " (SELECT console FROM versions WHERE game_id = ? ORDER BY console)",
+        (game_id,),
+    ).fetchone()
+    return (
+        f'<a href="/game/{game_id}" target=_blank>game {game_id}</a>: '
+        f"<b>{escape(row['name'])}</b> ({years}) — {consoles['n']} versions"
+        + (f": {escape(consoles['c'])}" if consoles["c"] else "")
+    )
+
+
+def _series_said(conn: sqlite3.Connection, series_id: int) -> str:
+    row = conn.execute(
+        "SELECT name, merged_into, (SELECT COUNT(*) FROM game_series gs"
+        " WHERE gs.series_id = s.series_id AND gs.member = 1) AS games"
+        " FROM series s WHERE series_id = ?",
+        (series_id,),
+    ).fetchone()
+    if row is None:
+        return f"series {series_id}: <b>no such series</b>"
+    if row["merged_into"]:
+        return f"series {series_id} was merged into — " + _series_said(conn, row["merged_into"])
+    return (
+        f'<a href="/series/{series_id}" target=_blank>series {series_id}</a>: '
+        f"<b>{escape(row['name'])}</b> — {row['games']} games"
+    )
+
+
 # Every page the menu lists, once (owner, 2026-10-14: the menu, the home
 # page's table and each page's title say one name): path → name.
 PAGES = {
@@ -2962,6 +3021,10 @@ async def game_merge(request: web.Request) -> web.Response:
     into = str(form.get("into") or "").strip()
     if not into.isdigit() or int(into) == game_id:
         raise _back(f"/game/{game_id}", "a game id to merge into, please")
+    if not form.get("confirmed"):
+        with _db(request) as conn:
+            sides = [_game_said(conn, game_id), "→ в →", _game_said(conn, int(into))]
+        return _confirm(request, form, "Слить игры?", sides)
     repo = _repo(request)
     a, b = await _game_anchors(repo, game_id, int(into))
     await _label(repo, a, b, "same")
@@ -2979,6 +3042,10 @@ async def game_relate(request: web.Request) -> web.Response:
         raise _back(f"/game/{game_id}", "a game id, please")
     if kind not in ("remaster_of", "remake_of", "vr_of", "contains"):
         raise _back(f"/game/{game_id}", "which relation?")
+    if not form.get("confirmed"):
+        with _db(request) as conn:
+            sides = [_game_said(conn, game_id), f"is {kind}", _game_said(conn, int(related))]
+        return _confirm(request, form, "Связать игры?", sides)
     repo = _repo(request)
     a, b = await _game_anchors(repo, game_id, int(related))
     await _label(repo, a, b, kind)
@@ -3120,7 +3187,8 @@ async def series_page(request: web.Request) -> web.Response:
         f'<form method=post action="{here}/merge">merge this series into series id: '
         "<input name=into size=8> <button>merge</button></form>"
         f'<form method=post action="{here}/member"><input type=hidden name=member value=1>'
-        f'<input type=hidden name=back value="{here}">add game id: '
+        f'<input type=hidden name=back value="{here}"><input type=hidden name=ask value=1>'
+        "add game id: "
         "<input name=game_id size=8> <button>add</button></form>"
     )
     toggles = "".join(
@@ -3164,6 +3232,10 @@ async def series_merge(request: web.Request) -> web.Response:
     into = str(form.get("into") or "").strip()
     if not into.isdigit():
         raise _back(f"/series/{series_id}", "a series id, please")
+    if not form.get("confirmed"):
+        with _db(request) as conn:
+            sides = [_series_said(conn, series_id), "→ в →", _series_said(conn, int(into))]
+        return _confirm(request, form, "Слить серии?", sides)
     await _repo(request).merge_series(series_id, int(into))
     raise _back(f"/series/{into}", f"series {series_id} merged into this one")
 
@@ -3178,6 +3250,11 @@ async def series_member(request: web.Request) -> web.Response:
     if not game.isdigit():
         raise _back(back, "a game id, please")
     member = str(form.get("member") or "1") == "1"
+    if form.get("ask") and not form.get("confirmed"):
+        # Typed by id on the series page (the toggles name their game).
+        with _db(request) as conn:
+            sides = [_game_said(conn, int(game)), "→ в серию →", _series_said(conn, series_id)]
+        return _confirm(request, form, "Добавить игру в серию?", sides)
     await _repo(request).set_series_member(int(game), series_id, member)
     raise _back(back, "in the series" if member else "not in the series")
 
@@ -3191,6 +3268,10 @@ async def game_series_add(request: web.Request) -> web.Response:
     name = str(form.get("name") or "").strip()
     if series.isdigit():
         series_id = int(series)
+        if not form.get("confirmed"):
+            with _db(request) as conn:
+                sides = [_game_said(conn, game_id), "→ в серию →", _series_said(conn, series_id)]
+            return _confirm(request, form, "Добавить игру в серию?", sides)
     elif name:
         series_id = await repo.create_series(name)
     else:

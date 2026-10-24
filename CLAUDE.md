@@ -1056,7 +1056,11 @@ What the stores and HLTB say about a game, collected but not shown yet
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,
-  collect, re-link). **Every name opens our own page** (owner, 2026-10-12) —
+  collect, re-link). **An action whose other side is typed as an id asks
+  first** (owner, 2026-10-24; `_confirm`): merging or relating games, merging
+  series, adding a game to a series by id show what each id is — name,
+  years, versions — then «да, выполнить» / «отмена».
+  **Every name opens our own page** (owner, 2026-10-12) —
   a game, a version, a DLC (`/dlc/<id>`: its version and game, its store,
   whether it is sold, its HLTB entry and times), an HLTB entry, an
   achievement list; a store page is always a separate small "↗" beside it,
