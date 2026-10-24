@@ -2370,8 +2370,9 @@ def _label_queue(request: web.Request) -> str:
             f" {sum(1 for _, x in queue if x == c)} to ask"
             for c in order
         )
+        advice = AdviceStore.for_db(Path(request.app["db_path"]))
         rows = _pair_rows(
-            conn, [r for r, _ in queue[:PAGE_SIZE]], "/review?tab=label", None, _label_picker
+            conn, [r for r, _ in queue[:PAGE_SIZE]], "/review?tab=label", advice, _label_picker
         )
     return (
         "<h2>Labelling — rare relations</h2>"
@@ -2477,7 +2478,19 @@ def _advice_badge(advice: AdviceStore | None, *pair_ids: str) -> str:
         state = advice.state(pair_id)
         if state.state != "unknown":
             word = _ADVICE_WORDS.get(state.state, state.state)
-            return f"<br><small>advisers: <b>{escape(word)}</b></small>"
+            said = ""
+            if state.state == "conflict":
+                # Who said what (owner, 2026-10-24): the operator decides
+                # between them.
+                said = " · ".join(
+                    f"{name}: {escape(str(a['relation']))}"
+                    + (f" ({escape(str(a['direction']))})" if a.get("direction") else "")
+                    + f", {escape(str(a['confidence']))}"
+                    for name, a in (("Claude", state.claude), ("Gemini", state.gemini))
+                    if a
+                )
+                said = f"<br><small>{said}</small>" if said else ""
+            return f"<br><small>advisers: <b>{escape(word)}</b></small>{said}"
     return "<br><small>advisers: not asked yet</small>"
 
 
