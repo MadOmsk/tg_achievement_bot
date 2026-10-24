@@ -37,6 +37,7 @@ from bot.services.advice import (
 )
 from bot.services.game_series import SURE_P
 from bot.services.stores import PC_LABELS, PC_UNKNOWN, console_label
+from scripts.trial_page import CSS as CARD_CSS
 
 PAGE_SIZE = 100
 
@@ -192,7 +193,9 @@ def _page(title: str, body: str) -> web.Response:
         "if(b){b.classList.add('sent');b.textContent='✓ '+b.textContent}"
         "setTimeout(function(){f.querySelectorAll('button').forEach("
         "function(x){x.disabled=true})},0)})</script>"
-        f"<title>{escape(title)}</title>"
+        # One look for every question (owner, 2026-10-24): the advisers'
+        # cards' styles, on every page.
+        f"{CARD_CSS}<title>{escape(title)}</title>"
         f"<p>{nav}</p><h1>{escape(title)}</h1>{body}"
     )
     return web.Response(text=html, content_type="text/html")
@@ -1514,28 +1517,49 @@ def _answer_forms(
     quick: list[tuple[str, str]],
     more: tuple[tuple[str, str], ...],
     back: str,
+    extra: str = "",
 ) -> str:
-    """Quick answers as buttons, one a line (owner, 2026-10-12), the rest a
-    step further under "more…". A quick label is HTML (its parts in bold);
-    the "more…" ones are plain text, as an <option> shows no markup."""
+    """Answers as the advisers' cards draw them (owner, 2026-10-24: one look
+    for every question): the quick ones a button a line — a quick label is
+    HTML, its parts in bold —, the rest under «Own answer…», each a button;
+    `extra` (a field to name a series) under the quick ones."""
     fields = "".join(
         f'<input type=hidden name={k} value="{escape(str(v))}">'
         for k, v in {**hidden, "back": back}.items()
     )
-    buttons = "".join(
-        f'<form method=post action="{action}" style="display:block;margin:0 0 4px">{fields}'
-        f'<input type=hidden name=decision value="{key}">'
-        f'<button style="width:100%;text-align:left">{label}</button></form>'
-        for key, label in quick
+    picks = "".join(
+        f'<button name=decision value="{escape(key)}">{label}</button>' for key, label in quick
     )
-    options = "".join(f'<option value="{k}">{escape(lbl)}</option>' for k, lbl in more)
-    rest = (
-        f"<details><summary><small>more…</small></summary>"
+    rest = "".join(
+        f'<button name=decision value="{escape(key)}">{escape(label)}</button>'
+        for key, label in more
+    )
+    own = (
+        f"<details class=own><summary>Own answer…</summary><div class=more>{rest}</div></details>"
+        if rest
+        else ""
+    )
+    return (
         f'<form method=post action="{action}" style="margin:0">{fields}'
-        "<select name=decision required><option value='' selected disabled>answer…</option>"
-        f"{options}</select> <button>ok</button></form></details>"
+        f"<div class=picks>{picks}</div></form>{extra}"
+        f'<form method=post action="{action}" style="margin:0">{fields}{own}</form>'
     )
-    return f"<div>{buttons}</div>{rest}"
+
+
+def _card(badge: str, note: str, sides: list[str], answers: str, why: str = "") -> str:
+    """One question as a card, the advisers' look: what it is, the model's
+    word, the sides with their pictures, the answers, why (folded)."""
+    return (
+        f"<div class=tq><h3><span class=badge>{escape(badge)}</span><small>{note}</small></h3>"
+        + "".join(f"<div class=subj>{side}</div>" for side in sides)
+        + answers
+        + (
+            f"<details class=why><summary>why the model thinks so</summary>{why}</details>"
+            if why
+            else ""
+        )
+        + "</div>"
+    )
 
 
 def _relation_sentence(decision: str, this: str, that: str, *, html: bool = True) -> str:
@@ -1590,28 +1614,26 @@ def _game_picker(
     ]
     quick.append(("skip", "ask later"))
     named = (
-        f'<form method=post action="/decide-games" style="display:flex;gap:4px;margin:0 0 4px">'
+        f'<form method=post action="/decide-games" class=free style="margin:4px 0">'
         f'<input type=hidden name=game_id value="{game_id}">'
         f'<input type=hidden name=other_game value="{other_game}">'
         f'<input type=hidden name=back value="{escape(back)}">'
         '<input type=hidden name=decision value="series#new">'
-        "<input name=series_name list=series-names required style='flex:1'"
+        "<input class=other name=series_name list=series-names required"
         f" placeholder='{'one series — another' if series else 'one series — which?'}"
         " (several: comma-separated)'>"
         "<button>ok</button></form>"
     )
-    return (
-        _answer_forms(
-            "/decide-games",
-            {"game_id": game_id, "other_game": other_game},
-            quick,
-            tuple(
-                (key, _relation_sentence(key, this, that, html=False) if names else label)
-                for key, label in _GAME_DECISIONS
-            ),
-            back,
-        )
-        + named
+    return _answer_forms(
+        "/decide-games",
+        {"game_id": game_id, "other_game": other_game},
+        quick,
+        tuple(
+            (key, _relation_sentence(key, this, that, html=False) if names else label)
+            for key, label in _GAME_DECISIONS
+        ),
+        back,
+        named,
     )
 
 
@@ -1669,25 +1691,23 @@ def _versions_picker(
         for sid, name in series or []
     ]
     named = (
-        '<form method=post action="/decide" style="display:flex;gap:4px;margin:0 0 4px">'
+        '<form method=post action="/decide" class=free style="margin:4px 0">'
         f'<input type=hidden name=version_id value="{version_id}">'
         f'<input type=hidden name=other_id value="{other_id}">'
         f'<input type=hidden name=back value="{escape(back)}">'
         '<input type=hidden name=decision value="series#new">'
-        "<input name=series_name list=series-names required style='flex:1'"
+        "<input class=other name=series_name list=series-names required"
         f" placeholder='another game of the series — {'another' if series else 'which'}?"
         " (several: comma-separated)'>"
         "<button>ok</button></form>"
     )
-    return (
-        _answer_forms(
-            "/decide",
-            {"version_id": version_id, "other_id": other_id},
-            buttons,
-            tuple((k, label) for k, label in more if k != "series"),
-            back,
-        )
-        + named
+    return _answer_forms(
+        "/decide",
+        {"version_id": version_id, "other_id": other_id},
+        buttons,
+        tuple((k, label) for k, label in more if k != "series"),
+        back,
+        named,
     )
 
 
@@ -2111,30 +2131,29 @@ def _pair_rows(
             f" {_store_link(v)}</small>{game}"
         )
 
-    lines = []
+    cards = []
     for r in pairs:
         feats = json.loads(r["features"]) if r["features"] else {}
         signs = ", ".join(k for k in feats if k != "bias")
-        lines.append(
-            f"<tr><td>{side(r['subject'])}</td>"
-            f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
-            f"<br><small>{escape(signs)}</small></td>"
-            f"<td>{side(r['other'])}</td>"
-            f"<td>{picker(r['subject'], r['other'], back, _series_of_pair(conn, info, r))}"
-            + _advice_badge(
-                advice,
-                *(
-                    versions_pair_id(a, g)
-                    for a, b in ((r["subject"], r["other"]), (r["other"], r["subject"]))
-                    if (g := (info.get(b) or {"game_id": None})["game_id"]) is not None
-                ),
-            )
-            + "</td></tr>"
+        answers = picker(r["subject"], r["other"], back, _series_of_pair(conn, info, r))
+        answers += _advice_badge(
+            advice,
+            *(
+                versions_pair_id(a, g)
+                for a, b in ((r["subject"], r["other"]), (r["other"], r["subject"]))
+                if (g := (info.get(b) or {"game_id": None})["game_id"]) is not None
+            ),
         )
-    return (
-        "<div class=scroll><table class=versions><tr><th>this version</th><th>the model"
-        " thinks</th><th>…that version</th><th>answer</th></tr>" + "".join(lines) + "</table></div>"
-    )
+        cards.append(
+            _card(
+                "Version ↔ version",
+                f"the model: <b>{escape(r['relation'])}</b> {r['p']:.2f}",
+                [side(r["subject"]), side(r["other"])],
+                answers,
+                escape(signs),
+            )
+        )
+    return "".join(cards)
 
 
 def _series_of_pair(
@@ -2419,18 +2438,16 @@ def _game_pair_rows(
             )
         ]
         lines.append(
-            f"<tr><td>{_game_card(conn, ga[0])}</td>"
-            f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
-            f"<br><small>{escape(signs)}</small></td>"
-            f"<td>{_game_card(conn, gb[0])}</td>"
-            f"<td>{_game_picker(ga[0], gb[0], back, str(r['relation']), names, shared)}"
-            f"{_advice_badge(advice, games_pair_id(ga[0], gb[0]), games_pair_id(gb[0], ga[0]))}"
-            "</td></tr>"
+            _card(
+                "Games related",
+                f"the model: <b>{escape(r['relation'])}</b> {r['p']:.2f}",
+                [_game_card(conn, ga[0]), _game_card(conn, gb[0])],
+                _game_picker(ga[0], gb[0], back, str(r["relation"]), names, shared)
+                + _advice_badge(advice, games_pair_id(ga[0], gb[0]), games_pair_id(gb[0], ga[0])),
+                escape(signs),
+            )
         )
-    return (
-        "<div class=scroll><table class=versions><tr><th>this game</th><th>the model"
-        " thinks</th><th>…that game</th><th>answer</th></tr>" + "".join(lines) + "</table></div>"
-    )
+    return "".join(lines)
 
 
 # Who besides the operator may give an answer (`decided_by`): the advisers

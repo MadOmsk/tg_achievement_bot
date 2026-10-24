@@ -684,7 +684,7 @@ def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, li
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(accepted, ensure_ascii=False, indent=1), "utf-8")
     line = (
-        CSS + f"<p><small>Advisers: {escape(', '.join(names))} · answered {done}/{total}"
+        f"<p><small>Advisers: {escape(', '.join(names))} · answered {done}/{total}"
         f" disputed · where all three agree, the answer is taken without you ({len(accepted)})"
         f" · «Missing versions» wait for the octopus (#204)</small></p>"
         "<datalist id=series-names>"
