@@ -276,6 +276,24 @@ class _Look:
         ).fetchall()
         return "".join(f"<div class=subj>{self.version(int(r[0]))}</div>" for r in rows)
 
+    def edition_word(self, eid: int) -> str | None:
+        """What an edition's own name calls it: the name past its game's
+        ("The Evil Within Digital Bundle" → "digital bundle"; owner,
+        2026-10-24: offered first, not typed). None when it is the game's
+        name alone, or does not start with it."""
+        e = self._one("SELECT name FROM editions WHERE edition_id = ?", (eid,))
+        if e is None or not e["name"]:
+            return None
+        games = [
+            str(r[0])
+            for r in self.conn.execute(
+                "SELECT i.name FROM edition_items i WHERE i.edition_id = ? AND i.name IS NOT NULL"
+                " AND i.item_kind = 'game' ORDER BY i.is_primary DESC",
+                (eid,),
+            )
+        ]
+        return edition_word(str(e["name"]), games)
+
     def edition(self, eid: int) -> str:
         e = self._one("SELECT * FROM editions WHERE edition_id = ?", (eid,))
         if e is None:
@@ -292,6 +310,25 @@ class _Look:
             + f"<span>{escape(e['name'] or '?')}<br><small>{escape(e['store'])} · our type"
             f" {escape(e['kind'] or '?')} · {escape(holds)}</small></span>"
         )
+
+
+_MARKS = re.compile(r"[™®©]")
+
+
+def _plain(text: str) -> str:
+    return " ".join(_MARKS.sub("", text).split())
+
+
+def edition_word(name: str, games: list[str]) -> str | None:
+    """An edition's name past the name of a game it holds, lower-cased and
+    without the marks and the separators between them; None when nothing is
+    left or no game's name opens it."""
+    plain = _plain(name)
+    for game in sorted((_plain(g) for g in games), key=len, reverse=True):
+        if game and plain.casefold().startswith(game.casefold()):
+            rest = plain[len(game) :].strip(" -–—:|,").strip()
+            return rest.casefold() or None
+    return None
 
 
 # A question asked the other way round than the adviser's field (owner,
@@ -452,11 +489,13 @@ def _ask(
     labels: dict,
     ask: str,
     series: list[tuple[int, str]] | None = None,
+    named: str | None = None,
 ) -> tuple[str, bool]:
     """One decision: a button for each answer the advisers gave, saying who
     gave it, then «Own answer…» with every other answer it can take and a field
-    for one typed — a tap records it (owner, 2026-10-23). Returns the html and
-    whether the advisers agree on it."""
+    for one typed — a tap records it (owner, 2026-10-23). `named`: an answer
+    the item's own name gives (an edition's type), offered among the first.
+    Returns the html and whether the advisers agree on it."""
     said = {n: str(per[n].get(key, "—")) for n in names}
     given = list(dict.fromkeys(said.values()))
     others = [v for v in _choices(key) if v not in given]
@@ -487,7 +526,9 @@ def _ask(
         )
 
     picks = "".join(button(v, ", ".join(n for n in names if said[n] == v)) for v in given)
-    more = "".join(button(v) for v in others)
+    if named and named not in given:
+        picks += button(named, "its name")
+    more = "".join(button(v) for v in others if v != named)
     series_field = (
         f"<div class=free><input class=other name='s:{escape(key)}' list=series-names"
         f" placeholder='one series — another (several: comma-separated)'>"
@@ -540,7 +581,9 @@ def _rows(qid: str, keys: list[str], names: list[str], per: dict, labels: dict, 
         what, _ask0 = _subject(group[0], look)
         asks, all_agree = [], True
         for key in group:
-            html, agreed = _ask(qid, key, names, per, labels, _subject(key, look)[1], series)
+            m = re.fullmatch(r"e(\d+)\.kind", key)
+            named = look.edition_word(int(m[1])) if m else None
+            html, agreed = _ask(qid, key, names, per, labels, _subject(key, look)[1], series, named)
             asks.append(html)
             all_agree &= agreed
         out.append(

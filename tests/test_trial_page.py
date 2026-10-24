@@ -85,3 +85,19 @@ def test_an_edition_no_longer_the_games_own_is_not_asked() -> None:
     keys = ["e10.kind", "e10.holds", "e11.kind", "name"]
     assert trial_page.current_keys(conn, "E:837", keys) == ["e11.kind", "name"]
     assert trial_page.current_keys(conn, "R:1:2", keys) == keys
+
+
+def test_an_editions_type_is_offered_from_its_own_name() -> None:
+    """Owner, 2026-10-24: «The Evil Within Digital Bundle» says what it is."""
+    word = trial_page.edition_word
+    assert word("The Evil Within Digital Bundle", ["The Evil Within"]) == "digital bundle"
+    assert word("FIFA 16 Deluxe Edition", ["EA SPORTS™ FIFA 16", "FIFA 16"]) == "deluxe edition"
+    assert word("DOOM Eternal - Deluxe Edition", ["DOOM Eternal"]) == "deluxe edition"
+    assert word("The Evil Within", ["The Evil Within"]) is None
+    assert word("Ultimate Bundle", ["The Evil Within"]) is None
+    per = {"a": {"e1.kind": "complete"}, "b": {"e1.kind": "bundle"}}
+    html, _agreed = trial_page._ask(
+        "E:1", "e1.kind", list(per), per, {}, "Edition type", None, "digital bundle"
+    )
+    picks = html.split("<details", 1)[0]
+    assert 'value="digital bundle"' in picks and "its name" in picks
