@@ -403,6 +403,12 @@ def _choices(key: str) -> list[str]:
 SERIES = "('series', None)"
 
 
+def series_names(typed: str) -> list[str]:
+    """Series typed by name, several by commas (owner, 2026-10-24; no
+    series of ours has a comma in its name): each trimmed, once each."""
+    return list(dict.fromkeys(n.strip() for n in typed.split(",") if n.strip()))
+
+
 def _series_label(value: str | None, choices: list[tuple[int, str]]) -> str:
     if not value:
         return ""
@@ -443,7 +449,7 @@ def _ask(
             # No series both are in yet: the answer names it, typed.
             return (
                 f"<div class='free series'><input class=other name='s:{escape(key)}'"
-                f" list=series-names placeholder='одна серия — какая?'>"
+                f" list=series-names placeholder='одна серия — какая? (несколько — через запятую)'>"
                 f'<button name="d:{escape(key)}" value="{escape(v)}#new">'
                 f"одна серия{small}</button></div>"
             )
@@ -456,7 +462,7 @@ def _ask(
     more = "".join(button(v) for v in others)
     series_field = (
         f"<div class=free><input class=other name='s:{escape(key)}' list=series-names"
-        f" placeholder='одна серия — другая: название'>"
+        f" placeholder='одна серия — другая (несколько — через запятую)'>"
         f'<button name="d:{escape(key)}" value="{escape(SERIES)}#new">ок</button></div>'
         if key == "relation" and choices
         else ""
@@ -664,7 +670,8 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                 answer = str(value) or str(form.get(f"o:{key}") or "").strip()
                 answer, _, which = answer.partition("#")
                 if which == "new":
-                    which = str(form.get(f"s:{key}") or "").strip()
+                    # Several series, by commas (owner, 2026-10-24).
+                    which = ", ".join(series_names(str(form.get(f"s:{key}") or "")))
                 if answer:
                     labels[f"{qid}|{key}"] = answer
                     if which:

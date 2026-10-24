@@ -1506,7 +1506,8 @@ def _game_picker(
         f'<input type=hidden name=back value="{escape(back)}">'
         '<input type=hidden name=decision value="series#new">'
         "<input name=series_name list=series-names required style='flex:1'"
-        f" placeholder='{'одна серия — другая' if series else 'одна серия — какая?'}'>"
+        f" placeholder='{'одна серия — другая' if series else 'одна серия — какая?'}"
+        " (несколько — через запятую)'>"
         "<button>ok</button></form>"
     )
     return (
@@ -2860,22 +2861,25 @@ async def decide_games(request: web.Request) -> web.Response:
     # An answer the advisers agreed on (owner, 2026-10-12: Claude's proposal
     # confirmed by Gemini) is written as theirs, never as the operator's.
     by = str(form.get("by") or "")
-    named = ""
+    named: list[str] = []
     if relation == "series" and which:
-        named = str(form.get("series_name") or "").strip()
+        from scripts.trial_page import series_names
+
+        # Several typed by commas (owner, 2026-10-24).
+        named = series_names(str(form.get("series_name") or ""))
         if which.isdigit():
-            named = await repo.series_name(int(which)) or named
-        if not named:
+            named = [await repo.series_name(int(which)) or ""]
+        if not any(named):
             raise _back(back, "a series name, please")
     await _label(repo, a, b, relation, by=by if by in ADVISERS else "viewer")
-    if named:
+    for name in named:
         # After the label, which relinks and proposes the series again: the
         # games are found again by their anchors, the series by its id or
         # its name (owner, 2026-10-24: "one series" says which).
         series_id = (
             int(which)
             if which.isdigit() and await repo.series_exists(int(which))
-            else await repo.series_by_name(named) or await repo.create_series(named)
+            else await repo.series_by_name(name) or await repo.create_series(name)
         )
         for anchor in (a, b):
             game = await repo.game_of_version(anchor)

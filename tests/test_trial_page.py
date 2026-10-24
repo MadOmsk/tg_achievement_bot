@@ -58,3 +58,8 @@ def test_one_series_says_which() -> None:
         "R:5541:2724", "relation", list(per), per, labels, "Как связаны", series
     )
     assert "✓ одна серия — LEGO" in html
+
+
+def test_several_series_are_typed_by_commas() -> None:
+    assert trial_page.series_names(" LEGO, Batman ,,LEGO ") == ["LEGO", "Batman"]
+    assert trial_page.series_names("") == []

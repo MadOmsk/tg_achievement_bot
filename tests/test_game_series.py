@@ -416,7 +416,8 @@ async def test_one_series_answered_in_the_review_says_which(repo: Repo, tmp_path
                 "game_id": await game("Halo: Reach"),
                 "other_game": await game("Gears of War"),
                 "decision": "series#new",
-                "series_name": "Xbox shooters",
+                # Several by commas (owner, 2026-10-24); "Halo" is ours.
+                "series_name": "Xbox shooters, Halo ,Xbox shooters",
             },
         )
     cur = await repo._conn.execute(
@@ -429,4 +430,5 @@ async def test_one_series_answered_in_the_review_says_which(repo: Repo, tmp_path
         ("Halo", "Halo: Reach"),
         ("Xbox shooters", "Halo: Reach"),
         ("Xbox shooters", "Gears of War"),
+        ("Halo", "Gears of War"),
     }
