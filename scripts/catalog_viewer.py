@@ -1464,23 +1464,25 @@ _VERSION_LINKS = {
 
 # The operator's answers, quick ones first (owner, 2026-10-11: the review
 # should take a tap; everything else is a step further). About two versions:
+# Worded by the sides' numbers, 1 above, 2 below (owner, 2026-10-24: "1 a
+# demo of 2, or 2 of 1?" — "it" and "this" did not say which).
 _DECISIONS_QUICK = (
-    ("same", "same game"),
-    ("other", "a different game"),
-    ("remaster_of", "a remaster of it"),
-    ("remake_of", "a remake of it"),
+    ("same", "1 and 2 are one game"),
+    ("other", "1 and 2 are different games"),
+    ("remaster_of", "1 is a remaster of 2"),
+    ("remake_of", "1 is a remake of 2"),
 )
 _DECISIONS_MORE = (
-    ("remaster_of:flip", "⇄ it is a remaster of this"),
-    ("remake_of:flip", "⇄ it is a remake of this"),
-    ("demo_of", "a demo of it"),
-    ("demo_of:flip", "⇄ it is a demo of this"),
-    ("tool_of", "a tool for it"),
-    ("tool_of:flip", "⇄ it is a tool for this"),
-    ("mode_of", "a mode of it (a launcher of one of its modes)"),
-    ("mode_of:flip", "⇄ it is a mode of this"),
-    ("extra_of", "its soundtrack / artbook"),
-    ("extra_of:flip", "⇄ this is its soundtrack / artbook"),
+    ("remaster_of:flip", "2 is a remaster of 1"),
+    ("remake_of:flip", "2 is a remake of 1"),
+    ("demo_of", "1 is a demo of 2"),
+    ("demo_of:flip", "2 is a demo of 1"),
+    ("tool_of", "1 is a tool for 2"),
+    ("tool_of:flip", "2 is a tool for 1"),
+    ("mode_of", "1 is a mode of 2 (a launcher of one of its modes)"),
+    ("mode_of:flip", "2 is a mode of 1"),
+    ("extra_of", "1 is the soundtrack / artbook of 2"),
+    ("extra_of:flip", "2 is the soundtrack / artbook of 1"),
     ("series", "another game of its series"),
     ("skip", "skip: ask again later"),
 )
@@ -1642,18 +1644,18 @@ PART_DECISIONS = ("demo_of", "tool_of", "mode_of", "extra_of")
 # The labelling queue's answers (the training audit, 2026-10-24): the rare
 # relations are one tap, as one game and another game are.
 _LABEL_QUICK = (
-    ("same", "same game"),
-    ("other", "a different game"),
-    ("remaster_of", "a remaster of it"),
-    ("remake_of", "a remake of it"),
-    ("contains", "a compilation holding it"),
-    ("vr_of", "the VR version of it"),
+    ("same", "1 and 2 are one game"),
+    ("other", "1 and 2 are different games"),
+    ("remaster_of", "1 is a remaster of 2"),
+    ("remake_of", "1 is a remake of 2"),
+    ("contains", "1 is a compilation holding 2"),
+    ("vr_of", "1 is the VR version of 2"),
 )
 _LABEL_MORE = (
-    ("remaster_of:flip", "⇄ it is a remaster of this"),
-    ("remake_of:flip", "⇄ it is a remake of this"),
-    ("contains:flip", "⇄ it is a compilation holding this"),
-    ("vr_of:flip", "⇄ it is the VR version of this"),
+    ("remaster_of:flip", "2 is a remaster of 1"),
+    ("remake_of:flip", "2 is a remake of 1"),
+    ("contains:flip", "2 is a compilation holding 1"),
+    ("vr_of:flip", "2 is the VR version of 1"),
     # The parts of a game, as the version answers have them (owner,
     # 2026-10-24: «Tiny Bunny: Prologue» is a demo, and there was no way).
     *(item for item in _DECISIONS_MORE if item[0].split(":")[0] in PART_DECISIONS),
@@ -1691,7 +1693,7 @@ def _versions_picker(
     to name it (several by commas)."""
     buttons = [(key, escape(label)) for key, label in quick]
     buttons += [
-        (f"series#{sid}", f"another game of the series (<b>{escape(name)}</b>)")
+        (f"series#{sid}", f"1 and 2: another game of the series (<b>{escape(name)}</b>)")
         for sid, name in series or []
     ]
     named = (
@@ -2152,7 +2154,10 @@ def _pair_rows(
             _card(
                 "Version ↔ version",
                 f"the model: <b>{escape(r['relation'])}</b> {r['p']:.2f}",
-                [side(r["subject"]), side(r["other"])],
+                [
+                    f"<span class=badge>1</span>{side(r['subject'])}",
+                    f"<span class=badge>2</span>{side(r['other'])}",
+                ],
                 answers,
                 escape(signs),
             )
