@@ -205,7 +205,13 @@ async def _place(
             media=edition_media.psn(page._products(payload)),
         )
         await repo.save_edition_item(
-            edition_id, product_id, product.name, "game", is_primary=True, version_id=version_id
+            edition_id,
+            product_id,
+            product.name,
+            "game",
+            is_primary=True,
+            version_id=version_id,
+            role="main",
         )
         report.editions += 1
     else:

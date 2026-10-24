@@ -811,10 +811,37 @@ def _bundle(product_id: str, *items: tuple[str, bool]) -> dict:
     }
 
 
-async def test_a_game_thrown_into_a_bundle_is_not_the_bundles_game(repo: Repo) -> None:
-    """FIFA 16 Super Deluxe Edition holds Plants vs. Zombies Garden Warfare
-    (owner, 2026-10-24): an edition of FIFA 16, never of PvZ. A bundle of
-    games with none primary is each one's, as before."""
+def test_a_bundle_is_read_from_what_it_holds() -> None:
+    from bot.services.stores import classify_bundle
+
+    # Monster Hunter Rise + Sunbreak: one game, no primary flag — an edition.
+    assert classify_bundle("Monster Hunter Rise + Sunbreak", [("game", False), ("dlc", False)]) == (
+        "edition",
+        "complete",
+        ["main", None],
+    )
+    # FIFA 16 Super Deluxe: FIFA primary, PvZ thrown in.
+    assert classify_bundle(
+        "FIFA 16 Super Deluxe Edition", [("dlc", False), ("game", False), ("game", True)]
+    ) == ("edition", "deluxe", [None, "bonus", "main"])
+    # The PopCap Bundle: several equal games.
+    assert classify_bundle("PopCap Bundle", [("game", False), ("game", False)]) == (
+        "bundle",
+        "bundle",
+        ["part", "part"],
+    )
+    # Add-ons and currency only.
+    assert classify_bundle("Season Pass", [("dlc", False), ("consumable", False)]) == (
+        "addon_pack",
+        "addon_pack",
+        [None, None],
+    )
+
+
+async def test_xbox_bundles_are_kept_for_what_they_are(repo: Repo) -> None:
+    """Owner, 2026-10-24: FIFA 16 Super Deluxe was listed among Plants vs.
+    Zombies Garden Warfare's editions. Every game an item stands for keeps its
+    version; its role says what it is to the bundle."""
     from bot.services.stores import StoreVersion
 
     async def game(product: str, name: str) -> int:
@@ -828,27 +855,43 @@ async def test_a_game_thrown_into_a_bundle_is_not_the_bundles_game(repo: Repo) -
     items = [
         {"ProductId": "FIFA16", "ProductType": "Game"},
         {"ProductId": "PVZGW", "ProductType": "Game"},
+        {"ProductId": "KO", "ProductType": "Durable"},
     ]
     editions = [
-        _bundle("SUPERDELUXE", ("FIFA16", True), ("PVZGW", False)),
+        _bundle("SUPERDELUXE", ("FIFA16", True), ("PVZGW", False), ("KO", False)),
         _bundle("EAPACK", ("FIFA16", False), ("PVZGW", False)),
+        _bundle("PACK", ("KO", False)),
     ]
     await StoreCollector(repo)._xbox_editions(editions, items, CollectReport("x", "1"))
     cursor = await repo._conn.execute(
-        "SELECT e.store_id, i.version_id FROM edition_items i"
-        " JOIN editions e ON e.edition_id = i.edition_id WHERE i.version_id IS NOT NULL"
-        " ORDER BY 1, 2"
+        "SELECT e.store_id, e.scope, i.store_id, i.version_id, i.role FROM edition_items i"
+        " JOIN editions e ON e.edition_id = i.edition_id ORDER BY 1, 3"
     )
     assert [tuple(r) for r in await cursor.fetchall()] == [
-        ("EAPACK", fifa),
-        ("EAPACK", pvz),
-        ("SUPERDELUXE", fifa),
+        ("EAPACK", "bundle", "FIFA16", fifa, "part"),
+        ("EAPACK", "bundle", "PVZGW", pvz, "part"),
+        ("PACK", "addon_pack", "KO", None, None),
+        ("SUPERDELUXE", "edition", "FIFA16", fifa, "main"),
+        ("SUPERDELUXE", "edition", "KO", None, None),
+        ("SUPERDELUXE", "edition", "PVZGW", pvz, "bonus"),
     ]
 
-    # One linked before the rule: the re-parse unlinks it.
-    await repo._conn.execute(
-        "UPDATE edition_items SET version_id = ? WHERE store_id = 'PVZGW'"
-        " AND edition_id = (SELECT edition_id FROM editions WHERE store_id = 'SUPERDELUXE')",
-        (pvz,),
+
+async def test_kept_editions_are_read_again_and_a_kind_set_by_hand_stays(repo: Repo) -> None:
+    from bot.services.store_collect import classify_editions
+
+    one = await repo.save_edition("xbox", "MHR", "Monster Hunter Rise + Sunbreak", "bundle")
+    await repo.save_edition_item(one, "RISE", "Monster Hunter Rise", "game")
+    await repo.save_edition_item(one, "SUNBREAK", "Sunbreak", "dlc")
+    chosen = await repo.save_edition("xbox", "GOTY", "A Game: GOTY", "complete")
+    await repo.save_edition_item(chosen, "G", "A Game", "game", is_primary=True)
+    counts = await classify_editions(repo)
+    assert counts == {"edition": 2}
+    cursor = await repo._conn.execute(
+        "SELECT e.store_id, e.scope, e.kind, i.role FROM editions e"
+        " JOIN edition_items i ON i.edition_id = e.edition_id AND i.item_kind = 'game' ORDER BY 1"
     )
-    assert await repo.unlink_bonus_games() == 1
+    assert [tuple(r) for r in await cursor.fetchall()] == [
+        ("GOTY", "edition", "complete", "main"),  # the advisers' kind kept
+        ("MHR", "edition", "complete", "main"),  # "bundle" was wrong: the game complete
+    ]

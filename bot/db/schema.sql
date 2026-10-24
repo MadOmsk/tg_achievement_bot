@@ -1440,6 +1440,8 @@ CREATE TABLE IF NOT EXISTS editions (
     image_path    TEXT,
     image_hash    TEXT,
     image_checked_at TEXT,
+    -- 127: edition / bundle / addon_pack, read from what it holds.
+    scope         TEXT NOT NULL DEFAULT 'edition',
     UNIQUE (store, store_id)
 );
 
@@ -1452,6 +1454,8 @@ CREATE TABLE IF NOT EXISTS edition_items (
     item_kind  TEXT NOT NULL,       -- game / dlc / consumable / other
     is_primary INTEGER NOT NULL DEFAULT 0,
     version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
+    -- 127: main / bonus / part for a game the item stands for.
+    role          TEXT,
     PRIMARY KEY (edition_id, store_id)
 );
 CREATE INDEX IF NOT EXISTS idx_edition_items_version ON edition_items(version_id);

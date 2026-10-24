@@ -36,6 +36,7 @@ from bot.services.steam.client import get_schema
 from bot.services.steam_news import find_appid
 from bot.services.stores import (
     StoreVersion,
+    classify_bundle,
     edition_kind,
     hltb_page,
     psn_store,
@@ -254,6 +255,7 @@ class StoreCollector:
                     "game" if is_game else "dlc",
                     is_primary=is_game,
                     version_id=version_id if is_game else None,
+                    role="main" if is_game else None,
                 )
 
     async def _recently_patched(self, appid: int | None) -> bool:
@@ -395,28 +397,32 @@ class StoreCollector:
             if not contents:
                 continue
             name = xbox_catalog.title_of(edition)
-            primary = any(is_primary for _id, is_primary in contents)
+            kinds = [
+                {"Game": "game", "Durable": "dlc", "Consumable": "consumable"}.get(
+                    str(by_id.get(big_id, {}).get("ProductType") or ""), "other"
+                )
+                for big_id, _primary in contents
+            ]
+            # What it is, read from what it holds (owner, 2026-10-24): one game
+            # is its edition, a game thrown in is a bonus, several equal games
+            # a bundle, no game a pack of add-ons.
+            scope, kind, roles = classify_bundle(
+                name, [(k, p) for k, (_id, p) in zip(kinds, contents, strict=True)]
+            )
             edition_id = await self._repo.save_edition(
                 "xbox",
                 str(edition.get("ProductId")),
                 name,
-                edition_kind(name) if primary else "bundle",
+                kind,
                 xbox_catalog.sold(edition),
                 media=edition_media.xbox(edition),
+                scope=scope,
             )
-            for big_id, is_primary in contents:
+            for (big_id, is_primary), item_kind, role in zip(contents, kinds, roles, strict=True):
                 item = by_id.get(big_id, {})
-                product_type = str(item.get("ProductType") or "")
-                item_kind = {"Game": "game", "Durable": "dlc", "Consumable": "consumable"}.get(
-                    product_type, "other"
-                )
-                # The edition's game is its primary one; a game thrown in
-                # (FIFA 16 Super Deluxe with Plants vs. Zombies Garden
-                # Warfare, owner, 2026-10-24) is held, not the edition's game.
-                # A bundle of games with none primary is each one's.
                 version_id = (
                     await self._repo.version_of_product("xbox", big_id)
-                    if item_kind == "game" and (is_primary or not primary)
+                    if item_kind == "game"
                     else None
                 )
                 await self._repo.save_edition_item(
@@ -426,6 +432,7 @@ class StoreCollector:
                     item_kind,
                     is_primary=is_primary,
                     version_id=version_id,
+                    role=role,
                 )
 
     # ------------------------------------------------------------ by name (#147)
@@ -706,8 +713,8 @@ class StoreCollector:
         """Every kept answer read again through today's parsers, and written as
         a collection would write it — **no request** (owner, 2026-10-12;
         `scripts/reparse_store_payloads.py`): versions, their consoles and
-        availability, Xbox add-ons (only their own game's), an edition's games
-        (only its primary one, when it has one), the 360 store
+        availability, Xbox add-ons (only their own game's), what each edition is by
+        what it holds (`classify_editions`), the 360 store
         pages, HLTB entries and their links. The answers themselves are kept
         again without prices. What only a request brings (a Steam DLC's or
         package's own answer, the Russian appdetails) is left as it is."""
@@ -717,9 +724,10 @@ class StoreCollector:
             done[key] = done.get(key, 0) + 1
 
         repo = self._repo
-        # A game thrown into a bundle is not the bundle's game (2026-10-24):
-        # the rule `_xbox_editions` follows now, over the editions kept.
-        done["edition games unlinked"] = await repo.unlink_bonus_games()
+        # What each kept edition is, read again from what it holds (owner,
+        # 2026-10-24): the rule `_xbox_editions` follows now.
+        for scope, n in (await classify_editions(repo)).items():
+            done[f"editions: {scope}"] = n
         for subject in await repo.payload_subjects("steam_store", "steam:"):
             data = steam_store.without_prices(await repo.payload(subject, "steam_store"))
             if not data:
@@ -1096,6 +1104,30 @@ class StoreCollector:
     async def _title_steam_appid(self, platform: str, title_id: str) -> int | None:
         steam = await self._repo.title_steam(platform, title_id)
         return steam.steam_appid if steam else None
+
+
+async def classify_editions(repo: Repo) -> dict[str, int]:
+    """Every kept edition's scope and its items' roles read again from what it
+    holds (`stores.classify_bundle`). A kind set by the advisers or by hand is
+    kept while it stays an edition; one that was a bundle's (`bundle`, or
+    none) becomes its name's. Returns how many of each scope."""
+    counts: dict[str, int] = {}
+    for edition in await repo.editions_with_items():
+        items = edition["items"]
+        scope, kind, roles = classify_bundle(
+            edition["name"], [(i["item_kind"], i["is_primary"]) for i in items]
+        )
+        counts[scope] = counts.get(scope, 0) + 1
+        keep_kind = scope == "edition" and edition["kind"] not in (None, "bundle", "addon_pack")
+        changed_roles = {
+            i["store_id"]: role for i, role in zip(items, roles, strict=True) if i["role"] != role
+        }
+        if scope == edition["scope"] and keep_kind and not changed_roles:
+            continue
+        await repo.set_edition_scope(
+            edition["edition_id"], scope, None if keep_kind else kind, changed_roles
+        )
+    return counts
 
 
 def _close(ours: str, hit: str) -> bool:

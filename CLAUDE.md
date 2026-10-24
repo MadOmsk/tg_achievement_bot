@@ -712,12 +712,13 @@ What the stores and HLTB say about a game, collected but not shown yet
     game does not list its add-ons: its editions do (`BundledSkus`); only
     Durables are kept, and **only those naming this game's products as their
     `addOnParent`** — an edition of several games bundles the others' too, and
-    one an earlier collection stored goes. **An edition is its primary
-    game's** (`IsPrimary`; owner, 2026-10-24: FIFA 16 Super Deluxe holds Plants
-    vs. Zombies Garden Warfare and was listed among PvZ's editions): a game
-    thrown in is held, not linked; a bundle of games with none primary is each
-    one's; `reparse_stored` unlinks the ones kept before
-    (`repo.unlink_bonus_games`). An add-on sold only on its own is
+    one an earlier collection stored goes. **A bundle is read from what it holds**
+    (owner, 2026-10-24; migration 127, `stores.classify_bundle`): one game → its
+    `edition` (`role` main; a `+`/`&` name is `complete`); several games, one
+    primary → its edition, the rest `bonus`; several equal games → `bundle`
+    (`part`s); no game → `addon_pack` (shown with the game's DLC). Every game
+    item keeps its version link; `reparse_stored` re-reads kept ones
+    (`classify_editions`, a kind set by hand kept). An add-on sold only on its own is
     not found this way. `9998-12-30` is "not on sale", no date. Trailers are
     `CMSVideos`' https HLS/DASH links with their poster (the old `Videos` are
     http Smooth Streaming, unplayable); links only, nothing downloaded.

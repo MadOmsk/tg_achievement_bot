@@ -192,6 +192,40 @@ def without_keys(payload: object, keys: frozenset[str]) -> object:
     return payload
 
 
+def classify_bundle(
+    name: str | None, items: list[tuple[str, bool]]
+) -> tuple[str, str, list[str | None]]:
+    """What a store's bundle is, read from what it holds (owner, 2026-10-24),
+    never from a flag alone: `items` are `(item_kind, is_primary)`. Returns
+    `(scope, kind, role of each item)`:
+
+    - one game, maybe with its own add-ons → `edition` of it (`main`), its
+      kind from its name (Monster Hunter Rise + Sunbreak: no primary flag, an
+      edition all the same);
+    - several games, one primary → `edition` of that one; the rest are
+      `bonus` (FIFA 16 Super Deluxe holds Plants vs. Zombies Garden Warfare);
+    - several games, none or many primary → a `bundle` of `part`s (the
+      PopCap Bundle, games of different series);
+    - no game → an `addon_pack` (add-ons, currency).
+    """
+    games = [n for n, (kind, _p) in enumerate(items) if kind == "game"]
+    roles: list[str | None] = [None] * len(items)
+    if not games:
+        return "addon_pack", "addon_pack", roles
+    primary = [n for n in games if items[n][1]]
+    if len(games) == 1 or len(primary) == 1:
+        main = games[0] if len(games) == 1 else primary[0]
+        for n in games:
+            roles[n] = "main" if n == main else "bonus"
+        kind = edition_kind(name)
+        # "Bundle" is a bundle of games now; one game sold with its add-ons
+        # under a "+" or "& … Bundle" name is that game complete.
+        return "edition", "complete" if kind == "bundle" else kind, roles
+    for n in games:
+        roles[n] = "part"
+    return "bundle", "bundle", roles
+
+
 def edition_kind(name: str | None) -> str:
     """What kind of edition a store's name says it is (`standard` when it says
     none); a pre-order says so first, as it is the one that vanishes."""

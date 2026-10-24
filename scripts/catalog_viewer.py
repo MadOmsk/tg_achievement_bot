@@ -1719,14 +1719,31 @@ async def game(request: web.Request) -> web.Response:
             " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
             (game_id,),
         ).fetchall()
-        editions = conn.execute(
+        # What the stores sell around it, by what each holds (owner,
+        # 2026-10-24; `stores.classify_bundle`): its editions, the bundles it
+        # is one game of, those it is thrown into, and packs of its add-ons.
+        held = (
             "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.kind, e.on_sale,"
             " e.first_seen_at, e.last_seen_at,"
             " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
             "  '; ') FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
             " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
             " JOIN versions v ON v.version_id = i.version_id"
-            " WHERE v.game_id = ? ORDER BY e.store, e.name",
+            " WHERE v.game_id = ? AND {} ORDER BY e.store, e.name"
+        )
+        editions = conn.execute(
+            held.format("e.scope = 'edition' AND COALESCE(i.role, 'main') = 'main'"), (game_id,)
+        ).fetchall()
+        in_bundles = conn.execute(held.format("i.role = 'part'"), (game_id,)).fetchall()
+        bonus_in = conn.execute(held.format("i.role = 'bonus'"), (game_id,)).fetchall()
+        packs = conn.execute(
+            "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.on_sale,"
+            " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id), '; ')"
+            "  FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
+            " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
+            " JOIN dlcs d ON d.store_id = i.store_id"
+            " JOIN versions v ON v.version_id = d.version_id"
+            " WHERE e.scope = 'addon_pack' AND v.game_id = ? ORDER BY e.name",
             (game_id,),
         ).fetchall()
         hltb = conn.execute(
@@ -1825,24 +1842,34 @@ async def game(request: web.Request) -> web.Response:
                 "other_id": lambda r: f"/version/{r['other_id']}",
             },
         )
-        + "<h2>Editions (packs the stores sell)</h2>"
-        + _table(
-            [
-                {
-                    **{k: e[k] for k in e.keys() if k != "on_sale"},
-                    "store page": _Html(_store_link(e, str(e["store"]), _edition_href(e))),
-                }
-                for e in editions
-            ]  # type: ignore[arg-type]
-        )
+        + "<h2>Editions</h2>"
+        + _editions_table(editions)
+        + "<h2>In store bundles of several games</h2>"
+        + _editions_table(in_bundles)
+        + "<h2>Thrown into another game's edition</h2>"
+        + _editions_table(bonus_in)
         + "<h2>DLC, by version</h2>"
         + _dlcs_by_version(dlcs)
+        + "<h2>Add-on packs</h2>"
+        + _editions_table(packs)
         + "<h2>HLTB</h2>"
         + _table(hltb, {"hltb_id": _hltb_href, "name": _hltb_href})
         + "<h2>Detach</h2>"
         + detach
     )
     return _page(row["name"] if row else f"Game {game_id}", body)
+
+
+def _editions_table(rows: list[sqlite3.Row]) -> str:
+    return _table(
+        [
+            {
+                **{k: e[k] for k in e.keys() if k != "on_sale"},
+                "store page": _Html(_store_link(e, str(e["store"]), _edition_href(e))),
+            }
+            for e in rows
+        ]  # type: ignore[arg-type]
+    )
 
 
 def _identity(conn: sqlite3.Connection, game_id: int) -> str:

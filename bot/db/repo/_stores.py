@@ -332,18 +332,6 @@ class _StoresRepo:
         )
         return {str(row[0]) for row in await cursor.fetchall()}
 
-    async def unlink_bonus_games(self) -> int:
-        """A game held by an edition that has a primary game of its own is
-        not that edition's game (FIFA 16 Super Deluxe holds Plants vs. Zombies
-        Garden Warfare): its version link goes. Returns how many went."""
-        cursor = await self._conn.execute(
-            "UPDATE edition_items SET version_id = NULL"
-            " WHERE item_kind = 'game' AND is_primary = 0 AND version_id IS NOT NULL"
-            " AND edition_id IN (SELECT edition_id FROM edition_items WHERE is_primary = 1)"
-        )
-        await self._conn.commit()
-        return cursor.rowcount
-
     async def save_dlc(self, version_id: int, dlc: StoreDlc) -> None:
         await self._conn.execute(
             "INSERT INTO dlcs (version_id, store_id, name, kind, release_date, description_en,"
@@ -1067,18 +1055,20 @@ class _StoresRepo:
         kind: str | None,
         on_sale: bool | None = None,
         media: dict | None = None,
+        scope: str = "edition",
     ) -> int:
         """An edition seen on its store now: kept, its last sighting stamped;
-        its pictures (`services/edition_media`) when the answer had any."""
+        its pictures (`services/edition_media`) when the answer had any.
+        `scope` is what it is by its contents (`stores.classify_bundle`)."""
         now = utcnow_iso()
         await self._conn.execute(
             "INSERT INTO editions (store, store_id, name, kind, first_seen_at, last_seen_at,"
-            " on_sale, media) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            " on_sale, media, scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(store, store_id) DO UPDATE SET"
             "  name = COALESCE(excluded.name, editions.name),"
             "  kind = COALESCE(excluded.kind, editions.kind), last_seen_at = excluded.last_seen_at,"
             "  on_sale = COALESCE(excluded.on_sale, editions.on_sale),"
-            "  media = COALESCE(excluded.media, editions.media)",
+            "  media = COALESCE(excluded.media, editions.media), scope = excluded.scope",
             (
                 store,
                 store_id,
@@ -1088,6 +1078,7 @@ class _StoresRepo:
                 now,
                 None if on_sale is None else int(on_sale),
                 json.dumps(media, ensure_ascii=False) if media else None,
+                scope,
             ),
         )
         cursor = await self._conn.execute(
@@ -1140,16 +1131,66 @@ class _StoresRepo:
         *,
         is_primary: bool = False,
         version_id: int | None = None,
+        role: str | None = None,
     ) -> None:
         await self._conn.execute(
             "INSERT INTO edition_items (edition_id, store_id, name, item_kind, is_primary,"
-            " version_id) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(edition_id, store_id) DO UPDATE SET"
+            " version_id, role) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(edition_id, store_id) DO UPDATE SET"
             "  name = COALESCE(excluded.name, edition_items.name),"
             "  item_kind = excluded.item_kind, is_primary = excluded.is_primary,"
-            "  version_id = COALESCE(excluded.version_id, edition_items.version_id)",
-            (edition_id, store_id, name, item_kind, 1 if is_primary else 0, version_id),
+            "  version_id = COALESCE(excluded.version_id, edition_items.version_id),"
+            "  role = excluded.role",
+            (edition_id, store_id, name, item_kind, 1 if is_primary else 0, version_id, role),
         )
         await self._conn.commit()
+
+    async def editions_with_items(self) -> list[dict[str, Any]]:
+        """Every edition with what it holds, for the re-parse to read again:
+        `{edition_id, name, scope, kind, items: [{store_id, item_kind,
+        is_primary, role}]}`, items in the order kept."""
+        cursor = await self._conn.execute(
+            "SELECT e.edition_id, e.name, e.scope, e.kind, i.store_id, i.item_kind,"
+            " i.is_primary, i.role FROM editions e"
+            " JOIN edition_items i ON i.edition_id = e.edition_id"
+            " ORDER BY e.edition_id, i.rowid"
+        )
+        found: dict[int, dict[str, Any]] = {}
+        for r in await cursor.fetchall():
+            edition = found.setdefault(
+                int(r["edition_id"]),
+                {
+                    "edition_id": int(r["edition_id"]),
+                    "name": r["name"],
+                    "scope": r["scope"],
+                    "kind": r["kind"],
+                    "items": [],
+                },
+            )
+            edition["items"].append(
+                {
+                    "store_id": r["store_id"],
+                    "item_kind": r["item_kind"],
+                    "is_primary": bool(r["is_primary"]),
+                    "role": r["role"],
+                }
+            )
+        return list(found.values())
+
+    async def set_edition_scope(
+        self, edition_id: int, scope: str, kind: str | None, roles: dict[str, str | None]
+    ) -> None:
+        """What an edition is by its contents: its scope, its kind when it
+        changes with it (None keeps the kind), each item's role."""
+        async with self.transaction():
+            await self._conn.execute(
+                "UPDATE editions SET scope = ?, kind = COALESCE(?, kind) WHERE edition_id = ?",
+                (scope, kind, edition_id),
+            )
+            await self._conn.executemany(
+                "UPDATE edition_items SET role = ? WHERE edition_id = ? AND store_id = ?",
+                [(role, edition_id, store_id) for store_id, role in roles.items()],
+            )
 
     async def version_of_product(self, store: str, product_id: str) -> int | None:
         """One of our versions of this store product (any console)."""
