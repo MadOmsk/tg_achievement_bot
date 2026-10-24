@@ -353,6 +353,9 @@ class _SeriesRepo:
         """A game said to be in a series or not, by the operator (`manual`)
         or the advisers (`advisers`) — never over the operator's word."""
         now = utcnow_iso()
+        await self.log_label(
+            "series", "label", decided_by, game_id=game_id, series_id=series_id, member=member
+        )
         await self._conn.execute(
             "INSERT INTO game_series (game_id, series_id, source, member, decided_by,"
             " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"

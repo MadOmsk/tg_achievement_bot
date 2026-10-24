@@ -1350,6 +1350,25 @@ CREATE TABLE IF NOT EXISTS match_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_match_decisions_other ON match_decisions(other_id);
 
+-- Every answer given about the games, kept (128): match_decisions and
+-- game_series hold the one that counts now.
+CREATE TABLE IF NOT EXISTS label_log (
+    log_id     INTEGER PRIMARY KEY,
+    subject    TEXT NOT NULL,      -- pair (two versions) / series (a game in a series)
+    event      TEXT NOT NULL,      -- label / undo / skip / refused (kept under the operator's)
+    version_id INTEGER,
+    other_id   INTEGER,
+    relation   TEXT,
+    game_id    INTEGER,
+    series_id  INTEGER,
+    member     INTEGER,
+    decided_by TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    note       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_label_log_pair ON label_log(version_id, other_id);
+CREATE INDEX IF NOT EXISTS idx_label_log_series ON label_log(game_id, series_id);
+
 -- The model's latest doubtful pairs (099): the review list.
 CREATE TABLE IF NOT EXISTS match_pairs (
     version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,

@@ -890,7 +890,14 @@ What the stores and HLTB say about a game, collected but not shown yet
   game's versions are output**: a decision is a label on a pair of versions
   (`match_decisions`: same / demo_of / tool_of / mode_of / remaster_of /
   remake_of / contains / vr_of / other, with the pair's signs and the model that
-  saw them — what the weights will be fitted to); which game a version is in
+  saw them — what the weights will be fitted to). **Every answer is kept**
+  (migration 128, `label_log`, append-only; the training audit, 2026-10-24):
+  `match_decisions` and `game_series` hold the one that counts, the log each
+  event — a label, an undo, a «позже» (`skip`), and an adviser's answer on a
+  pair the operator (`viewer`) answered, which never replaces theirs
+  (`refused`); series answers likewise. «Отсоединить» labels `other` against
+  the version the model likeliest calls the same game, the link that was
+  wrong, not the anchor. Which game a version is in
   (columns of `versions` since migration 108 — `game_id`, `role`, `of_version_id`, `link_p`, `linked_at`; the old table `game_versions` was one row per version —, **one game per version**, its role version / demo / tool / mode / extra and the version a demo, tool, mode or extra is of; the roles are checked in `game_link.py`, not by a CHECK, which would mean rebuilding `versions`) and how games relate
   (`game_relations`) are rebuilt from the labels and the model by
   `services/game_link.py`, so a decision outlives every rebuild. **A label
@@ -1031,7 +1038,14 @@ What the stores and HLTB say about a game, collected but not shown yet
     each; other strong evidence joins a lone game, but **between two series
     of their own it makes each game a crossover of the other's, never one
     series of both** (owner, 2026-10-24: chained labels had put LEGO Batman,
-    Marvel and Harry Potter in Star Wars); weak does nothing. A name is the
+    Marvel and Harry Potter in Star Wars); weak does nothing. **A label
+    naming no series is weaker than its 0.97** (the training audit,
+    2026-10-24: ten labels on LEGO Harry Potter Collection, meaning LEGO, had
+    built a "Harry Potter" of LEGO games): between names with no first word
+    in common it joins only a lone game with one way in, and its other end
+    only as a series already, by a name one holds of the other, or with no
+    other label out; two LEGO games of different licences labelled one
+    series are LEGO's, never a sign for either licence. A name is the
     franchise more than half its games share ("Gears of War"), else the
     prefix common to all ("Sonic"), lengthened to the words all go on with
     ("Cities: Skylines"), as most of them write it. Proposed again after

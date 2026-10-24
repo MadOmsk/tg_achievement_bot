@@ -2919,6 +2919,10 @@ async def decide(request: web.Request) -> web.Response:
     relation, _, flip = decision.partition(":")
     if relation == "skip":
         request.app["skipped"].add(frozenset((version_id, other_id)))
+        # "Unsure" is an answer too (the training audit): kept in the log.
+        await _repo(request).log_label(
+            "pair", "skip", "viewer", version_id=version_id, other_id=other_id
+        )
         raise _back(back, f"versions {version_id} / {other_id}: asked again later")
     if flip:
         version_id, other_id = other_id, version_id
@@ -2967,6 +2971,7 @@ async def decide_games(request: web.Request) -> web.Response:
                 (game_id, other_game, other_game, game_id),
             ):
                 request.app["skipped"].add(frozenset((row[0], row[1])))
+                await repo.log_label("pair", "skip", "viewer", version_id=row[0], other_id=row[1])
         request.app["skipped_games"].add(frozenset((game_id, other_game)))
         # Not back to its card: it has gone to the end of the list.
         raise _back(back.split("#")[0], f"games {game_id} / {other_game}: asked again later")
@@ -3062,22 +3067,45 @@ async def game_relate(request: web.Request) -> web.Response:
 
 
 async def game_detach(request: web.Request) -> web.Response:
-    """ "Not this game": a label `other` against another version of it."""
+    """ "Not this game": a label `other` against the version that pulled it
+    in — the one the model thinks likeliest the same game (the training
+    audit, 2026-10-24: labelling the anchor taught nothing about the pair
+    that was wrong)."""
     game_id = int(request.match_info["game_id"])
     form = await request.post()
     version_id = int(str(form["version_id"]))
     repo = _repo(request)
     with _db(request) as conn:
-        row = conn.execute(
-            "SELECT version_id FROM versions WHERE game_id = ? AND version_id <> ?"
-            " ORDER BY version_id = (SELECT anchor_version_id FROM games WHERE game_id = ?) DESC,"
-            " version_id LIMIT 1",
-            (game_id, version_id, game_id),
-        ).fetchone()
-    if row is None:
+        others = [
+            int(r[0])
+            for r in conn.execute(
+                "SELECT version_id FROM versions WHERE game_id = ? AND version_id <> ?"
+                " ORDER BY version_id",
+                (game_id, version_id),
+            )
+        ]
+    if not others:
         raise _back(f"/game/{game_id}", "the only version of its game")
-    await _label(repo, version_id, int(row[0]), "other")
+    await _label(repo, version_id, await _puller(repo, version_id, others), "other")
     raise _back(f"/version/{version_id}", f"version {version_id} is not game {game_id}")
+
+
+async def _puller(repo: Repo, version_id: int, others: list[int]) -> int:
+    """Of `others`, the version the model would most readily call one game
+    with `version_id`: the link a detach says was wrong."""
+    from bot.services.game_link import load_candidates
+    from bot.services.game_match import features, probabilities
+
+    candidates = await load_candidates(repo, [version_id, *others])
+    me = candidates.get(version_id)
+    if me is None:
+        return others[0]
+
+    def same(other: int) -> float:
+        them = candidates.get(other)
+        return probabilities(features(me, them))["same"] if them is not None else -1.0
+
+    return max(others, key=lambda o: (same(o), -o))
 
 
 # ---------------------------------------------------------------- series

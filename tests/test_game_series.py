@@ -432,3 +432,40 @@ async def test_one_series_answered_in_the_review_says_which(repo: Repo, tmp_path
         ("Xbox shooters", "Gears of War"),
         ("Halo", "Gears of War"),
     }
+
+
+def test_a_game_labelled_with_many_of_other_names_joins_none_of_them() -> None:
+    """The training audit (2026-10-24): LEGO Harry Potter Collection, labelled
+    "of the series" with LEGO games of other licences (meaning LEGO), made a
+    "Harry Potter" series of them. A label naming no series, between names of
+    different franchises, joins only a lone game with one way in."""
+    games = _games(
+        (1, "Wizard Collection", 2016, "Studio A", "Pub A"),
+        (2, "Space Heroes", 2013, "Studio B", "Pub B"),
+        (3, "Bat Gotham", 2014, "Studio C", "Pub C"),
+        (4, "Dino World", 2015, "Studio D", "Pub D"),
+    )
+    labels = [(1, 2, "viewer"), (1, 3, "viewer"), (1, 4, "viewer")]
+    assert _series(games, labels=labels) == {}
+
+
+def test_two_lego_games_of_other_licences_labelled_one_series_are_lego_only() -> None:
+    games = _games(
+        (1, "LEGO Harry Potter", 2010, "TT", "WB"),
+        (2, "LEGO Harry Potter: Years 5-7", 2011, "TT", "WB"),
+        (3, "LEGO Harry Potter Collection", 2016, "TT", "WB"),
+        (4, "The LEGO Movie 2 Videogame", 2019, "TT", "WB"),
+    )
+    series = _series(games, relations=[(3, 1, "contains")], labels=[(4, 3, "viewer")])
+    assert 4 not in series.get("Harry Potter", set())
+
+
+def test_a_label_inside_one_name_family_still_joins() -> None:
+    games = _games(
+        (1, "NBA 2K14", 2013, "Visual Concepts", "2K"),
+        (2, "NBA 2K15", 2014, "Visual Concepts", "2K"),
+        (3, "NBA 2K16", 2015, "Visual Concepts", "2K"),
+        (4, "NBA 2K11", 2010, "Visual Concepts", "2K"),
+    )
+    labels = [(2, 1, "viewer"), (2, 3, "viewer"), (3, 1, "viewer"), (4, 1, "viewer")]
+    assert {1, 2, 3, 4} <= set().union(*_series(games, labels=labels).values())

@@ -185,8 +185,18 @@ def evidence(
                 kind="family" if kind in FAMILY else "contains",
             )
         )
+    lego = {g for g, game in games.items() if _core_words(game)[:1] == ["lego"]}
     for a, b, by in labels:
         if a not in games or b not in games or a == b:
+            continue
+        if (
+            a in lego
+            and b in lego
+            and not compatible(franchise_key(games[a].name), franchise_key(games[b].name))
+        ):
+            # Two LEGO games of different licences "of one series" are LEGO,
+            # which its own rule makes (owner's labels on LEGO Harry Potter
+            # Collection, 2026-10-15): never a sign for either licence.
             continue
         who, p = ("advisers", ADVISERS_P) if by in ADVISER_SOURCES else ("operator", OPERATOR_P)
         found.append(
@@ -313,10 +323,14 @@ def propose(games: dict[int, SeriesGame], found: list[Evidence]) -> list[Proposa
             loose.append(e)
 
     neighbours: dict[int, set[int]] = defaultdict(set)
+    labelled: dict[int, set[int]] = defaultdict(set)
     for e in found:
         if not e.family:
             neighbours[e.a].add(e.b)
             neighbours[e.b].add(e.a)
+        if e.kind == "label":
+            labelled[e.a].add(e.b)
+            labelled[e.b].add(e.a)
     # (crossover game, a game of the group it is added to, the evidence)
     extras: list[tuple[int, int, Evidence]] = []
     for e in loose:
@@ -341,8 +355,20 @@ def propose(games: dict[int, SeriesGame], found: list[Evidence]) -> list[Proposa
             continue
         lone = [
             (x, rx, ry)
-            for x, rx, ry in ((e.a, ra, rb), (e.b, rb, ra))
-            if len(members[rx]) == 1 and {find(n) for n in neighbours[x]} == {ry}
+            for x, rx, ry, y in ((e.a, ra, rb, e.b), (e.b, rb, ra, e.a))
+            if len(members[rx]) == 1
+            and {find(n) for n in neighbours[x]} == {ry}
+            # A label's other end takes it only as a series already, by a
+            # name one holds of the other («Shadow of the Tomb Raider»), or
+            # with no other label out: never a lone game labelled into
+            # several of other names.
+            and (
+                e.kind != "label"
+                or len(members[ry]) >= 2
+                or _holds(words[x], keys[y])
+                or _holds(words[y], keys[x])
+                or {find(n) for n in labelled[y]} == {rx}
+            )
         ]
         if lone:
             union(e.a, e.b)
@@ -364,6 +390,12 @@ def propose(games: dict[int, SeriesGame], found: list[Evidence]) -> list[Proposa
             # ended in one (owner, 2026-10-24). A lone game still joins.
             if len(members[ra]) >= 2 and len(members[rb]) >= 2:
                 extras += [(e.a, e.b, e), (e.b, e.a, e)]
+                continue
+            if e.kind == "label" and keys[e.a].split()[:1] != keys[e.b].split()[:1]:
+                # A label naming no series, between names with nothing in
+                # common, never joins by itself — only as a lone game's one
+                # way in, above (the training audit, 2026-10-24). Names of
+                # one family still do: «NBA 2K15» and «NBA 2K16».
                 continue
             union(e.a, e.b)
 

@@ -11,6 +11,9 @@ from typing import Any
 
 from bot.util import utcnow_iso
 
+# Who the operator is in `decided_by` (the catalog viewer)
+OPERATOR = "viewer"
+
 
 class _GamesRepo:
     async def match_rows(self) -> list[dict[str, Any]]:
@@ -102,9 +105,29 @@ class _GamesRepo:
         model: str | None,
         decided_by: str,
     ) -> None:
-        """The operator's label on a pair; a pair has one label, whichever way
-        round it was given."""
+        """A label on a pair; a pair has one label that counts, whichever way
+        round it was given, and every one is kept in `label_log`. The
+        operator's (`viewer`) is never replaced by anybody else's: theirs is
+        logged as `refused` (the training audit, 2026-10-24: an adviser's
+        answer and the operator's could not be compared)."""
         async with self.transaction():
+            cursor = await self._conn.execute(
+                "SELECT decided_by FROM match_decisions WHERE (version_id = ? AND other_id = ?)"
+                " OR (version_id = ? AND other_id = ?)",
+                (version_id, other_id, other_id, version_id),
+            )
+            held = await cursor.fetchone()
+            refused = held is not None and held[0] == OPERATOR and decided_by != OPERATOR
+            await self.log_label(
+                "pair",
+                "refused" if refused else "label",
+                decided_by,
+                version_id=version_id,
+                other_id=other_id,
+                relation=relation,
+            )
+            if refused:
+                return
             await self._conn.execute(
                 "DELETE FROM match_decisions WHERE version_id = ? AND other_id = ?",
                 (other_id, version_id),
@@ -510,11 +533,60 @@ class _GamesRepo:
 
     async def delete_decision(self, version_id: int, other_id: int) -> None:
         """The operator takes an answer back (either way round): the pair is
-        the model's again."""
+        the model's again; the log keeps what was taken back."""
+        async with self.transaction():
+            cursor = await self._conn.execute(
+                "SELECT version_id, other_id, relation FROM match_decisions"
+                " WHERE (version_id = ? AND other_id = ?) OR (version_id = ? AND other_id = ?)",
+                (version_id, other_id, other_id, version_id),
+            )
+            for row in await cursor.fetchall():
+                await self.log_label(
+                    "pair",
+                    "undo",
+                    OPERATOR,
+                    version_id=int(row[0]),
+                    other_id=int(row[1]),
+                    relation=str(row[2]),
+                )
+            await self._conn.execute(
+                "DELETE FROM match_decisions WHERE (version_id = ? AND other_id = ?)"
+                " OR (version_id = ? AND other_id = ?)",
+                (version_id, other_id, other_id, version_id),
+            )
+
+    async def log_label(
+        self,
+        subject: str,
+        event: str,
+        decided_by: str,
+        *,
+        version_id: int | None = None,
+        other_id: int | None = None,
+        relation: str | None = None,
+        game_id: int | None = None,
+        series_id: int | None = None,
+        member: bool | None = None,
+        note: str | None = None,
+    ) -> None:
+        """One event of `label_log`, appended; never changed afterwards."""
         await self._conn.execute(
-            "DELETE FROM match_decisions WHERE (version_id = ? AND other_id = ?)"
-            " OR (version_id = ? AND other_id = ?)",
-            (version_id, other_id, other_id, version_id),
+            "INSERT INTO label_log (subject, event, version_id, other_id, relation, game_id,"
+            " series_id, member, decided_by, decided_at, note)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                subject,
+                event,
+                version_id,
+                other_id,
+                relation,
+                game_id,
+                series_id,
+                None if member is None else int(member),
+                decided_by,
+                utcnow_iso(),
+                note,
+            ),
         )
         await self._conn.commit()
 
