@@ -10,9 +10,9 @@ pictures, and next to each item the choice to make, the advisers' answers on
 pills (orange where they differ). The question's raw text is one click away.
 
 **One tap is an answer** (owner, 2026-10-23): each adviser's answer is a
-button that records it, the other answers sit under «Свой ответ…», and there
-is no separate «сохранить». The cards are drawn inside the viewer's one review
-tab (`/review`); `/trial` only sends there. «Недостающие версии» (M) are not
+button that records it, the other answers sit under «Own answer…», and there
+is no separate «save». The cards are drawn inside the viewer's one review
+tab (`/review`); `/trial` only sends there. «Missing versions» (M) are not
 the operator's to dig for: they wait for the octopus (#204) and are shown only
 when asked for (`kind=M`).
 """
@@ -31,27 +31,27 @@ from aiohttp import web
 from scripts.compare_answers import KINDS, decisions, read_answers
 
 KIND_RU = {
-    "G": "Карточка игры",
-    "M": "Недостающие версии",
-    "R": "Связь игр",
-    "D": "Похожие игры",
-    "S": "Серия",
-    "P": "Группа трофеев PSN",
-    "E": "Издания",
+    "G": "Game card",
+    "M": "Missing versions",
+    "R": "Games related",
+    "D": "Similar games",
+    "S": "Series",
+    "P": "PSN trophy group",
+    "E": "Editions",
     "H": "DLC ↔ HLTB",
-    "X": "Отклонённый HLTB",
+    "X": "Rejected HLTB",
 }
 VALUE_RU = {
-    "yes": "да",
-    "no": "нет",
-    "unsure": "не уверен",
-    "same": "та же",
-    "wrong": "не та",
-    "True": "да",
-    "False": "нет",
+    "yes": "yes",
+    "no": "no",
+    "unsure": "unsure",
+    "same": "the same",
+    "wrong": "wrong",
+    "True": "yes",
+    "False": "no",
     "None": "—",
-    "()": "ничего",
-    "—": "нет ответа",
+    "()": "nothing",
+    "—": "no answer",
 }
 
 CSS = """
@@ -173,7 +173,7 @@ class _Look:
         href = self.store_href(v)
         name = escape(v["name"] or "?")
         link = f'<a href="{escape(href)}" target=_blank>{name} ↗</a>' if href else name
-        stand_in = " · заглушка" if v["stand_in"] else ""
+        stand_in = " · stand-in" if v["stand_in"] else ""
         return (
             self.img(self.version_cover(v), 54)
             + f"<span><span class=con>{escape(console_label(v['store'], v['console']))}</span>"
@@ -263,7 +263,7 @@ class _Look:
         holds = "; ".join(f"{i['name'] or '?'} ({i['item_kind']})" for i in items[:6])
         return (
             self.img(pic, 54)
-            + f"<span>{escape(e['name'] or '?')}<br><small>{escape(e['store'])} · наш тип"
+            + f"<span>{escape(e['name'] or '?')}<br><small>{escape(e['store'])} · our type"
             f" {escape(e['kind'] or '?')} · {escape(holds)}</small></span>"
         )
 
@@ -273,22 +273,22 @@ class _Look:
 # stored stays the field's own value.
 VALUE_BY_KEY = {
     "relation": {
-        "('same', None)": "одна игра",
-        "('series', None)": "одна серия",
-        "('not_related', None)": "не связаны",
-        "('unsure', None)": "не уверен",
-        "('remaster_of', 'first')": "1 — ремастер 2",
-        "('remaster_of', 'second')": "2 — ремастер 1",
-        "('remake_of', 'first')": "1 — ремейк 2",
-        "('remake_of', 'second')": "2 — ремейк 1",
-        "('contains', 'first')": "1 содержит 2",
-        "('contains', 'second')": "2 содержит 1",
-        "('vr_of', 'first')": "1 — VR-версия 2",
-        "('vr_of', 'second')": "2 — VR-версия 1",
+        "('same', None)": "one game",
+        "('series', None)": "one series",
+        "('not_related', None)": "not related",
+        "('unsure', None)": "unsure",
+        "('remaster_of', 'first')": "1 is a remaster of 2",
+        "('remaster_of', 'second')": "2 is a remaster of 1",
+        "('remake_of', 'first')": "1 is a remake of 2",
+        "('remake_of', 'second')": "2 is a remake of 1",
+        "('contains', 'first')": "1 contains 2",
+        "('contains', 'second')": "2 contains 1",
+        "('vr_of', 'first')": "1 is the VR version of 2",
+        "('vr_of', 'second')": "2 is the VR version of 1",
     },
-    "facts_wrong": {"False": "да, верны", "True": "нет, есть ошибка"},
-    "missing_hltb": {"False": "нет", "True": "да, есть"},
-    "name_ok": {"True": "да", "False": "нет"},
+    "facts_wrong": {"False": "yes, right", "True": "no, a mistake"},
+    "missing_hltb": {"False": "no", "True": "yes, there is"},
+    "name_ok": {"True": "yes", "False": "no"},
 }
 
 
@@ -304,34 +304,36 @@ def _value(v: str, key: str = "") -> str:
 
 
 ASK = {
-    "missing_hltb": "У самой игры (не DLC) есть запись HLTB, которой у нас нет?",
-    "series": "В каких сериях игра",
-    "facts_wrong": "Год, студия и издатель верны?",
-    "missing": "Каких версий в магазинах не хватает",
-    "relation": "Как связаны",
-    "name_ok": "Название серии верное?",
-    "addon": "Какой аддон принёс группу",
-    "links": "Какие DLC — какие записи HLTB",
-    "verdict": "Эта запись HLTB — та же игра?",
+    "missing_hltb": "Does the game itself (not a DLC) have an HLTB entry we lack?",
+    "series": "Which series is the game in",
+    "facts_wrong": "Are the year, studio and publisher right?",
+    "missing": "Which store versions are missing",
+    "relation": "How are they related",
+    "name_ok": "Is the series name right?",
+    "addon": "Which add-on brought the group",
+    "links": "Which DLC is which HLTB entry",
+    "verdict": "Is this HLTB entry the same game?",
 }
 
 
 def _subject(key: str, look: _Look) -> tuple[str, str]:
     """`(what the decision is about, the question asked)`."""
     if m := re.fullmatch(r"v(\d+)\.belongs", key):
-        return look.version(int(m[1])), "Относится к игре?"
+        return look.version(int(m[1])), "Is it part of the game?"
     if m := re.fullmatch(r"v(\d+)\.kind", key):
-        return look.version(int(m[1])), "Что это за игра? (у всех версий одной игры одинаково)"
+        return look.version(
+            int(m[1])
+        ), "What kind of game is it? (the same for all versions of one game)"
     if m := re.fullmatch(r"v(\d+)\.hltb(\d+)", key):
-        return look.version(int(m[1])) + " → " + look.hltb(int(m[2])), "HLTB верна?"
+        return look.version(int(m[1])) + " → " + look.hltb(int(m[2])), "Is the HLTB right?"
     if m := re.fullmatch(r"dlc(\d+)\.hltb(\d+)", key):
-        return look.dlc(int(m[1])) + " → " + look.hltb(int(m[2])), "HLTB верна?"
+        return look.dlc(int(m[1])) + " → " + look.hltb(int(m[2])), "Is the HLTB right?"
     if m := re.fullmatch(r"e(\d+)\.kind", key):
-        return look.edition(int(m[1])), "Тип издания"
+        return look.edition(int(m[1])), "Edition type"
     if m := re.fullmatch(r"e(\d+)\.holds", key):
-        return look.edition(int(m[1])), "Это издание этой игры?"
+        return look.edition(int(m[1])), "Is this an edition of this game?"
     if m := re.fullmatch(r"g(\d+)", key):
-        return look.game(int(m[1]), 48), "В серии?"
+        return look.game(int(m[1]), 48), "In the series?"
     return "", ASK.get(key, key)
 
 
@@ -343,7 +345,7 @@ def _head(qid: str, text: str, look: _Look) -> str:
         # without it): every release of the game, then the choice.
         return (
             f"<div class=subj>{look.game(int(parts[0]))}</div>"
-            f"<div class=have><b>Уже есть у нас:</b>{look.releases(int(parts[0]))}</div>"
+            f"<div class=have><b>We already have:</b>{look.releases(int(parts[0]))}</div>"
         )
     if kind in ("G", "E", "H"):
         return f"<div class=subj>{look.game(int(parts[0]))}</div>"
@@ -413,7 +415,7 @@ def _series_label(value: str | None, choices: list[tuple[int, str]]) -> str:
     if not value:
         return ""
     named = dict(choices)
-    return named.get(int(value), f"серия {value}") if value.isdigit() else value
+    return named.get(int(value), f"series {value}") if value.isdigit() else value
 
 
 def _ask(
@@ -426,7 +428,7 @@ def _ask(
     series: list[tuple[int, str]] | None = None,
 ) -> tuple[str, bool]:
     """One decision: a button for each answer the advisers gave, saying who
-    gave it, then «Свой ответ…» with every other answer it can take and a field
+    gave it, then «Own answer…» with every other answer it can take and a field
     for one typed — a tap records it (owner, 2026-10-23). Returns the html and
     whether the advisers agree on it."""
     said = {n: str(per[n].get(key, "—")) for n in names}
@@ -442,16 +444,16 @@ def _ask(
             # One button per series both games are in: the tap says which.
             return "".join(
                 f'<button name="d:{escape(key)}" value="{escape(v)}#{sid}">'
-                f"одна серия — {escape(name)}{small}</button>"
+                f"one series — {escape(name)}{small}</button>"
                 for sid, name in choices
             )
         if v == SERIES:
             # No series both are in yet: the answer names it, typed.
             return (
                 f"<div class='free series'><input class=other name='s:{escape(key)}'"
-                f" list=series-names placeholder='одна серия — какая? (несколько — через запятую)'>"
+                f" list=series-names placeholder='one series — which? (several: comma-separated)'>"
                 f'<button name="d:{escape(key)}" value="{escape(v)}#new">'
-                f"одна серия{small}</button></div>"
+                f"one series{small}</button></div>"
             )
         return (
             f'<button name="d:{escape(key)}" value="{escape(v)}">'
@@ -462,17 +464,17 @@ def _ask(
     more = "".join(button(v) for v in others)
     series_field = (
         f"<div class=free><input class=other name='s:{escape(key)}' list=series-names"
-        f" placeholder='одна серия — другая (несколько — через запятую)'>"
-        f'<button name="d:{escape(key)}" value="{escape(SERIES)}#new">ок</button></div>'
+        f" placeholder='one series — another (several: comma-separated)'>"
+        f'<button name="d:{escape(key)}" value="{escape(SERIES)}#new">ok</button></div>'
         if key == "relation" and choices
         else ""
     )
     own = (
-        "<details class=own><summary>Свой ответ…</summary>"
+        "<details class=own><summary>Own answer…</summary>"
         + (f"<div class=more>{more}</div>" if more else "")
         + series_field
-        + f"<div class=free><input class=other name='o:{escape(key)}' placeholder='вписать'>"
-        f'<button name="d:{escape(key)}" value="">ок</button></div></details>'
+        + f"<div class=free><input class=other name='o:{escape(key)}' placeholder='type one'>"
+        f'<button name="d:{escape(key)}" value="">ok</button></div></details>'
     )
     which = _series_label(labels.get(f"{qid}|{key}.series"), choices)
     mark = (
@@ -595,15 +597,15 @@ def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, li
             out.append(
                 f'<div class=tq id="{escape(qid)}">'
                 f"<h3><span class=badge>{escape(KIND_RU.get(qkind, ''))}</span>"
-                f"<small>советники разошлись · {labelled}/{len(keys)} отвечено</small></h3>"
+                f"<small>advisers disagree · {labelled}/{len(keys)} answered</small></h3>"
                 f"{_head(qid, text, look)}"
                 f'<form method=post action="/trial/label">'
                 f'<input type=hidden name=q value="{escape(qid)}">'
                 f'<input type=hidden name=back value="{escape(back_base)}">'
                 f"{rows}"
-                f'<button class=later formaction="/trial/later">Позже</button></form>'
-                f"<details class=why><summary>почему так ответили</summary>{whys}</details>"
-                f"<details><summary>текст вопроса</summary>"
+                f'<button class=later formaction="/trial/later">Later</button></form>'
+                f"<details class=why><summary>why they answered so</summary>{whys}</details>"
+                f"<details><summary>the question's text</summary>"
                 f"<pre style='white-space:pre-wrap;font-size:12px'>{escape(text)}</pre>"
                 "</details></div>"
             )
@@ -612,9 +614,9 @@ def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, li
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(accepted, ensure_ascii=False, indent=1), "utf-8")
     line = (
-        CSS + f"<p><small>Советники: {escape(', '.join(names))} · отвечено {done}/{total}"
-        f" спорных · где все трое согласны, ответ принят без вас ({len(accepted)})"
-        f" · «Недостающие версии» ждут осьминога (#204)</small></p>"
+        CSS + f"<p><small>Advisers: {escape(', '.join(names))} · answered {done}/{total}"
+        f" disputed · where all three agree, the answer is taken without you ({len(accepted)})"
+        f" · «Missing versions» wait for the octopus (#204)</small></p>"
         "<datalist id=series-names>"
         + "".join(f'<option value="{escape(n)}">' for n in names_list)
         + "</datalist>"
@@ -666,7 +668,7 @@ def register(app: web.Application, trial: Path | None, page) -> None:
         for name, value in form.items():
             if name.startswith("d:"):
                 key = name[2:]
-                # «ок» beside the field carries no value: the typed one is it.
+                # «ok» beside the field carries no value: the typed one is it.
                 answer = str(value) or str(form.get(f"o:{key}") or "").strip()
                 answer, _, which = answer.partition("#")
                 if which == "new":

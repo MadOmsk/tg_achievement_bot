@@ -64,9 +64,9 @@ def test_a_store_link_says_whether_it_is_sold() -> None:
 
     row = {"store": "xbox", "product_id": "BV83SM3191S5", "stand_in": 0, "on_sale": 0}
     link = _store_link(row)  # type: ignore[arg-type]
-    assert "xbox.com" in link and "↗" in link and "снято с продажи" in link
+    assert "xbox.com" in link and "↗" in link and "off sale" in link
     stand_in = {"store": "xbox", "product_id": "1", "stand_in": 1, "on_sale": None}
-    assert "no store page" in _store_link(stand_in) and "неизвестно" in _store_link(stand_in)  # type: ignore[arg-type]
+    assert "no store page" in _store_link(stand_in) and "unknown" in _store_link(stand_in)  # type: ignore[arg-type]
 
 
 async def test_every_page_of_the_viewer_answers(tmp_path: Path, settings, monkeypatch) -> None:

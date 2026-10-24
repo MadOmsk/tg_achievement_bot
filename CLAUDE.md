@@ -2739,6 +2739,10 @@ actually invocable (`tests/test_handler_wiring.py`).
   files deliberately kept in two languages: `README.md` / `README.ru.md`,
   `docs/*.md` / `*.ru.md`, `changelog/<v>.ru.md` / `.en.md` and their summaries,
   and `bot/locales/ru|en/`.
+- **The operator's tools are in English** (owner, 2026-10-24): the catalog
+  viewer (`scripts/catalog_viewer.py`, `scripts/trial_page.py`) and every
+  script's output — page titles, buttons, questions, notes. Only the bot and
+  the Mini App speak Russian, through the `.ftl` files.
 - Comment *why*, not *what* — especially in the pollers and around token refresh.
 - Prefer small, precise changes that preserve behavior unless the task is to change
   it.

@@ -90,8 +90,8 @@ def _confirm(request: web.Request, form, question: str, sides: list[str]) -> web
     body = (
         "".join(f"<p>{side}</p>" for side in sides)
         + "<p>"
-        + _button(request.path, "да, выполнить", fields)
-        + f' <a href="{escape(back)}">отмена</a></p>'
+        + _button(request.path, "yes, do it", fields)
+        + f' <a href="{escape(back)}">cancel</a></p>'
     )
     return _page(question, body)
 
@@ -146,7 +146,7 @@ PAGES = {
     # One tab of manual review (owner, 2026-10-23): the advisers' disputes and
     # the model's doubts in one queue; Proposals, Advised and Trial are gone
     # from the menu (their pages stay at their addresses for an old link).
-    "/review": "Ревью",
+    "/review": "Review",
     "/rules": "Rules",
     "/titles": "Achievement lists",
     "/versions": "Versions",
@@ -154,9 +154,9 @@ PAGES = {
     "/hltb": "HLTB",
     "/fetch": "Fetch state",
     "/payloads": "Payloads",
-    "/decisions": "История ответов",
+    "/decisions": "Answer history",
     "/series": "Series",
-    "/octopus": "Осьминог",
+    "/octopus": "Octopus",
 }
 
 
@@ -291,8 +291,8 @@ def _store_link(row: sqlite3.Row, label: str | None = None, href: str | None = N
 def _sale_word(on_sale: object) -> str:
     """Whether the store offers it now (`versions.on_sale`; owner, 2026-10-12)."""
     if on_sale is None:
-        return "неизвестно"
-    return "в продаже" if on_sale else "снято с продажи"
+        return "unknown"
+    return "on sale" if on_sale else "off sale"
 
 
 def _console_sql(store: str = "v.store", console: str = "v.console") -> str:
@@ -1009,8 +1009,8 @@ async def dlc(request: web.Request) -> web.Response:
         # it is wanted.
         head += (
             f'<form method=post action="/dlc/{dlc_id}/read">'
-            "<button>прочитать страницу PSN</button>"
-            " <small>в списке по id: у игры больше 100 DLC</small></form>"
+            "<button>read the PSN page</button>"
+            " <small>listed by id: the game has over 100 DLC</small></form>"
         )
     body = (
         head
@@ -1586,7 +1586,7 @@ def _game_picker(
     if guess in _GUESS_WORDS:
         quick.append((guess, f"✓ <b>Model</b>: {_relation_sentence(guess, this, that)}"))
     quick += [
-        (f"series#{sid}", f"одна серия — <b>{escape(name)}</b>") for sid, name in series or []
+        (f"series#{sid}", f"one series — <b>{escape(name)}</b>") for sid, name in series or []
     ]
     quick.append(("skip", "ask later"))
     named = (
@@ -1596,8 +1596,8 @@ def _game_picker(
         f'<input type=hidden name=back value="{escape(back)}">'
         '<input type=hidden name=decision value="series#new">'
         "<input name=series_name list=series-names required style='flex:1'"
-        f" placeholder='{'одна серия — другая' if series else 'одна серия — какая?'}"
-        " (несколько — через запятую)'>"
+        f" placeholder='{'one series — another' if series else 'one series — which?'}"
+        " (several: comma-separated)'>"
         "<button>ok</button></form>"
     )
     return (
@@ -1866,7 +1866,7 @@ async def game(request: web.Request) -> web.Response:
             f'<input name=name value="{escape(row["name"])}" size=40> '
             f'ru: <input name=name_ru value="{escape(row["name_ru"] or "")}" size=30> '
             "<button>rename</button></form>"
-            + _button("/octopus/add", "собрать осьминогом", {"keys": f"game:{game_id}"})
+            + _button("/octopus/add", "assemble with the octopus", {"keys": f"game:{game_id}"})
             + f'<form method=post action="{here}/merge">merge this game into game id: '
             "<input name=into size=8> <button>merge</button></form>"
             f'<form method=post action="{here}/kind">this is '
@@ -1991,7 +1991,7 @@ def _identity(conn: sqlite3.Connection, game_id: int) -> str:
     parts = [str(row["name"]), year]
     for field in ("developer", "publisher"):
         if row[field]:
-            parts.append(str(row[field]) + (" и другие" if row[f"more_{field}s"] else ""))
+            parts.append(str(row[field]) + (" and others" if row[f"more_{field}s"] else ""))
     badge = _KIND_BADGES.get(row["kind"], "")
     return f"{' · '.join(parts)} (game {game_id})" + (f" {badge}" if badge else "")
 
@@ -2166,7 +2166,7 @@ async def review(request: web.Request) -> web.Response:
         if advisers_cards:
             sections.append(advisers_line + "".join(advisers_cards))
         elif tab == "advisers":
-            sections.append("<p>(советники ни в чём не расходятся)</p>")
+            sections.append("<p>(the advisers agree on everything)</p>")
     with _db(request) as conn:
         counts = {
             name: conn.execute(
@@ -2180,8 +2180,8 @@ async def review(request: web.Request) -> web.Response:
         skipped = request.app["skipped"]
         back = f"/review?tab={tab}"
         for name, where, title in (
-            ("versions", versions_where, "Версия ↔ игра — модель не уверена"),
-            ("games", games_where, "Связь игр — модель не уверена"),
+            ("versions", versions_where, "Version ↔ game — the model is unsure"),
+            ("games", games_where, "Games related — the model is unsure"),
         ):
             if tab not in ("all", name) or (tab == "all" and not counts[name]):
                 continue
@@ -2208,25 +2208,25 @@ async def review(request: web.Request) -> web.Response:
     kind = request.query.get("kind", "")
     later = request.query.get("later") == "1"
     chips = [
-        chip(f"Все ({total})", "/review", tab == "all" and not kind and not later),
+        chip(f"All ({total})", "/review", tab == "all" and not kind and not later),
         chip(
-            f"Советники разошлись ({advisers_open})",
+            f"Advisers disagree ({advisers_open})",
             "/review?tab=advisers",
             tab == "advisers" and not kind and not later,
         ),
-        chip(f"Версия ↔ игра ({counts['versions']})", "/review?tab=versions", tab == "versions"),
-        chip(f"Связь игр, модель ({counts['games']})", "/review?tab=games", tab == "games"),
-        chip("Разметка", "/review?tab=label", False),
+        chip(f"Version ↔ game ({counts['versions']})", "/review?tab=versions", tab == "versions"),
+        chip(f"Games related, model ({counts['games']})", "/review?tab=games", tab == "games"),
+        chip("Labelling", "/review?tab=label", False),
     ]
     if trial is not None:
         chips += [
             chip(name, f"/review?tab=advisers&kind={k}", tab == "advisers" and kind == k)
             for k, name in trial_page.kinds()
         ]
-        chips.append(chip("Отложенные", "/review?tab=advisers&later=1&done=1", later))
+        chips.append(chip("Postponed", "/review?tab=advisers&later=1&done=1", later))
     head = (
         f"<p>{' · '.join(chips)}</p>"
-        "<p><small>Одно нажатие — ответ записан. «Свой ответ…» — остальные варианты.</small></p>"
+        "<p><small>One tap records the answer. «Own answer…» has the rest.</small></p>"
     )
     with _db(request) as conn:
         names = [
@@ -2287,10 +2287,11 @@ def _label_queue(request: web.Request) -> str:
             conn, [r for _, r, _ in found[:PAGE_SIZE]], "/review?tab=label", None, _label_picker
         )
     return (
-        "<h2>Разметка — редкие связи</h2>"
+        "<h2>Labelling — rare relations</h2>"
         f"<p><small>{tally}</small></p>"
-        "<p><small>Пары, где модель допускает VR-версию, сборник, ремейк или ремастер;"
-        " первым — то, на что у тебя меньше всего ответов. Каждый ответ идёт в обучение."
+        "<p><small>Pairs where the model allows a VR version, a compilation, a remake"
+        " or a remaster;"
+        " first what you have answered least. Every answer goes into training."
         "</small></p>" + rows
     )
 
@@ -3129,8 +3130,8 @@ async def game_merge(request: web.Request) -> web.Response:
         raise _back(f"/game/{game_id}", "a game id to merge into, please")
     if not form.get("confirmed"):
         with _db(request) as conn:
-            sides = [_game_said(conn, game_id), "→ в →", _game_said(conn, int(into))]
-        return _confirm(request, form, "Слить игры?", sides)
+            sides = [_game_said(conn, game_id), "→ into →", _game_said(conn, int(into))]
+        return _confirm(request, form, "Merge the games?", sides)
     repo = _repo(request)
     a, b = await _game_anchors(repo, game_id, int(into))
     await _label(repo, a, b, "same")
@@ -3151,7 +3152,7 @@ async def game_relate(request: web.Request) -> web.Response:
     if not form.get("confirmed"):
         with _db(request) as conn:
             sides = [_game_said(conn, game_id), f"is {kind}", _game_said(conn, int(related))]
-        return _confirm(request, form, "Связать игры?", sides)
+        return _confirm(request, form, "Relate the games?", sides)
     repo = _repo(request)
     a, b = await _game_anchors(repo, game_id, int(related))
     await _label(repo, a, b, kind)
@@ -3225,7 +3226,7 @@ def _member_toggle(
     """The operator's "not in this series" / "in it after all"; `short` on a
     row that already names the game."""
     if short:
-        label = "исключить" if member else "вернуть"
+        label = "exclude" if member else "restore"
     else:
         label = f"not in «{name}»" if member else f"in «{name}» after all"
     return _button(
@@ -3390,28 +3391,28 @@ async def octopus_page(request: web.Request) -> web.Response:
             " WHERE source = 'octopus' ORDER BY checked_at DESC LIMIT 30"
         ).fetchall()
     feed = (
-        '<form method=post action="/octopus/add"><p>Ссылки (Steam, Xbox, PlayStation Store,'
-        " HowLongToBeat), ключи (<code>game:12</code>, <code>list:psn:NPWR…</code>,"
+        '<form method=post action="/octopus/add"><p>Links (Steam, Xbox, PlayStation Store,'
+        " HowLongToBeat), keys (<code>game:12</code>, <code>list:psn:NPWR…</code>,"
         " <code>edition:5</code>, <code>series:7</code>, <code>account:psn:…</code>)"
-        " или названия — по одному в строке:</p>"
-        "<textarea name=keys rows=5 cols=80></textarea><br><button>в очередь</button></form>"
+        " or names — one per line:</p>"
+        "<textarea name=keys rows=5 cols=80></textarea><br><button>queue</button></form>"
     )
     run = (
-        "<p><b>идёт прогон…</b> (обнови страницу)</p>"
+        "<p><b>running…</b> (reload the page)</p>"
         if busy
-        else '<form method=post action="/octopus/run">прогнать <input name=limit value=10 size=4>'
-        " записей <button>запустить</button></form>"
+        else '<form method=post action="/octopus/run">run <input name=limit value=10 size=4>'
+        " entries <button>start</button></form>"
     )
     body = (
         _flash(request)
         + feed
         + run
         + (f"<pre>{escape(last)}</pre>" if last else "")
-        + "<h2>Проверки</h2>"
+        + "<h2>Checks</h2>"
         + _table(checks)  # type: ignore[arg-type]
-        + f"<h2>Очередь: {total}</h2>"
+        + f"<h2>Queue: {total}</h2>"
         + _table(waiting)
-        + "<h2>Последние сборки</h2>"
+        + "<h2>Latest assemblies</h2>"
         + _table(recent)
     )
     return _page(PAGES["/octopus"], body)
@@ -3498,8 +3499,8 @@ async def series_merge(request: web.Request) -> web.Response:
         raise _back(f"/series/{series_id}", "a series id, please")
     if not form.get("confirmed"):
         with _db(request) as conn:
-            sides = [_series_said(conn, series_id), "→ в →", _series_said(conn, int(into))]
-        return _confirm(request, form, "Слить серии?", sides)
+            sides = [_series_said(conn, series_id), "→ into →", _series_said(conn, int(into))]
+        return _confirm(request, form, "Merge the series?", sides)
     await _repo(request).merge_series(series_id, int(into))
     raise _back(f"/series/{into}", f"series {series_id} merged into this one")
 
@@ -3517,8 +3518,8 @@ async def series_member(request: web.Request) -> web.Response:
     if form.get("ask") and not form.get("confirmed"):
         # Typed by id on the series page (the toggles name their game).
         with _db(request) as conn:
-            sides = [_game_said(conn, int(game)), "→ в серию →", _series_said(conn, series_id)]
-        return _confirm(request, form, "Добавить игру в серию?", sides)
+            sides = [_game_said(conn, int(game)), "→ into series →", _series_said(conn, series_id)]
+        return _confirm(request, form, "Add the game to the series?", sides)
     await _repo(request).set_series_member(int(game), series_id, member)
     raise _back(back, "in the series" if member else "not in the series")
 
@@ -3534,8 +3535,12 @@ async def game_series_add(request: web.Request) -> web.Response:
         series_id = int(series)
         if not form.get("confirmed"):
             with _db(request) as conn:
-                sides = [_game_said(conn, game_id), "→ в серию →", _series_said(conn, series_id)]
-            return _confirm(request, form, "Добавить игру в серию?", sides)
+                sides = [
+                    _game_said(conn, game_id),
+                    "→ into series →",
+                    _series_said(conn, series_id),
+                ]
+            return _confirm(request, form, "Add the game to the series?", sides)
     elif name:
         series_id = await repo.create_series(name)
     else:
