@@ -992,14 +992,16 @@ What the stores and HLTB say about a game, collected but not shown yet
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own
     version as the subject), and the weights are fitted by gradient descent
-    **pulled towards the current ones** (a proximal step) — weakly
-    (`strength` 0.001, step 0.5, 800 passes: held out, a stronger pull kept
-    the weights near their start and lost accuracy, 85% against 80%). The script prints
-    held-out accuracy before and after and the weights that moved, writes them
-    as JSON, and changes nothing: `WEIGHTS` is edited by hand once the fit is
-    judged better. **A label weighs by who gave it**: the operator's 1.0, the
-    advisers' `match_fit.ADVISER_WEIGHT` (0.6); the script prints the count
-    per source.
+    **pulled towards the current ones** (a proximal step, `strength` 0.001,
+    step 0.5, 800 passes); **the bias is never fitted** (labels come from the
+    review list), and a class with fewer than `FEW_LABELS` labels is pulled
+    harder. A label weighs by who gave it (`label_weight`). **A fit is judged
+    held out by game** (labels joined by a game sit in one fold — a random
+    split flattered it by ~4 points) **and on the operator's labels alone**
+    (`gate`; the advisers' scores are printed beside, never decide). The
+    script also scores every pair the linker compares with both weights and
+    counts what would move. It changes nothing: `WEIGHTS` is edited by hand,
+    and only after a relink on a copy has been looked at.
   - **Doubtful pairs go to two advisers first** (owner, 2026-10-12;
     `services/advice.py`, `scripts/advise_pairs.py`). Where the model is
     sure it decides alone; the pairs it is not sure of — the review list

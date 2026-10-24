@@ -706,11 +706,14 @@ def probabilities(
     return {c: v / total for c, v in exp.items()}
 
 
-def compare(a: Candidate, b: Candidate) -> Verdict:
-    """How two versions relate, and how sure the model is."""
+def compare(
+    a: Candidate, b: Candidate, weights: dict[str, dict[str, float]] | None = None
+) -> Verdict:
+    """How two versions relate, and how sure the model is (`weights`: other
+    weights than `WEIGHTS`, a fit's, to see what it would change)."""
     s, o = subject_of(a, b)
     f = features(a, b)
-    probs = probabilities(f)
+    probs = probabilities(f, weights)
     ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
     (relation, p), (_second, p2) = ranked[0], ranked[1]
     best_link = max(((c, probs[c]) for c in CLASSES), key=lambda kv: kv[1])
@@ -727,7 +730,7 @@ def compare(a: Candidate, b: Candidate) -> Verdict:
         relation, p = best_link
     else:
         state = "apart"
-    w = WEIGHTS.get(relation, {})
+    w = (weights or WEIGHTS).get(relation, {})
     reasons = [f"{relation} {p:.2f}"] + [
         f"{k} {w.get(k, 0.0) * v:+.1f}"
         for k, v in sorted(f.items(), key=lambda kv: -abs(w.get(kv[0], 0.0) * kv[1]))
