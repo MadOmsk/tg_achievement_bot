@@ -1,4 +1,5 @@
-"""The octopus's queue and the linker's dirty set (#215, migration 126)."""
+"""The octopus's queue and what it reads to assemble a game (#215, migration
+126)."""
 
 from __future__ import annotations
 
@@ -6,42 +7,34 @@ from datetime import timedelta
 
 from bot.util import utcnow, utcnow_iso
 
-# A failed item is asked again in an hour, and dropped after three tries; the
+# A failed entry is asked again in an hour, and dropped after three tries; the
 # source's own `fetch_state` keeps the error.
 RETRY = timedelta(hours=1)
 TRIES = 3
 
 
 class _OctopusRepo:
-    async def octopus_enqueue(self, key: str, hops: int, reason: str = "") -> bool:
-        """Put a key in the queue, due now; a key already waiting keeps the
-        fewer hops. Returns whether it was new."""
-        cursor = await self._conn.execute("SELECT hops FROM octopus_queue WHERE key = ?", (key,))
-        row = await cursor.fetchone()
-        if row is not None:
-            if hops < int(row[0]):
-                await self._conn.execute(
-                    "UPDATE octopus_queue SET hops = ? WHERE key = ?", (hops, key)
-                )
-                await self._conn.commit()
-            return False
+    # ------------------------------------------------------------ the queue
+
+    async def octopus_enqueue(self, key: str, reason: str = "") -> bool:
+        """Put an entry in the queue, due now. Returns whether it was new."""
         now = utcnow_iso()
-        await self._conn.execute(
-            "INSERT INTO octopus_queue (key, hops, reason, due_at, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (key, hops, reason, now, now),
+        cursor = await self._conn.execute(
+            "INSERT OR IGNORE INTO octopus_queue (key, reason, due_at, created_at)"
+            " VALUES (?, ?, ?, ?)",
+            (key, reason, now, now),
         )
         await self._conn.commit()
-        return True
+        return cursor.rowcount == 1
 
-    async def octopus_due(self, limit: int) -> list[tuple[str, int, str]]:
-        """`(key, hops, reason)` due now, the nearest to what was asked first."""
+    async def octopus_due(self, limit: int) -> list[tuple[str, str]]:
+        """`(key, reason)` due now, the oldest first."""
         cursor = await self._conn.execute(
-            "SELECT key, hops, reason FROM octopus_queue WHERE due_at <= ?"
-            " ORDER BY hops, due_at, key LIMIT ?",
+            "SELECT key, reason FROM octopus_queue WHERE due_at <= ?"
+            " ORDER BY due_at, created_at, key LIMIT ?",
             (utcnow_iso(), limit),
         )
-        return [(str(r[0]), int(r[1]), str(r[2] or "")) for r in await cursor.fetchall()]
+        return [(str(r[0]), str(r[1] or "")) for r in await cursor.fetchall()]
 
     async def octopus_done(self, key: str) -> None:
         await self._conn.execute("DELETE FROM octopus_queue WHERE key = ?", (key,))
@@ -62,37 +55,24 @@ class _OctopusRepo:
         cursor = await self._conn.execute("SELECT COUNT(*) FROM octopus_queue")
         return int((await cursor.fetchone())[0])
 
-    async def mark_dirty(self, version_ids: list[int]) -> None:
-        now = utcnow_iso()
-        await self._conn.executemany(
-            "INSERT OR IGNORE INTO octopus_dirty (version_id, marked_at) VALUES (?, ?)",
-            [(int(v), now) for v in dict.fromkeys(version_ids)],
-        )
-        await self._conn.commit()
+    # ------------------------------------------------------- entry → anchor
 
-    async def take_dirty(self) -> list[int]:
-        """The dirty versions, taken: the set is empty after."""
-        async with self.transaction():
-            cursor = await self._conn.execute("SELECT version_id FROM octopus_dirty")
-            ids = [int(r[0]) for r in await cursor.fetchall()]
-            await self._conn.execute("DELETE FROM octopus_dirty")
-        return ids
-
-    async def octopus_lists_of_game(self, game_id: int) -> list[tuple[str, str]]:
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT platform, title_id FROM versions"
-            " WHERE game_id = ? AND platform IS NOT NULL AND title_id IS NOT NULL",
-            (game_id,),
-        )
-        return [(str(r[0]), str(r[1])) for r in await cursor.fetchall()]
-
-    async def octopus_hltb_of_game(self, game_id: int) -> list[int]:
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT vh.hltb_id FROM version_hltb vh"
-            " JOIN versions v ON v.version_id = vh.version_id WHERE v.game_id = ?",
-            (game_id,),
-        )
+    async def _ids(self, sql: str, args: tuple) -> list[int]:
+        cursor = await self._conn.execute(sql, args)
         return [int(r[0]) for r in await cursor.fetchall()]
+
+    async def versions_of_store_product(self, store: str, product_id: str) -> list[int]:
+        return await self._ids(
+            "SELECT version_id FROM versions WHERE store = ? AND product_id = ?"
+            " ORDER BY version_id",
+            (store, product_id),
+        )
+
+    async def version_of_dlc(self, dlc_id: int) -> int | None:
+        found = await self._ids("SELECT version_id FROM dlcs WHERE dlc_id = ?", (dlc_id,))
+        return found[0] if found else None
+
+    # --------------------------------------------------------- the assembly
 
     async def octopus_names_of_game(self, game_id: int) -> list[str]:
         """Every name the game is known by (#215: one name found too little):
@@ -117,3 +97,16 @@ class _OctopusRepo:
             cursor = await self._conn.execute(sql, (game_id,))
             names += [str(r[0]) for r in await cursor.fetchall()]
         return names
+
+    async def octopus_gaps(self, game_id: int) -> dict[str, int]:
+        """What a game assembled still lacks: stand-ins (a list with no store
+        product), and how many of its versions have an HLTB entry."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) AS versions, COALESCE(SUM(stand_in), 0) AS stand_ins,"
+            " (SELECT COUNT(*) FROM version_hltb vh JOIN versions w"
+            "   ON w.version_id = vh.version_id WHERE w.game_id = ?) AS hltb"
+            " FROM versions WHERE game_id = ?",
+            (game_id, game_id),
+        )
+        row = await cursor.fetchone()
+        return {k: int(row[k] or 0) for k in ("versions", "stand_ins", "hltb")}

@@ -1,15 +1,14 @@
-"""The octopus's queue worked through (#204, #215): seeds put in the queue —
-games, achievement lists, Steam apps, HLTB pages, names — then the keys due
-looked for in every store, a batch at a time, the linker after each batch
-(`game_link.link_dirty`). Resumable: the queue is in the database, and a key
-done is asked again only when due; `--force` asks everything again. The
-database is copied into `backups/` first.
+"""The octopus's queue worked through (#204, #215): entries put in the queue,
+then each one's game assembled whole (`services/octopus.py`). Resumable: the
+queue is in the database, and a game assembled is assembled again only when
+due; `--force` asks everything again. The database is copied into `backups/`
+first.
 
     BOT_ENV_FILE=…/.env.games .venv/Scripts/python.exe -X utf8 -m scripts.octopus \\
         --db data/games.db --auth-db data/games-bot.db --seed game:4070
-    … --seed list:psn:NPWR12345_00 --seed steam:620 --seed hltb:10270 \\
-      --seed "name:Dead Rising"
-    … --which singles|stand-ins|all [--limit 50] [--batch 20] [--no-link]
+    … --seed list:psn:NPWR12345_00 --seed product:steam:620 --seed dlc:77 \\
+      --seed achievement:steam:620:ACH.WAKE_UP --seed hltb:10270 --seed "name:Dead Rising"
+    … --which singles|stand-ins|all [--limit 50]
     … (no seed: only what is already in the queue)
 """
 
@@ -28,14 +27,12 @@ from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
-from bot.services.octopus import BATCH, OctopusCollector, game_key, search_key
+from bot.services.octopus import KINDS, OctopusCollector, game_key, search_key
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.store_collect import StoreCollector
 
 logging.basicConfig(level="WARNING")
-
-KINDS = ("game", "list", "steam", "hltb", "name")
 
 
 def _backup(db_path: Path) -> Path:
@@ -64,10 +61,8 @@ async def main() -> int:
     parser.add_argument("--db", required=True)
     parser.add_argument("--seed", action="append", default=[], help="kind:value, see above")
     parser.add_argument("--which", choices=["all", "singles", "stand-ins"])
-    parser.add_argument("--limit", type=int, default=None, help="keys handled at most")
-    parser.add_argument("--batch", type=int, default=BATCH, help="keys between linker passes")
+    parser.add_argument("--limit", type=int, default=None, help="entries handled at most")
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--no-link", action="store_true", help="leave the games as they are")
     parser.add_argument(
         "--auth-db",
         help="the database whose PSN and Steam keys are used (the dev bot's; never production's)",
@@ -103,14 +98,18 @@ async def main() -> int:
             seeds += [game_key(g) for g in await repo.game_ids_for_sweep(args.which)]
         added = sum([await octopus.enqueue(s, reason="seed") for s in seeds])
         print(f"queued {added} new of {len(seeds)} seeds; waiting {await repo.octopus_waiting()}")
-        report = await octopus.run(
-            limit=args.limit, batch=args.batch, force=args.force, link=not args.no_link
-        )
+        report = await octopus.run(limit=args.limit, force=args.force)
+        for game in report.games:
+            print(
+                f"{game.entry} → game {game.game_id} {game.name!r}: versions"
+                f" {game.versions_before} → {game.versions_after} in {game.rounds} rounds,"
+                f" found {len(set(game.found))}, to review {game.review};"
+                f" stand-ins {game.stand_ins}, HLTB on {game.hltb} versions"
+                + (f"; errors {len(game.errors)}" if game.errors else "")
+            )
         print(
-            f"handled {report.handled} keys in {report.batches} batches:"
-            f" done {report.done}, not due {report.skipped}, games gone {report.gone};"
-            f" queued on the way {report.queued}; versions found {len(set(report.found))};"
-            f" games relinked {report.linked}, to review {report.review}"
+            f"handled {report.handled}: games {len(report.games)}, not due {report.skipped},"
+            f" led nowhere {report.gone}, queued on the way {report.queued}"
         )
         for line in report.failed[:20]:
             print("  error:", line)

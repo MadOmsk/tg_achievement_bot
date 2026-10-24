@@ -636,14 +636,10 @@ async def spread_hltb(repo: Repo, game_ids: list[int] | None = None) -> int:
     return made
 
 
-async def link_dirty(repo: Repo) -> LinkReport | None:
-    """The linker's stage after the octopus's (#215): every version a batch
-    touched, relinked once — never inside the collection, so the games do not
-    change under it and the result does not depend on the order. None when
-    nothing was touched."""
-    version_ids = await repo.take_dirty()
-    if not version_ids:
-        return None
+async def link_and_spread(repo: Repo, version_ids: list[int]) -> LinkReport:
+    """These versions relinked with their neighbourhood, and HLTB spread over
+    the games they are in now — the linker's own step, which the octopus calls
+    once per round of a game's assembly (#215), never inside a collection."""
     report = await GameLinker(repo).link_versions(version_ids)
     if report.games:
         # Only these games: `None` would mean every game.

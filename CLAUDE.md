@@ -838,22 +838,26 @@ What the stores and HLTB say about a game, collected but not shown yet
   teaches. What they disagree on is the operator's, in the viewer's one
   review tab (`/review`; `/trial` is an old address of it).
 - **The octopus** (#204, #215; owner, 2026-10-16/17, 2026-10-24;
-  `services/octopus.py`, `scripts/octopus.py`, migration 126): **collection
-  only** — whatever a game is reached from looked for in every store. A queue
-  (`octopus_queue`) on **stable keys**, never only a game id (a relink changes
-  it): `game:<id>` (opened into its lists, HLTB pages and every different name
-  it goes by — its own, Russian, versions', editions', HLTB's and alias,
-  normalized, six at most; PSN concepts' products read at once),
-  `list:<platform>:<title_id>` (`StoreCollector.collect`), `steam:<appid>`,
-  `hltb:<id>` (its Steam apps, then a search by its name), `name:<normalized>`
-  (every store and HLTB). A key done is stamped (`fetch_state`, source
-  `octopus`) and asked again only when due, whatever game it is in by then;
-  `hops` from the seed, none queued past `MAX_HOPS` (2). The versions touched
-  are marked dirty (`octopus_dirty`) and the **linker is a stage of its own**:
-  `game_link.link_dirty` after each batch, never inside the collection. More
-  entry points (DLC, edition, achievement, series, account, news, a pasted
-  link), the step-12 checks page and the triggers from the bot: later stages
-  of #215.
+  `services/octopus.py`, `scripts/octopus.py`, migration 126): **one game
+  assembled whole** — every version of the same game, each with its store
+  data, achievement list, DLC, editions and HLTB — by a chain with a goal, not
+  a crawl. Entry → anchor (an achievement → its list; a DLC → its version; a
+  product, a list → itself; an HLTB page → the versions linked to it, else a
+  search by its name; a name → one entry per game it finds; a game → its
+  anchor version) → the game it is in → each version expanded (its list or
+  Steam app collected; the game searched by every different name — its own,
+  Russian, versions', editions', HLTB's and alias, normalized, six at most;
+  PSN concepts' products) → the linker (`game_link.link_and_spread`) over
+  this game's neighbourhood → again while the game gains versions
+  (`MAX_ROUNDS` 4). **Only what the linker puts in this game is expanded**: a
+  remaster, a remake, a compilation, a series, another game or a doubt for
+  review is kept and never followed. Done: every version's anchor stamped
+  (`fetch_state`, source `octopus`), so another entry to the same game waits
+  until due; stand-ins and HLTB reported. The queue (`octopus_queue`) keeps
+  entries by keys a relink cannot change (`list:`, `product:`,
+  `achievement:`, `dlc:`, `hltb:`, `name:`, `game:`). More entries (edition,
+  series, account, news, a pasted link), the step-12 page and the triggers
+  from the bot: later stages of #215.
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions

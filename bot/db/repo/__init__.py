@@ -55,7 +55,7 @@ Layout:
                     entries, each source's last answer and when to ask again (091).
     _games.py       games over versions: which game each version is, how, and
                     who decided it (092).
-    _octopus.py     the octopus's queue and the linker's dirty set (#215).
+    _octopus.py     the octopus's queue and what it reads to assemble a game (#215).
     _series.py      game series: which games are in each, proposed by the
                     linker or said by the operator and the advisers (105).
 
