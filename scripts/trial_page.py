@@ -28,6 +28,7 @@ from urllib.parse import quote
 
 from aiohttp import web
 
+from bot.db.repo._sql import OWN_EDITION
 from scripts.compare_answers import KINDS, decisions, read_answers
 
 KIND_RU = {
@@ -101,6 +102,31 @@ a{color:#0b57d0}
 .own .free{display:flex;gap:4px;margin-top:4px}
 </style>
 """
+
+
+def own_editions(conn: sqlite3.Connection, game_id: int) -> set[int]:
+    """The game's own editions as the database says now (`_sql.OWN_EDITION`)."""
+    return {
+        int(r[0])
+        for r in conn.execute(
+            "SELECT DISTINCT e.edition_id FROM editions e"
+            " JOIN edition_items i ON i.edition_id = e.edition_id"
+            " JOIN versions v ON v.version_id = i.version_id"
+            f" WHERE v.game_id = ? AND {OWN_EDITION}",
+            (game_id,),
+        )
+    }
+
+
+def current_keys(conn: sqlite3.Connection, qid: str, keys: list[str]) -> list[str]:
+    """The trial is a snapshot (2026-10-16): of an editions question, only
+    the editions still the game's own are asked — FIFA 16's bundles were
+    filed under Plants vs. Zombies, which they only throw in."""
+    kind, _, rest = qid.partition(":")
+    if kind != "E" or not rest.isdigit():
+        return keys
+    own = own_editions(conn, int(rest))
+    return [k for k in keys if not (m := re.fullmatch(r"e(\d+)\.\w+", k)) or int(m[1]) in own]
 
 
 def _questions(trial: Path) -> list[tuple[str, str]]:
@@ -575,6 +601,7 @@ def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, li
             disputed, alike = _disputed(qid, per, names)
             accepted.update({f"{qid}|{k}": v for k, v in alike.items()})
             keys = sorted(set(disputed) | set(alike)) if show_all else disputed
+            keys = current_keys(conn, qid, keys)
             qkind = qid.split(":")[0]
             if not keys or (qkind in WAITING_FOR_OCTOPUS and kind != qkind):
                 continue

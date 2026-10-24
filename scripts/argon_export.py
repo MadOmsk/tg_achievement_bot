@@ -34,6 +34,7 @@ import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
+from bot.db.repo._sql import OWN_EDITION
 from bot.services.stores import console_label
 
 INSTRUCTIONS = """You are checking a video game database, question by question. Rely on what you
@@ -316,9 +317,9 @@ def edition_questions(conn: sqlite3.Connection) -> list[dict]:
         "SELECT DISTINCT v.game_id, e.edition_id, e.store, e.name, e.kind FROM editions e"
         " JOIN edition_items i ON i.edition_id = e.edition_id"
         " JOIN versions v ON v.version_id = i.version_id WHERE v.game_id IS NOT NULL"
-        # Only a game's own editions (owner, 2026-10-24): a bundle of several
-        # games, a game thrown in, a pack of add-ons are not asked about.
-        " AND e.scope = 'edition' AND COALESCE(i.role, 'main') = 'main'"
+        # Only a game's own editions: a bundle of several games, a game
+        # thrown in, a pack of add-ons are not asked about.
+        f" AND {OWN_EDITION}"
         " ORDER BY v.game_id, e.edition_id",
     )
     by_game: dict[int, list] = defaultdict(list)

@@ -28,7 +28,7 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 from bot.db.repo import Database, Repo
-from bot.db.repo._sql import STEAM_APP_OF_TITLE
+from bot.db.repo._sql import BONUS_IN, OWN_EDITION, PART_OF_BUNDLE, STEAM_APP_OF_TITLE
 from bot.services.advice import (
     ADVISER_SOURCES,
     AdviceStore,
@@ -1832,11 +1832,9 @@ async def game(request: web.Request) -> web.Response:
             " JOIN versions v ON v.version_id = i.version_id"
             " WHERE v.game_id = ? AND {} ORDER BY e.store, e.name"
         )
-        editions = conn.execute(
-            held.format("e.scope = 'edition' AND COALESCE(i.role, 'main') = 'main'"), (game_id,)
-        ).fetchall()
-        in_bundles = conn.execute(held.format("i.role = 'part'"), (game_id,)).fetchall()
-        bonus_in = conn.execute(held.format("i.role = 'bonus'"), (game_id,)).fetchall()
+        editions = conn.execute(held.format(OWN_EDITION), (game_id,)).fetchall()
+        in_bundles = conn.execute(held.format(PART_OF_BUNDLE), (game_id,)).fetchall()
+        bonus_in = conn.execute(held.format(BONUS_IN), (game_id,)).fetchall()
         packs = conn.execute(
             "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.on_sale,"
             " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id), '; ')"

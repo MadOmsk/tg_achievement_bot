@@ -304,6 +304,16 @@ def rarity(prefix: str = "s.") -> str:
 # The rarity threshold, one for every chat (owner, 2026-10-01): read where a
 # chat's settings are read, so every caller that took the chat's own value
 # gets the global one. chat_settings.rare_threshold_percent is left unread.
+# A store's edition `e` is a game's own when the edition's item `i` on one
+# of the game's versions is its main game (owner, 2026-10-24;
+# `stores.classify_bundle`): a bundle of several games, a game thrown in as
+# a bonus, a pack of add-ons are none of its editions. Every reader of "a
+# game's editions" uses this (the viewer, the advisers' export and cards).
+OWN_EDITION = "e.scope = 'edition' AND COALESCE(i.role, 'main') = 'main'"
+# … and the store products it is one game of, or thrown into.
+PART_OF_BUNDLE = "i.role = 'part'"
+BONUS_IN = "i.role = 'bonus'"
+
 GLOBAL_RARE_THRESHOLD = (
     "COALESCE((SELECT CAST(value AS REAL) FROM app_settings"
     " WHERE key = 'rare_threshold_percent'), 10.0)"

@@ -65,3 +65,23 @@ def test_one_series_says_which() -> None:
 def test_several_series_are_typed_by_commas() -> None:
     assert trial_page.series_names(" LEGO, Batman ,,LEGO ") == ["LEGO", "Batman"]
     assert trial_page.series_names("") == []
+
+
+def test_an_edition_no_longer_the_games_own_is_not_asked() -> None:
+    """The trial is a snapshot: FIFA 16's bundles throw Plants vs. Zombies in,
+    and are none of its editions any more (2026-10-24)."""
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        "CREATE TABLE versions (version_id INTEGER, game_id INTEGER);"
+        "CREATE TABLE editions (edition_id INTEGER, scope TEXT);"
+        "CREATE TABLE edition_items (edition_id INTEGER, version_id INTEGER, role TEXT);"
+        "INSERT INTO versions VALUES (1, 837), (2, 2844);"
+        "INSERT INTO editions VALUES (10, 'edition'), (11, 'edition');"
+        # 10: FIFA's edition, PvZ a bonus in it; 11: PvZ's own.
+        "INSERT INTO edition_items VALUES (10, 2, 'main'), (10, 1, 'bonus'), (11, 1, 'main');"
+    )
+    keys = ["e10.kind", "e10.holds", "e11.kind", "name"]
+    assert trial_page.current_keys(conn, "E:837", keys) == ["e11.kind", "name"]
+    assert trial_page.current_keys(conn, "R:1:2", keys) == keys
