@@ -933,15 +933,29 @@ def version_year(
         years.append(int(m.group(1)))
     if hltb_year:
         years.append(int(hltb_year))
-    if release_date and release_date[:4].isdigit():
-        years.append(int(release_date[:4]))
+    if (year := store_year(release_date)) is not None:
+        years.append(year)
     return min(years) if years else None
+
+
+# A store's "date" for no date (2026-10-24): Microsoft's 2799-12-31 and
+# 9998-12-30, said of a product not on sale.
+PLACEHOLDER_YEAR = 2100
+
+
+def store_year(release_date: str | None) -> int | None:
+    """A store's release year, or None for none or a placeholder."""
+    if release_date and release_date[:4].isdigit() and int(release_date[:4]) < PLACEHOLDER_YEAR:
+        return int(release_date[:4])
+    return None
 
 
 def candidate_year(row: dict) -> int | None:
     """The one year of a version, for the matcher and the game's facts
     alike: its name's and its store's; its HLTB entry's only for a stand-in
-    no store describes (an HLTB entry is found by name — a weak sign)."""
+    no store describes (an HLTB entry is found by name — a weak sign; and it
+    is the game's first year, which made a late port look like a remake,
+    2026-10-24)."""
     hltb = row.get("hltb_year") if row.get("stand_in") else None
     return version_year(row.get("name"), row.get("release_date"), hltb)
 

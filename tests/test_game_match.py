@@ -1415,3 +1415,12 @@ def test_a_name_never_learned_says_nothing_about_a_pair() -> None:
     f = features(unnamed, _c(2, "Days Gone 2", console="ps4", year=2019))
     assert f.get("name_unknown") == 1.0
     assert not {"name", "numbers_differ", "subtitle"} & set(f)
+
+
+def test_a_placeholder_date_is_no_year() -> None:
+    """Microsoft's 2799-12-31 is no date (2026-10-24: «Marvel vs. Capcom 3
+    (2799)»)."""
+    from bot.services.game_match import candidate_year
+
+    assert candidate_year({"name": "Marvel vs. Capcom 3", "release_date": "2799-12-31"}) is None
+    assert candidate_year({"name": "Halo", "release_date": "2021-11-15"}) == 2021
