@@ -92,3 +92,77 @@ async def test_an_add_on_is_a_dlc_of_the_version_of_its_console(repo: Repo) -> N
     assert report.dlcs == 1
     cursor = await repo._conn.execute("SELECT version_id, name, store_id FROM dlcs")
     assert [tuple(r) for r in await cursor.fetchall()] == [(ps4, "Dine Out", "UP1-CUSA1_00-ADDON")]
+
+
+async def test_a_concept_of_many_add_ons_is_kept_as_a_list(repo: Repo, monkeypatch) -> None:
+    """DEAD OR ALIVE 5 Last Round has a thousand add-ons, two seconds a page
+    (owner, 2026-10-24): past `DLC_PAGES_MAX` only the game's pages are read,
+    each add-on is a DLC by its id, and one page is read when wanted."""
+    ps4 = await repo.save_version(
+        StoreVersion(
+            store="psn", product_id="1", console="ps4", name="G", store_ids=[("psn_concept", "42")]
+        ),
+        platform=None,
+        title_id=None,
+        origin="played",
+    )
+    many = [f"UP1-CUSA1_00-ADDON{i:03}" for i in range(psn_products.DLC_PAGES_MAX + 1)]
+    await repo.save_payload(
+        "psn:42",
+        "psn_store",
+        {
+            "categorizedProducts": [
+                {"topCategory": "GAME", "ids": ["UP1-CUSA1_00-GAME"]},
+                {"topCategory": "ADD_ON", "ids": many},
+            ]
+        },
+    )
+    asked: list[str] = []
+
+    async def fetch(product_id: str):
+        asked.append(product_id)
+        return page.extract(_page(product_id, f"Page of {product_id}"))
+
+    monkeypatch.setattr(psn_products.page, "fetch_product", fetch)
+    report = await psn_products.read_pages(repo, None)
+    assert asked == ["UP1-CUSA1_00-GAME"]
+    assert report.listed_only == len(many)
+
+    placed = await psn_products.put_in_place(repo, None, {"42"})
+    assert placed.dlcs == len(many) and placed.editions == 1
+    cursor = await repo._conn.execute(
+        "SELECT COUNT(*), COUNT(name) FROM dlcs WHERE version_id = ?", (ps4,)
+    )
+    assert tuple(await cursor.fetchone()) == (len(many), 0)
+
+    # Wanted: one page read, the DLC named.
+    assert await psn_products.read_one(repo, many[7])
+    cursor = await repo._conn.execute("SELECT name FROM dlcs WHERE store_id = ?", (many[7],))
+    assert (await cursor.fetchone())[0] == f"Page of {many[7]}"
+
+
+async def test_put_in_place_keeps_to_the_concepts_it_is_given(repo: Repo) -> None:
+    for concept, product in (("42", "1"), ("43", "2")):
+        await repo.save_version(
+            StoreVersion(
+                store="psn",
+                product_id=product,
+                console="ps4",
+                name="G",
+                store_ids=[("psn_concept", concept)],
+            ),
+            platform=None,
+            title_id=None,
+            origin="played",
+        )
+        addon = f"UP1-CUSA{product}_00-ADDON"
+        await repo.save_payload(
+            f"psn:{concept}",
+            "psn_store",
+            {"categorizedProducts": [{"topCategory": "ADD_ON", "ids": [addon]}]},
+        )
+        await repo.save_payload(
+            f"psn_product:{addon}", "psn_product", page.extract(_page(addon, f"DLC {concept}"))
+        )
+    report = await psn_products.put_in_place(repo, None, {"42"})
+    assert report.dlcs == 1

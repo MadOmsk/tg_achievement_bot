@@ -5,7 +5,13 @@ have). A concept (`psn_store`) lists their ids by category and names none;
 `stores/psn_product` reads a product's page. This module decides what to ask
 and where an answer goes: an add-on is a DLC of the version of its console
 (`CUSA` is the PS4's, `PPSA` the PS5's), a game-category product an edition of
-its game; the rest is kept as the page said it."""
+its game; the rest is kept as the page said it.
+
+**A concept with more than `DLC_PAGES_MAX` add-ons** (owner, 2026-10-24: DEAD
+OR ALIVE 5 Last Round has a thousand, two seconds each) has only its list
+kept: each add-on a DLC by its id, its page read when it is wanted
+(`read_one`), and whatever is checked against the game's DLC is checked
+against that list — an unread page is neither missing nor due."""
 
 from __future__ import annotations
 
@@ -20,6 +26,9 @@ from bot.services.stores import psn_product as page
 log = logging.getLogger(__name__)
 SOURCE = "psn_product"
 EDITION_CATEGORIES = ("GAME", "PVU_GAME")
+ADD_ON = "ADD_ON"
+# Add-ons of one concept past which their pages are not read, only listed.
+DLC_PAGES_MAX = 100
 
 
 @dataclass
@@ -31,6 +40,7 @@ class Report:
     dlcs: int = 0
     editions: int = 0
     kept_only: int = 0
+    listed_only: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -57,6 +67,15 @@ async def products_of_concepts(
     return found
 
 
+def list_only(products: list[tuple[str, str, str]]) -> set[str]:
+    """The concepts whose add-ons are too many to read page by page."""
+    count: dict[str, int] = {}
+    for concept_id, category, _product in products:
+        if category == ADD_ON:
+            count[concept_id] = count.get(concept_id, 0) + 1
+    return {c for c, n in count.items() if n > DLC_PAGES_MAX}
+
+
 async def read_pages(
     repo: Repo,
     origin: str | None,
@@ -68,7 +87,12 @@ async def read_pages(
     """Read the pages not read yet (or due again), keep each as it came."""
     report = Report()
     in_a_row = 0
-    for _concept, _category, product_id in await products_of_concepts(repo, origin, concepts):
+    products = await products_of_concepts(repo, origin, concepts)
+    listed = list_only(products)
+    for concept_id, category, product_id in products:
+        if category == ADD_ON and concept_id in listed:
+            report.listed_only += 1
+            continue
         subject = f"psn_product:{product_id}"
         if not await repo.fetch_due(subject, SOURCE):
             continue
@@ -102,43 +126,87 @@ async def read_pages(
 
 
 async def put_in_place(repo: Repo, origin: str | None, concepts: set[str] | None = None) -> Report:
-    """Every kept product page, read into the DLC and editions of the
-    versions of its concept. No request: it can be run again at any time."""
+    """Every kept product page of these concepts (all when None), read into
+    the DLC and editions of the versions of its concept; an add-on of a
+    concept listed only is a DLC by its id. No request: it can be run again
+    at any time."""
     report = Report()
-    concepts = await repo.psn_concept_versions(origin)
-    for concept_id, category, product_id in await products_of_concepts(repo, origin, concepts):
-        payload = await repo.payload(f"psn_product:{product_id}", SOURCE)
-        versions = concepts.get(concept_id) or []
-        if not payload or not versions:
-            continue
-        product = page.parse_product(payload)
-        console = console_of_product(product_id)
-        version_id = next((v for v, c in versions if c == console), versions[0][0])
-        if category == "ADD_ON":
-            await repo.save_dlc(
-                version_id,
-                StoreDlc(
-                    store_id=product_id,
-                    name=product.name,
-                    kind="dlc",
-                    release_date=product.release_date,
-                    description_en=product.description,
-                    image_url=product.image_url,
-                ),
-            )
-            report.dlcs += 1
-        elif category in EDITION_CATEGORIES:
-            edition_id = await repo.save_edition(
-                "psn",
-                product_id,
-                product.name,
-                edition_kind(product.name),
-                media=edition_media.psn(page._products(payload)),
-            )
-            await repo.save_edition_item(
-                edition_id, product_id, product.name, "game", is_primary=True, version_id=version_id
-            )
-            report.editions += 1
-        else:
-            report.kept_only += 1
+    versions_of = await repo.psn_concept_versions(origin)
+    products = await products_of_concepts(repo, origin, concepts)
+    listed = list_only(products)
+    for concept_id, category, product_id in products:
+        versions = versions_of.get(concept_id) or []
+        if versions:
+            await _place(repo, concept_id in listed, category, product_id, versions, report)
     return report
+
+
+async def read_one(repo: Repo, product_id: str) -> bool:
+    """One product's page read now, wanted (an add-on of a concept listed
+    only, opened in the viewer), and put in place. Returns whether it was
+    read."""
+    subject = f"psn_product:{product_id}"
+    try:
+        data = await page.fetch_product(product_id)
+    except page.ProductPageGone:
+        await repo.record_fetch(subject, SOURCE, status="not_found")
+        return False
+    if data is None:
+        await repo.record_fetch(subject, SOURCE, status="not_found")
+        return False
+    changed = await repo.save_payload(subject, SOURCE, data)
+    await repo.record_fetch(subject, SOURCE, status="ok", changed=changed)
+    versions_of = await repo.psn_concept_versions(None)
+    for concept_id, category, product in await products_of_concepts(repo, None):
+        if product == product_id and versions_of.get(concept_id):
+            await _place(repo, False, category, product_id, versions_of[concept_id], Report())
+    return True
+
+
+async def _place(
+    repo: Repo,
+    listed: bool,
+    category: str,
+    product_id: str,
+    versions: list[tuple[int, str]],
+    report: Report,
+) -> None:
+    """One product put with the version of its console."""
+    console = console_of_product(product_id)
+    version_id = next((v for v, c in versions if c == console), versions[0][0])
+    payload = await repo.payload(f"psn_product:{product_id}", SOURCE)
+    if not payload:
+        if listed and category == ADD_ON:
+            # Its page not read: in the game's list by its id, named once read.
+            await repo.save_dlc(version_id, StoreDlc(store_id=product_id, kind="dlc"))
+            report.dlcs += 1
+            report.listed_only += 1
+        return
+    product = page.parse_product(payload)
+    if category == ADD_ON:
+        await repo.save_dlc(
+            version_id,
+            StoreDlc(
+                store_id=product_id,
+                name=product.name,
+                kind="dlc",
+                release_date=product.release_date,
+                description_en=product.description,
+                image_url=product.image_url,
+            ),
+        )
+        report.dlcs += 1
+    elif category in EDITION_CATEGORIES:
+        edition_id = await repo.save_edition(
+            "psn",
+            product_id,
+            product.name,
+            edition_kind(product.name),
+            media=edition_media.psn(page._products(payload)),
+        )
+        await repo.save_edition_item(
+            edition_id, product_id, product.name, "game", is_primary=True, version_id=version_id
+        )
+        report.editions += 1
+    else:
+        report.kept_only += 1

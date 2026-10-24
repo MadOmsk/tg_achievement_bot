@@ -879,6 +879,20 @@ def _dlc_table(rows: list[sqlite3.Row]) -> str:
     )
 
 
+async def dlc_read(request: web.Request) -> web.Response:
+    """A PlayStation add-on's page read now (#215: a long list is kept by
+    its ids, each page read when wanted)."""
+    from bot.services import psn_products
+
+    dlc_id = int(request.match_info["dlc_id"])
+    with _db(request) as conn:
+        row = conn.execute("SELECT store_id FROM dlcs WHERE dlc_id = ?", (dlc_id,)).fetchone()
+    if row is None or not row["store_id"]:
+        raise _back(f"/dlc/{dlc_id}", "no store id")
+    read = await psn_products.read_one(_repo(request), str(row["store_id"]))
+    raise _back(f"/dlc/{dlc_id}", "page read" if read else "no such page on the store")
+
+
 async def dlc(request: web.Request) -> web.Response:
     """A DLC's own page (owner, 2026-10-12): its version and game, its store
     page, whether it is sold, its HLTB entry and times."""
@@ -922,6 +936,14 @@ async def dlc(request: web.Request) -> web.Response:
         )
         + f" · {_store_link(row, 'on the store', _dlc_href(row))}</p>"
     )
+    if row["store"] == "psn" and row["store_id"] and not row["name"]:
+        # One of a long list kept by its id only (#215): its page read when
+        # it is wanted.
+        head += (
+            f'<form method=post action="/dlc/{dlc_id}/read">'
+            "<button>прочитать страницу PSN</button>"
+            " <small>в списке по id: у игры больше 100 DLC</small></form>"
+        )
     body = (
         head
         + _record(row)
@@ -3294,6 +3316,7 @@ def build(
     app.router.add_get("/version/{version_id:\\d+}", version)
     app.router.add_get("/dlcs", dlcs)
     app.router.add_get("/dlc/{dlc_id:\\d+}", dlc)
+    app.router.add_post("/dlc/{dlc_id:\\d+}/read", dlc_read)
     app.router.add_get("/hltb", hltb_list)
     app.router.add_get("/hltb/{hltb_id:\\d+}", hltb_entry)
     app.router.add_get("/fetch", fetch)

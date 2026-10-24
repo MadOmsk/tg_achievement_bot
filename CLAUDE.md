@@ -729,7 +729,13 @@ What the stores and HLTB say about a game, collected but not shown yet
     game-category product an edition. A trophy group names no store product, so
     the DLC of a group (`dlcs.trophy_group_id`) and the DLC of a page
     (`dlcs.store_id`) are two rows until the link between them is made.
-    Scope so far: the games we have (`--scope played`).
+    Scope so far: the games we have (`--scope played`). **A concept of more
+    than `DLC_PAGES_MAX` (100) add-ons is kept as a list** (owner, 2026-10-24:
+    DEAD OR ALIVE 5 Last Round has a thousand): its game pages are read, each
+    add-on is a DLC by its id with no page, and one page is read when wanted
+    (`psn_products.read_one`; the viewer's DLC page has the button). Whatever
+    is checked against a game's DLC is checked against that list — an unread
+    page is neither missing nor due.
   - PSN: the store is searched by name and a concept is accepted **only when
     Sony's trophy API says one of its title ids has our `NPWR…` list**, asked as
     an account that played it (`psn/client.trophy_lists_of`); never by name
