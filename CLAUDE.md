@@ -2202,6 +2202,12 @@ History: #112.
 
 Real Xbox, Steam, PSN, HLTB or Telegram calls are forbidden in tests — mock at the
 service boundary.
+**`tests/conftest.py` enforces it** (2026-10-24): a host name that is not this
+machine's is refused, and a test that reached for one fails at its end with the
+hosts — code that swallows a failed request (a store name is best-effort) would
+otherwise hide it. Side errands no test is about are stubbed there for all: the
+Steam store's game name, and a fetcher's HLTB match and icon caching after it
+publishes; their own tests stub them again or call them directly.
 
 Required coverage: achievement/trophy dedup; first-connect backfill publishes nothing;
 only earned items enter `seen_achievements` (`InProgress` never leaks in); rarity
