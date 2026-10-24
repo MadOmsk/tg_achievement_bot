@@ -362,3 +362,17 @@ def test_a_lego_game_is_of_its_licence_whoever_made_the_other_games() -> None:
     assert {1, 2, 3} <= star_wars  # no studio or publisher in common
     # "Worlds" is not "Worlds Adrift": one word is no licence of two.
     assert not any(4 in m and 5 in m for m in series.values())
+
+
+def test_a_sure_label_between_two_series_never_chains_them() -> None:
+    """LEGO Batman 3 and Dark Forces ended in one series (owner, 2026-10-24):
+    a label "another of the series" between one game of each of two series
+    makes a crossover, never one series of both."""
+    games = _games(
+        (1, "Halo 3", 2007, "Bungie", "Microsoft"),
+        (2, "Halo Reach", 2010, "Bungie", "Microsoft"),
+        (3, "Gears of War 2", 2008, "Epic", "Microsoft"),
+        (4, "Gears of War 3", 2011, "Epic", "Microsoft"),
+    )
+    series = _series(games, labels=[(2, 3, "viewer")])
+    assert series == {"Halo": {1, 2, 3}, "Gears of War": {3, 4, 2}}

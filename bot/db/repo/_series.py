@@ -52,8 +52,8 @@ class _SeriesRepo:
         async with self.transaction():
             await self._fold_merged_games()
             cursor = await self._conn.execute(
-                "SELECT series_id, anchor_game_id, merged_into, name_source, name, rule_key"
-                " FROM series"
+                "SELECT series_id, anchor_game_id, merged_into, merged_by, name_source, name,"
+                " rule_key FROM series"
             )
             series = {int(r["series_id"]): dict(r) for r in await cursor.fetchall()}
 
@@ -65,10 +65,15 @@ class _SeriesRepo:
                 return series_id
 
             game_of = await self._live_games()
+            # A series merged by the builder leads nowhere any more (owner,
+            # 2026-10-24): its anchor sent another proposal's games back into
+            # the series it was once chained to on every rebuild. One the
+            # operator merged still leads to where they put it.
             anchors = {
                 game_of.get(int(s["anchor_game_id"]), int(s["anchor_game_id"])): live(sid)
                 for sid, s in series.items()
                 if s["anchor_game_id"] is not None
+                and not (s["merged_into"] and s["merged_by"] == "auto")
             }
             cursor = await self._conn.execute(
                 "SELECT gs.game_id, gs.series_id FROM game_series gs"
@@ -121,7 +126,7 @@ class _SeriesRepo:
                 if hits:
                     target = hits[0]
                     for other in hits[1:]:
-                        await self._merge_series_rows(other, target)
+                        await self._merge_series_rows(other, target, by="auto")
                         series[other]["merged_into"] = target
                         anchors = {g: (target if s == other else s) for g, s in anchors.items()}
                 else:
@@ -134,6 +139,13 @@ class _SeriesRepo:
                             (core[0], now, target),
                         )
                     else:
+                        # The anchor may still be held by a series the builder
+                        # merged away: it no longer needs one (its id resolves).
+                        await self._conn.execute(
+                            "UPDATE series SET anchor_game_id = NULL"
+                            " WHERE anchor_game_id = ? AND merged_by = 'auto'",
+                            (core[0],),
+                        )
                         cursor = await self._conn.execute(
                             "INSERT INTO series (name, anchor_game_id, created_at, updated_at)"
                             " VALUES (?, ?, ?, ?)",
@@ -253,9 +265,9 @@ class _SeriesRepo:
             ),
         )
 
-    async def _merge_series_rows(self, series_id: int, into: int) -> None:
+    async def _merge_series_rows(self, series_id: int, into: int, *, by: str) -> None:
         """Every row of one series moved into another; the old id resolves
-        to the kept one."""
+        to the kept one. `by` is `operator` or `auto` (migration 125)."""
         cursor = await self._conn.execute(
             "SELECT * FROM game_series WHERE series_id = ?", (series_id,)
         )
@@ -263,9 +275,9 @@ class _SeriesRepo:
             await self._put_row(dict(row), series_id=into)
         await self._conn.execute("DELETE FROM game_series WHERE series_id = ?", (series_id,))
         await self._conn.execute(
-            "UPDATE series SET merged_into = ?, updated_at = ?"
+            "UPDATE series SET merged_into = ?, merged_by = COALESCE(?, merged_by), updated_at = ?"
             " WHERE series_id = ? OR merged_into = ?",
-            (into, utcnow_iso(), series_id, series_id),
+            (into, by, utcnow_iso(), series_id, series_id),
         )
 
     async def _drop_empty_series(self) -> None:
@@ -305,7 +317,7 @@ class _SeriesRepo:
         if series_id == into:
             return
         async with self.transaction():
-            await self._merge_series_rows(series_id, into)
+            await self._merge_series_rows(series_id, into, by="operator")
 
     async def series_exists(self, series_id: int) -> bool:
         cursor = await self._conn.execute(

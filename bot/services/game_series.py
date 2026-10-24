@@ -358,6 +358,13 @@ def propose(games: dict[int, SeriesGame], found: list[Evidence]) -> list[Proposa
             extras += [(x, y, e) for x, y in hubs]
             continue
         if e.p >= STRONG_P:
+            # Two series of their own already (Star Wars, LEGO): a sure sign
+            # between one game of each makes each a member of the other's,
+            # never one series of both — chained, LEGO Batman and Dark Forces
+            # ended in one (owner, 2026-10-24). A lone game still joins.
+            if len(members[ra]) >= 2 and len(members[rb]) >= 2:
+                extras += [(e.a, e.b, e), (e.b, e.a, e)]
+                continue
             union(e.a, e.b)
 
     groups: dict[int, list[int]] = {}

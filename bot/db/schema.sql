@@ -1388,6 +1388,7 @@ CREATE TABLE IF NOT EXISTS series (
     name_source    TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
     anchor_game_id INTEGER UNIQUE REFERENCES games(game_id) ON DELETE SET NULL,
     merged_into    INTEGER REFERENCES series(series_id),  -- an old id keeps resolving
+    merged_by      TEXT,             -- operator / auto (125): an auto merge is undone
     -- A series a rule names, not an anchor game (111): "lego", a franchise's
     -- sub-series ("key:star wars jedi", "sub:call of duty|modern warfare").
     -- A game is in several series: the rule's and its franchise's.

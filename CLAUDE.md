@@ -987,12 +987,17 @@ What the stores and HLTB say about a game, collected but not shown yet
     name holds the other's franchise is a crossover — one more member of the
     other; a lone game joins the one series its evidence leads to (Crisis Core
     into Final Fantasy); a compilation reaching several series is a member of
-    each; other strong evidence joins, weak does nothing. A name is the
+    each; other strong evidence joins a lone game, but **between two series
+    of their own it makes each game a crossover of the other's, never one
+    series of both** (owner, 2026-10-24: chained labels had put LEGO Batman,
+    Marvel and Harry Potter in Star Wars); weak does nothing. A name is the
     franchise more than half its games share ("Gears of War"), else the
     prefix common to all ("Sonic"), lengthened to the words all go on with
     ("Cities: Skylines"), as most of them write it. Proposed again after
     every linking (`SeriesBuilder`, whole: cheap); a series keeps its id by
-    its anchor game, an operator's merge stands (`merged_into`).
+    its anchor game, an operator's merge stands (`merged_into`, `merged_by =
+    'operator'`); a merge the builder made (`merged_by = 'auto'`, migration
+    125) leads nowhere on the next rebuild, so an old chain comes apart.
     **Series a rule names** (owner, 2026-10-14; migration 111, `series.rule_key`,
     no anchor game, `game_series.umbrellas`): every LEGO game is in the series
     **LEGO** (0.95) *and* in its licence's series — `franchise_key` reads
