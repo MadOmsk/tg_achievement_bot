@@ -1033,7 +1033,11 @@ What the stores and HLTB say about a game, collected but not shown yet
   menu; answers already given are «История ответов», `/decisions`). An
   adviser card is **one tap**: a button per answer the advisers gave, saying
   who gave it; every other answer and a field for one typed under «Свой
-  ответ…»; «Позже». «Недостающие версии» (M) are not the operator's — the
+  ответ…»; «Позже». **«Одна серия» names the series** (owner, 2026-10-24):
+  a button per series both games are in, or a field for its name with ours
+  suggested; kept beside the label as `<qid>|relation.series` (an id, or a
+  name typed for a new series). Own answers follow the template; free text
+  only where a name is asked. «Недостающие версии» (M) are not the operator's — the
   octopus (#204) searches the stores; they show only with `kind=M`.
   **The model's doubts have two questions** (owner,
   2026-10-11): version ↔ game (one game, an edition, a demo, a tool — or

@@ -37,3 +37,24 @@ def test_missing_versions_wait_for_the_octopus() -> None:
     kinds = dict(trial_page.kinds())
     assert "M" not in kinds
     assert kinds["R"] == "Связь игр"
+
+
+def test_one_series_says_which() -> None:
+    """LEGO Harry Potter and LEGO Batman meet only in LEGO (owner,
+    2026-10-24): "one series" is a button per series both games are in."""
+    per = {"a": {"relation": "('series', None)"}, "b": {"relation": "('not_related', None)"}}
+    series = [(304, "LEGO"), (4, "STAR WARS Dark Forces")]
+    html, _agreed = trial_page._ask(
+        "R:5541:2724", "relation", list(per), per, {}, "Как связаны", series
+    )
+    picks = html.split("<details class=own>")[0]
+    assert 'value="(&#x27;series&#x27;, None)#304">одна серия — LEGO<small>a</small>' in picks
+    assert "одна серия — STAR WARS Dark Forces" in picks
+    # Another series, by name, under «Свой ответ…».
+    assert "list=series-names" in html and "#new" in html
+
+    labels = {"R:5541:2724|relation": "('series', None)", "R:5541:2724|relation.series": "304"}
+    html, _agreed = trial_page._ask(
+        "R:5541:2724", "relation", list(per), per, labels, "Как связаны", series
+    )
+    assert "✓ одна серия — LEGO" in html

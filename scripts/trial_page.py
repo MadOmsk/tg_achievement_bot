@@ -221,6 +221,27 @@ class _Look:
             f" / {escape(g['publisher'] or '?')}</small></span>"
         )
 
+    def shared_series(self, first: int, second: int) -> list[tuple[int, str]]:
+        """The series both games are in, as `(series_id, name)`."""
+        return [
+            (int(r[0]), str(r[1]))
+            for r in self.conn.execute(
+                "SELECT s.series_id, s.name FROM series s"
+                " JOIN game_series a ON a.series_id = s.series_id AND a.game_id = ?"
+                " JOIN game_series b ON b.series_id = s.series_id AND b.game_id = ?"
+                " WHERE s.merged_into IS NULL ORDER BY s.name",
+                (first, second),
+            )
+        ]
+
+    def series_names(self) -> list[str]:
+        return [
+            str(r[0])
+            for r in self.conn.execute(
+                "SELECT name FROM series WHERE merged_into IS NULL ORDER BY name"
+            )
+        ]
+
     def releases(self, gid: int) -> str:
         """Every release of a game, a line each, with its picture."""
         rows = self.conn.execute(
@@ -376,8 +397,27 @@ def _choices(key: str) -> list[str]:
     return []
 
 
+# "One series" says which (owner, 2026-10-24: LEGO Harry Potter and LEGO
+# Batman meet only in LEGO): the answer is the relation, and beside it, under
+# `<key>.series`, the series — an id from ours, or a name typed for a new one.
+SERIES = "('series', None)"
+
+
+def _series_label(value: str | None, choices: list[tuple[int, str]]) -> str:
+    if not value:
+        return ""
+    named = dict(choices)
+    return named.get(int(value), f"серия {value}") if value.isdigit() else value
+
+
 def _ask(
-    qid: str, key: str, names: list[str], per: dict, labels: dict, ask: str
+    qid: str,
+    key: str,
+    names: list[str],
+    per: dict,
+    labels: dict,
+    ask: str,
+    series: list[tuple[int, str]] | None = None,
 ) -> tuple[str, bool]:
     """One decision: a button for each answer the advisers gave, saying who
     gave it, then «Свой ответ…» with every other answer it can take and a field
@@ -388,23 +428,52 @@ def _ask(
     others = [v for v in _choices(key) if v not in given]
     current = labels.get(f"{qid}|{key}")
     agreed = len(given) == 1
-    picks = "".join(
-        f'<button name="d:{escape(key)}" value="{escape(v)}">{escape(_value(v, key))}'
-        f"<small>{escape(', '.join(n for n in names if said[n] == v))}</small></button>"
-        for v in given
-    )
-    more = "".join(
-        f'<button name="d:{escape(key)}" value="{escape(v)}">{escape(_value(v, key))}</button>'
-        for v in others
+    choices = series or []
+
+    def button(v: str, who: str = "") -> str:
+        small = f"<small>{escape(who)}</small>" if who else ""
+        if v == SERIES and choices:
+            # One button per series both games are in: the tap says which.
+            return "".join(
+                f'<button name="d:{escape(key)}" value="{escape(v)}#{sid}">'
+                f"одна серия — {escape(name)}{small}</button>"
+                for sid, name in choices
+            )
+        if v == SERIES:
+            # No series both are in yet: the answer names it, typed.
+            return (
+                f"<div class='free series'><input class=other name='s:{escape(key)}'"
+                f" list=series-names placeholder='одна серия — какая?'>"
+                f'<button name="d:{escape(key)}" value="{escape(v)}#new">'
+                f"одна серия{small}</button></div>"
+            )
+        return (
+            f'<button name="d:{escape(key)}" value="{escape(v)}">'
+            f"{escape(_value(v, key))}{small}</button>"
+        )
+
+    picks = "".join(button(v, ", ".join(n for n in names if said[n] == v)) for v in given)
+    more = "".join(button(v) for v in others)
+    series_field = (
+        f"<div class=free><input class=other name='s:{escape(key)}' list=series-names"
+        f" placeholder='одна серия — другая: название'>"
+        f'<button name="d:{escape(key)}" value="{escape(SERIES)}#new">ок</button></div>'
+        if key == "relation" and choices
+        else ""
     )
     own = (
         "<details class=own><summary>Свой ответ…</summary>"
         + (f"<div class=more>{more}</div>" if more else "")
+        + series_field
         + f"<div class=free><input class=other name='o:{escape(key)}' placeholder='вписать'>"
         f'<button name="d:{escape(key)}" value="">ок</button></div></details>'
     )
+    which = _series_label(labels.get(f"{qid}|{key}.series"), choices)
     mark = (
-        f" <span class=done>✓ {escape(_value(current, key))}</span>" if current is not None else ""
+        f" <span class=done>✓ {escape(_value(current, key))}"
+        f"{' — ' + escape(which) if which else ''}</span>"
+        if current is not None
+        else ""
     )
     html = (
         f'<div class="one{"" if agreed else " diff"}"><div class=ask>{escape(ask)}{mark}</div>'
@@ -420,6 +489,13 @@ def _subject_of(key: str) -> str:
 
 
 def _rows(qid: str, keys: list[str], names: list[str], per: dict, labels: dict, look: _Look) -> str:
+    kind, _, rest = qid.partition(":")
+    parts = rest.split(":")
+    series = (
+        look.shared_series(int(parts[0]), int(parts[1]))
+        if kind in ("R", "D") and len(parts) == 2 and all(x.isdigit() for x in parts)
+        else []
+    )
     """Decisions grouped by the item they are about: a release's "belongs" and
     "kind" sit beside one picture of it."""
     groups: dict[str, list[str]] = {}
@@ -430,7 +506,7 @@ def _rows(qid: str, keys: list[str], names: list[str], per: dict, labels: dict, 
         what, _ask0 = _subject(group[0], look)
         asks, all_agree = [], True
         for key in group:
-            html, agreed = _ask(qid, key, names, per, labels, _subject(key, look)[1])
+            html, agreed = _ask(qid, key, names, per, labels, _subject(key, look)[1], series)
             asks.append(html)
             all_agree &= agreed
         out.append(
@@ -525,6 +601,7 @@ def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, li
                 f"<pre style='white-space:pre-wrap;font-size:12px'>{escape(text)}</pre>"
                 "</details></div>"
             )
+        names_list = look.series_names()
     path = trial / "compare" / "accepted.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(accepted, ensure_ascii=False, indent=1), "utf-8")
@@ -532,6 +609,9 @@ def cards(request: web.Request, trial: Path, *, back_base: str) -> tuple[str, li
         CSS + f"<p><small>Советники: {escape(', '.join(names))} · отвечено {done}/{total}"
         f" спорных · где все трое согласны, ответ принят без вас ({len(accepted)})"
         f" · «Недостающие версии» ждут осьминога (#204)</small></p>"
+        "<datalist id=series-names>"
+        + "".join(f'<option value="{escape(n)}">' for n in names_list)
+        + "</datalist>"
     )
     return line, out, total - done
 
@@ -582,8 +662,15 @@ def register(app: web.Application, trial: Path | None, page) -> None:
                 key = name[2:]
                 # «ок» beside the field carries no value: the typed one is it.
                 answer = str(value) or str(form.get(f"o:{key}") or "").strip()
+                answer, _, which = answer.partition("#")
+                if which == "new":
+                    which = str(form.get(f"s:{key}") or "").strip()
                 if answer:
                     labels[f"{qid}|{key}"] = answer
+                    if which:
+                        labels[f"{qid}|{key}.series"] = which
+                    else:
+                        labels.pop(f"{qid}|{key}.series", None)
         path = _labels_path(trial)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(labels, ensure_ascii=False, indent=1), "utf-8")
