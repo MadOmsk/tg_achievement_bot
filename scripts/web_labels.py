@@ -8,6 +8,12 @@ remaster_of / remake_of / demo_of / extra_of / contains / series /
 not_related, `direction` "a" or "b" for the side that is the enhanced /
 remaster / … one. Only high and medium confidence answers are written, as
 `decided_by = claude-web`; each pair's versions are linked again after.
+
+Two more kinds of answer (`scripts/review_questions.py`): `{"type": "hltb",
+"version_id", "hltb_id", "verdict": "same" | "wrong"}` — a wrong automatic
+HLTB link becomes a refusal — and `{"type": "series", "game_id",
+"series_id", "verdict": "yes" | "no"}` — a game said to be in a series or
+not, as the advisers' word (never over the operator's).
 Run with the viewer stopped (one linker at a time).
 
 Usage:
@@ -60,10 +66,25 @@ def label_of(answer: dict) -> tuple[int, int, str, str] | None:
     return a, b, relation, series
 
 
-async def write(db: Path, labels: list[tuple[int, int, str, str]]) -> None:
+async def write(
+    db: Path, labels: list[tuple[int, int, str, str]], others: list[dict] | None = None
+) -> None:
     database = await Database(db).connect()
     try:
         repo = Repo(database)
+        for answer in others or []:
+            if answer["type"] == "hltb" and answer.get("verdict") == "wrong":
+                await repo.unlink_version_hltb(
+                    int(answer["version_id"]), int(answer["hltb_id"]), only_auto=True
+                )
+            elif answer["type"] == "series" and answer.get("verdict") in ("yes", "no"):
+                await repo.set_series_member(
+                    int(answer["game_id"]),
+                    int(answer["series_id"]),
+                    answer["verdict"] == "yes",
+                    source="advisers",
+                    decided_by=SOURCE,
+                )
         for a, b, relation, _series in labels:
             features, model = await repo.pair_features(a, b)
             await repo.save_decision(
@@ -90,9 +111,13 @@ def main() -> None:
     parser.add_argument("files", nargs="+")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    labels = []
+    labels, others = [], []
     for path in args.files:
         for answer in json.loads(Path(path).read_text("utf-8")):
+            if answer.get("type") in ("hltb", "series"):
+                if answer.get("confidence") in ("high", "medium"):
+                    others.append(answer)
+                continue
             label = label_of(answer)
             print(
                 ("  " if label else "- ") + f"{answer['a']}:{answer['b']} {answer['relation']}"
@@ -100,9 +125,9 @@ def main() -> None:
             )
             if label:
                 labels.append(label)
-    print(f"{len(labels)} labels")
+    print(f"{len(labels)} labels, {len(others)} HLTB and series answers")
     if not args.dry_run:
-        asyncio.run(write(Path(args.db), labels))
+        asyncio.run(write(Path(args.db), labels, others))
 
 
 if __name__ == "__main__":
