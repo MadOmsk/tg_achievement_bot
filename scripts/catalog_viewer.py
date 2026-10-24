@@ -205,14 +205,20 @@ def _cell(value: object) -> str:
     return escape(text if len(text) <= 300 else text[:300] + "…")
 
 
-def _table(rows: list[sqlite3.Row], links: dict[str, object] | None = None) -> str:
+def _table(
+    rows: list[sqlite3.Row],
+    links: dict[str, object] | None = None,
+    extra: dict[str, object] | None = None,
+) -> str:
     """Rows as a table; `links[column]` makes that column a link (a function
-    of the row giving the href)."""
+    of the row giving the href); `extra[title]` adds a last column of HTML of
+    its own (a function of the row: a button)."""
     if not rows:
         return "<p>(none)</p>"
     links = links or {}
+    extra = extra or {}
     columns = rows[0].keys()
-    head = "".join(f"<th>{escape(c)}</th>" for c in columns)
+    head = "".join(f"<th>{escape(c)}</th>" for c in [*columns, *extra])
     body = []
     for row in rows:
         cells = []
@@ -223,6 +229,7 @@ def _table(rows: list[sqlite3.Row], links: dict[str, object] | None = None) -> s
             if target:
                 text = f'<a href="{escape(target)}">{text}</a>'
             cells.append(f"<td>{text}</td>")
+        cells += [f"<td>{make(row)}</td>" for make in extra.values()]  # type: ignore[operator]
         body.append("<tr>" + "".join(cells) + "</tr>")
     return f"<div class=scroll><table><tr>{head}</tr>{''.join(body)}</table></div>"
 
@@ -3090,9 +3097,15 @@ def _series_members(conn: sqlite3.Connection, series_id: int) -> list[sqlite3.Ro
     ).fetchall()
 
 
-def _member_toggle(series_id: int, game_id: int, name: str, member: bool, back: str) -> str:
-    """The operator's "not in this series" / "in it after all"."""
-    label = f"not in «{name}»" if member else f"in «{name}» after all"
+def _member_toggle(
+    series_id: int, game_id: int, name: str, member: bool, back: str, *, short: bool = False
+) -> str:
+    """The operator's "not in this series" / "in it after all"; `short` on a
+    row that already names the game."""
+    if short:
+        label = "исключить" if member else "вернуть"
+    else:
+        label = f"not in «{name}»" if member else f"in «{name}» after all"
     return _button(
         f"/series/{series_id}/member",
         label,
@@ -3191,10 +3204,6 @@ async def series_page(request: web.Request) -> web.Response:
         "add game id: "
         "<input name=game_id size=8> <button>add</button></form>"
     )
-    toggles = "".join(
-        "<p>" + _member_toggle(series_id, m["game_id"], m["name"], bool(m["member"]), here) + "</p>"
-        for m in members
-    )
     body = (
         _flash(request)
         + controls
@@ -3202,8 +3211,14 @@ async def series_page(request: web.Request) -> web.Response:
         + _table(
             [{**dict(m), "member": "yes" if m["member"] else "no (said so)"} for m in members],  # type: ignore[arg-type]
             {"game_id": _game_href, "name": _game_href},
+            # The way out of the series on the game's own row (owner,
+            # 2026-10-24), and back in for one said not to be in it.
+            {
+                "": lambda m: _member_toggle(
+                    series_id, m["game_id"], m["name"], m["member"] == "yes", here, short=True
+                )
+            },
         )
-        + toggles
     )
     return _page(f"Series: {row['name']}", body)
 
