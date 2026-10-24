@@ -1664,6 +1664,7 @@ _LABEL_MORE = (
 # The relations the queue asks about, rarest among the operator's labels first.
 RARE_RELATIONS = ("vr_of", "contains", "remake_of", "remaster_of")
 LABEL_FLOOR = 0.1  # a relation the model gives at least this is worth asking
+ASKED = "asked"  # a pair put in the labelling queue by hand
 
 
 def _label_picker(
@@ -2329,7 +2330,9 @@ def _series_datalist(request: web.Request) -> str:
 
 
 def label_queue(
-    conn: sqlite3.Connection, skipped: set | frozenset = frozenset()
+    conn: sqlite3.Connection,
+    skipped: set | frozenset = frozenset(),
+    requested: list[dict] | tuple = (),
 ) -> tuple[list[tuple[sqlite3.Row, str]], dict[str, int], list[str]]:
     """Pairs to label for the model's sake (the training audit, 2026-10-24):
     the doubtful pairs in which the model gives a rare relation — a VR
@@ -2337,7 +2340,8 @@ def label_queue(
     not yet answered by the operator. The relation the operator has answered
     least comes first, then the pairs the model is least sure of. Returns
     (row, its rare relation) in that order, the operator's counts, and the
-    relations' order."""
+    relations' order. `requested`: pairs asked for by hand
+    (`AdviceStore.label_requests`), first of all, as `ASKED`."""
     answered = {
         str(r[0]): int(r[1])
         for r in conn.execute(
@@ -2367,19 +2371,30 @@ def label_queue(
         # Least sure first: the rare relation nearest to even odds.
         found.append(((order.index(rare), abs(probs[rare] - 0.5) + (pair in skipped)), r, rare))
     found.sort(key=lambda t: t[0])
-    return [(r, rare) for _, r, rare in found], answered, order
+    asked: list[tuple[sqlite3.Row, str]] = []
+    queued: set[frozenset[int]] = set()
+    for r in requested:
+        pair = frozenset((int(r["subject"]), int(r["other"])))
+        if pair not in labelled and pair not in queued:
+            queued.add(pair)
+            asked.append((r, ASKED))
+    return asked + [(r, rare) for _, r, rare in found], answered, order
 
 
 def _label_queue(request: web.Request) -> str:
     """The labelling queue (`label_queue`) as a page."""
     with _db(request) as conn:
-        queue, answered, order = label_queue(conn, request.app["skipped"])
-        tally = " · ".join(
-            f"{escape(c)}: {answered.get(c, 0)} answered,"
-            f" {sum(1 for _, x in queue if x == c)} to ask"
-            for c in order
-        )
         advice = AdviceStore.for_db(Path(request.app["db_path"]))
+        queue, answered, order = label_queue(conn, request.app["skipped"], advice.label_requests())
+        asked = sum(1 for _, x in queue if x == ASKED)
+        tally = " · ".join(
+            ([f"asked for by hand: {asked}"] if asked else [])
+            + [
+                f"{escape(c)}: {answered.get(c, 0)} answered,"
+                f" {sum(1 for _, x in queue if x == c)} to ask"
+                for c in order
+            ]
+        )
         rows = _pair_rows(
             conn, [r for r, _ in queue[:PAGE_SIZE]], "/review?tab=label", advice, _label_picker
         )

@@ -233,3 +233,26 @@ def test_the_label_queue_can_say_a_demo() -> None:
     html = _label_picker(1, 2, "/review?tab=label")
     for key in ("demo_of", "demo_of:flip", "tool_of", "mode_of", "extra_of"):
         assert f'value="{key}"' in html
+
+
+def test_pairs_asked_for_by_hand_come_first_until_answered() -> None:
+    import sqlite3
+
+    from scripts.catalog_viewer import ASKED, label_queue
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(
+        "CREATE TABLE match_decisions (version_id, other_id, relation, decided_by);"
+        "CREATE TABLE match_pairs (version_id, other_id, relation, p, probs, features);"
+        "INSERT INTO match_pairs VALUES (5, 6, 'remake_of', 0.5, '{\"remake_of\": 0.5}', '{}');"
+        "INSERT INTO match_decisions VALUES (4, 3, 'same', 'viewer');"
+    )
+    row = {"relation": "same", "p": 0.9, "probs": "{}", "features": "{}"}
+    requested = [
+        {**row, "subject": 1, "other": 2},
+        {**row, "subject": 2, "other": 1},  # the same pair again
+        {**row, "subject": 3, "other": 4},  # answered already
+    ]
+    queue, _, _ = label_queue(conn, frozenset(), requested)
+    assert [(r["subject"], kind) for r, kind in queue] == [(1, ASKED), (5, "remake_of")]

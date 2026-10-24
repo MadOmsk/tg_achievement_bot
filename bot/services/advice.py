@@ -448,6 +448,14 @@ class AdviceStore:
             json.dump(data, f, ensure_ascii=False, indent=1, sort_keys=True)
         os.replace(tmp, self.directory / name)
 
+    def label_requests(self) -> list[dict[str, Any]]:
+        """Pairs put in front of the operator's «Labelling» by hand
+        (`scripts/request_labels.py`): each with the model's word on it."""
+        return list(self._read("label_requests.json").get("pairs", []))
+
+    def save_label_requests(self, pairs: list[dict[str, Any]]) -> None:
+        self._write("label_requests.json", {"pairs": pairs})
+
     def questions(self) -> dict[str, dict[str, Any]]:
         return self._read("questions.json").get("pairs", {})
 
