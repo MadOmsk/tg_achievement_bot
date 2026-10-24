@@ -9,7 +9,7 @@ import pytest
 
 from bot.db.repo import Repo
 from bot.services import store_collect
-from bot.services.store_collect import StoreCollector
+from bot.services.store_collect import CollectReport, StoreCollector
 from bot.services.stores import psn_store, steam_store, xbox_catalog
 from bot.util import utcnow
 
@@ -795,3 +795,60 @@ async def test_migration_109_folds_the_store_ids_into_a_column(tmp_path) -> None
     ]
     assert rows[1] == (2, None)
     assert gone == []
+
+
+def _bundle(product_id: str, *items: tuple[str, bool]) -> dict:
+    return {
+        "ProductId": product_id,
+        "ProductType": "Game",
+        "DisplaySkuAvailabilities": [
+            {
+                "Sku": {
+                    "Properties": {"BundledSkus": [{"BigId": b, "IsPrimary": p} for b, p in items]}
+                }
+            }
+        ],
+    }
+
+
+async def test_a_game_thrown_into_a_bundle_is_not_the_bundles_game(repo: Repo) -> None:
+    """FIFA 16 Super Deluxe Edition holds Plants vs. Zombies Garden Warfare
+    (owner, 2026-10-24): an edition of FIFA 16, never of PvZ. A bundle of
+    games with none primary is each one's, as before."""
+    from bot.services.stores import StoreVersion
+
+    async def game(product: str, name: str) -> int:
+        return await repo.save_version(
+            StoreVersion(store="xbox", product_id=product, console="one", name=name),
+            platform=None,
+            title_id=None,
+        )
+
+    fifa, pvz = await game("FIFA16", "FIFA 16"), await game("PVZGW", "PvZ Garden Warfare")
+    items = [
+        {"ProductId": "FIFA16", "ProductType": "Game"},
+        {"ProductId": "PVZGW", "ProductType": "Game"},
+    ]
+    editions = [
+        _bundle("SUPERDELUXE", ("FIFA16", True), ("PVZGW", False)),
+        _bundle("EAPACK", ("FIFA16", False), ("PVZGW", False)),
+    ]
+    await StoreCollector(repo)._xbox_editions(editions, items, CollectReport("x", "1"))
+    cursor = await repo._conn.execute(
+        "SELECT e.store_id, i.version_id FROM edition_items i"
+        " JOIN editions e ON e.edition_id = i.edition_id WHERE i.version_id IS NOT NULL"
+        " ORDER BY 1, 2"
+    )
+    assert [tuple(r) for r in await cursor.fetchall()] == [
+        ("EAPACK", fifa),
+        ("EAPACK", pvz),
+        ("SUPERDELUXE", fifa),
+    ]
+
+    # One linked before the rule: the re-parse unlinks it.
+    await repo._conn.execute(
+        "UPDATE edition_items SET version_id = ? WHERE store_id = 'PVZGW'"
+        " AND edition_id = (SELECT edition_id FROM editions WHERE store_id = 'SUPERDELUXE')",
+        (pvz,),
+    )
+    assert await repo.unlink_bonus_games() == 1

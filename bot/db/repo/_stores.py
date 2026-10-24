@@ -332,6 +332,18 @@ class _StoresRepo:
         )
         return {str(row[0]) for row in await cursor.fetchall()}
 
+    async def unlink_bonus_games(self) -> int:
+        """A game held by an edition that has a primary game of its own is
+        not that edition's game (FIFA 16 Super Deluxe holds Plants vs. Zombies
+        Garden Warfare): its version link goes. Returns how many went."""
+        cursor = await self._conn.execute(
+            "UPDATE edition_items SET version_id = NULL"
+            " WHERE item_kind = 'game' AND is_primary = 0 AND version_id IS NOT NULL"
+            " AND edition_id IN (SELECT edition_id FROM edition_items WHERE is_primary = 1)"
+        )
+        await self._conn.commit()
+        return cursor.rowcount
+
     async def save_dlc(self, version_id: int, dlc: StoreDlc) -> None:
         await self._conn.execute(
             "INSERT INTO dlcs (version_id, store_id, name, kind, release_date, description_en,"

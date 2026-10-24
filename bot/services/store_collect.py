@@ -410,9 +410,13 @@ class StoreCollector:
                 item_kind = {"Game": "game", "Durable": "dlc", "Consumable": "consumable"}.get(
                     product_type, "other"
                 )
+                # The edition's game is its primary one; a game thrown in
+                # (FIFA 16 Super Deluxe with Plants vs. Zombies Garden
+                # Warfare, owner, 2026-10-24) is held, not the edition's game.
+                # A bundle of games with none primary is each one's.
                 version_id = (
                     await self._repo.version_of_product("xbox", big_id)
-                    if item_kind == "game"
+                    if item_kind == "game" and (is_primary or not primary)
                     else None
                 )
                 await self._repo.save_edition_item(
@@ -702,7 +706,8 @@ class StoreCollector:
         """Every kept answer read again through today's parsers, and written as
         a collection would write it — **no request** (owner, 2026-10-12;
         `scripts/reparse_store_payloads.py`): versions, their consoles and
-        availability, Xbox add-ons (only their own game's), the 360 store
+        availability, Xbox add-ons (only their own game's), an edition's games
+        (only its primary one, when it has one), the 360 store
         pages, HLTB entries and their links. The answers themselves are kept
         again without prices. What only a request brings (a Steam DLC's or
         package's own answer, the Russian appdetails) is left as it is."""
@@ -712,6 +717,9 @@ class StoreCollector:
             done[key] = done.get(key, 0) + 1
 
         repo = self._repo
+        # A game thrown into a bundle is not the bundle's game (2026-10-24):
+        # the rule `_xbox_editions` follows now, over the editions kept.
+        done["edition games unlinked"] = await repo.unlink_bonus_games()
         for subject in await repo.payload_subjects("steam_store", "steam:"):
             data = steam_store.without_prices(await repo.payload(subject, "steam_store"))
             if not data:
