@@ -234,6 +234,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "groups_differ": -2.0,
         "steam_parent": 6.0,  # Steam names one the other's game (a demo, a tool)
         "same_hltb": 2.5,  # one HLTB entry — found by name, so a weak sign
+        "year_unknown": 0.6,  # a fit on the labels (the training audit, 2026-10-24)
         "name": 10.0,  # × (name similarity − 0.8)
         "full_name": 4.4,  # the very same full name, a few years apart at most
         "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
@@ -276,6 +277,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "same_group": 1.0,
         "steam_parent": -2.0,
         "same_hltb": 1.5,
+        "year_unknown": 0.45,
         "name": 8.0,
         "full_name": 1.0,
         "franchise": 1.0,
@@ -351,6 +353,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "franchise": 1.0,
         "compilation_word": 3.0,
         "list_subset": 4.0,  # the part's list sits inside the compilation's
+        "year_unknown": 0.6,
         "overlap_high": -1.0,
         "overlap_partial": 2.0,
         "overlap_low": -1.0,
@@ -397,6 +400,10 @@ TEXT_SIGNS = (
     "text_same",  # the two descriptions say much the same
     "text_differ",  # the two descriptions share few words
     "genres_differ",  # both name genres, no word in common
+    # Either side's name was never learned (an id-named stand-in): the names
+    # say nothing, and the name signs are left out (the training audit,
+    # 2026-10-24). 0 until a fit gives it a weight.
+    "name_unknown",
 )
 for _signs in WEIGHTS.values():
     for _sign in TEXT_SIGNS:
@@ -654,6 +661,10 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     else:
         f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
     f.update(text_features(s, o))
+    if not s.names or not o.names:
+        for sign in _NAME_SIGNS:
+            f.pop(sign, None)
+        f["name_unknown"] = 1.0
     if "demo_of" in f or "tool_of" in f or "mode_of" in f or extra_of:
         # Its game's name opens it (that is what made it one): the rest of
         # its name says nothing more, nor, for a tool, a mode or an extra,
@@ -666,6 +677,20 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
             # Black Ops II's 90 on 360): a part, not a compilation's.
             f.pop("list_subset", None)
     return f
+
+
+# What a pair's names say — nothing when one side has none.
+_NAME_SIGNS = (
+    "name",
+    "full_name",
+    "franchise",
+    "subtitle",
+    "subtitles_differ",
+    "numbers_differ",
+    "same_name",
+    "same_name_far",
+    "same_name_other_studio",
+)
 
 
 def probabilities(

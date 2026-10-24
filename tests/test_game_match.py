@@ -1385,3 +1385,33 @@ def test_a_game_is_not_called_by_an_id_when_a_release_has_a_name() -> None:
         year=2018,
     )
     assert game_name([unnamed, named]).lower() == "days gone"
+
+
+def test_a_name_never_learned_says_nothing_about_a_pair() -> None:
+    """An id-named stand-in (the training audit, 2026-10-24): no name signs,
+    `name_unknown` instead — never a name 0.8 below the floor."""
+    from bot.services.game_link import _candidate
+
+    row = {
+        "version_id": 1,
+        "store": "unknown",
+        "product_id": "1881441063",
+        "title_id": "1881441063",
+        "console": "pc",
+        "platform": "xbox_modern",
+        "name": "1881441063",
+        "list_name": "1881441063",
+        "list_name_en": None,
+        "kind": None,
+        "developer": None,
+        "publisher": None,
+        "release_date": None,
+        "store_group": None,
+        "stand_in": 1,
+        "hltb_ids": None,
+    }
+    unnamed = _candidate(row)
+    assert unnamed.names == ()
+    f = features(unnamed, _c(2, "Days Gone 2", console="ps4", year=2019))
+    assert f.get("name_unknown") == 1.0
+    assert not {"name", "numbers_differ", "subtitle"} & set(f)

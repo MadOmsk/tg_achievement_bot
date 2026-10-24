@@ -295,6 +295,11 @@ def _cluster(
         # and that must not keep it out of the game its own pair joins it to.
         if kinds.get(a) in PARTS or kinds.get(b) in PARTS:
             continue
+        # A version whose name was never learned knows too little to keep
+        # two versions apart (the training audit, 2026-10-24: its wrong
+        # year split Fall Guys and Among Us); it may still join.
+        if "name_unknown" in v.features:
+            continue
         if v.p_same < VETO_P and "one_list" not in v.features:
             forbidden[a].add(b)
             forbidden[b].add(a)
@@ -553,11 +558,17 @@ def _genres(raw: object) -> frozenset[str]:
 
 
 def _candidate(row: dict) -> Candidate:
+    # A stand-in whose name was never learned is named by its id
+    # ("1881441063"): no name at all, for the matcher (the training audit,
+    # 2026-10-24: compared as a name it cost "same" some 8 log-odds).
+    ids = {str(row["product_id"]), str(row.get("title_id") or "")}
     names = tuple(
         dict.fromkeys(
             str(n)
             for n in (row["name"], row["list_name_en"], row["list_name"])
-            if n and normalize(str(n))  # "?" (a name lost on production) is none
+            if n
+            and normalize(str(n))  # "?" (a name lost on production) is none
+            and str(n).strip() not in ids
         )
     )
     return Candidate(

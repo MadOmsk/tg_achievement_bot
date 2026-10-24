@@ -963,6 +963,10 @@ What the stores and HLTB say about a game, collected but not shown yet
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
+  - **A name never learned is no name** (the training audit, 2026-10-24): a
+    stand-in named by its own id («1881441063») has no names for the model;
+    its pairs show `name_unknown` instead of any name sign, and veto nothing
+    (its year is often wrong). `year_unknown` starts from the labels' fit.
   - **The stores' texts are signs too** (owner, 2026-10-13): a version's
     genres and short description (`versions.genres`, `description_en`) and its
     HLTB summary give `TEXT_SIGNS` — the subject's text says remastered,
