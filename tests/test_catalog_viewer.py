@@ -213,3 +213,15 @@ def test_the_label_queue_offers_every_rare_relation_in_one_tap() -> None:
     html = _label_picker(1, 2, "/review?tab=label")
     for relation in RARE_RELATIONS:
         assert f'value="{relation}"' in html
+
+
+def test_another_game_of_the_series_is_one_tap_naming_it() -> None:
+    """Owner, 2026-10-24: a frequent answer — a button per series, and a
+    field to name one when the games are in none."""
+    from scripts.catalog_viewer import _decision_picker, _label_picker
+
+    html = _label_picker(1, 2, "/review?tab=label", [(7, "Hello Neighbor")])
+    assert 'value="series#7"' in html and "(<b>Hello Neighbor</b>)" in html
+    assert 'value="series#new"' in html and "another?" in html
+    bare = _decision_picker(1, 2, "/review")
+    assert "series#" in bare and "which?" in bare and 'value="series"' not in bare

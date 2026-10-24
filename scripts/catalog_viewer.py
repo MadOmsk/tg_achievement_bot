@@ -1638,25 +1638,56 @@ RARE_RELATIONS = ("vr_of", "contains", "remake_of", "remaster_of")
 LABEL_FLOOR = 0.1  # a relation the model gives at least this is worth asking
 
 
-def _label_picker(version_id: int, other_id: int, back: str) -> str:
-    return _answer_forms(
-        "/decide",
-        {"version_id": version_id, "other_id": other_id},
-        [(key, escape(label)) for key, label in _LABEL_QUICK],
-        _LABEL_MORE,
-        back,
-    )
+def _label_picker(
+    version_id: int, other_id: int, back: str, series: list[tuple[int, str]] | None = None
+) -> str:
+    return _versions_picker(version_id, other_id, back, _LABEL_QUICK, _LABEL_MORE, series)
 
 
-def _decision_picker(version_id: int, other_id: int, back: str) -> str:
+def _decision_picker(
+    version_id: int, other_id: int, back: str, series: list[tuple[int, str]] | None = None
+) -> str:
     """The answers about two versions: one game, another game, a remaster, a
-    remake — the rest under "more…"."""
-    return _answer_forms(
-        "/decide",
-        {"version_id": version_id, "other_id": other_id},
-        [(key, escape(label)) for key, label in _DECISIONS_QUICK],
-        _DECISIONS_MORE,
-        back,
+    remake, another game of its series — the rest under "more…"."""
+    return _versions_picker(version_id, other_id, back, _DECISIONS_QUICK, _DECISIONS_MORE, series)
+
+
+def _versions_picker(
+    version_id: int,
+    other_id: int,
+    back: str,
+    quick: tuple[tuple[str, str], ...],
+    more: tuple[tuple[str, str], ...],
+    series: list[tuple[int, str]] | None,
+) -> str:
+    """ "Another game of its series" is a frequent answer (owner, 2026-10-24):
+    one button per series either game is in, naming it; with none, a field
+    to name it (several by commas)."""
+    buttons = [(key, escape(label)) for key, label in quick]
+    buttons += [
+        (f"series#{sid}", f"another game of the series (<b>{escape(name)}</b>)")
+        for sid, name in series or []
+    ]
+    named = (
+        '<form method=post action="/decide" style="display:flex;gap:4px;margin:0 0 4px">'
+        f'<input type=hidden name=version_id value="{version_id}">'
+        f'<input type=hidden name=other_id value="{other_id}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        '<input type=hidden name=decision value="series#new">'
+        "<input name=series_name list=series-names required style='flex:1'"
+        f" placeholder='another game of the series — {'another' if series else 'which'}?"
+        " (several: comma-separated)'>"
+        "<button>ok</button></form>"
+    )
+    return (
+        _answer_forms(
+            "/decide",
+            {"version_id": version_id, "other_id": other_id},
+            buttons,
+            tuple((k, label) for k, label in more if k != "series"),
+            back,
+        )
+        + named
     )
 
 
@@ -2040,7 +2071,7 @@ def _pair_rows(
     pairs: list[sqlite3.Row],
     back: str,
     advice: AdviceStore | None = None,
-    picker: Callable[[int, int, str], str] = _decision_picker,
+    picker: Callable[..., str] = _decision_picker,
 ) -> str:
     """Doubtful pairs as one table: the subject and its game, what the model
     thinks and how sure, the other and its game, and the answer."""
@@ -2089,7 +2120,7 @@ def _pair_rows(
             f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
             f"<br><small>{escape(signs)}</small></td>"
             f"<td>{side(r['other'])}</td>"
-            f"<td>{picker(r['subject'], r['other'], back)}"
+            f"<td>{picker(r['subject'], r['other'], back, _series_of_pair(conn, info, r))}"
             + _advice_badge(
                 advice,
                 *(
@@ -2104,6 +2135,27 @@ def _pair_rows(
         "<div class=scroll><table class=versions><tr><th>this version</th><th>the model"
         " thinks</th><th>…that version</th><th>answer</th></tr>" + "".join(lines) + "</table></div>"
     )
+
+
+def _series_of_pair(
+    conn: sqlite3.Connection, info: dict, row: sqlite3.Row
+) -> list[tuple[int, str]]:
+    """The series either version's game is in, those of both first."""
+    games = [(info.get(v) or {"game_id": None})["game_id"] for v in (row["subject"], row["other"])]
+    games = [g for g in games if g is not None]
+    if not games:
+        return []
+    marks = ",".join("?" * len(games))
+    return [
+        (int(x[0]), str(x[1]))
+        for x in conn.execute(
+            "SELECT s.series_id, s.name FROM series s JOIN game_series gs"
+            " ON gs.series_id = s.series_id AND gs.member = 1"
+            f" WHERE gs.game_id IN ({marks}) AND s.merged_into IS NULL"
+            " GROUP BY s.series_id ORDER BY COUNT(DISTINCT gs.game_id) DESC, s.name",
+            games,
+        )
+    ]
 
 
 def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
@@ -2151,7 +2203,10 @@ async def review(request: web.Request) -> web.Response:
     )
     games_where = f"mp.relation IN ({marks}) AND {two_games}"
     if tab == "label":
-        return _page(PAGES["/review"], _flash(request) + _label_queue(request))
+        return _page(
+            PAGES["/review"],
+            _flash(request) + _label_queue(request) + _series_datalist(request),
+        )
     versions_where = f"NOT ({games_where})"
     query = request.query_string
     advisers_line, advisers_cards, advisers_open = (
@@ -2226,17 +2281,23 @@ async def review(request: web.Request) -> web.Response:
         f"<p>{' · '.join(chips)}</p>"
         "<p><small>One tap records the answer. «Own answer…» has the rest.</small></p>"
     )
+    return _page(
+        PAGES["/review"], _flash(request) + head + "".join(sections) + _series_datalist(request)
+    )
+
+
+def _series_datalist(request: web.Request) -> str:
+    """Every series' name, offered as one types a series."""
     with _db(request) as conn:
         names = [
             str(r[0])
             for r in conn.execute("SELECT name FROM series WHERE merged_into IS NULL ORDER BY name")
         ]
-    datalist = (
+    return (
         "<datalist id=series-names>"
         + "".join(f'<option value="{escape(n)}">' for n in names)
         + "</datalist>"
     )
-    return _page(PAGES["/review"], _flash(request) + head + "".join(sections) + datalist)
 
 
 def _label_queue(request: web.Request) -> str:
@@ -3008,6 +3069,7 @@ async def decide(request: web.Request) -> web.Response:
     version_id, other_id = int(str(form["version_id"])), int(str(form["other_id"]))
     decision, back = str(form["decision"]), str(form.get("back") or "/review")
     relation, _, flip = decision.partition(":")
+    relation, _, which = relation.partition("#")
     if relation == "skip":
         request.app["skipped"].add(frozenset((version_id, other_id)))
         # "Unsure" is an answer too (the training audit): kept in the log.
@@ -3017,8 +3079,43 @@ async def decide(request: web.Request) -> web.Response:
         raise _back(back, f"versions {version_id} / {other_id}: asked again later")
     if flip:
         version_id, other_id = other_id, version_id
-    await _label(_repo(request), version_id, other_id, relation)
+    repo = _repo(request)
+    named = await _series_named(repo, relation, which, form)
+    if named is None:
+        raise _back(back, "a series name, please")
+    await _label(repo, version_id, other_id, relation)
+    await _put_in_series(repo, which, named, (version_id, other_id))
     raise _back(back, f"version {version_id} {relation} version {other_id}")
+
+
+async def _series_named(repo: Repo, relation: str, which: str, form) -> list[str] | None:
+    """The series an answer "another of the series" names: by id, or typed
+    (several by commas, owner, 2026-10-24); [] for any other answer, None
+    when a series was meant and none is named."""
+    if relation != "series" or not which:
+        return []
+    from scripts.trial_page import series_names
+
+    named = series_names(str(form.get("series_name") or ""))
+    if which.isdigit():
+        named = [await repo.series_name(int(which)) or ""]
+    return named if any(named) else None
+
+
+async def _put_in_series(repo: Repo, which: str, named: list[str], versions) -> None:
+    """After the label, which relinks and proposes the series again: the
+    games are found again by their versions, the series by its id or its
+    name (owner, 2026-10-24: "one series" says which)."""
+    for name in named:
+        series_id = (
+            int(which)
+            if which.isdigit() and await repo.series_exists(int(which))
+            else await repo.series_by_name(name) or await repo.create_series(name)
+        )
+        for version in versions:
+            game = await repo.game_of_version(version)
+            if game is not None:
+                await repo.set_series_member(game, series_id, True)
 
 
 async def game_rename(request: web.Request) -> web.Response:
@@ -3074,30 +3171,11 @@ async def decide_games(request: web.Request) -> web.Response:
     # An answer the advisers agreed on (owner, 2026-10-12: Claude's proposal
     # confirmed by Gemini) is written as theirs, never as the operator's.
     by = str(form.get("by") or "")
-    named: list[str] = []
-    if relation == "series" and which:
-        from scripts.trial_page import series_names
-
-        # Several typed by commas (owner, 2026-10-24).
-        named = series_names(str(form.get("series_name") or ""))
-        if which.isdigit():
-            named = [await repo.series_name(int(which)) or ""]
-        if not any(named):
-            raise _back(back, "a series name, please")
+    named = await _series_named(repo, relation, which, form)
+    if named is None:
+        raise _back(back, "a series name, please")
     await _label(repo, a, b, relation, by=by if by in ADVISERS else "viewer")
-    for name in named:
-        # After the label, which relinks and proposes the series again: the
-        # games are found again by their anchors, the series by its id or
-        # its name (owner, 2026-10-24: "one series" says which).
-        series_id = (
-            int(which)
-            if which.isdigit() and await repo.series_exists(int(which))
-            else await repo.series_by_name(name) or await repo.create_series(name)
-        )
-        for anchor in (a, b):
-            game = await repo.game_of_version(anchor)
-            if game is not None:
-                await repo.set_series_member(game, series_id, True)
+    await _put_in_series(repo, which, named, (a, b))
     raise _back(back, f"game {game_id} / game {other_game}: {decision}")
 
 
