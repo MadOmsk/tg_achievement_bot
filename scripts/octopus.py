@@ -1,11 +1,16 @@
-"""The octopus sweep (#204): games looked for in every store, one after
-another (`services/octopus.py`), then the checks of step 12. Resumable: a game
-done is stamped (`fetch_state`, source `octopus`) and skipped while not due;
-`--force` asks everything again. The database is copied into `backups/` first.
+"""The octopus's queue worked through (#204, #215): seeds put in the queue —
+games, achievement lists, Steam apps, HLTB pages, names — then the keys due
+looked for in every store, a batch at a time, the linker after each batch
+(`game_link.link_dirty`). Resumable: the queue is in the database, and a key
+done is asked again only when due; `--force` asks everything again. The
+database is copied into `backups/` first.
 
-    BOT_ENV_FILE=.env.test .venv/Scripts/python.exe -X utf8 -m scripts.octopus \\
-        --db data/games.db --game 4070
-    … --which singles|stand-ins|all [--limit 50] [--no-link]
+    BOT_ENV_FILE=…/.env.games .venv/Scripts/python.exe -X utf8 -m scripts.octopus \\
+        --db data/games.db --auth-db data/games-bot.db --seed game:4070
+    … --seed list:psn:NPWR12345_00 --seed steam:620 --seed hltb:10270 \\
+      --seed "name:Dead Rising"
+    … --which singles|stand-ins|all [--limit 50] [--batch 20] [--no-link]
+    … (no seed: only what is already in the queue)
 """
 
 from __future__ import annotations
@@ -23,12 +28,14 @@ from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
-from bot.services.octopus import SOURCE, OctopusCollector
+from bot.services.octopus import BATCH, OctopusCollector, game_key, search_key
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.store_collect import StoreCollector
 
 logging.basicConfig(level="WARNING")
+
+KINDS = ("game", "list", "steam", "hltb", "name")
 
 
 def _backup(db_path: Path) -> Path:
@@ -45,12 +52,20 @@ def _backup(db_path: Path) -> Path:
     return target
 
 
+def _seed_key(seed: str) -> str:
+    kind, _, value = seed.partition(":")
+    if kind not in KINDS or not value:
+        raise SystemExit(f"--seed {seed!r}: one of {', '.join(KINDS)}, then ':' and a value")
+    return search_key(value) if kind == "name" else seed
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--db", required=True)
-    parser.add_argument("--game", type=int, action="append")
+    parser.add_argument("--seed", action="append", default=[], help="kind:value, see above")
     parser.add_argument("--which", choices=["all", "singles", "stand-ins"])
-    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--limit", type=int, default=None, help="keys handled at most")
+    parser.add_argument("--batch", type=int, default=BATCH, help="keys between linker passes")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--no-link", action="store_true", help="leave the games as they are")
     parser.add_argument(
@@ -58,12 +73,11 @@ async def main() -> int:
         help="the database whose PSN and Steam keys are used (the dev bot's; never production's)",
     )
     args = parser.parse_args()
-    if not args.game and not args.which:
-        parser.error("--game or --which")
     settings = get_settings()
     db_path = Path(args.db)
     print("database copied to", _backup(db_path))
     database = await Database(db_path).connect()
+    keys_db: Database | None = None
     try:
         repo = Repo(database)
         raw_answers.set_sink(repo.save_payload)
@@ -84,30 +98,30 @@ async def main() -> int:
             SteamAuth(keys_repo, cipher, env_key=key.get_secret_value() if key else None),
         )
         octopus = OctopusCollector(repo, collector)
-        games = args.game or await repo.game_ids_for_sweep(args.which)
-        done = 0
-        for game_id in games:
-            if args.limit is not None and done >= args.limit:
-                break
-            if (
-                not args.force
-                and not args.game
-                and not await repo.fetch_due(f"game:{game_id}", SOURCE)
-            ):
-                continue
-            report = await octopus.game(game_id, force=args.force, link=not args.no_link)
-            done += 1
-            print(
-                f"game {game_id} {report.name!r}: lists {report.lists},"
-                f" versions {report.versions_before} → {report.versions_after},"
-                f" found {len(set(report.found))}, psn pages {report.psn_pages},"
-                f" hltb spread {report.hltb_spread}"
-                + (f", errors {len(report.errors)}" if report.errors else "")
-            )
+        seeds = [_seed_key(s) for s in args.seed]
+        if args.which:
+            seeds += [game_key(g) for g in await repo.game_ids_for_sweep(args.which)]
+        added = sum([await octopus.enqueue(s, reason="seed") for s in seeds])
+        print(f"queued {added} new of {len(seeds)} seeds; waiting {await repo.octopus_waiting()}")
+        report = await octopus.run(
+            limit=args.limit, batch=args.batch, force=args.force, link=not args.no_link
+        )
+        print(
+            f"handled {report.handled} keys in {report.batches} batches:"
+            f" done {report.done}, not due {report.skipped}, games gone {report.gone};"
+            f" queued on the way {report.queued}; versions found {len(set(report.found))};"
+            f" games relinked {report.linked}, to review {report.review}"
+        )
+        for line in report.failed[:20]:
+            print("  error:", line)
         lone = await repo.lone_versions()
-        print(f"{done} games; versions in no game: {len(lone)}")
+        print(
+            f"left in the queue: {await repo.octopus_waiting()}; versions in no game: {len(lone)}"
+        )
     finally:
         raw_answers.set_sink(None)
+        if keys_db is not None and keys_db._conn is not None:
+            await keys_db._conn.close()
         await database.close()
     return 0
 

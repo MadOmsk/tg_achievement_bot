@@ -463,6 +463,34 @@ class StoreCollector:
             report.review = len(linked.review)
         return report
 
+    async def collect_steam_app(
+        self, appid: str, *, found: tuple[str, str], force: bool = False
+    ) -> CollectReport:
+        """One Steam app as an entry of its own (#215): its version, DLC,
+        editions and schema; a list of ours if somebody here has it."""
+        report = CollectReport("steam", appid)
+        held = await self._repo.title_record("steam", appid) is not None
+        await self._steam(appid, report, force, ours=held, found=found)
+        await self._steam_schema(appid)
+        return report
+
+    async def collect_hltb(self, hltb_id: int) -> tuple[CollectReport, str | None]:
+        """One HowLongToBeat page as an entry of its own (#215): the page read
+        and kept, the Steam apps it names, its links checked. Returns the
+        report and the entry's name (for a search by it)."""
+        report = CollectReport("hltb", str(hltb_id))
+        data = await hltb_page.fetch_page(hltb_id)
+        entry = hltb_page.parse_page(data) if data else None
+        if entry is None:
+            report.errors.append("hltb page unreadable")
+            return report, None
+        await self._repo.save_payload(f"hltb:{entry.hltb_id}", "hltb_page", data)
+        await self._repo.save_hltb_page(entry)
+        await self._from_hltb(entry, report)
+        await link_hltb_entry(self._repo, entry.hltb_id)
+        report.hltb_id = entry.hltb_id
+        return report, entry.name
+
     async def _hltb_by_name(self, name: str, ours: str, report: CollectReport) -> None:
         """HLTB's entries close to the name, each page read and kept; one is
         linked to a Steam version only when its page names that very app."""

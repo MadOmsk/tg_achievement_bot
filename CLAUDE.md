@@ -837,13 +837,23 @@ What the stores and HLTB say about a game, collected but not shown yet
   on is written into the games (pairs of versions, refused HLTB links); the rest
   teaches. What they disagree on is the operator's, in the viewer's one
   review tab (`/review`; `/trial` is an old address of it).
-- **The octopus search** (#204, owner, 2026-10-16/17; `services/octopus.py`,
-  `scripts/octopus.py`): one game looked for in every store and everything that
-  belongs to it pulled, in the protocol's order — each achievement list's own
-  product, the other stores by its name, HLTB, whole lists, DLC, editions, PSN
-  products of its concepts, then the game rebuilt and its HLTB spread. Each piece
-  keeps its raw answers and `fetch_state`; the sweep stamps a game done
-  (`octopus`, `game:<id>`) and checks that no version is in no game.
+- **The octopus** (#204, #215; owner, 2026-10-16/17, 2026-10-24;
+  `services/octopus.py`, `scripts/octopus.py`, migration 126): **collection
+  only** — whatever a game is reached from looked for in every store. A queue
+  (`octopus_queue`) on **stable keys**, never only a game id (a relink changes
+  it): `game:<id>` (opened into its lists, HLTB pages and every different name
+  it goes by — its own, Russian, versions', editions', HLTB's and alias,
+  normalized, six at most; PSN concepts' products read at once),
+  `list:<platform>:<title_id>` (`StoreCollector.collect`), `steam:<appid>`,
+  `hltb:<id>` (its Steam apps, then a search by its name), `name:<normalized>`
+  (every store and HLTB). A key done is stamped (`fetch_state`, source
+  `octopus`) and asked again only when due, whatever game it is in by then;
+  `hops` from the seed, none queued past `MAX_HOPS` (2). The versions touched
+  are marked dirty (`octopus_dirty`) and the **linker is a stage of its own**:
+  `game_link.link_dirty` after each batch, never inside the collection. More
+  entry points (DLC, edition, achievement, series, account, news, a pasted
+  link), the step-12 checks page and the triggers from the bot: later stages
+  of #215.
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions

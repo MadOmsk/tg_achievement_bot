@@ -1385,39 +1385,3 @@ def test_a_game_is_not_called_by_an_id_when_a_release_has_a_name() -> None:
         year=2018,
     )
     assert game_name([unnamed, named]).lower() == "days gone"
-
-
-async def test_the_octopus_runs_every_step_for_a_game(repo: Repo) -> None:
-    from bot.services.octopus import OctopusCollector
-    from bot.services.store_collect import CollectReport
-    from bot.services.stores import StoreVersion
-
-    v = await repo.save_version(
-        StoreVersion(store="steam", product_id="10", console="steam", name="A Game"),
-        platform=None,
-        title_id=None,
-    )
-    game = await repo.create_game("A Game", 2020, v)
-    await repo.write_members({v: (game, "version", None, None)})
-    asked: list[str] = []
-
-    class Stub:
-        async def collect(self, platform, title_id, *, force=False, link=True):
-            asked.append(f"collect {platform}:{title_id}")
-            return CollectReport(platform, title_id)
-
-        async def collect_name(self, name, *, link=True):
-            asked.append(f"name {name}")
-            found = await repo.save_version(
-                StoreVersion(store="psn", product_id="77", console="ps5", name="A Game"),
-                platform=None,
-                title_id=None,
-            )
-            report = CollectReport("name", name)
-            report.versions.append(found)
-            return report
-
-    report = await OctopusCollector(repo, Stub()).game(game)  # type: ignore[arg-type]
-    assert asked == ["name A Game"]  # no list of ours: only the search by name
-    assert report.found and report.versions_after >= 1
-    assert await repo.lone_versions() == []

@@ -55,6 +55,7 @@ Layout:
                     entries, each source's last answer and when to ask again (091).
     _games.py       games over versions: which game each version is, how, and
                     who decided it (092).
+    _octopus.py     the octopus's queue and the linker's dirty set (#215).
     _series.py      game series: which games are in each, proposed by the
                     linker or said by the operator and the advisers (105).
 
@@ -129,6 +130,7 @@ from bot.db.repo._models import (
     UserSettings,
 )
 from bot.db.repo._notifications import NotificationRow, PushSubscription, _NotificationsRepo
+from bot.db.repo._octopus import _OctopusRepo
 from bot.db.repo._passkeys import PasskeyRow, _PasskeysRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
@@ -205,6 +207,7 @@ __all__ = [
 
 
 class Repo(
+    _OctopusRepo,
     _AccountsRepo,
     _ChatsRepo,
     _PollingRepo,
