@@ -2300,50 +2300,59 @@ def _series_datalist(request: web.Request) -> str:
     )
 
 
-def _label_queue(request: web.Request) -> str:
+def label_queue(
+    conn: sqlite3.Connection, skipped: set | frozenset = frozenset()
+) -> tuple[list[tuple[sqlite3.Row, str]], dict[str, int], list[str]]:
     """Pairs to label for the model's sake (the training audit, 2026-10-24):
     the doubtful pairs in which the model gives a rare relation — a VR
     version, a compilation, a remake, a remaster — at least `LABEL_FLOOR`,
     not yet answered by the operator. The relation the operator has answered
-    least comes first, then the pairs the model is least sure of."""
-    with _db(request) as conn:
-        answered = {
-            str(r[0]): int(r[1])
-            for r in conn.execute(
-                "SELECT relation, COUNT(*) FROM match_decisions WHERE decided_by = 'viewer'"
-                " GROUP BY relation"
-            )
-        }
-        order = sorted(RARE_RELATIONS, key=lambda c: (answered.get(c, 0), RARE_RELATIONS.index(c)))
-        labelled = {
-            frozenset((int(r[0]), int(r[1])))
-            for r in conn.execute(
-                "SELECT version_id, other_id FROM match_decisions WHERE decided_by = 'viewer'"
-            )
-        }
-        skipped = request.app["skipped"]
-        found: list[tuple[tuple[int, float], sqlite3.Row, str]] = []
+    least comes first, then the pairs the model is least sure of. Returns
+    (row, its rare relation) in that order, the operator's counts, and the
+    relations' order."""
+    answered = {
+        str(r[0]): int(r[1])
         for r in conn.execute(
-            "SELECT version_id AS subject, other_id AS other, relation, p, probs, features"
-            " FROM match_pairs"
-        ):
-            pair = frozenset((int(r["subject"]), int(r["other"])))
-            if pair in labelled:
-                continue
-            probs = json.loads(r["probs"] or "{}")
-            rare = max(RARE_RELATIONS, key=lambda c: probs.get(c, 0.0))
-            if probs.get(rare, 0.0) < LABEL_FLOOR:
-                continue
-            # Least sure first: the rare relation nearest to even odds.
-            found.append(((order.index(rare), abs(probs[rare] - 0.5) + (pair in skipped)), r, rare))
-        found.sort(key=lambda t: t[0])
+            "SELECT relation, COUNT(*) FROM match_decisions WHERE decided_by = 'viewer'"
+            " GROUP BY relation"
+        )
+    }
+    order = sorted(RARE_RELATIONS, key=lambda c: (answered.get(c, 0), RARE_RELATIONS.index(c)))
+    labelled = {
+        frozenset((int(r[0]), int(r[1])))
+        for r in conn.execute(
+            "SELECT version_id, other_id FROM match_decisions WHERE decided_by = 'viewer'"
+        )
+    }
+    found: list[tuple[tuple[int, float], sqlite3.Row, str]] = []
+    for r in conn.execute(
+        "SELECT version_id AS subject, other_id AS other, relation, p, probs, features"
+        " FROM match_pairs"
+    ):
+        pair = frozenset((int(r["subject"]), int(r["other"])))
+        if pair in labelled:
+            continue
+        probs = json.loads(r["probs"] or "{}")
+        rare = max(RARE_RELATIONS, key=lambda c: probs.get(c, 0.0))
+        if probs.get(rare, 0.0) < LABEL_FLOOR:
+            continue
+        # Least sure first: the rare relation nearest to even odds.
+        found.append(((order.index(rare), abs(probs[rare] - 0.5) + (pair in skipped)), r, rare))
+    found.sort(key=lambda t: t[0])
+    return [(r, rare) for _, r, rare in found], answered, order
+
+
+def _label_queue(request: web.Request) -> str:
+    """The labelling queue (`label_queue`) as a page."""
+    with _db(request) as conn:
+        queue, answered, order = label_queue(conn, request.app["skipped"])
         tally = " · ".join(
             f"{escape(c)}: {answered.get(c, 0)} answered,"
-            f" {sum(1 for _, _, x in found if x == c)} to ask"
+            f" {sum(1 for _, x in queue if x == c)} to ask"
             for c in order
         )
         rows = _pair_rows(
-            conn, [r for _, r, _ in found[:PAGE_SIZE]], "/review?tab=label", None, _label_picker
+            conn, [r for r, _ in queue[:PAGE_SIZE]], "/review?tab=label", None, _label_picker
         )
     return (
         "<h2>Labelling — rare relations</h2>"
