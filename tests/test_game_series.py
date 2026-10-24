@@ -376,3 +376,57 @@ def test_a_sure_label_between_two_series_never_chains_them() -> None:
     )
     series = _series(games, labels=[(2, 3, "viewer")])
     assert series == {"Halo": {1, 2, 3}, "Gears of War": {3, 4, 2}}
+
+
+async def test_one_series_answered_in_the_review_says_which(repo: Repo, tmp_path) -> None:
+    """ "Another of the series" names the series (owner, 2026-10-24): the
+    answer is the label, and both games are put in that series by hand — an
+    existing one by id, or one typed by name. A label relinks, so the games
+    are named here, not counted by id."""
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from scripts.catalog_viewer import build
+
+    await _game(repo, "Halo 3", 2007)
+    await _game(repo, "Halo: Reach", 2010)
+    await _game(repo, "Gears of War", 2006, developer="Epic")
+    await SeriesBuilder(repo).rebuild()
+    halo = await _series_id(repo, "Halo")
+
+    async def game(name: str) -> str:
+        cur = await repo._conn.execute("SELECT game_id FROM games WHERE name = ?", (name,))
+        return str((await cur.fetchone())[0])
+
+    app = build(tmp_path / "test.db")
+    app.on_startup.clear()
+    app.on_cleanup.clear()
+    app["repo"] = repo
+    async with TestClient(TestServer(app)) as client:
+        await client.post(
+            "/decide-games",
+            data={
+                "game_id": await game("Halo 3"),
+                "other_game": await game("Halo: Reach"),
+                "decision": f"series#{halo}",
+            },
+        )
+        await client.post(
+            "/decide-games",
+            data={
+                "game_id": await game("Halo: Reach"),
+                "other_game": await game("Gears of War"),
+                "decision": "series#new",
+                "series_name": "Xbox shooters",
+            },
+        )
+    cur = await repo._conn.execute(
+        "SELECT s.name, g.name FROM game_series gs JOIN series s USING (series_id)"
+        " JOIN games g ON g.game_id = gs.game_id"
+        " WHERE gs.member = 1 AND gs.source <> 'auto' AND s.merged_into IS NULL"
+    )
+    assert {(r[0], r[1]) for r in await cur.fetchall()} == {
+        ("Halo", "Halo 3"),
+        ("Halo", "Halo: Reach"),
+        ("Xbox shooters", "Halo: Reach"),
+        ("Xbox shooters", "Gears of War"),
+    }

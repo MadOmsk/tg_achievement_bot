@@ -1053,7 +1053,10 @@ What the stores and HLTB say about a game, collected but not shown yet
   again. **Answers are a tap** (owner, 2026-10-11): two games — "✓" the
   model's guess, "another of the series" (label `series`: relates nothing,
   like `other`, but tells the fit the model mixed up a series), "other: ask
-  later" (nothing written, the pair comes back after the rest); two versions —
+  later" (nothing written, the pair comes back after the rest); "another of the
+  series" **names the series** (owner, 2026-10-24): a button per series both
+  games are in, or a field for its name (ours suggested) — both games are put
+  in it by hand beside the label; two versions —
   same game, a different game, a remaster of it, a remake of it (one tap moves
   the version out and relates the games). The rest is under "more…". **No authentication
   yet** (#186).

@@ -1485,24 +1485,42 @@ def _game_picker(
     back: str,
     guess: str = "",
     names: tuple[str, str] | None = None,
+    series: list[tuple[int, str]] | None = None,
 ) -> str:
-    """The answers about two games: the model's guess, another of the series,
-    skip — the rest under "more…". With the games' names every button says
-    what it records."""
+    """The answers about two games: the model's guess, another of the series
+    — which series (owner, 2026-10-24: "one series" with no name chained
+    LEGO into Star Wars) —, skip; the rest under "more…". With the games'
+    names every button says what it records."""
     this, that = names or ("this game", "that game")
     quick = []
     if guess in _GUESS_WORDS:
         quick.append((guess, f"✓ <b>Model</b>: {_relation_sentence(guess, this, that)}"))
-    quick += [("series", "another game of the series"), ("skip", "ask later")]
-    return _answer_forms(
-        "/decide-games",
-        {"game_id": game_id, "other_game": other_game},
-        quick,
-        tuple(
-            (key, _relation_sentence(key, this, that, html=False) if names else label)
-            for key, label in _GAME_DECISIONS
-        ),
-        back,
+    quick += [
+        (f"series#{sid}", f"одна серия — <b>{escape(name)}</b>") for sid, name in series or []
+    ]
+    quick.append(("skip", "ask later"))
+    named = (
+        f'<form method=post action="/decide-games" style="display:flex;gap:4px;margin:0 0 4px">'
+        f'<input type=hidden name=game_id value="{game_id}">'
+        f'<input type=hidden name=other_game value="{other_game}">'
+        f'<input type=hidden name=back value="{escape(back)}">'
+        '<input type=hidden name=decision value="series#new">'
+        "<input name=series_name list=series-names required style='flex:1'"
+        f" placeholder='{'одна серия — другая' if series else 'одна серия — какая?'}'>"
+        "<button>ok</button></form>"
+    )
+    return (
+        _answer_forms(
+            "/decide-games",
+            {"game_id": game_id, "other_game": other_game},
+            quick,
+            tuple(
+                (key, _relation_sentence(key, this, that, html=False) if names else label)
+                for key, label in _GAME_DECISIONS
+            ),
+            back,
+        )
+        + named
     )
 
 
@@ -2054,7 +2072,17 @@ async def review(request: web.Request) -> web.Response:
         f"<p>{' · '.join(chips)}</p>"
         "<p><small>Одно нажатие — ответ записан. «Свой ответ…» — остальные варианты.</small></p>"
     )
-    return _page(PAGES["/review"], _flash(request) + head + "".join(sections))
+    with _db(request) as conn:
+        names = [
+            str(r[0])
+            for r in conn.execute("SELECT name FROM series WHERE merged_into IS NULL ORDER BY name")
+        ]
+    datalist = (
+        "<datalist id=series-names>"
+        + "".join(f'<option value="{escape(n)}">' for n in names)
+        + "</datalist>"
+    )
+    return _page(PAGES["/review"], _flash(request) + head + "".join(sections) + datalist)
 
 
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
@@ -2099,12 +2127,24 @@ def _game_pair_rows(
         feats = json.loads(r["features"]) if r["features"] else {}
         signs = ", ".join(k for k in feats if k != "bias")
         names = (_game_name(conn, ga[0]), _game_name(conn, gb[0]))
+        shared = [
+            (int(x[0]), str(x[1]))
+            for x in conn.execute(
+                "SELECT s.series_id, s.name FROM series s"
+                " JOIN game_series a ON a.series_id = s.series_id"
+                "  AND a.game_id = ? AND a.member = 1"
+                " JOIN game_series b ON b.series_id = s.series_id"
+                "  AND b.game_id = ? AND b.member = 1"
+                " WHERE s.merged_into IS NULL ORDER BY s.name",
+                (ga[0], gb[0]),
+            )
+        ]
         lines.append(
             f"<tr><td>{_game_card(conn, ga[0])}</td>"
             f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
             f"<br><small>{escape(signs)}</small></td>"
             f"<td>{_game_card(conn, gb[0])}</td>"
-            f"<td>{_game_picker(ga[0], gb[0], back, str(r['relation']), names)}"
+            f"<td>{_game_picker(ga[0], gb[0], back, str(r['relation']), names, shared)}"
             f"{_advice_badge(advice, games_pair_id(ga[0], gb[0]), games_pair_id(gb[0], ga[0]))}"
             "</td></tr>"
         )
@@ -2794,6 +2834,9 @@ async def decide_games(request: web.Request) -> web.Response:
     game_id, other_game = int(str(form["game_id"])), int(str(form["other_game"]))
     decision, back = str(form["decision"]), str(form.get("back") or "/review?tab=games")
     relation, _, flip = decision.partition(":")
+    # "series#<id>" or "series#new" with its name: which series (owner,
+    # 2026-10-24) — both games are put in it by hand as well.
+    relation, _, which = relation.partition("#")
     repo = _repo(request)
     if relation == "skip":
         # Every pair of versions between the two games comes back later.
@@ -2817,7 +2860,27 @@ async def decide_games(request: web.Request) -> web.Response:
     # An answer the advisers agreed on (owner, 2026-10-12: Claude's proposal
     # confirmed by Gemini) is written as theirs, never as the operator's.
     by = str(form.get("by") or "")
+    named = ""
+    if relation == "series" and which:
+        named = str(form.get("series_name") or "").strip()
+        if which.isdigit():
+            named = await repo.series_name(int(which)) or named
+        if not named:
+            raise _back(back, "a series name, please")
     await _label(repo, a, b, relation, by=by if by in ADVISERS else "viewer")
+    if named:
+        # After the label, which relinks and proposes the series again: the
+        # games are found again by their anchors, the series by its id or
+        # its name (owner, 2026-10-24: "one series" says which).
+        series_id = (
+            int(which)
+            if which.isdigit() and await repo.series_exists(int(which))
+            else await repo.series_by_name(named) or await repo.create_series(named)
+        )
+        for anchor in (a, b):
+            game = await repo.game_of_version(anchor)
+            if game is not None:
+                await repo.set_series_member(game, series_id, True)
     raise _back(back, f"game {game_id} / game {other_game}: {decision}")
 
 

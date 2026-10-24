@@ -325,6 +325,13 @@ class _SeriesRepo:
         )
         return await cursor.fetchone() is not None
 
+    async def series_name(self, series_id: int) -> str | None:
+        cursor = await self._conn.execute(
+            "SELECT name FROM series WHERE series_id = ?", (series_id,)
+        )
+        row = await cursor.fetchone()
+        return str(row[0]) if row else None
+
     async def series_by_name(self, name: str) -> int | None:
         cursor = await self._conn.execute(
             "SELECT series_id FROM series WHERE merged_into IS NULL"

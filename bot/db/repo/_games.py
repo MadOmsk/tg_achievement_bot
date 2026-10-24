@@ -444,6 +444,14 @@ class _GamesRepo:
         row = await cursor.fetchone()
         return int(row["game_id"]) if row and row["game_id"] is not None else None
 
+    async def game_of_version(self, version_id: int) -> int | None:
+        """The game a version is in now (a relink may have given it another)."""
+        cursor = await self._conn.execute(
+            "SELECT game_id FROM versions WHERE version_id = ?", (version_id,)
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+
     async def anchor_of(self, game_id: int) -> int | None:
         """A version that stands for the game: its anchor, else any of its."""
         cursor = await self._conn.execute(
