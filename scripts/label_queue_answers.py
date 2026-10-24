@@ -5,7 +5,7 @@ Two advisers answered one prompt each (a Claude and a Gemini, with a web
 search). Their answers go into the advice store (`data/advice`, beside the
 database) as `claude` and `gemini`, where `advise_pairs apply` writes what
 both say alike as their label (`claude+gemini`, weighed
-`match_fit.MAJORITY_WEIGHT`) and leaves what they dispute to the operator.
+`match_fit.BOTH_WEIGHT`) and leaves what they dispute to the operator.
 
 **A blind sample is held back** (`--audit`, 20 pairs by default): pairs the
 two agree on that are not put in the store at all, so the operator answers

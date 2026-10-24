@@ -38,6 +38,9 @@ from bot.services.game_match import CLASSES, probabilities
 OPERATOR_WEIGHT = 0.9
 UNANIMOUS_WEIGHT = 0.8
 MAJORITY_WEIGHT = 0.4
+# Two advisers (a Claude and a Gemini, with a web search) agreeing: right on
+# 14 of 15 pairs the operator answered blind (2026-10-24).
+BOTH_WEIGHT = 0.7
 # Who gave a label in the full run: all three advisers, or two of the three.
 UNANIMOUS = "advisers:3/3"
 MAJORITY = "advisers:2/3"
@@ -75,7 +78,9 @@ def label_weight(decided_by: str | None) -> float:
     by = decided_by or ""
     if by in (UNANIMOUS, ALL_THREE):
         return UNANIMOUS_WEIGHT
-    if by in (MAJORITY, BOTH) or by in ADVISER_SOURCES:
+    if by == BOTH:
+        return BOTH_WEIGHT
+    if by == MAJORITY or by in ADVISER_SOURCES:
         return MAJORITY_WEIGHT
     return OPERATOR_WEIGHT
 
