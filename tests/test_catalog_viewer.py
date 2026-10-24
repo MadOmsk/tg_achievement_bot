@@ -225,3 +225,11 @@ def test_another_game_of_the_series_is_one_tap_naming_it() -> None:
     assert 'value="series#new"' in html and "another?" in html
     bare = _decision_picker(1, 2, "/review")
     assert "series#" in bare and "which?" in bare and 'value="series"' not in bare
+
+
+def test_the_label_queue_can_say_a_demo() -> None:
+    from scripts.catalog_viewer import _label_picker
+
+    html = _label_picker(1, 2, "/review?tab=label")
+    for key in ("demo_of", "demo_of:flip", "tool_of", "mode_of", "extra_of"):
+        assert f'value="{key}"' in html

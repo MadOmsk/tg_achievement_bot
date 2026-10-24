@@ -1637,6 +1637,8 @@ def _game_picker(
     )
 
 
+PART_DECISIONS = ("demo_of", "tool_of", "mode_of", "extra_of")
+
 # The labelling queue's answers (the training audit, 2026-10-24): the rare
 # relations are one tap, as one game and another game are.
 _LABEL_QUICK = (
@@ -1652,7 +1654,9 @@ _LABEL_MORE = (
     ("remake_of:flip", "⇄ it is a remake of this"),
     ("contains:flip", "⇄ it is a compilation holding this"),
     ("vr_of:flip", "⇄ it is the VR version of this"),
-    ("series", "another game of its series"),
+    # The parts of a game, as the version answers have them (owner,
+    # 2026-10-24: «Tiny Bunny: Prologue» is a demo, and there was no way).
+    *(item for item in _DECISIONS_MORE if item[0].split(":")[0] in PART_DECISIONS),
     ("skip", "skip: ask again later"),
 )
 # The relations the queue asks about, rarest among the operator's labels first.
