@@ -20,6 +20,7 @@ import argparse
 import json
 import sqlite3
 import zlib
+from collections.abc import Callable
 from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -1614,6 +1615,39 @@ def _game_picker(
     )
 
 
+# The labelling queue's answers (the training audit, 2026-10-24): the rare
+# relations are one tap, as one game and another game are.
+_LABEL_QUICK = (
+    ("same", "same game"),
+    ("other", "a different game"),
+    ("remaster_of", "a remaster of it"),
+    ("remake_of", "a remake of it"),
+    ("contains", "a compilation holding it"),
+    ("vr_of", "the VR version of it"),
+)
+_LABEL_MORE = (
+    ("remaster_of:flip", "⇄ it is a remaster of this"),
+    ("remake_of:flip", "⇄ it is a remake of this"),
+    ("contains:flip", "⇄ it is a compilation holding this"),
+    ("vr_of:flip", "⇄ it is the VR version of this"),
+    ("series", "another game of its series"),
+    ("skip", "skip: ask again later"),
+)
+# The relations the queue asks about, rarest among the operator's labels first.
+RARE_RELATIONS = ("vr_of", "contains", "remake_of", "remaster_of")
+LABEL_FLOOR = 0.1  # a relation the model gives at least this is worth asking
+
+
+def _label_picker(version_id: int, other_id: int, back: str) -> str:
+    return _answer_forms(
+        "/decide",
+        {"version_id": version_id, "other_id": other_id},
+        [(key, escape(label)) for key, label in _LABEL_QUICK],
+        _LABEL_MORE,
+        back,
+    )
+
+
 def _decision_picker(version_id: int, other_id: int, back: str) -> str:
     """The answers about two versions: one game, another game, a remaster, a
     remake — the rest under "more…"."""
@@ -2008,6 +2042,7 @@ def _pair_rows(
     pairs: list[sqlite3.Row],
     back: str,
     advice: AdviceStore | None = None,
+    picker: Callable[[int, int, str], str] = _decision_picker,
 ) -> str:
     """Doubtful pairs as one table: the subject and its game, what the model
     thinks and how sure, the other and its game, and the answer."""
@@ -2056,7 +2091,7 @@ def _pair_rows(
             f"<td><b>{escape(r['relation'])}</b> {r['p']:.2f}"
             f"<br><small>{escape(signs)}</small></td>"
             f"<td>{side(r['other'])}</td>"
-            f"<td>{_decision_picker(r['subject'], r['other'], back)}"
+            f"<td>{picker(r['subject'], r['other'], back)}"
             + _advice_badge(
                 advice,
                 *(
@@ -2117,6 +2152,8 @@ async def review(request: web.Request) -> web.Response:
         " (SELECT game_id FROM versions WHERE version_id = mp.other_id)"
     )
     games_where = f"mp.relation IN ({marks}) AND {two_games}"
+    if tab == "label":
+        return _page(PAGES["/review"], _flash(request) + _label_queue(request))
     versions_where = f"NOT ({games_where})"
     query = request.query_string
     advisers_line, advisers_cards, advisers_open = (
@@ -2179,6 +2216,7 @@ async def review(request: web.Request) -> web.Response:
         ),
         chip(f"Версия ↔ игра ({counts['versions']})", "/review?tab=versions", tab == "versions"),
         chip(f"Связь игр, модель ({counts['games']})", "/review?tab=games", tab == "games"),
+        chip("Разметка", "/review?tab=label", False),
     ]
     if trial is not None:
         chips += [
@@ -2201,6 +2239,60 @@ async def review(request: web.Request) -> web.Response:
         + "</datalist>"
     )
     return _page(PAGES["/review"], _flash(request) + head + "".join(sections) + datalist)
+
+
+def _label_queue(request: web.Request) -> str:
+    """Pairs to label for the model's sake (the training audit, 2026-10-24):
+    the doubtful pairs in which the model gives a rare relation — a VR
+    version, a compilation, a remake, a remaster — at least `LABEL_FLOOR`,
+    not yet answered by the operator. The relation the operator has answered
+    least comes first, then the pairs the model is least sure of."""
+    with _db(request) as conn:
+        answered = {
+            str(r[0]): int(r[1])
+            for r in conn.execute(
+                "SELECT relation, COUNT(*) FROM match_decisions WHERE decided_by = 'viewer'"
+                " GROUP BY relation"
+            )
+        }
+        order = sorted(RARE_RELATIONS, key=lambda c: (answered.get(c, 0), RARE_RELATIONS.index(c)))
+        labelled = {
+            frozenset((int(r[0]), int(r[1])))
+            for r in conn.execute(
+                "SELECT version_id, other_id FROM match_decisions WHERE decided_by = 'viewer'"
+            )
+        }
+        skipped = request.app["skipped"]
+        found: list[tuple[tuple[int, float], sqlite3.Row, str]] = []
+        for r in conn.execute(
+            "SELECT version_id AS subject, other_id AS other, relation, p, probs, features"
+            " FROM match_pairs"
+        ):
+            pair = frozenset((int(r["subject"]), int(r["other"])))
+            if pair in labelled:
+                continue
+            probs = json.loads(r["probs"] or "{}")
+            rare = max(RARE_RELATIONS, key=lambda c: probs.get(c, 0.0))
+            if probs.get(rare, 0.0) < LABEL_FLOOR:
+                continue
+            # Least sure first: the rare relation nearest to even odds.
+            found.append(((order.index(rare), abs(probs[rare] - 0.5) + (pair in skipped)), r, rare))
+        found.sort(key=lambda t: t[0])
+        tally = " · ".join(
+            f"{escape(c)}: {answered.get(c, 0)} answered,"
+            f" {sum(1 for _, _, x in found if x == c)} to ask"
+            for c in order
+        )
+        rows = _pair_rows(
+            conn, [r for _, r, _ in found[:PAGE_SIZE]], "/review?tab=label", None, _label_picker
+        )
+    return (
+        "<h2>Разметка — редкие связи</h2>"
+        f"<p><small>{tally}</small></p>"
+        "<p><small>Пары, где модель допускает VR-версию, сборник, ремейк или ремастер;"
+        " первым — то, на что у тебя меньше всего ответов. Каждый ответ идёт в обучение."
+        "</small></p>" + rows
+    )
 
 
 def _game_card(conn: sqlite3.Connection, game_id: int) -> str:

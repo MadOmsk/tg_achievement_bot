@@ -205,3 +205,11 @@ def test_a_confirmation_names_the_game_behind_an_id() -> None:
     assert "(2016–2018)" in said and "2 versions: one, ps4" in said
     assert "game 2 was merged into" in _game_said(conn, 2)
     assert "no such game" in _game_said(conn, 99)
+
+
+def test_the_label_queue_offers_every_rare_relation_in_one_tap() -> None:
+    from scripts.catalog_viewer import RARE_RELATIONS, _label_picker
+
+    html = _label_picker(1, 2, "/review?tab=label")
+    for relation in RARE_RELATIONS:
+        assert f'value="{relation}"' in html
