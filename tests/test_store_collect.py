@@ -446,6 +446,12 @@ async def test_a_phantom_series_version_goes_into_the_one_version(
         return [fixed]
 
     monkeypatch.setattr(store_collect.xbox_catalog, "products_for_title", products_for_title)
+
+    async def no_products(ids) -> list[dict]:
+        # The editions' bundled add-ons: none here (the test is about versions).
+        return []
+
+    monkeypatch.setattr(store_collect.xbox_catalog, "products", no_products)
     monkeypatch.setattr(StoreCollector, "_siblings", _nothing)
     await repo.upsert_title("1799887933", "The Witcher 3", "xbox_modern")
     report = await StoreCollector(repo).collect("xbox_modern", "1799887933")
