@@ -1471,8 +1471,10 @@ _DECISIONS_QUICK = (
     ("other", "1 and 2 are different games"),
     ("remaster_of", "1 is a remaster of 2"),
     ("remake_of", "1 is a remake of 2"),
+    ("enhanced_of", "1 is an enhanced edition of 2"),
 )
 _DECISIONS_MORE = (
+    ("enhanced_of:flip", "2 is an enhanced edition of 1"),
     ("remaster_of:flip", "2 is a remaster of 1"),
     ("remake_of:flip", "2 is a remake of 1"),
     ("demo_of", "1 is a demo of 2"),
@@ -1582,6 +1584,7 @@ def _relation_sentence(decision: str, this: str, that: str, *, html: bool = True
         "series": f"{a} and {b} are {bold('different games of one series')}",
         "other": f"{a} and {b} are {bold('not related')}",
         "remaster_of": f"{a} is a {bold('remaster')} of {b}",
+        "enhanced_of": f"{a} is an {bold('enhanced edition')} of {b}",
         "remake_of": f"{a} is a {bold('remake')} of {b}",
         "contains": f"{a} is a {bold('compilation that holds')} {b}",
         "vr_of": f"{a} is the {bold('VR version')} of {b}",
@@ -1639,7 +1642,7 @@ def _game_picker(
     )
 
 
-PART_DECISIONS = ("demo_of", "tool_of", "mode_of", "extra_of")
+PART_DECISIONS = ("demo_of", "tool_of", "mode_of", "extra_of", "enhanced_of")
 
 # The labelling queue's answers (the training audit, 2026-10-24): the rare
 # relations are one tap, as one game and another game are.
@@ -1647,6 +1650,7 @@ _LABEL_QUICK = (
     ("same", "1 and 2 are one game"),
     ("other", "1 and 2 are different games"),
     ("remaster_of", "1 is a remaster of 2"),
+    ("enhanced_of", "1 is an enhanced edition of 2"),
     ("remake_of", "1 is a remake of 2"),
     ("contains", "1 is a compilation holding 2"),
     ("vr_of", "1 is the VR version of 2"),
@@ -2414,7 +2418,7 @@ def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
         f"SELECT (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM versions v"
         "  WHERE v.game_id = ? AND v.role <> 'covered') AS consoles,"
         " (SELECT " + COVER.replace(" AS cover", "") + " FROM versions v"
-        "  WHERE v.game_id = ? AND v.role IN ('version', 'edition') LIMIT 1) AS cover",
+        "  WHERE v.game_id = ? AND v.role IN ('version', 'edition', 'enhanced') LIMIT 1) AS cover",
         (game_id, game_id),
     ).fetchone()
     return (

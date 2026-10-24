@@ -107,12 +107,15 @@ class _GamesRepo:
         features: dict[str, float] | None,
         model: str | None,
         decided_by: str,
+        overrule: bool = False,
     ) -> None:
         """A label on a pair; a pair has one label that counts, whichever way
         round it was given, and every one is kept in `label_log`. The
         operator's (`viewer`) is never replaced by anybody else's: theirs is
         logged as `refused` (the training audit, 2026-10-24: an adviser's
-        answer and the operator's could not be compared)."""
+        answer and the operator's could not be compared) — unless the
+        operator asked for it (`overrule`; owner, 2026-10-24: the web's
+        answer over theirs on enhanced editions they had called remasters)."""
         async with self.transaction():
             cursor = await self._conn.execute(
                 "SELECT decided_by FROM match_decisions WHERE (version_id = ? AND other_id = ?)"
@@ -120,7 +123,9 @@ class _GamesRepo:
                 (version_id, other_id, other_id, version_id),
             )
             held = await cursor.fetchone()
-            refused = held is not None and held[0] == OPERATOR and decided_by != OPERATOR
+            refused = (
+                held is not None and held[0] == OPERATOR and decided_by != OPERATOR and not overrule
+            )
             await self.log_label(
                 "pair",
                 "refused" if refused else "label",

@@ -38,6 +38,7 @@ from bot.services.game_match import (
     era,
     game_name,
     is_compilation,
+    is_enhanced,
     is_extra,
     kind_of,
     plain_text,
@@ -51,7 +52,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Labels that put two versions in one game; every other label keeps them apart.
-JOINING = {"same", "edition", "demo_of", "tool_of", "mode_of", "extra_of"}
+JOINING = {"same", "edition", "enhanced_of", "demo_of", "tool_of", "mode_of", "extra_of"}
 # The roles that are a part of a game rather than the game: each names the
 # version it is of, and vetoes nothing. An extra (a soundtrack, an artbook;
 # owner, 2026-10-14) is one; an extra of no game is its own entry.
@@ -361,7 +362,7 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
     roles: dict[int, tuple[str, int | None]] = {}
     for c in cluster:
         relation, of = told.get(c.version_id, (None, None))
-        if relation in ("demo_of", "tool_of", "mode_of", "extra_of"):
+        if relation in ("demo_of", "tool_of", "mode_of", "extra_of", "enhanced_of"):
             roles[c.version_id] = (str(relation)[: -len("_of")], of)
             continue
         kind = kind_of(c)
@@ -377,10 +378,17 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
                 )
 
             roles[c.version_id] = (kind, max(parents, key=fit).version_id)
+        elif kind == "edition" and (plain := [g for g in parents if not is_enhanced(g)]):
+            # An enhanced edition (owner, 2026-10-24: they are many): a
+            # product of its own that is the game made more of — GOTY,
+            # Definitive, a Director's Cut — kept in the game and marked, of
+            # the plain version it enhances (the earliest). A remaster is not
+            # one: it is a game of its own.
+            roles[c.version_id] = (
+                "enhanced",
+                min(plain, key=lambda g: (era(g) or 9999, g.version_id)).version_id,
+            )
         else:
-            # No "edition" role (owner, 2026-10-11): an edition is a pack the
-            # store sells around the same version (`editions`), and a product
-            # of its own is the game, or a remaster.
             roles[c.version_id] = ("version", None)
     # A PC version of no known store only says "it is on PC" (owner,
     # 2026-10-12): once the game has a PC version in a known store (xbox pc,

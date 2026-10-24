@@ -917,9 +917,15 @@ What the stores and HLTB say about a game, collected but not shown yet
     Reloaded is a remaster of Ultimate Edition, a remake of Gears of War. Inside a game: the same product across platforms (PS4 and PS5, One and
     Series released together under one name are one game, even with two lists —
     not two games of one pack, Return to Arkham), demos (betas and tech tests too),
-    tools and modes. No "edition" role (owner, 2026-10-11): GOTY / Deluxe are packs the
-    stores sell around the same version (`editions`), not versions. A later product on a newer
-    console with a list of its own is a remaster (Ghost of Tsushima DC on PS5);
+    tools and modes, and **enhanced editions** (owner, 2026-10-24: they are many):
+    a product of its own that is the game made more of — GOTY, Complete, Ultimate,
+    Definitive, a Director's Cut, an HD or Enhanced release with its DLC or modest
+    improvements — stays in the game with the role `enhanced`, `of_version_id` the
+    plain version, by its name (`game_match.is_enhanced`) or by an `enhanced_of`
+    label (one game to a fit). A pack a store sells around one version is an
+    edition (`editions`), not a version. A remaster — reworked, marketed as one —
+    is a game of its own; a later product on a newer console with a list of its
+    own is one unless the labels call it enhanced (Ghost of Tsushima DC on PS5);
     Witcher 3's next-gen products are a remaster, its Steam app the original.
     Such a game is named by its own release ("Gears of War: Ultimate Edition").
   - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;

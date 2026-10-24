@@ -57,6 +57,7 @@ FEW_LABELS = 40
 LABEL_CLASS = {
     "same": "same",
     "edition": "same",
+    "enhanced_of": "same",  # an enhanced edition is one game (owner, 2026-10-24)
     "demo_of": "same",
     "tool_of": "same",
     "mode_of": "same",

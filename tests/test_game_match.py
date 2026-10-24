@@ -1464,3 +1464,20 @@ def test_a_veto_needs_a_sign_the_two_differ() -> None:
     # The model sure it is a remaster: another game, whatever the signs.
     assert groups({"name", "years_near"}, remaster=0.9) == [{1, 2}, {3}]
     assert groups({"name", "numbers_differ"}) == [{1, 2}, {3}]
+
+
+def test_an_enhanced_edition_is_marked_in_its_game() -> None:
+    """Owner, 2026-10-24: GOTY, Definitive, a Director's Cut — the game made
+    more of — stay in the game, marked `enhanced`, of the plain version; a
+    label says so where the name does not."""
+    from bot.services.game_link import _roles
+
+    plain = _c(1, "Fallout 3", year=2008)
+    goty = _c(2, "Fallout 3: Game of the Year Edition", year=2009)
+    port = _c(3, "Fallout 3", console="ps3", year=2008)
+    cut = _c(4, "Sonic Adventure", year=2011)
+    roles = _roles([plain, goty, port], [])
+    assert roles[2] == ("enhanced", 1)
+    assert roles[1] == roles[3] == ("version", None)
+    told = _roles([plain, cut], [{"version_id": 4, "other_id": 1, "relation": "enhanced_of"}])
+    assert told[4] == ("enhanced", 1)

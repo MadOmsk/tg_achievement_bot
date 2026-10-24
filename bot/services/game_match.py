@@ -203,9 +203,15 @@ def kind_of(candidate: Candidate) -> str:
         return "tool"
     if (candidate.kind or "") == "demo" or any(_DEMO.search(n) for n in candidate.names):
         return "demo"
-    if any(_EDITION.search(n) for n in candidate.names):
+    if is_enhanced(candidate):
         return "edition"
     return "version"
+
+
+def is_enhanced(candidate: Candidate) -> bool:
+    """Its name says it is a release of the game made more of: GOTY,
+    Complete, Ultimate, Definitive, Director's Cut, HD, Enhanced, …"""
+    return any(_EDITION.search(n) or _ENHANCED.search(n) for n in candidate.names)
 
 
 # The relations a pair of versions can have (#147; owner, 2026-10-11): one
