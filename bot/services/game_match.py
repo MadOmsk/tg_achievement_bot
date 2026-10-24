@@ -414,6 +414,24 @@ LINK_P = 0.85  # at or above: linked (one game, or the relation)
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
 CLOSE_CALL = 0.2  # two classes this close: the operator decides
 VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
+# A veto needs a sign the two differ, not only no sign they are one (the
+# training audit, 2026-10-24): with nothing but a shared name the model said
+# "other" for Fortnite and Save the World, GRIP and GRIP: Combat Racing, and
+# that kept them apart from the versions their own pairs joined them to.
+DIFFER_SIGNS = frozenset(
+    {
+        "numbers_differ",
+        "subtitles_differ",
+        "same_name_far",
+        "same_name_other_studio",
+        "groups_differ",
+        "overlap_low",
+        "text_sequel",
+        "text_names_other",
+        "extra_pair",
+        "extra_both",
+    }
+)
 
 _REMAKE = re.compile(r"\b(remake|reimagined|reignited|n sane|rehydrated|part i)\b", re.I)
 _COMPILATION = re.compile(r"\b(collection|trilogy|anthology|legendary edition)\b|\s\+\s", re.I)

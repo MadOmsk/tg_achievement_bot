@@ -1424,3 +1424,35 @@ def test_a_placeholder_date_is_no_year() -> None:
 
     assert candidate_year({"name": "Marvel vs. Capcom 3", "release_date": "2799-12-31"}) is None
     assert candidate_year({"name": "Halo", "release_date": "2021-11-15"}) == 2021
+
+
+def test_a_veto_needs_a_sign_the_two_differ() -> None:
+    """Only a shared name and a near year, and the model says "other"
+    (2026-10-24: Fortnite and Save the World): no veto, so the pairs that
+    join them still do. With a sign they differ (a sequel's number) it holds."""
+    from bot.services.game_link import _cluster
+    from bot.services.game_match import Verdict
+
+    members = [_c(1, "Fortnite"), _c(2, "Fortnite"), _c(3, "Fortnite: Save the World")]
+
+    def verdict(a: int, b: int, p_same: float, signs: set[str]) -> Verdict:
+        return Verdict(
+            a,
+            b,
+            "same",
+            p_same,
+            {"same": p_same, "other": 1 - p_same},
+            "linked",
+            dict.fromkeys(signs, 1.0),
+        )
+
+    def groups(far_signs: set[str]) -> list[set[int]]:
+        verdicts = {
+            (1, 2): verdict(1, 2, 0.99, {"name"}),
+            (2, 3): verdict(2, 3, 0.95, {"name", "same_hltb"}),
+            (1, 3): verdict(1, 3, 0.02, far_signs),
+        }
+        return sorted(_cluster(members, verdicts, []), key=min)
+
+    assert groups({"name", "years_near"}) == [{1, 2, 3}]
+    assert groups({"name", "numbers_differ"}) == [{1, 2}, {3}]

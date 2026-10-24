@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from bot.services.game_match import (
+    DIFFER_SIGNS,
     LINK_P,
     MODEL,
     RELATIONS,
@@ -300,7 +301,11 @@ def _cluster(
         # year split Fall Guys and Among Us); it may still join.
         if "name_unknown" in v.features:
             continue
-        if v.p_same < VETO_P and "one_list" not in v.features:
+        if (
+            v.p_same < VETO_P
+            and "one_list" not in v.features
+            and not DIFFER_SIGNS.isdisjoint(v.features)
+        ):
             forbidden[a].add(b)
             forbidden[b].add(a)
 
