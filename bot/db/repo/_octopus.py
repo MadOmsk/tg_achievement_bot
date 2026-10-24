@@ -72,6 +72,52 @@ class _OctopusRepo:
         found = await self._ids("SELECT version_id FROM dlcs WHERE dlc_id = ?", (dlc_id,))
         return found[0] if found else None
 
+    async def versions_by_store_id(self, kind: str, value: str) -> list[int]:
+        """The versions a store id names (`versions.store_ids`: a PSN title
+        id, an Xbox product id, …), case aside."""
+        return await self._ids(
+            "SELECT DISTINCT v.version_id FROM versions v, json_each(v.store_ids) j"
+            " WHERE json_extract(j.value, '$[0]') = ?"
+            " AND UPPER(json_extract(j.value, '$[1]')) = UPPER(?) ORDER BY v.version_id",
+            (kind, value),
+        )
+
+    # ----------------------------------------------------- spreading entries
+
+    async def octopus_edition_versions(self, edition_id: int) -> list[int]:
+        """The versions a bundle or an edition holds, its main game first."""
+        return await self._ids(
+            "SELECT version_id FROM edition_items"
+            " WHERE edition_id = ? AND version_id IS NOT NULL"
+            " GROUP BY version_id"
+            " ORDER BY MIN(COALESCE(role, 'main') <> 'main'), MAX(is_primary) DESC, version_id",
+            (edition_id,),
+        )
+
+    async def octopus_series_games(self, series_id: int) -> tuple[str | None, list[int]]:
+        """A series' name and its games (those said not to be in it left out)."""
+        cursor = await self._conn.execute(
+            "SELECT name FROM series WHERE series_id = ?", (series_id,)
+        )
+        row = await cursor.fetchone()
+        games = await self._ids(
+            "SELECT game_id FROM game_series WHERE series_id = ? AND member = 1 ORDER BY game_id",
+            (series_id,),
+        )
+        return (str(row[0]) if row else None), games
+
+    async def octopus_account_lists(self, platform: str, external_id: str) -> list[tuple[str, str]]:
+        """Every achievement list an account earned something in, as
+        `(platform, title_id)`; an Xbox account covers both generations."""
+        platforms = ("xbox_modern", "xbox_360") if platform == "xbox" else (platform,)
+        marks = ",".join("?" * len(platforms))
+        cursor = await self._conn.execute(
+            f"SELECT DISTINCT platform, title_id FROM seen_achievements"
+            f" WHERE xuid = ? AND platform IN ({marks}) ORDER BY platform, title_id",
+            (external_id, *platforms),
+        )
+        return [(str(r[0]), str(r[1])) for r in await cursor.fetchall()]
+
     # --------------------------------------------------------- the assembly
 
     async def octopus_names_of_game(self, game_id: int) -> list[str]:

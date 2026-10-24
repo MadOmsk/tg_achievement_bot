@@ -164,3 +164,62 @@ async def test_an_hltb_page_leads_to_the_versions_it_is_linked_to(repo: Repo) ->
     assert stub.asked[0] == "hltb:7"
     assert len(report.games) == 1 and report.games[0].game_id == game
     assert report.games[0].hltb >= 1
+
+
+def test_a_pasted_link_is_read_into_a_key() -> None:
+    from bot.services.octopus import entry_key
+
+    assert entry_key("https://store.steampowered.com/app/976730/Halo/") == "product:steam:976730"
+    assert entry_key("https://howlongtobeat.com/game/10270") == "hltb:10270"
+    assert (
+        entry_key("https://store.playstation.com/ru-ru/concept/10000176") == "product:psn:10000176"
+    )
+    assert (
+        entry_key("https://store.playstation.com/en-us/product/EP1018-PPSA22946_00-HARRYPOTTER17")
+        == "storeid:psn_title:PPSA22946_00"
+    )
+    assert (
+        entry_key("https://www.xbox.com/en-US/games/store/halo/9nblggh4r315/0001")
+        == "storeid:xbox_product:9NBLGGH4R315"
+    )
+    assert entry_key("list:psn:NPWR1") == "list:psn:NPWR1"
+    assert entry_key("Halo Reach") == search_key("Halo Reach")
+    assert entry_key("https://example.com/whatever") is None
+
+
+async def test_a_store_id_leads_to_its_version(repo: Repo) -> None:
+    game, v = await _halo(repo)
+    await repo.add_store_ids(v, [("xbox_product", "9NBLGGH4R315")])
+    octopus = OctopusCollector(repo, Stub(repo), linker=_linker([]))  # type: ignore[arg-type]
+    await octopus.enqueue("storeid:xbox_product:9nblggh4r315")
+    report = await octopus.run(limit=1)
+    assert len(report.games) == 1 and report.games[0].game_id == game
+
+
+async def test_a_bundle_series_and_account_spread_into_what_they_hold(repo: Repo) -> None:
+    game, v = await _halo(repo)
+    other = await _version(repo, "steam", "620", "steam", "Portal 2", "steam", "620")
+    edition = await repo.save_edition("steam", "sub:1", "Two games", "bundle", scope="bundle")
+    await repo.save_edition_item(edition, "620", "Portal 2", "game", version_id=other, role="part")
+    await repo.save_edition_item(edition, "976730", "Halo", "game", version_id=v, role="part")
+    series = await repo.create_series("Halo")
+    await repo.set_series_member(game, series, True)
+    await repo._conn.execute(
+        "INSERT INTO accounts (platform, external_id, first_seen_at, updated_at)"
+        " VALUES ('steam', '765', 'now', 'now')"
+    )
+    await repo._conn.execute(
+        "INSERT INTO seen_achievements (xuid, title_id, achievement_id, name, platform,"
+        " created_at) VALUES ('765', '620', 'A', 'a', 'steam', 'now')"
+    )
+    octopus = OctopusCollector(repo, Stub(repo), linker=_linker([]))  # type: ignore[arg-type]
+    assert await octopus._held("edition", str(edition)) == [
+        list_key("steam", "976730"),
+        list_key("steam", "620"),
+    ]
+    assert await octopus._held("series", str(series)) == [game_key(game), search_key("Halo")]
+    assert await octopus._held("account", "steam:765") == [list_key("steam", "620")]
+    # Run, a spreading entry is handled by queueing what it holds.
+    await octopus.enqueue(f"series:{series}")
+    report = await octopus.run(limit=1)
+    assert report.spread == 1 and report.queued == 2 and not report.games

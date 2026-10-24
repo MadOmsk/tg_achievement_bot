@@ -155,6 +155,7 @@ PAGES = {
     "/payloads": "Payloads",
     "/decisions": "История ответов",
     "/series": "Series",
+    "/octopus": "Осьминог",
 }
 
 
@@ -1831,7 +1832,8 @@ async def game(request: web.Request) -> web.Response:
             f'<input name=name value="{escape(row["name"])}" size=40> '
             f'ru: <input name=name_ru value="{escape(row["name_ru"] or "")}" size=30> '
             "<button>rename</button></form>"
-            f'<form method=post action="{here}/merge">merge this game into game id: '
+            + _button("/octopus/add", "собрать осьминогом", {"keys": f"game:{game_id}"})
+            + f'<form method=post action="{here}/merge">merge this game into game id: '
             "<input name=into size=8> <button>merge</button></form>"
             f'<form method=post action="{here}/kind">this is '
             + "".join(
@@ -3223,6 +3225,133 @@ async def series_page(request: web.Request) -> web.Response:
     return _page(f"Series: {row['name']}", body)
 
 
+# ---------------------------------------------------------------- octopus
+
+
+async def octopus_page(request: web.Request) -> web.Response:
+    """The octopus (#215): feed it anything — links, keys, names, one a line —
+    see its queue, run it, and the step-12 checks: what assembled games
+    still lack."""
+    state = request.app["octopus"]
+    busy = state["task"] is not None and not state["task"].done()
+    last = state["last"]
+    with _db(request) as conn:
+        waiting = conn.execute(
+            "SELECT key, reason, due_at, attempts, last_error FROM octopus_queue"
+            " ORDER BY due_at, created_at, key LIMIT 100"
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM octopus_queue").fetchone()[0]
+        checks = [
+            {
+                "check": what,
+                "count": conn.execute(sql).fetchone()[0],
+            }
+            for what, sql in (
+                ("versions in no game", "SELECT COUNT(*) FROM versions WHERE game_id IS NULL"),
+                (
+                    "stand-ins (a list no store page was found for)",
+                    "SELECT COUNT(*) FROM versions WHERE stand_in = 1",
+                ),
+                (
+                    "games with no HLTB entry",
+                    "SELECT COUNT(*) FROM games g WHERE g.merged_into IS NULL AND NOT EXISTS"
+                    " (SELECT 1 FROM versions v JOIN version_hltb vh"
+                    "  ON vh.version_id = v.version_id AND vh.source <> 'rejected'"
+                    "  WHERE v.game_id = g.game_id)",
+                ),
+                (
+                    "versions assembled by the octopus",
+                    "SELECT COUNT(*) FROM fetch_state WHERE source = 'octopus'",
+                ),
+            )
+        ]
+        recent = conn.execute(
+            "SELECT subject, status, checked_at, next_check_at FROM fetch_state"
+            " WHERE source = 'octopus' ORDER BY checked_at DESC LIMIT 30"
+        ).fetchall()
+    feed = (
+        '<form method=post action="/octopus/add"><p>Ссылки (Steam, Xbox, PlayStation Store,'
+        " HowLongToBeat), ключи (<code>game:12</code>, <code>list:psn:NPWR…</code>,"
+        " <code>edition:5</code>, <code>series:7</code>, <code>account:psn:…</code>)"
+        " или названия — по одному в строке:</p>"
+        "<textarea name=keys rows=5 cols=80></textarea><br><button>в очередь</button></form>"
+    )
+    run = (
+        "<p><b>идёт прогон…</b> (обнови страницу)</p>"
+        if busy
+        else '<form method=post action="/octopus/run">прогнать <input name=limit value=10 size=4>'
+        " записей <button>запустить</button></form>"
+    )
+    body = (
+        _flash(request)
+        + feed
+        + run
+        + (f"<pre>{escape(last)}</pre>" if last else "")
+        + "<h2>Проверки</h2>"
+        + _table(checks)  # type: ignore[arg-type]
+        + f"<h2>Очередь: {total}</h2>"
+        + _table(waiting)
+        + "<h2>Последние сборки</h2>"
+        + _table(recent)
+    )
+    return _page(PAGES["/octopus"], body)
+
+
+async def octopus_add(request: web.Request) -> web.Response:
+    from bot.services.octopus import OctopusCollector, entry_key
+
+    form = await request.post()
+    octopus = OctopusCollector(_repo(request), request.app["collector"])
+    added, unread = 0, []
+    for line in str(form.get("keys") or "").splitlines():
+        if not line.strip():
+            continue
+        key = entry_key(line)
+        if key is None:
+            unread.append(line.strip())
+            continue
+        added += await octopus.enqueue(key, reason="viewer")
+    message = f"queued {added}" + (f"; not understood: {', '.join(unread)}" if unread else "")
+    raise _back("/octopus", message)
+
+
+async def octopus_run(request: web.Request) -> web.Response:
+    """A run in the background, one at a time; the page shows it done."""
+    import asyncio
+
+    from bot.services.octopus import OctopusCollector
+
+    state = request.app["octopus"]
+    if state["task"] is not None and not state["task"].done():
+        raise _back("/octopus", "a run is going already")
+    form = await request.post()
+    limit = str(form.get("limit") or "10").strip()
+    octopus = OctopusCollector(_repo(request), request.app["collector"])
+
+    async def go() -> None:
+        try:
+            report = await octopus.run(limit=int(limit) if limit.isdigit() else 10)
+        except Exception as exc:  # shown on the page, the viewer goes on
+            state["last"] = f"failed: {exc!r}"
+            return
+        lines = [
+            f"{g.entry} → game {g.game_id} {g.name!r}: versions {g.versions_before} →"
+            f" {g.versions_after} in {g.rounds} rounds, found {len(set(g.found))},"
+            f" to review {g.review}; stand-ins {g.stand_ins}, HLTB on {g.hltb}"
+            for g in report.games
+        ]
+        lines.append(
+            f"handled {report.handled}: games {len(report.games)}, searched {report.searched},"
+            f" spread {report.spread}, not due {report.skipped}, led nowhere {report.gone},"
+            f" queued on the way {report.queued}"
+        )
+        lines += [f"error: {line}" for line in report.failed[:20]]
+        state["last"] = "\n".join(lines)
+
+    state["task"] = asyncio.get_running_loop().create_task(go())
+    raise _back("/octopus", "started")
+
+
 async def series_rebuild(request: web.Request) -> web.Response:
     from bot.services.game_series import SeriesBuilder
 
@@ -3320,6 +3449,9 @@ async def _open(app: web.Application) -> None:
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
     steam = SteamAuth(repo, cipher, env_key=_secret(settings.steam_api_key))
     app["collector"] = StoreCollector(repo, PsnAuth(repo, cipher), steam)
+    # The octopus's run in the background and its last report (a dict made
+    # here: the app's own state is fixed once it serves).
+    app["octopus"] = {"task": None, "last": ""}
 
 
 def _secret(value: object) -> str | None:
@@ -3403,6 +3535,9 @@ def build(
     app.router.add_post("/series/rebuild", series_rebuild)
     app.router.add_post("/series/{series_id:\\d+}/rename", series_rename)
     app.router.add_post("/series/{series_id:\\d+}/merge", series_merge)
+    app.router.add_get("/octopus", octopus_page)
+    app.router.add_post("/octopus/add", octopus_add)
+    app.router.add_post("/octopus/run", octopus_run)
     app.router.add_post("/series/{series_id:\\d+}/member", series_member)
     app.router.add_post("/game/{game_id:\\d+}/series", game_series_add)
     app.router.add_get("/rules", rules)

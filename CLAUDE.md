@@ -870,9 +870,17 @@ What the stores and HLTB say about a game, collected but not shown yet
   (`fetch_state`, source `octopus`), so another entry to the same game waits
   until due; stand-ins and HLTB reported. The queue (`octopus_queue`) keeps
   entries by keys a relink cannot change (`list:`, `product:`,
-  `achievement:`, `dlc:`, `hltb:`, `name:`, `game:`). More entries (edition,
-  series, account, news, a pasted link), the step-12 page and the triggers
-  from the bot: later stages of #215.
+  `achievement:`, `dlc:`, `hltb:`, `name:`, `game:`; stage 2: `storeid:` — a
+  PSN title id or an Xbox product id from `versions.store_ids` — and `news:`,
+  a Steam post's app). **Three entries spread** into what they hold instead
+  of assembling: `edition:` (every version in a bundle), `series:` (its games
+  and a search by its name), `account:` (a player's lists). A pasted Steam,
+  Xbox, PlayStation Store or HLTB link is read into a key (`entry_key`), so
+  the queue keeps keys only. The viewer's **«Осьминог»** (`/octopus`): links,
+  keys or names one a line into the queue, a run in the background (one at a
+  time), the queue, and the step-12 checks — versions in no game, stand-ins,
+  games with no HLTB; a game page has «собрать осьминогом». Triggers from the
+  bot: a later stage of #215.
 - **Games** (migrations 092, 099; the model after the review, owner,
   2026-10-11; decisions in #147). **The operator's decisions are input, a
   game's versions are output**: a decision is a label on a pair of versions

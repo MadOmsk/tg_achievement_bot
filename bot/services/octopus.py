@@ -24,11 +24,22 @@ The queue (`octopus_queue`, migration 126) holds entries by a key that
 survives a relink: `game:<id>`, `list:<platform>:<title_id>`,
 `product:<store>:<id>`, `achievement:<platform>:<title_id>:<id>`, `dlc:<id>`,
 `hltb:<id>`, `name:<text>`. A find by name stays provisional (#202).
+
+Stage 2 (#215, 2026-10-24): more ways in. `storeid:<kind>:<id>` (an id a
+store gives a version — a PSN CUSA, an Xbox product id — `versions.store_ids`)
+and `news:<appid>:<gid>` (a Steam post → its app) lead to an anchor like the
+rest. Three entries **spread** instead of assembling — each becomes the
+entries it holds: `edition:<id>` (a bundle → every version in it),
+`series:<id>` (its games, and a search by its name for the ones missing),
+`account:<platform>:<external id>` (a player's achievement lists). A link
+pasted by the operator (Steam, Xbox, PlayStation Store, HowLongToBeat) is
+read into one of these keys by `entry_key`, so the queue holds keys only.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -45,7 +56,57 @@ MAX_ROUNDS = 4
 # Names one game is searched by in all: its own, the Russian one, store names
 # of its versions and editions, HLTB's — different ones only (#215).
 NAMES_PER_GAME = 6
-KINDS = ("game", "list", "product", "achievement", "dlc", "hltb", "name")
+KINDS = (
+    "game",
+    "list",
+    "product",
+    "achievement",
+    "dlc",
+    "hltb",
+    "name",
+    "storeid",
+    "news",
+    "edition",
+    "series",
+    "account",
+)
+# Entries that become the entries they hold rather than one game assembled.
+SPREADING = ("edition", "series", "account")
+# A link the operator pastes → the key it names. Xbox's product ids are
+# upper-case in `store_ids`.
+_LINKS = (
+    (
+        re.compile(r"(?:store\.steampowered\.com|steamcommunity\.com)/(?:app|stats)/(\d+)"),
+        "product:steam:",
+    ),
+    (re.compile(r"howlongtobeat\.com/game/(\d+)"), "hltb:"),
+    (re.compile(r"store\.playstation\.com/.*?/concept/(\d+)"), "product:psn:"),
+    (
+        re.compile(r"store\.playstation\.com/.*?/product/[A-Z]{2}\d{4}-([A-Z]{4}\d{5}_00)"),
+        "storeid:psn_title:",
+    ),
+    (re.compile(r"xbox\.com/.*?/([0-9a-z]{12})(?:[/?#]|$)", re.I), "storeid:xbox_product:"),
+)
+
+
+def entry_key(text: str) -> str | None:
+    """What the operator typed or pasted, as a queue key: a link to a store
+    or HLTB page, a key as it is (`list:psn:NPWR…`), or else a name to
+    search. None for a link nothing here can read."""
+    text = text.strip()
+    if not text:
+        return None
+    if "://" in text or text.startswith("www."):
+        for pattern, prefix in _LINKS:
+            found = pattern.search(text)
+            if found:
+                value = found.group(1)
+                return prefix + (value.upper() if prefix.endswith("xbox_product:") else value)
+        return None
+    kind, _, rest = text.partition(":")
+    if kind in KINDS and rest:
+        return search_key(rest) if kind == "name" else text
+    return search_key(text)
 
 
 def game_key(game_id: int) -> str:
@@ -98,12 +159,13 @@ class OctopusReport:
     searched: int = 0
     skipped: int = 0
     gone: int = 0
+    spread: int = 0
     queued: int = 0
     failed: list[str] = field(default_factory=list)
 
     @property
     def handled(self) -> int:
-        return len(self.games) + self.searched + self.skipped + self.gone
+        return len(self.games) + self.searched + self.skipped + self.gone + self.spread
 
 
 Linker = Callable[[Repo, list[int]], Awaitable[LinkReport]]
@@ -156,6 +218,11 @@ class OctopusCollector:
                 for game in sorted(linked.games):
                     report.queued += await self.enqueue(game_key(game), reason=key)
             return
+        if kind in SPREADING:
+            report.spread += 1
+            for held in await self._held(kind, rest):
+                report.queued += await self.enqueue(held, reason=key)
+            return
         anchor = await self._anchor(kind, rest, key, report, force)
         if anchor is None:
             report.gone += 1
@@ -177,6 +244,12 @@ class OctopusCollector:
         if kind == "game":
             game = await self._repo.game_card(int(rest))
             return await self._repo.anchor_of(int(game["game_id"])) if game else None
+        if kind == "news":
+            kind, rest = "product", "steam:" + rest.partition(":")[0]
+        if kind == "storeid":
+            id_kind, _, value = rest.partition(":")
+            found = await self._repo.versions_by_store_id(id_kind, value)
+            return found[0] if found else None
         if kind == "achievement":
             platform, title_id, _id = rest.split(":", 2)
             kind, rest = "list", f"{platform}:{title_id}"
@@ -208,6 +281,27 @@ class OctopusCollector:
                 report.queued += await self.enqueue(search_key(name), reason=key)
             return None
         raise ValueError(f"unknown octopus entry {key!r}")
+
+    async def _held(self, kind: str, rest: str) -> list[str]:
+        """The entries a spreading entry holds, each once."""
+        keys: list[str] = []
+        if kind == "edition":
+            for version in await self._repo.octopus_edition_versions(int(rest)):
+                row = await self._repo.version_row(version)
+                if row is not None:
+                    keys.append(anchor_key(row))
+        elif kind == "series":
+            name, games = await self._repo.octopus_series_games(int(rest))
+            keys += [game_key(g) for g in games]
+            if name:
+                keys.append(search_key(name))
+        elif kind == "account":
+            platform, _, external_id = rest.partition(":")
+            for list_platform, title_id in await self._repo.octopus_account_lists(
+                platform, external_id
+            ):
+                keys.append(list_key(list_platform, title_id))
+        return list(dict.fromkeys(keys))
 
     # --------------------------------------------------------- the assembly
 

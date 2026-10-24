@@ -8,6 +8,8 @@ first.
         --db data/games.db --auth-db data/games-bot.db --seed game:4070
     … --seed list:psn:NPWR12345_00 --seed product:steam:620 --seed dlc:77 \\
       --seed achievement:steam:620:ACH.WAKE_UP --seed hltb:10270 --seed "name:Dead Rising"
+    … --seed edition:42 --seed series:7 --seed account:psn:<account id> \\
+      --seed https://store.steampowered.com/app/620/ --seed storeid:psn_title:CUSA08455_00
     … --which singles|stand-ins|all [--limit 50]
     … (no seed: only what is already in the queue)
 """
@@ -27,7 +29,7 @@ from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
-from bot.services.octopus import KINDS, OctopusCollector, game_key, search_key
+from bot.services.octopus import OctopusCollector, entry_key, game_key
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.store_collect import StoreCollector
@@ -50,10 +52,11 @@ def _backup(db_path: Path) -> Path:
 
 
 def _seed_key(seed: str) -> str:
-    kind, _, value = seed.partition(":")
-    if kind not in KINDS or not value:
-        raise SystemExit(f"--seed {seed!r}: one of {', '.join(KINDS)}, then ':' and a value")
-    return search_key(value) if kind == "name" else seed
+    """A key, a store or HLTB link, or a name (`octopus.entry_key`)."""
+    key = entry_key(seed)
+    if key is None:
+        raise SystemExit(f"--seed {seed!r}: a key (kind:value), a store or HLTB link, or a name")
+    return key
 
 
 async def main() -> int:
