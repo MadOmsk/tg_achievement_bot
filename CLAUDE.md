@@ -1201,8 +1201,11 @@ Microsoft OAuth + Xbox Live APIs, one refresh token per user.
 - **Contracts.** Modern Xbox: contract 6 — contract 4 (the only one with
   rarity) and each achievement's `groupIds` (2026-10-15). Only
   `progressState == "Achieved"` enters `seen_achievements` — an `InProgress` row
-  would hide the achievement forever once it is earned. Xbox 360: contract 1 — no
-  rarity from Microsoft and only a bare `imageId`, so its card uses the box art.
+  would hide the achievement forever once it is earned. Xbox 360 takes two
+  (#121): contract 1 (`/achievements`) lists what the caller earned, with no
+  rarity and only a bare `imageId`, so its card uses the box art; contract 3
+  (`/titleachievements`) lists the whole game with its rarity and total. The
+  earned ones come from 1, their rarity and the game's list from 3.
 - **Identity.** Match an account by XUID, never by gamertag (gamertags change);
   `users.gamertag` is a display cache.
 - **Timeouts.** The shared `SignedSession` gets a split timeout —
@@ -1393,8 +1396,8 @@ An achievement is published to a chat only if every check passes: the person is
 subscribed there; not admin-excluded; the account's posting switch is on (#20); the
 person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
-known rarity is at or below the rarity threshold (a platform with no rarity at all —
-Xbox 360 — is exempt, not hidden); the game
+known rarity is at or below the rarity threshold (Xbox 360 included since #121;
+an achievement whose rarity is unknown is held back); the game
 isn't muted there; it wasn't already published there.
 
 - **`hidden` is about notifications only** (owner, 2026-10-06; #167): a person who
@@ -2237,8 +2240,10 @@ Pickers of fixed options (timezones, digest thresholds, hours) are not lists.
   contract 4, so the contract-2 history is filled by `poller/rarity_backfill.py` (and
   `scripts/backfill_rarity.py`, bot stopped) — one request per title covers every
   owner. Every platform's poll also writes it. Nothing expires: a year-old
-  percentage is worth more than none. Xbox 360 has no rarity: no 💎 there, and `rare` mode
-  lets its achievements through.
+  percentage is worth more than none. Xbox 360's rarity comes from contract 3
+  (#121; live polls and `poller/rarity_backfill.py`), so 💎 and `rare` mode
+  apply there as everywhere; in `rare` mode an achievement whose rarity is still
+  unknown is held back.
 - **The admin's user list** is text and buttons on purpose: columns to read, rows to
   tap. **The chat list** is buttons only — a row fits on its button.
 - **`/who`** is split from `/online` so one stays a glance and the other a grid; its
@@ -2800,7 +2805,7 @@ publishes; their own tests stub them again or call them directly.
 
 Required coverage: achievement/trophy dedup; first-connect backfill publishes nothing;
 only earned items enter `seen_achievements` (`InProgress` never leaks in); rarity
-filtering at different thresholds, and a platform with no rarity under `rare`; Xbox
+filtering at different thresholds, and an unknown rarity under `rare`; Xbox
 token refresh ordering and serialization, `invalid_grant`; excluded users are never
 polled or published; the dead-token reminder is rate-limited; a missing rarity block
 doesn't crash parsing; no secret in a log line or exception; Steam/PSN linking,
@@ -2838,8 +2843,8 @@ actually invocable (`tests/test_handler_wiring.py`).
 - **`/compare` and `/top`** — `/stats`, the summaries, `/recent` and `/online` cover
   the useful group views; a leaderboard command was not worth the surface.
 - **A visibility toggle per platform** — tried twice, rejected twice: nobody needs a
-  different mode per platform. One `rarity_mode` covers all; a platform without rarity
-  (Xbox 360) is exempt from `rare` instead of getting a toggle. (#20 settled it differently:
+  different mode per platform. One `rarity_mode` covers all (Xbox 360 too, since
+  its rarity is known, #121). (#20 settled it differently:
   a posting on/off switch per *account*, not a rarity mode per platform.)
 - **Live platform API calls from `/stats`, the summaries, `/online` or the panel** —
   every normal read is cache-only; the panel's own sync button is the exception.
