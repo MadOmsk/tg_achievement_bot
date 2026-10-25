@@ -240,6 +240,7 @@ name, or when the tree goes stale.
 │   ├── collect_game.py           collect one game from the stores now (#147), beside a running bot
 │   ├── reparse_store_payloads.py the store side again from the kept answers, no request (#147)
 │   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
+│   ├── catalog_transfer.py       the games catalog carried whole from one database to another (#147)
 │   ├── fit_match_weights.py      the games matcher's weights fitted to the operator's labels (#147)
 │   ├── advise_pairs.py           the matcher's doubtful pairs to Claude and Gemini and back:
 │   │                             export / import / status / apply / conflicts (#147)
@@ -1120,6 +1121,16 @@ What the stores and HLTB say about a game, collected but not shown yet
   what would change; `--apply` backs the database up into `backups/` first,
   with the bot stopped. What only a request brings (a Steam DLC's or
   package's own answer, the Russian appdetails) stays as it was.
+- **The catalog is built where it is taught and carried to the servers**
+  (owner, 2026-10-25: production collects the very games the development
+  catalog holds): `scripts/catalog_transfer.py export` copies its tables —
+  versions, games, relations, editions, DLC, the HLTB side, series, labels
+  and their log, the weights, `fetch_state`, the octopus's queue; not the
+  raw answers — and `import` replaces a server's catalog with them in one
+  transaction, the bot stopped, a backup beside the database first. The
+  catalog points outside itself only by a list's (platform, title_id), so
+  nothing else moves; a list the file lacks keeps its own stand-in, linked
+  into a game after. `--tables match_weights` carries a new fit alone.
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,
