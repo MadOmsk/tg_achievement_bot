@@ -1037,7 +1037,7 @@ CREATE TABLE IF NOT EXISTS versions (
     -- The game this version is in (108: it was the table game_versions, a
     -- version is in exactly one game): the matcher's output, rebuilt from the
     -- operator's labels and the model; NULL until it is linked. `role` is
-    -- version / demo / tool / mode / extra / covered, checked in
+    -- version / enhanced / demo / tool / mode / extra / pass / covered, checked in
     -- game_link.py (a CHECK would mean rebuilding this table whenever a
     -- role is added); a demo, a tool, a mode and an extra name the version
     -- they are of.

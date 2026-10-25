@@ -695,7 +695,9 @@ What the stores and HLTB say about a game, collected but not shown yet
   the game whose name opens theirs (`mode_of`, like `demo_of`; a mode's list
   being a part of its game's is no compilation's sign). Names: a leading
   Microsoft "COD" reads as "Call of Duty" (`game_match._COD`, one rule, no
-  alias table).
+  alias table). A **friend's pass** (owner, 2026-10-25: a free copy to play
+  the whole game with its owner — It Takes Two, Split Fiction) is a role of
+  its own, `pass`, joined like a demo (`pass_of`).
 - **Sources**, one module each in `services/stores/`, network only:
   - Steam `appdetails` (no key; en + ru), each DLC named by its own request,
     `DLC_NAMES_PER_PASS` a pass, the rest in the next (due within the hour).
@@ -898,7 +900,7 @@ What the stores and HLTB say about a game, collected but not shown yet
   (`refused`); series answers likewise. «Отсоединить» labels `other` against
   the version the model likeliest calls the same game, the link that was
   wrong, not the anchor. Which game a version is in
-  (columns of `versions` since migration 108 — `game_id`, `role`, `of_version_id`, `link_p`, `linked_at`; the old table `game_versions` was one row per version —, **one game per version**, its role version / demo / tool / mode / extra and the version a demo, tool, mode or extra is of; the roles are checked in `game_link.py`, not by a CHECK, which would mean rebuilding `versions`) and how games relate
+  (columns of `versions` since migration 108 — `game_id`, `role`, `of_version_id`, `link_p`, `linked_at`; the old table `game_versions` was one row per version —, **one game per version**, its role version / enhanced / demo / tool / mode / extra / pass / covered and the version a demo, tool, mode, extra or pass is of; the roles are checked in `game_link.py`, not by a CHECK, which would mean rebuilding `versions`) and how games relate
   (`game_relations`) are rebuilt from the labels and the model by
   `services/game_link.py`, so a decision outlives every rebuild. **A label
   outlives its versions too** (migration 106, 2026-10-12): `match_decisions`

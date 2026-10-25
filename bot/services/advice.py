@@ -84,6 +84,8 @@ _SYNONYMS = {
     "demo": "demo_of",
     "tool": "tool_of",
     "mode": "mode_of",
+    "friend's pass": "pass_of",
+    "pass": "pass_of",
     "soundtrack": "extra_of",
     "artbook": "extra_of",
     "vr": "vr_of",

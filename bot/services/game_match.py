@@ -42,6 +42,11 @@ _DEMO = re.compile(
 )
 # A tool made for a game, not a game (owner, 2026-10-10: "Fallout 4: Creation
 # Kit" belongs to Fallout 4). Steam files it as a game.
+# A friend's pass (owner, 2026-10-25): a free copy to play the whole game
+# with somebody who owns it (It Takes Two, Split Fiction, A Way Out) — not
+# a demo, a part of its game all the same.
+_PASS = re.compile(r"\bfriend'?s? ?pass\b", re.IGNORECASE)
+
 _TOOL = re.compile(
     r"\b(creation kit|construction set|mod(?:ding)? tools?|(?:level|map) editor|editor"
     r"|sdk|dedicated server|toolkit|tool ?set)\b",
@@ -155,11 +160,15 @@ def is_part(kind: str | None, role: str | None, names: tuple[str, ...] | list[st
     hand: Resident Evil 7's teaser)."""
     if (kind or "") in ("demo", "app", "music", "video") or (role or "") in PART_ROLES:
         return True
-    return any(_DEMO.search(n) or _TOOL.search(n) or _EXTRA.search(n) for n in names if n)
+    return any(
+        _DEMO.search(n) or _TOOL.search(n) or _EXTRA.search(n) or _PASS.search(n)
+        for n in names
+        if n
+    )
 
 
 # (A mode is no such part: Fortnite's Save the World has an entry of its own.)
-PART_ROLES = frozenset({"demo", "tool", "extra"})
+PART_ROLES = frozenset({"demo", "tool", "extra", "pass"})
 
 
 def is_extra(candidate: Candidate) -> bool:
@@ -191,12 +200,14 @@ def extra_game_name(candidate: Candidate) -> str | None:
 
 def kind_of(candidate: Candidate) -> str:
     """A version's role inside its game, from the store's own kind first and
-    the name second: a mode (a Steam launcher of one mode of another app), an
-    extra (not a game: a soundtrack, an artbook, an app), a demo, a tool, an
-    edition, or the game itself. (A remaster is no role: it is a game of its
-    own, 2026-10-11.)"""
+    the name second: a mode (a Steam launcher of one mode of another app), a
+    friend's pass, an extra (not a game: a soundtrack, an artbook, an app), a
+    demo, a tool, an edition, or the game itself. (A remaster is no role: it
+    is a game of its own, 2026-10-11.)"""
     if (candidate.kind or "") == MODE_KIND:
         return "mode"
+    if any(_PASS.search(n) for n in candidate.names):
+        return "pass"
     if is_extra(candidate):
         return "extra"
     if any(_TOOL.search(n) for n in candidate.names):
@@ -791,12 +802,13 @@ def _unknown_pc_namesake(a: Candidate, b: Candidate) -> bool:
 
 
 def _demo_pair(a: Candidate, b: Candidate) -> bool:
-    """A demo whose game's name opens it, released within a year of it, and
-    not filed by one store under another game of its own."""
+    """A demo (or a friend's pass, which joins its game the same way) whose
+    game's name opens it, released within a year of it, and not filed by one
+    store under another game of its own."""
     for demo, game in ((a, b), (b, a)):
         if (
-            kind_of(demo) == "demo"
-            and kind_of(game) != "demo"
+            kind_of(demo) in ("demo", "pass")
+            and kind_of(game) not in ("demo", "pass")
             and not _groups_differ(demo, game)
             and _starts(game, demo)
             and demo.year
@@ -1087,7 +1099,9 @@ def game_name(members: list[Candidate], *, release: bool = False) -> str:
     (Control and its Ultimate Edition) is called by their common core — the
     plainest version's, the earliest. Its parts (demos, tools, modes) say
     nothing about its name."""
-    games = [m for m in members if kind_of(m) not in ("demo", "tool", "mode", "extra")] or members
+    games = [
+        m for m in members if kind_of(m) not in ("demo", "tool", "mode", "extra", "pass")
+    ] or members
     plain = [m for m in games if kind_of(m) == "version"] or games
     # A name that is only digits is an id we never learned the name of
     # (2026-10-16: Days Gone was called "1881441063"): any real name first.

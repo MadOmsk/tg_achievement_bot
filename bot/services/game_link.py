@@ -52,11 +52,20 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Labels that put two versions in one game; every other label keeps them apart.
-JOINING = {"same", "edition", "enhanced_of", "demo_of", "tool_of", "mode_of", "extra_of"}
+JOINING = {
+    "same",
+    "edition",
+    "enhanced_of",
+    "demo_of",
+    "tool_of",
+    "mode_of",
+    "extra_of",
+    "pass_of",
+}
 # The roles that are a part of a game rather than the game: each names the
 # version it is of, and vetoes nothing. An extra (a soundtrack, an artbook;
 # owner, 2026-10-14) is one; an extra of no game is its own entry.
-PARTS = ("demo", "tool", "mode", "extra")
+PARTS = ("demo", "tool", "mode", "extra", "pass")
 # Labels that relate two games in no way: "other", and "another game of its
 # series" (owner, 2026-10-11) — the same for building games, kept apart for
 # what it tells about the model's mistakes.
@@ -362,7 +371,7 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
     roles: dict[int, tuple[str, int | None]] = {}
     for c in cluster:
         relation, of = told.get(c.version_id, (None, None))
-        if relation in ("demo_of", "tool_of", "mode_of", "extra_of", "enhanced_of"):
+        if relation in ("demo_of", "tool_of", "mode_of", "extra_of", "pass_of", "enhanced_of"):
             roles[c.version_id] = (str(relation)[: -len("_of")], of)
             continue
         kind = kind_of(c)

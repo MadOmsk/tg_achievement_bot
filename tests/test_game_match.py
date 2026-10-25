@@ -1481,3 +1481,17 @@ def test_an_enhanced_edition_is_marked_in_its_game() -> None:
     assert roles[1] == roles[3] == ("version", None)
     told = _roles([plain, cut], [{"version_id": 4, "other_id": 1, "relation": "enhanced_of"}])
     assert told[4] == ("enhanced", 1)
+
+
+def test_a_friends_pass_is_a_part_of_its_game() -> None:
+    """A friend's pass (owner, 2026-10-25): a free copy to play the whole
+    game with its owner — not a demo, a role in the game all the same."""
+    from bot.services.game_link import _roles
+
+    game = _c(1, "It Takes Two", console="ps4", store="psn", year=2021)
+    pass_ = _c(2, "It Takes Two - Friend's Pass", console="ps4", store="psn", year=2021)
+    assert kind_of(pass_) == "pass"
+    assert _linked(game, pass_, "same"), compare(game, pass_).reasons
+    assert _roles([game, pass_], [])[2] == ("pass", 1)
+    told = _roles([game, pass_], [{"version_id": 2, "other_id": 1, "relation": "pass_of"}])
+    assert told[2] == ("pass", 1)

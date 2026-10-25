@@ -1485,6 +1485,8 @@ _DECISIONS_MORE = (
     ("mode_of:flip", "2 is a mode of 1"),
     ("extra_of", "1 is the soundtrack / artbook of 2"),
     ("extra_of:flip", "2 is the soundtrack / artbook of 1"),
+    ("pass_of", "1 is a friend's pass of 2"),
+    ("pass_of:flip", "2 is a friend's pass of 1"),
     ("series", "another game of its series"),
     ("skip", "skip: ask again later"),
 )
@@ -1589,6 +1591,7 @@ def _relation_sentence(decision: str, this: str, that: str, *, html: bool = True
         "contains": f"{a} is a {bold('compilation that holds')} {b}",
         "vr_of": f"{a} is the {bold('VR version')} of {b}",
         "extra_of": f"{a} is the {bold('soundtrack / artbook')} of {b}",
+        "pass_of": f"{a} is a {bold('friend’s pass')} of {b}",
         "demo_of": f"{a} is a {bold('demo / beta')} of {b}",
     }.get(relation, f"{a} {bold(relation)} {b}")
 
@@ -1642,7 +1645,7 @@ def _game_picker(
     )
 
 
-PART_DECISIONS = ("demo_of", "tool_of", "mode_of", "extra_of", "enhanced_of")
+PART_DECISIONS = ("demo_of", "tool_of", "mode_of", "extra_of", "pass_of", "enhanced_of")
 
 # The labelling queue's answers (the training audit, 2026-10-24): the rare
 # relations are one tap, as one game and another game are.

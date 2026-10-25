@@ -43,6 +43,7 @@ RELATIONS = {
     "demo_of": "demo_of",
     "tool_of": "tool_of",
     "extra_of": "extra_of",
+    "pass_of": "pass_of",
     "vr_of": "vr_of",
     "contains": "contains",
     "series": "series",
@@ -56,6 +57,7 @@ DIRECTED = {
     "demo_of",
     "tool_of",
     "extra_of",
+    "pass_of",
     "contains",
 }
 
