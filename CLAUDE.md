@@ -186,6 +186,7 @@ name, or when the tree goes stale.
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
+│   │   ├── api_usage.py          every outside API's requests (and the model's tokens), last 24h
 │   │   ├── description_backfill.py  one Xbox title's descriptions in both locales (#48)
 │   │   ├── xbox/                 auth.py (token storage, refresh), client.py (requests, retry,
 │   │   │                         backoff), models.py (pydantic responses)
@@ -612,7 +613,12 @@ every column. History: #106.
   - **Names**: the platform's own two strings, **never translated**, from the same
     two locale requests. Each platform's main call fixes one language (Xbox/PSN
     English, Steam Russian), which is why both are kept.
-  - Icons are cached under `data/achievements/{platform}/{title_id}/`.
+  - Icons are cached under `data/achievements/{platform}/{title_id}/`, **at most
+    1280 px on the longer side** (owner, 2026-10-23; `achievement_icons.shrink`):
+    Xbox hands out 1920×1080 PNGs of 2–4 MB, which took 4 GB of the disk and
+    reached phones whole. A larger picture is scaled down on download — PNG
+    when see-through, JPEG otherwise; a smaller one is kept as it came. Icons
+    cached before were shrunk once at start-up (`shrink_cached_once`).
   - **Tips** (`tip_en`/`tip_ru`/`tip_source`/`tip_translation`): how to get it, from
     the Steam community's guides. The text sits in its own language's column; the
     other stays NULL until a translation fills it and says so (`tip_translation =
@@ -629,7 +635,9 @@ every column. History: #106.
   from calls the bot already makes (Xbox `GameDisplayPicRaw`, Steam `avatarfull`, PSN
   `avatars`); `poller/avatars.py` re-checks each subject weekly and skips unchanged
   ones. Covers: Steam's is a fixed CDN path (`library_600x900`, portrait, else
-  `header.jpg` for games older than the library view, #117), PSN's
+  `header.jpg` for games older than the library view, #117; a game released
+  lately is at neither — its art sits in a hashed folder, so the store's
+  `header_image` is asked for then, one request, 2026-10-17), PSN's
   rides in the trophy listing, Xbox's costs a titlehub call — `poller/covers.py`
   rations three a minute and visits each title **once** (art does not change).
 
@@ -1223,6 +1231,23 @@ The official Steam Web API, one shared API key, no per-user OAuth.
   constructor copy, so a change in the admin panel applies on the next call (#17).
 - People connect by profile URL, vanity URL or bare SteamID64. Their profile and game
   stats must be public — only they can change that.
+- **Hidden achievements are not a dead key** (2026-10-12): Steam answers a
+  profile whose game details are hidden with 403 and a JSON
+  `playerstats.error`, a bad key with 403 and an HTML page;
+  `client._get` raises `SteamGameDetailsPrivateError` for the first. A
+  backfill that meets it on every game tells the person (as for a hidden
+  library) and leaves `achievements_visible = 0` — "the history waits".
+  The first achievement read again (any poll), or a library that answers
+  the catch-up while the flag is 0, starts `fill_library_gaps` in the
+  background: every game with nothing stored, as history, never published;
+  still hidden, it stops at its first game.
+- **Achievement icons moved off Akamai** (2026-10-17): the schema still hands
+  out `steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/…`, which has
+  no icon for a game released lately (a post went out as text only);
+  `shared.fastly.steamstatic.com/community_assets/images/apps/…` serves old
+  and new alike. `images.current_url` mends the address where it is used —
+  the schema (fresh and cached), the post, every bot download, the Mini App's
+  icon links — and stored rows keep what the platform said.
 - Presence comes in batches of up to 100 SteamIDs (`GetPlayerSummaries`).
 - **Every stored achievement carries its game's name** (#70): `fetch_unlocked`
   takes `title_name` so the `achievement_list_connectors` upsert has something to write — without it a
@@ -1395,11 +1420,17 @@ isn't muted there; it wasn't already published there.
   fetches it), the same bytes fetched by the bot (Telegram cannot always reach a
   platform's CDN), the icon cached on disk, then the game's cover (its file, its
   URL; never behind a spoiler); text alone only when there is none.
+  A digest of several pictures sent as one photo — an album cannot carry
+  the Mini App button — shows the game's cover first, its first icon only
+  when there is no cover (owner, 2026-10-18).
 - **A low-resolution post picture is enlarged on a square** (owner,
-  2026-10-10; `services/post_picture.py`). **The original is what is
-  stored** (icon cache, cover, URLs); the square is drawn when a post is
+  2026-10-10; `services/post_picture.py`). **Nothing drawn is stored**
+  (the icon cache keeps the icon, at most 1280 px; cover; URLs); the square is drawn when a post is
   sent, single or album, and kept nowhere. **A high-resolution picture goes
-  as it is.** A low-resolution one (smaller on its longer side than
+  as it is** — unless more than a tenth of it is see-through (2026-10-12:
+  Aniimo's white PSN trophies on nothing reached the chat as an empty
+  square, Telegram flattening the transparency): that one is set on the
+  card at its own size, never enlarged. A low-resolution one (smaller on its longer side than
   `post_picture_low_res`: 128, 200 — the default —, 256 or 512 px; Steam's
   and Xbox 360's icons are 64 px, PS4's trophies 240) is enlarged by a cheap
   filter (bicubic) and set in the middle of a card, rounded, with a shadow.
@@ -1968,7 +1999,16 @@ keyboard.
     the Mini App names a city beside an offset where one is known («Москва ·
     UTC+3», `value_label(place=True)`), the bot shows the offset alone.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
-    sign-in emails against their caps, every credential's state).
+    sign-in emails against their caps, every credential's state). **The API
+    load** (owner, 2026-10-12; `services/api_usage.py`, noted as each request
+    is made, in memory for 24 hours — a restart starts it over): XBOX, Steam,
+    PSN over 5 minutes, an hour and a day — Xbox per account, as «median /
+    busiest» over the Xbox accounts polled, a quiet one counting as nought
+    (Microsoft's budget is each person's, so a total says nothing); Steam's 100 000 a
+    day beside its day; PSN with no limit claimed; Anthropic's requests and
+    tokens over an hour and a day; the sign-in emails with their mail server.
+    `views/admin_home.py::usage_rows` words them once: the bot's home prints
+    them, the Mini App's «Ключи» lists them as the server sends them.
   - `services/admin_credentials.py` — the shared credentials (`set` raising
     `CredentialInvalid` / `CredentialSetupError`, `clear`).
   - `services/admin_actions.py` — **every action**, one class each: what it
@@ -2100,7 +2140,8 @@ upper-case. `/panel`'s "now" row names only the family, as its header lines do.
   per game with the game's own counter, every item in the card's line format, the
   descriptions in italics (owner, 2026-09-25) and the block's version named by
   whichever item knows its device. A
-  `sendMediaGroup`, caption on the first image, images deduped.
+  `sendMediaGroup`, caption on the first image, images deduped — or, with the
+  Mini App button, one photo of the game's cover (Publication rules).
 - **The anti-flood digest is the same form**, named by the person like every post;
   two accounts of one platform name their blocks.
 - **A digest never names a trophy group** — one block is one game.
@@ -2575,6 +2616,10 @@ so a fresh clone does not have them. Never run the dev server on prod's `BOT_TOK
 A VPS at Spaceship (Namecheap), Ubuntu 24.04, nginx + systemd, dedicated user
 `botsvc`; nginx terminates TLS (Let's Encrypt, certbot timer) and proxies to the bots,
 whose ports are never exposed (`OAUTH_LISTEN_HOST=127.0.0.1`).
+**SSH is keys only, on port 22022** (owner, 2026-10-23: password login
+is off, root by key only). CI's deploy connects on 22022 too, with
+`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches;
+port 22 is to be closed once a deploy over 22022 has gone through.
 
 ```bash
 systemctl {start|stop|restart|status} xbox-bot        # xbox-bot-test for the test server
@@ -2605,7 +2650,9 @@ journalctl -u xbox-bot -f
 the checkout on every deploy) is the only thing the CI `deploy` user may run as root.
 It:
 
-1. backs up the database **every** time (`data/backups/`);
+1. backs up the database **every** time (`data/backups/`) and keeps only the
+   newest of its own copies — **8 on prod, 5 on the test server** (owner,
+   2026-10-23: kept forever they filled the disk); a copy named by hand stays;
 2. `git fetch --prune` and `git merge --ff-only` — never a robot's merge commit;
 3. reinstalls dependencies only when `pyproject.toml` changed;
 4. unpacks the Mini App CI built (built there, not on the 300 MB box);
@@ -2651,7 +2698,10 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `prerelease`: `changelog/<v>.ru.md`, `.en.md`, `.contributors.md`, and
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
-  links never 404. Under each note's title, a line links its other language
+  links never 404. **A release without a new minor is a hotfix** (owner,
+  2026-10-12): its notes say so in the title (`# 1.8.5 — хотфикс — …`) and
+  the first line, and the announcement's header says so by itself
+  (`release_notify.is_hotfix`: C above 0). Under each note's title, a line links its other language
   (owner, 2026-10-10): `**Русский** · [English](<v>.en.md)` in the Russian one,
   `[Русский](<v>.ru.md) · **English**` in the English one.
 - **A release is: notes, a short review, then `prerelease` → `main`** (owner,

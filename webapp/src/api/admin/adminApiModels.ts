@@ -7,13 +7,14 @@ export type AdminHome = {
   steam_linked: number;
   psn_linked: number;
   chats: number;
-  xbox_usage: string;
-  steam_usage: string;
+  /** Every outside API's load and the sign-in emails, worded by the server —
+   * the same lines the bot's /admin home shows (label, value). */
+  usage: { label: string; value: string }[];
   steam_key: string;
   psn_key: string;
-  psn_requests: number;
-  /** Sign-in emails sent, against the app's hourly cap and the mail service's daily one. */
-  mail: { hour: number; hour_limit: number; day: number; day_limit: number };
+  /** Sign-in emails sent, against the app's hourly cap and the mail service's
+   * daily one, and the mail server they go through. */
+  mail: { hour: number; hour_limit: number; day: number; day_limit: number; server: string | null };
   credentials: AdminCredential[];
 };
 

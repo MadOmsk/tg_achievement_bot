@@ -20,17 +20,7 @@ from bot.services.admin_settings import (
     unlimited_label,
 )
 from bot.views.admin import render_user_list
-from bot.views.admin_home import format_api_usage
 from bot.views.admin_settings import render_setting_prompt, render_settings_group
-
-
-def test_api_usage_formats_seconds_and_minutes() -> None:
-    text = format_api_usage([(3, 100, 15.0), (12, 300, 300.0)], locale="ru")
-    assert text == "3/100 за 15с · 12/300 за 5 мин"
-
-
-def test_api_usage_with_no_windows() -> None:
-    assert format_api_usage([], locale="ru") == "нет данных"
 
 
 def test_threshold_bounds_reject_zero_and_over_a_hundred() -> None:

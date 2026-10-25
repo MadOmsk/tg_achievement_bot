@@ -8,6 +8,8 @@ goes to the back of the queue instead of returning on the next tick forever.
 
 from __future__ import annotations
 
+import pytest
+
 from bot.constants import Platform
 from bot.db.repo import AchievementRow, Repo
 from bot.poller import covers as covers_poller
@@ -18,6 +20,16 @@ from bot.services.steam.client import cover_url, cover_urls
 STEAM_APPID = "440"
 XBOX_TITLE = "1234567890"
 PSN_TITLE = "NPWR00001_00"
+
+
+@pytest.fixture(autouse=True)
+def _no_store(monkeypatch):
+    """The store is never asked for real; a test that wants an answer says so."""
+
+    async def nothing(appid: str) -> None:
+        return None
+
+    monkeypatch.setattr(covers_poller, "steam_store_header", nothing)
 
 
 class _FakeXbox:
@@ -247,3 +259,48 @@ async def test_a_login_dying_mid_visit_does_not_escape(repo: Repo, cipher, monke
     await CoverRefresh(repo, _Expired()).tick()  # type: ignore[arg-type]
 
     assert await _checked_at(repo, XBOX_TITLE) is not None
+
+
+async def test_a_new_steam_game_takes_the_header_its_store_page_names(
+    repo: Repo, monkeypatch, tmp_path
+) -> None:
+    """A game released lately is at neither fixed path (2026-10-17): its art
+    sits in a hashed folder only the store names."""
+    await repo.upsert_title(STEAM_APPID, "Thank You Bus Driver", Platform.STEAM)
+    header = (
+        "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/440/abc/header.jpg?t=1"
+    )
+    asked: list[str] = []
+
+    async def store(appid: str) -> str:
+        asked.append(appid)
+        return header
+
+    async def download(url, name):
+        return ("covers/new.jpg", "hash") if url == header else None
+
+    monkeypatch.setattr(covers_poller, "steam_store_header", store)
+    monkeypatch.setattr(covers_poller.covers, "download", download)
+
+    await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
+
+    assert asked == [STEAM_APPID]
+    assert await repo.title_icon_url(Platform.STEAM, STEAM_APPID) == header
+    assert await repo.titles_needing_cover(10) == []
+
+
+async def test_the_store_is_asked_only_when_both_fixed_paths_fail(
+    repo: Repo, monkeypatch, tmp_path
+) -> None:
+    await repo.upsert_title(STEAM_APPID, "Team Fortress 2", Platform.STEAM)
+    asked: list[str] = []
+
+    async def store(appid: str) -> None:
+        asked.append(appid)
+
+    monkeypatch.setattr(covers_poller, "steam_store_header", store)
+    _downloads_to(monkeypatch, tmp_path)
+
+    await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
+
+    assert asked == []

@@ -6,12 +6,18 @@ downloads from platform CDNs (Xbox Live, Steam, Sony) when users browse the Mini
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import io
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
+from PIL import Image, UnidentifiedImageError
+
+from bot.services import images
+from bot.util import utcnow_iso
 
 if TYPE_CHECKING:
     from bot.db.repo import Repo
@@ -20,7 +26,17 @@ log = logging.getLogger(__name__)
 
 ACHIEVEMENTS_DIR = Path("data/achievements")
 DOWNLOAD_TIMEOUT_SECONDS = 15.0
-MAX_BYTES = 4 * 1024 * 1024  # 4MB sanity bound
+# What a download may weigh. Xbox hands out 1920x1080 PNGs of 2-4 MB, some
+# just over 4 MB; what is stored is shrunk (`shrink`), so the bound is loose.
+MAX_BYTES = 16 * 1024 * 1024
+# The cached icon's longer side at most (owner, 2026-10-23): Xbox's art kept
+# whole took 4 GB of a 24 GB disk and reached phones at 4 MB an icon. More
+# than Telegram or a phone shows; a post's card is drawn at 1024.
+MAX_SIDE = 1280
+# More of a picture than this see-through, and it is kept as PNG; JPEG
+# otherwise. Rounded corners alone stay under it.
+SEE_THROUGH_SHARE = 0.01
+JPEG_QUALITY = 88
 
 _HEX_CHARS = set("0123456789abcdefABCDEF")
 _KNOWN_EXTENSIONS = (".png", ".jpg", ".webp", ".jpeg")
@@ -43,6 +59,54 @@ def detect_mime(data: bytes) -> tuple[str, str]:
     if data.startswith(b"\xff\xd8\xff"):
         return "image/jpeg", ".jpg"
     return "image/png", ".png"
+
+
+def shrink(data: bytes) -> bytes:
+    """`data` no larger than `MAX_SIDE` on its longer side: a larger picture
+    is scaled down and re-encoded — PNG when it is see-through, JPEG
+    otherwise. A picture already small enough, or one that cannot be read,
+    comes back untouched. CPU work — run it in a thread."""
+    try:
+        with Image.open(io.BytesIO(data)) as picture:
+            if max(picture.size) <= MAX_SIDE:
+                return data
+            picture.load()
+            rgba = picture.convert("RGBA")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        return data
+    clear = sum(rgba.getchannel("A").histogram()[:250])
+    see_through = clear > SEE_THROUGH_SHARE * rgba.width * rgba.height
+    rgba.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    if see_through:
+        rgba.save(out, "PNG", optimize=True)
+    else:
+        rgba.convert("RGB").save(out, "JPEG", quality=JPEG_QUALITY, optimize=True)
+    return out.getvalue()
+
+
+async def store_icon(
+    platform: str, title_id: str, achievement_id: str, data: bytes, *, root: Path | None = None
+) -> tuple[bytes, str]:
+    """Shrink a downloaded icon and keep it; returns what was kept and its
+    MIME. Written to a temporary file and renamed, so a reader never sees half
+    a picture; a copy under another extension (the PNG a JPEG replaces) goes."""
+    data = await asyncio.to_thread(shrink, data)
+    mime, ext = detect_mime(data)
+    g_dir = game_icon_dir(platform, title_id, root=root)
+    name = safe_part(achievement_id)
+    save_path = g_dir / f"{name}{ext}"
+    try:
+        g_dir.mkdir(parents=True, exist_ok=True)
+        temporary = save_path.with_name(save_path.name + ".part")
+        temporary.write_bytes(data)
+        temporary.replace(save_path)
+        for other in _KNOWN_EXTENSIONS:
+            if other != ext:
+                (g_dir / f"{name}{other}").unlink(missing_ok=True)
+    except OSError as exc:
+        log.warning("failed writing cached icon %s: %r", save_path, exc)
+    return data, mime
 
 
 def safe_part(val: str | int, fallback: str = "0") -> str:
@@ -184,19 +248,11 @@ async def get_or_download_achievement_icon(
         async with httpx.AsyncClient(
             timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True
         ) as client:
-            resp = await client.get(url)
+            resp = await client.get(images.current_url(url))
             if resp.status_code == 200 and resp.content:
                 data = resp.content
                 if len(data) <= MAX_BYTES:
-                    mime, ext = detect_mime(data)
-                    g_dir = game_icon_dir(platform, title_id, root=root)
-                    save_path = g_dir / f"{safe_part(achievement_id)}{ext}"
-                    try:
-                        g_dir.mkdir(parents=True, exist_ok=True)
-                        save_path.write_bytes(data)
-                    except OSError as exc:
-                        log.warning("failed writing cached icon %s: %r", save_path, exc)
-                    return data, mime
+                    return await store_icon(platform, title_id, achievement_id, data, root=root)
             if resp.status_code == 404:
                 return None
     except Exception as exc:
@@ -231,16 +287,12 @@ async def pre_cache_icon(
                 await get_or_download_x360_icon(t_hex, img_hex, root=root)
                 return
 
-        g_dir = game_icon_dir(platform, title_id, root=root)
         async with httpx.AsyncClient(
             timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True
         ) as client:
-            resp = await client.get(icon_url)
+            resp = await client.get(images.current_url(icon_url))
             if resp.status_code == 200 and resp.content and len(resp.content) <= MAX_BYTES:
-                _mime, ext = detect_mime(resp.content)
-                save_path = g_dir / f"{safe_part(achievement_id)}{ext}"
-                g_dir.mkdir(parents=True, exist_ok=True)
-                save_path.write_bytes(resp.content)
+                await store_icon(platform, title_id, achievement_id, resp.content, root=root)
     except Exception as exc:
         log.debug("pre_cache_icon ignored failure for %s/%s: %r", title_id, achievement_id, exc)
 
@@ -267,4 +319,56 @@ def format_achievement_icon_url(
     # 3. Fallback: ensure https
     if raw_icon_url.startswith("http://"):
         return "https://" + raw_icon_url[len("http://") :]
-    return raw_icon_url
+    return images.current_url(raw_icon_url)
+
+
+# Set once every icon cached before `MAX_SIDE` was shrunk (2026-10-23).
+SHRINK_DONE_KEY = "achievement_icons_shrunk_1280"
+# A pause between files: the server has one CPU and bots to run.
+SHRINK_PAUSE_SECONDS = 0.2
+
+
+async def shrink_cached_once(repo: Repo, *, root: Path | None = None) -> int:
+    """Shrink, once per server, every icon cached at full size before icons
+    were shrunk on download. One file at a time, written as `store_icon`
+    writes; a file that cannot be read is left as it is. Returns how many
+    were rewritten."""
+    if await repo.get_app_setting(SHRINK_DONE_KEY):
+        return 0
+    base = achievements_dir(root)
+    rewritten = saved = 0
+    paths = [p for p in base.rglob("*") if p.is_file() and p.suffix in _KNOWN_EXTENSIONS]
+    for path in paths:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        smaller = await asyncio.to_thread(shrink, data)
+        if smaller is data:
+            continue
+        _mime, ext = detect_mime(smaller)
+        target = path.with_suffix(ext)
+        try:
+            temporary = target.with_name(target.name + ".part")
+            temporary.write_bytes(smaller)
+            temporary.replace(target)
+            if target != path:
+                path.unlink(missing_ok=True)
+        except OSError as exc:
+            log.warning("could not shrink cached icon %s: %r", path, exc)
+            continue
+        rewritten += 1
+        saved += len(data) - len(smaller)
+        await asyncio.sleep(SHRINK_PAUSE_SECONDS)
+    await repo.set_app_setting(SHRINK_DONE_KEY, utcnow_iso())
+    log.info(
+        "cached icons shrunk: %s of %s files, %.0f MB saved", rewritten, len(paths), saved / 1e6
+    )
+    return rewritten
+
+
+async def shrink_cached_logged(repo: Repo) -> None:
+    try:
+        await shrink_cached_once(repo)
+    except Exception:
+        log.exception("shrinking cached icons failed")

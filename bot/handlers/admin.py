@@ -103,9 +103,7 @@ async def _replace_admin_home(
     # This one knows whose panel it is rebuilding, so it reads the locale
     # itself rather than making every caller carry it (#48).
     locale = await repo.user_locale(await repo.person_id(admin_id))
-    text, markup = await render_admin_home(
-        repo, fetcher, steam_fetcher, admin_credentials, locale=locale
-    )
+    text, markup = await render_admin_home(repo, admin_credentials, locale=locale)
     if prefix:
         text = f"{prefix}\n\n{text}"
     previous = await repo.get_admin_panel_refresh(admin_id)
@@ -152,7 +150,9 @@ async def admin_home(
     await _redraw(
         callback,
         *await render_admin_home(
-            repo, fetcher, steam_fetcher, admin_credentials, locale=i18n.locale
+            repo,
+            admin_credentials,
+            locale=i18n.locale,
         ),
     )
 
@@ -231,7 +231,9 @@ async def admin_text_input_cancel(
     await _redraw(
         callback,
         *await render_admin_home(
-            repo, fetcher, steam_fetcher, admin_credentials, locale=i18n.locale
+            repo,
+            admin_credentials,
+            locale=i18n.locale,
         ),
     )
 

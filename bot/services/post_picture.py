@@ -5,7 +5,11 @@ Steam and Xbox 360 hand out 64 px achievement icons; Telegram showed them
 as a tiny, blurry card, every post a different width. Here, at the moment a
 post is sent:
 
-- a picture of high resolution goes **as it is**, untouched;
+- a picture of high resolution goes **as it is**, untouched — unless much of
+  it is see-through: Telegram flattens a photo's transparency onto a plain
+  ground, and a white trophy drawn on nothing (PSN's Aniimo, 2026-10-12)
+  came out as an empty white square. Such a picture is set on the card at
+  its own size, never enlarged;
 - a low-resolution one (under `post_picture_low_res` on its longer side,
   200 px by default) is enlarged ×1–×8
   by a cheap filter (`post_picture_scale`, ×4 by default; never past 90% of
@@ -68,6 +72,9 @@ MAX_SHARE = 0.9
 LOW_RES_KEY = "post_picture_low_res"
 LOW_RES_CHOICES = (128, 200, 256, 512)
 LOW_RES_DEFAULT = 200
+# More than this share of a picture see-through, and it is set on a card
+# whatever its size; rounded corners alone stay well under it.
+SEE_THROUGH_SHARE = 0.1
 # Composed pictures kept for a while: one achievement goes to several chats.
 _MEMO_SIZE = 32
 _memo: OrderedDict[tuple[str, str, int, int, str, str], bytes] = OrderedDict()
@@ -112,6 +119,13 @@ def is_low_res(picture: Image.Image, limit: int = LOW_RES_DEFAULT) -> bool:
     return max(picture.size) < limit
 
 
+def is_see_through(picture: Image.Image) -> bool:
+    """Whether enough of an RGBA picture is transparent that the ground under
+    it decides what it looks like."""
+    clear = sum(picture.getchannel("A").histogram()[:250])
+    return clear > SEE_THROUGH_SHARE * picture.width * picture.height
+
+
 def _average(picture: Image.Image) -> tuple[int, int, int]:
     """The picture's mean colour, its transparent parts left out."""
     rgb = Image.new("RGB", picture.size, (0, 0, 0))
@@ -148,25 +162,33 @@ def _cover_ground(cover: Image.Image, size: tuple[int, int]) -> Image.Image:
 
 def compose(icon: bytes, look: Look, cover: bytes | None = None) -> bytes | None:
     """A low-resolution `icon` enlarged `look.scale` times — on its card in
-    `look.style`, or alone for the `original` size — as a JPEG; None when it
-    is of high resolution (it goes as it is), when the style is off, or when
-    `icon` is not a picture. CPU work — run it in a thread."""
+    `look.style`, or alone for the `original` size — as a JPEG; a
+    see-through one of high resolution on its card at its own size; None
+    when it is of high resolution and opaque (it goes as it is), when the
+    style is off, or when `icon` is not a picture. CPU work — run it in a
+    thread."""
     if not look.on:
         return None
     picture = _open(icon)
-    if picture is None or not is_low_res(picture, look.low_res):
+    if picture is None:
+        return None
+    low_res = is_low_res(picture, look.low_res)
+    see_through = is_see_through(picture)
+    if not low_res and not see_through:
         return None
     card = look.card()
-    scale = look.scale
+    scale = look.scale if low_res else 1
     if card is not None:
         # Never past 90% of the card, whatever scale was picked (owner,
         # 2026-10-10).
         scale = min(scale, min(card) * MAX_SHARE / max(picture.size))
     size = (max(1, round(picture.width * scale)), max(1, round(picture.height * scale)))
     # A cheap filter, as asked: bicubic, no sharpening, nothing learned.
-    big = picture.resize(size, Image.Resampling.BICUBIC)
+    big = picture.resize(size, Image.Resampling.BICUBIC) if size != picture.size else picture
     if card is None:
-        return _jpeg(Image.alpha_composite(Image.new("RGBA", big.size, (0, 0, 0, 255)), big))
+        # The icon's own toned-down colour under what is see-through, so a
+        # white drawing never lands on white, nor a dark one on black.
+        return _jpeg(Image.alpha_composite(_color_ground(picture, big.size).convert("RGBA"), big))
 
     cover_picture = _open(cover) if cover and look.style == STYLE_COVER else None
     ground = _cover_ground(cover_picture, card) if cover_picture else _color_ground(picture, card)
@@ -244,11 +266,19 @@ async def _first(sources: Sequence[str]) -> tuple[str, bytes] | None:
     return None
 
 
-def _low_res_bytes(data: bytes, limit: int) -> bool:
-    """Whether a picture is low-resolution, from its header alone."""
+def _to_draw(data: bytes, limit: int) -> bool:
+    """Whether a picture is drawn on a card: low-resolution, or see-through.
+    The size is in the header; transparency needs the pixels, and only a
+    picture that can have them is decoded."""
     try:
         with Image.open(io.BytesIO(data)) as picture:
-            return max(picture.size) < limit
+            if max(picture.size) < limit:
+                return True
+            if picture.mode not in ("RGBA", "LA", "PA") and not (
+                picture.mode == "P" and "transparency" in picture.info
+            ):
+                return False
+            return is_see_through(picture.convert("RGBA"))
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         return False
 
@@ -277,14 +307,14 @@ async def build(
     if icon is None:
         return None
     composed: bytes | None = None
-    if _low_res_bytes(icon[1], look.low_res):
+    if await asyncio.to_thread(_to_draw, icon[1], look.low_res):
         cover = await _first(cover_sources) if look.style == STYLE_COVER else None
         try:
             composed = await asyncio.to_thread(compose, icon[1], look, cover[1] if cover else None)
         except Exception:
             log.exception("could not compose a post picture from %s", icon[0])
             return None
-    # A high-resolution icon is remembered too, as nothing to draw: the next
+    # A high-resolution opaque icon is remembered too, as nothing to draw: the next
     # chat's copy of the post does not fetch it again.
     _memo[key] = composed or b""
     if len(_memo) > _MEMO_SIZE:

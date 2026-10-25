@@ -66,8 +66,6 @@ class AdminPanelRefresh:
         # to exactly one known person — rendered in their own language (#48).
         text, markup = await render_admin_home(
             self._repo,
-            self._fetcher,
-            self._steam_fetcher,
             self._credentials,
             locale=await self._repo.user_locale(await self._repo.person_id(row.admin_id)),
         )

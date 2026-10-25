@@ -346,3 +346,48 @@ async def test_with_no_icon_to_send_the_post_wears_the_games_cover(repo, monkeyp
     )
     assert await pub._deliver(job) == 9
     assert sent == ["https://cdn/cover.jpg"]
+
+
+async def test_a_digest_sent_as_one_photo_shows_the_games_cover(repo) -> None:
+    """An album cannot carry the Mini App button, so a digest of several
+    pictures goes as one photo — the game's cover, not the first achievement's
+    icon (owner, 2026-10-18). A single achievement keeps its own icon."""
+    from types import SimpleNamespace
+
+    from bot.poller.publisher import Picture, Publisher, PublishJob
+
+    sent: list[object] = []
+
+    class _Bot:
+        async def send_photo(self, chat_id, photo, **kwargs):
+            sent.append(photo)
+            return SimpleNamespace(message_id=1)
+
+    pub = Publisher(bot=_Bot(), repo=repo)
+    cover = [
+        Picture("url", "https://cdn/cover.jpg", cover=True),
+        Picture("fetch", "https://cdn/cover.jpg", cover=True),
+    ]
+    markup = SimpleNamespace(inline_keyboard=[])
+
+    await pub._deliver(
+        PublishJob(
+            chat_id=-1,
+            text="digest",
+            gallery=[("https://cdn/a.jpg", False), ("https://cdn/b.jpg", False)],
+            reply_markup=markup,
+            backups=cover,
+        )
+    )
+    assert sent[-1] == "https://cdn/cover.jpg"
+
+    await pub._deliver(
+        PublishJob(
+            chat_id=-1,
+            text="one",
+            gallery=[("https://cdn/a.jpg", False)],
+            reply_markup=markup,
+            backups=cover,
+        )
+    )
+    assert sent[-1] == "https://cdn/a.jpg"

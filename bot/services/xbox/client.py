@@ -22,7 +22,7 @@ from bot.constants import (
     PresenceState,
     XboxApiValue,
 )
-from bot.services import raw_answers
+from bot.services import api_usage, raw_answers
 from bot.services.rate_limiter import RateLimiter
 from bot.services.xbox.auth import XboxAuthService
 from bot.services.xbox.models import (
@@ -138,6 +138,12 @@ class XboxClient:
         self._auth = auth
         self._limiter = limiter or RateLimiter(RATE_WINDOWS)
 
+    async def _acquire(self, person_id: int) -> None:
+        """A slot under the shared limiter, noted against the person whose
+        token the request rides on: Microsoft's budget is each person's."""
+        await self._limiter.acquire()
+        api_usage.record(api_usage.XBOX, person_id)
+
     def rate_limit_usage(self) -> list[tuple[int, int, float]]:
         """(used, limit, window_seconds) for each achievements-service window
         this client shares across every user (SPEC 4, 6.4)."""
@@ -153,7 +159,7 @@ class XboxClient:
         """
         manager = await self._auth.authenticated_manager(person_id)
         client = XboxLiveClient(manager)
-        await self._limiter.acquire()
+        await self._acquire(person_id)
         try:
             item = await client.presence.get_presence_own()
         except httpx.HTTPStatusError as exc:
@@ -407,7 +413,7 @@ class XboxClient:
         }
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
-            await self._limiter.acquire()
+            await self._acquire(person_id)
             try:
                 response = await manager.session.get(url, params=params, headers=headers)
             except httpx.RequestError as exc:
@@ -468,7 +474,7 @@ class XboxClient:
         manager = await self._auth.authenticated_manager(person_id)
         assert manager.xsts_token is not None
         client = XboxLiveClient(manager)
-        await self._limiter.acquire()
+        await self._acquire(person_id)
         try:
             response = await client.profile.get_profile_by_xuid(manager.xsts_token.xuid)
         except httpx.HTTPStatusError as exc:
@@ -520,7 +526,7 @@ class XboxClient:
             **TITLEHUB_HEADERS,
             "Authorization": manager.xsts_token.authorization_header_value,
         }
-        await self._limiter.acquire()
+        await self._acquire(person_id)
         try:
             response = await manager.session.get(url, headers=headers)
             response.raise_for_status()
@@ -570,7 +576,7 @@ class XboxClient:
         manager = await self._auth.authenticated_manager(person_id)
         assert manager.xsts_token is not None
         client = XboxLiveClient(manager)
-        await self._limiter.acquire()
+        await self._acquire(person_id)
         try:
             response = await asyncio.wait_for(
                 client.titlehub.get_title_history(manager.xsts_token.xuid, max_items=max_items),

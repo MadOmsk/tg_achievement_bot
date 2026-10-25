@@ -27,12 +27,33 @@ MAX_BYTES = 4 * 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 20
 
 
+# Steam moved its community images off Akamai: a game released lately has no
+# icon at the old address (404 for Telegram and for us alike, 2026-10-17),
+# while every older one answers at both. The schema still hands out the old
+# one, and rows already stored keep it, so the address is mended where it is
+# used rather than in the data.
+_MOVED = (
+    (
+        "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/",
+        "https://shared.fastly.steamstatic.com/community_assets/images/apps/",
+    ),
+)
+
+
+def current_url(url: str) -> str:
+    """`url` at the host that serves it now."""
+    for old, new in _MOVED:
+        if url.startswith(old):
+            return new + url[len(old) :]
+    return url
+
+
 async def fetch(url: str) -> bytes | None:
     """One picture's bytes, or None when the fetch failed or brought nothing
     that could be a picture — bounded like `download`."""
     try:
         async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as c:
-            response = await c.get(url)
+            response = await c.get(current_url(url))
             response.raise_for_status()
             payload = response.content
     except Exception as exc:
@@ -54,7 +75,7 @@ async def download(
     """
     try:
         async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as c:
-            response = await c.get(url, headers=headers)
+            response = await c.get(current_url(url), headers=headers)
             response.raise_for_status()
             payload = response.content
     except Exception as exc:

@@ -13,6 +13,8 @@ import logging
 
 import httpx
 
+from bot.services import api_usage
+
 log = logging.getLogger(__name__)
 
 API_BASE = "https://api.anthropic.com/v1"
@@ -41,6 +43,19 @@ _BATCH_SIZE = 40
 class AnthropicApiError(Exception):
     """A request to the Anthropic API failed for a reason unrelated to the
     key itself (network, rate limit, malformed response, ...)."""
+
+
+def _note(response: httpx.Response) -> None:
+    """One request to the model, with the tokens its answer says it spent,
+    for the super-admin's home (`services/api_usage.py`)."""
+    spent = 0
+    if response.status_code == 200:
+        try:
+            usage = response.json().get("usage") or {}
+            spent = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
+        except (ValueError, AttributeError, TypeError):
+            spent = 0
+    api_usage.record(api_usage.ANTHROPIC, tokens=spent)
 
 
 def _headers(api_key: str) -> dict[str, str]:
@@ -103,6 +118,7 @@ async def ask_model(
     except httpx.RequestError as exc:
         log.warning("anthropic %s failed: %r", what, exc)
         return None
+    _note(response)
     if response.status_code != 200:
         log.warning("anthropic %s failed: HTTP %s", what, response.status_code)
         return None
@@ -179,6 +195,7 @@ async def _translate_batch(
     except httpx.RequestError as exc:
         log.warning("anthropic translate request failed: %r", exc)
         return {}
+    _note(response)
     if response.status_code != 200:
         log.warning("anthropic translate request failed: HTTP %s", response.status_code)
         return {}
@@ -248,6 +265,7 @@ async def translate_game_description(
     except httpx.RequestError as exc:
         log.warning("anthropic game-description translate failed: %r", exc)
         return None
+    _note(response)
     if response.status_code != 200:
         log.warning("anthropic game-description translate failed: HTTP %s", response.status_code)
         return None

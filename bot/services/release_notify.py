@@ -34,6 +34,13 @@ def base_version(full_version: str) -> str:
     return ".".join(parts[:3]) if len(parts) >= 3 else full_version
 
 
+def is_hotfix(base_ver: str) -> bool:
+    """A release that starts no minor line (`A.B.C`, C above 0) is a hotfix,
+    and says so (owner, 2026-10-12)."""
+    *_, patch = base_ver.split(".")
+    return patch.isdigit() and int(patch) > 0
+
+
 def load_release_summary(base_ver: str, locale: str) -> str | None:
     """Load brief release summary from a summary file or extract bullet
     points from changelog markdown."""
@@ -101,7 +108,10 @@ async def announce_release_if_needed(
             markup = None
         else:
             header = gettext(
-                "main", "main-release-announced", locale=locale, version=current_version
+                "main",
+                "main-release-hotfix" if is_hotfix(base_ver) else "main-release-announced",
+                locale=locale,
+                version=current_version,
             )
             details_prompt = gettext("main", "main-release-details-prompt", locale=locale)
             summary = load_release_summary(base_ver, locale)

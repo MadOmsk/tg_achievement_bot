@@ -96,6 +96,8 @@ class Picture:
     spoiler: bool = False
     # `bytes`: a picture drawn here, sent as it is.
     data: bytes | None = None
+    # The game's cover, not the achievement's own picture.
+    cover: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,11 +140,13 @@ def _gallery(achievements: list[AchievementRow]) -> list[tuple[str, bool]]:
     for item in achievements:
         if not item.icon_url:
             continue
-        if item.icon_url not in has_spoiler:
-            order.append(item.icon_url)
-            has_spoiler[item.icon_url] = item.is_secret
+        # The address Telegram fetches is the one that serves it now.
+        url = images.current_url(item.icon_url)
+        if url not in has_spoiler:
+            order.append(url)
+            has_spoiler[url] = item.is_secret
         elif item.is_secret:
-            has_spoiler[item.icon_url] = True
+            has_spoiler[url] = True
     return [(url, has_spoiler[url]) for url in order]
 
 
@@ -444,9 +448,12 @@ class Publisher:
             backups.append(Picture("file", str(cached), item.is_secret))
         cover_path, cover_url = await self._repo.title_cover(item.platform, item.title_id)
         if cover_path:
-            backups.append(Picture("file", str(covers.cover_dir() / cover_path)))
+            backups.append(Picture("file", str(covers.cover_dir() / cover_path), cover=True))
         if cover_url:
-            backups += [Picture("url", cover_url), Picture("fetch", cover_url)]
+            backups += [
+                Picture("url", cover_url, cover=True),
+                Picture("fetch", cover_url, cover=True),
+            ]
         return backups
 
     async def _art(self, achievements: list[AchievementRow]) -> list[Art]:
@@ -765,12 +772,18 @@ class Publisher:
             # cannot always reach a platform's CDN), the icon cached on disk,
             # then the game's cover; text alone only when there is none.
             candidates: list[Picture] = []
+            # Several achievements' pictures, one photo (an album cannot carry
+            # the Mini App button): the game's cover stands for them all, not
+            # the first one's icon (owner, 2026-10-18).
+            cover_first = len(job.gallery) >= 2
+            if cover_first:
+                candidates += [picture for picture in job.backups if picture.cover]
             if job.gallery:
                 url, secret = job.gallery[0]
                 if framed and framed[0]:
                     candidates.append(Picture("bytes", url, secret, framed[0]))
                 candidates += [Picture("url", url, secret), Picture("fetch", url, secret)]
-            candidates += job.backups
+            candidates += [p for p in job.backups if not (cover_first and p.cover)]
             for picture in candidates:
                 photo = await _photo_input(picture)
                 if photo is None:
