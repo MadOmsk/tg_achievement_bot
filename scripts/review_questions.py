@@ -3,10 +3,11 @@
 things relate, not only enhanced editions). Four kinds, each answered by
 `scripts/web_labels.py`:
 
-- `pair` — two versions: the model's review list first, then one game, an enhanced edition, a remaster, a demo,
-  another game of the series, …; the automatic relations between games
-  (`game_relations`) are asked as a pair of their versions, and so are the
-  versions the linker put in one game under different names;
+- `pair` — two versions: the model's review list first, then one game, an
+  enhanced edition, a remaster, a demo, another game of the series, …; the
+  automatic relations between games (`game_relations`) are asked as a pair
+  of their versions, and so are the versions the linker put in one game
+  under different names;
 - `hltb` — is this HowLongToBeat entry this version (an automatic link the
   matcher was least sure of);
 - `series` — is this game in this series (the linker's proposals, least
