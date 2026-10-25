@@ -2026,6 +2026,9 @@ keyboard.
     (Microsoft's budget is each person's, so a total says nothing); Steam's 100 000 a
     day beside its day; PSN with no limit claimed; Anthropic's requests and
     tokens over an hour and a day; the sign-in emails with their mail server.
+    **The octopus** has a row of its own there (owner, 2026-10-25): on or
+    off and its pace, the queue (and what waits to be retried), how many it
+    assembled in the last hour and day, its failures, the last game.
     `views/admin_home.py::usage_rows` words them once: the bot's home prints
     them, the Mini App's «Ключи» lists them as the server sends them.
   - `services/admin_credentials.py` — the shared credentials (`set` raising

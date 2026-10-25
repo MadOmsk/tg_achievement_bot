@@ -13,7 +13,11 @@ going is skipped. A game assembled a moment ago is not due again
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from bot.services import api_usage
+from bot.util import utcnow_iso
 
 if TYPE_CHECKING:
     from bot.db.repo import Repo
@@ -23,6 +27,33 @@ log = logging.getLogger(__name__)
 
 PER_TICK_KEY = "octopus_entries_per_tick"
 DEFAULT_PER_TICK = 1
+
+
+@dataclass(frozen=True, slots=True)
+class LastGame:
+    """The game the octopus assembled last, for the admin's home."""
+
+    name: str
+    versions: int
+    review: int
+    at: str  # UTC ISO
+
+
+# In memory, like the API counters: a restart starts it over.
+last_game: LastGame | None = None
+
+
+class _SkippedTick(logging.Filter):
+    """A tick that finds the last run still going is skipped by design (an
+    entry may take minutes): told at INFO, not as a warning."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno == logging.WARNING and "OctopusWorker.tick" in record.getMessage():
+            record.levelno, record.levelname = logging.INFO, "INFO"
+        return True
+
+
+logging.getLogger("apscheduler.scheduler").addFilter(_SkippedTick())
 
 
 class OctopusWorker:
@@ -39,8 +70,13 @@ class OctopusWorker:
         per_tick = await self._repo.get_int_setting(PER_TICK_KEY, DEFAULT_PER_TICK)
         if per_tick <= 0:
             return
+        global last_game
         report = await self._octopus.run(limit=per_tick)
         for game in report.games:
+            api_usage.record(api_usage.OCTOPUS)
+            last_game = LastGame(
+                game.name or str(game.game_id), game.versions_after, game.review, utcnow_iso()
+            )
             log.info(
                 "octopus: %s → game %s %r, versions %s → %s, to review %s",
                 game.entry,
@@ -51,4 +87,5 @@ class OctopusWorker:
                 game.review,
             )
         for line in report.failed:
+            api_usage.record(api_usage.OCTOPUS_FAILED)
             log.warning("octopus: %s", line)

@@ -31,6 +31,16 @@ adminview-api-tokens = { $requests } запр. · { $tokens } ток.
 adminview-span-300 = 5 мин
 adminview-span-3600 = час
 adminview-span-86400 = сутки
+adminview-octopus = 🐙 Осьминог
+adminview-octopus-on = вкл, { $per_tick } за тик
+adminview-octopus-off = выкл
+adminview-octopus-queue = в очереди { $queue }{ $retrying ->
+    [0] {""}
+   *[other] {" "}(ждут повтора { $retrying })
+}
+adminview-octopus-done = за час { $hour } · за сутки { $day }
+adminview-octopus-failed = ошибок за час { $failed }
+adminview-octopus-last = последний: { $name }, { $at } (версий { $versions }, на проверку { $review })
 adminview-mail-label = Писем с кодами ({ $server })
 adminview-mail-label-none = Писем с кодами
 adminview-btn-users = Пользователи ▸

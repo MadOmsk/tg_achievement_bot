@@ -31,6 +31,16 @@ adminview-api-tokens = { $requests } req. · { $tokens } tok.
 adminview-span-300 = 5 min
 adminview-span-3600 = hour
 adminview-span-86400 = day
+adminview-octopus = 🐙 Octopus
+adminview-octopus-on = on, { $per_tick } a tick
+adminview-octopus-off = off
+adminview-octopus-queue = queued { $queue }{ $retrying ->
+    [0] {""}
+   *[other] {" "}({ $retrying } to retry)
+}
+adminview-octopus-done = hour { $hour } · day { $day }
+adminview-octopus-failed = failures this hour { $failed }
+adminview-octopus-last = last: { $name }, { $at } ({ $versions } versions, { $review } to review)
 adminview-mail-label = Sign-in emails ({ $server })
 adminview-mail-label-none = Sign-in emails
 adminview-btn-users = Users ▸

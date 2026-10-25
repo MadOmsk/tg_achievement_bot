@@ -15,6 +15,8 @@ from collections import deque
 from dataclasses import dataclass
 
 XBOX, STEAM, PSN, ANTHROPIC = "xbox", "steam", "psn", "anthropic"
+# Not APIs, kept the same way: entries the octopus handled, and failed.
+OCTOPUS, OCTOPUS_FAILED = "octopus", "octopus_failed"
 
 FIVE_MINUTES, HOUR, DAY = 300.0, 3600.0, 86400.0
 WINDOWS = (FIVE_MINUTES, HOUR, DAY)

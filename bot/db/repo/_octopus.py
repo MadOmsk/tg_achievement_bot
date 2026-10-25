@@ -55,6 +55,11 @@ class _OctopusRepo:
         cursor = await self._conn.execute("SELECT COUNT(*) FROM octopus_queue")
         return int((await cursor.fetchone())[0])
 
+    async def octopus_retrying(self) -> int:
+        """Entries that failed at least once and wait to be tried again."""
+        cursor = await self._conn.execute("SELECT COUNT(*) FROM octopus_queue WHERE attempts > 0")
+        return int((await cursor.fetchone())[0])
+
     # ------------------------------------------------------- entry → anchor
 
     async def _ids(self, sql: str, args: tuple) -> list[int]:

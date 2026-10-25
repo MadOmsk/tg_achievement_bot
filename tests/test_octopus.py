@@ -260,3 +260,25 @@ async def test_a_list_collected_for_the_bot_is_queued_for_the_octopus(repo: Repo
     await repo.set_app_setting(STORE_COLLECTION_KEY, "1")
     await collector._collect_logged("psn", "NPWR1", reason="page")
     assert await repo.octopus_due(5) == [(list_key("psn", "NPWR1"), "page")]
+
+
+async def test_the_admin_home_tells_how_the_octopus_is_getting_on(repo: Repo) -> None:
+    from bot.poller import octopus as worker
+    from bot.poller.octopus import OctopusWorker
+    from bot.services.admin_status import octopus_status
+
+    game, _v = await _halo(repo)
+    octopus = OctopusCollector(repo, Stub(repo), linker=_linker([]))  # type: ignore[arg-type]
+    await octopus.enqueue(game_key(game))
+    for n in range(2):
+        await octopus.enqueue(game_key(999 + n))
+    status = await octopus_status(repo)
+    assert (status.on, status.queue, status.retrying) == (False, 3, 0)
+
+    await repo.set_app_setting(STORE_COLLECTION_KEY, "1")
+    before = (await octopus_status(repo)).hour
+    await OctopusWorker(repo, octopus).tick()
+    status = await octopus_status(repo)
+    assert status.on and status.queue == 2
+    assert status.hour == before + 1
+    assert worker.last_game is not None and status.last_name == worker.last_game.name
