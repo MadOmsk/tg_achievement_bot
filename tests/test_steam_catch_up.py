@@ -250,6 +250,33 @@ async def test_catch_up_target_filters_games_by_last_played(
     assert fetcher.calls[0][4] == "CS2 (fresh)"
 
 
+async def test_catch_up_polls_a_game_whose_last_play_steam_left_out(
+    repo: Repo, steam_auth, monkeypatch
+) -> None:
+    """GetRecentlyPlayedGames answers without `rtime_last_played` (2026-10-25):
+    a game played in the last two weeks is polled, not dropped as never played."""
+    await _linked_steam_user(repo)
+
+    async def fake_recently_played(api_key, steam_id, count=10):
+        return [
+            RecentlyPlayedGame(
+                appid="952060",
+                name="Resident Evil 3",
+                playtime_2weeks=434,
+                playtime_forever=949,
+                last_played=0,
+            )
+        ]
+
+    monkeypatch.setattr(steam_client, "get_recently_played_games", fake_recently_played)
+    fetcher = FakeSteamFetcher()
+    poller = SteamCatchUpPoller(_settings(), repo, fetcher, steam_auth)  # type: ignore[arg-type]
+    targets = await repo.steam_pollable_users()
+    checked, _published = await poller.catch_up_target(targets[0])
+    assert checked == 1
+    assert fetcher.calls[0][3] == "952060"
+
+
 async def test_catch_up_target_handles_steam_api_error(repo: Repo, steam_auth, monkeypatch) -> None:
     await _linked_steam_user(repo)
 
