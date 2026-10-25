@@ -11,7 +11,10 @@ lightweight (only games played in the last 2 weeks, usually 1-5 games),
 and spread across the hour there is no burst at all.
 
 For each account, we check recently played games. For any game with
-`last_played > since`, we call `steam_fetcher.poll_title`.
+`last_played > since`, we call `steam_fetcher.poll_title`. Steam's answer
+carries no `rtime_last_played` (2026-10-25: checked live; only GetOwnedGames
+has it), so a game whose last play is unknown is always polled — otherwise
+nobody's catch-up ever found anything.
 """
 
 from __future__ import annotations
@@ -76,7 +79,7 @@ async def catch_up_steam_account(
         log.info("recently played games for person_id=%s skipped: %s", person_id, exc)
         return (0, 0)
 
-    candidates = [g for g in games if g.last_played > cutoff]
+    candidates = [g for g in games if g.last_played == 0 or g.last_played > cutoff]
     if not candidates:
         return (0, 0)
 
