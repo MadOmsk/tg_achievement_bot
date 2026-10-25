@@ -177,9 +177,12 @@ export function FollowsSheet({
       onClose={onClose}
       mid
       title={t(locale, "people")}
-      aside={
-        // Which list, picked at the head's right with how many in each (owner, 2026-10-07).
-        <Dropdown
+    >
+      <div className="sheet-content score-sheet picker-sheet follows-sheet">
+        {/* Which list, with how many in each: the body's first row, not the
+            bar's right — that is kept for actions (owner, 2026-10-12). */}
+        <div className="follows-pick">
+          <Dropdown
           className="dd-trigger follows-switch"
           value={kind}
           options={(theirs
@@ -201,9 +204,7 @@ export function FollowsSheet({
             </>
           }
         />
-      }
-    >
-      <div className="sheet-content score-sheet picker-sheet follows-sheet">
+        </div>
         {/* Searches the list shown, by nickname. */}
         <SearchBar locale={locale} value={query} onChange={setQuery} placeholder={t(locale, "searchPeople")} />
         {rows === null ? (

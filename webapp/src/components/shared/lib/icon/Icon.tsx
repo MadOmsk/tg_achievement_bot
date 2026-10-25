@@ -39,7 +39,8 @@ export function Icon({
     | "gauge"
     | "key"
     | "gift"
-    | "copy";
+    | "copy"
+    | "heart";
   size?: number;
   filled?: boolean;
 }) {
@@ -54,6 +55,13 @@ export function Icon({
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
   };
+  if (name === "heart") {
+    return (
+      <svg {...props}>
+        <path d="M12 20.2s-7.6-4.6-7.6-10.1A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.6 2.7c0 5.5-7.6 10.1-7.6 10.1z" />
+      </svg>
+    );
+  }
   if (name === "copy") {
     return (
       <svg {...props}>

@@ -35,7 +35,7 @@ from bot.services.naming import (
     person_name,
     person_name_of,
 )
-from bot.util import parse_iso, utcnow
+from bot.util import parse_iso, real_game_name, utcnow
 from bot.version import is_test
 from bot.views.notification import format_digest, format_single
 from bot.views.parts import platform_label
@@ -413,7 +413,7 @@ class Publisher:
         if self.on_new_post is None:
             return
         first = achievements[0]
-        game = first.title_name or title_name or first.title_id
+        game = real_game_name(first.title_name) or real_game_name(title_name) or first.title_id
         # The notice names an achievement and shows its picture — never a secret one.
         shown = next((item for item in achievements if not item.is_secret), None)
         notice = self.on_new_post

@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import type { FeedItem } from "../../../api";
 import { t, timeAgo, type Locale } from "../../../i18n";
 import { CoverImg, gameRefOf, useOpenGame } from "../../shared/lib";
@@ -79,12 +78,7 @@ export function PlayedGames({
                 <span className="played-bar" aria-hidden>
                   <span
                     className="played-bar-fill"
-                    style={
-                      {
-                        width: `${(100 * progress.unlocked) / progress.total}%`,
-                        "--month": `${(100 * Math.min(count, progress.unlocked)) / progress.unlocked}%`,
-                      } as CSSProperties
-                    }
+                    style={{ width: `${(100 * progress.unlocked) / progress.total}%` }}
                   />
                 </span>
               )}

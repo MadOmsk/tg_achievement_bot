@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchGame, fetchGameGuides, type AchievementTip, type AchievementVideo, type FeedItem, type GameAchievement } from "../../../api";
 import type { Locale } from "../../../i18n";
+import { gameRefOf, useOpenGame } from "../../shared/lib";
 import { AchievementPage } from "./AchievementPage";
 
 /** What a post already knows, drawn at once while the game's own row loads. */
@@ -38,6 +39,7 @@ export function AchievementLoader({
   const [row, setRow] = useState<GameAchievement>(() => rowOf(item));
   const [tip, setTip] = useState<AchievementTip | undefined>();
   const [videos, setVideos] = useState<AchievementVideo[] | undefined>();
+  const openGame = useOpenGame();
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +67,17 @@ export function AchievementLoader({
       tip={tip}
       videos={videos}
       game={item.game ?? ""}
+      gameArt={item.game_icon_url}
+      gameProgress={item.progress}
+      // The page closes and the game opens in the same turn: one step back.
+      onOpenGame={
+        openGame && item.title_id
+          ? () => {
+              onClose();
+              openGame(gameRefOf(item));
+            }
+          : undefined
+      }
       fallbackIcon={item.game_icon_url}
       locale={locale}
       onClose={onClose}

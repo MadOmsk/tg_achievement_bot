@@ -17,6 +17,7 @@ import { GamesSection } from "../../components/person/games-section/GamesSection
 import { AccountBar, Avatar, EmptyState, MonthChipSkel, FeedSkel, FriendsSkel, HomeBodySkel, PersonSkel, preloadImages, StatsSkel, Dropdown, DropdownArrow, accountLabel, isOnline, telegramPhoto } from "../../components/shared/lib";
 import {
   ClubStats,
+  FavoriteGames,
   FriendsStrip,
   NewsFeed,
   currentMonth,
@@ -497,7 +498,8 @@ export function Club({
           person={openProfile}
           onOpenCard={() => setAuthor({ id: openProfile.person_id, handle: openProfile.name })}
           people={
-            theirFollows === undefined ? (
+            <>
+            {theirFollows === undefined ? (
               <FriendsSkel />
             ) : theirFollows && theirFollows.personId === openProfile.person_id ? (
               <FriendsStrip
@@ -533,7 +535,14 @@ export function Club({
                   openProfile.person_id === me.person_id ? "friendsEmpty" : "theirFollowingEmpty",
                 )}
               />
-            ) : null
+            ) : null}
+            <FavoriteGames
+              data={data}
+              locale={locale}
+              personId={openProfile.person_id}
+              own={openProfile.person_id === me.person_id}
+            />
+            </>
           }
           status={
             statusOf(online.find((m) => m.person_id === openProfile.person_id)) ??
@@ -665,6 +674,7 @@ export function Club({
                   onSeeAll={() => setRosterOpen(true)}
                   onFind={onFind}
                 />
+                <FavoriteGames data={data} locale={locale} own />
                 {hasAccounts && (
                   <GamesSection
                     items={mine}

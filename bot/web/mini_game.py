@@ -1,0 +1,295 @@
+"""The Mini App's game page, the games search and favorite games (#147,
+stage 5; owner, 2026-10-25). The page is read whole from the catalog; the
+old page of one achievement list (`/api/mini/games/{platform}/{title_id}`)
+stays as the achievements screen it opens."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from aiohttp import web
+
+from bot.constants import account_platform_of
+from bot.db.repo import Repo
+from bot.services import game_page
+from bot.services.naming import person_name_of
+
+log = logging.getLogger(__name__)
+
+SEARCH_MIN = 2
+SEARCH_LIMIT = 20
+# Faces of people who played it, on the page.
+PLAYERS_SHOWN = 12
+NEWS_SHOWN = game_page.NEWS_SHOWN
+
+# Background reads started from a page, kept so they are not collected mid-run.
+_BACKGROUND: set[asyncio.Task] = set()
+
+
+def setup_game_routes(app: web.Application) -> None:
+    app.router.add_get("/api/mini/game", handle_game_page)
+    app.router.add_put(r"/api/mini/game/{game_id:\d+}/favorite", handle_favorite)
+    app.router.add_delete(r"/api/mini/game/{game_id:\d+}/favorite", handle_favorite)
+    app.router.add_get("/api/mini/game-search", handle_game_search)
+    app.router.add_get("/api/mini/game-favorites", handle_favorites)
+
+
+def _int(raw: str | None, what: str) -> int:
+    try:
+        return int(raw or "")
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=f"bad {what}") from exc
+
+
+async def _game_id(request: web.Request, repo: Repo) -> int:
+    """The game asked for: by its id, or by one of its achievement lists (a
+    post, a profile's games, an old link)."""
+    if request.query.get("game_id"):
+        game = await repo.live_game_id(_int(request.query.get("game_id"), "game_id"))
+    else:
+        platform = (request.query.get("platform") or "").lower()
+        title_id = request.query.get("title_id") or ""
+        if not platform or not title_id:
+            raise web.HTTPBadRequest(text="game_id or platform and title_id")
+        game = await repo.game_of_list(platform, title_id)
+        if game is None:
+            # A list in no game yet: a game of its own from this visit on.
+            game = await repo.adopt_list_as_game(platform, title_id)
+    if game is None:
+        raise web.HTTPNotFound(text="game not found")
+    return game
+
+
+async def handle_game_page(request: web.Request) -> web.Response:
+    from bot.web.mini_api import _may_see_activity, _require_user, _user_locale
+
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    game_id = await _game_id(request, repo)
+    game = await repo.game_row(game_id)
+    if game is None:
+        raise web.HTTPNotFound(text="game not found")
+    locale = await _user_locale(repo, user.person_id)
+
+    # Whose progress the page leads with: the viewer's own, or the person it
+    # was opened from when the viewer may see their activity (#157).
+    viewer = user.person_id
+    viewed = viewer
+    raw_person = request.query.get("person")
+    if raw_person:
+        other = _int(raw_person, "person")
+        if other != viewer and await _may_see_activity(repo, viewer, other):
+            viewed = other
+
+    versions = await repo.game_page_versions(game_id)
+    lists = await repo.game_page_lists(game_id)
+    hltb_found = await repo.game_hltb(game_id)
+    hltb_entry = hltb_found["entry"] if hltb_found else None
+    art = game_page.art_of(versions, [row["icon_url"] for row in lists if row.get("icon_url")])
+
+    # Who here played it: the viewer, whom they follow, and the person it was
+    # opened from — each only as far as their privacy lets the viewer see.
+    people: list[int] = []
+    if viewer is not None:
+        people = [viewer, *[row.id for row in await repo.following_of(viewer)]]
+    if viewed is not None and viewed not in people:
+        people.append(viewed)
+    visible = [
+        person
+        for person in people
+        if person == viewer or await _may_see_activity(repo, viewer, person)
+    ]
+    totals = {(row["platform"], str(row["title_id"])): int(row["total"] or 0) for row in lists}
+    players = []
+    progress = None
+    for row in await repo.game_players(game_id, visible):
+        person = await repo.get_user(int(row["person_id"]))
+        if person is None:
+            continue
+        # The same count the feed and the posts show (`title_progress`), so a
+        # game reads "40/50" everywhere; the list's own size when it knows none.
+        known = await repo.title_progress(
+            account_platform_of(row["platform"]), str(row["xuid"]), str(row["title_id"])
+        )
+        item = {
+            "person_id": person.id,
+            "name": person_name_of(person),
+            "count": known.unlocked if known else int(row["n"]),
+            "last": row["last"],
+            "platform": row["platform"],
+            "title_id": str(row["title_id"]),
+            "total": (known.total if known else None)
+            or totals.get((row["platform"], str(row["title_id"])))
+            or None,
+        }
+        if person.id == viewed:
+            progress = item
+        else:
+            players.append(item)
+
+    # The newest posts of the game's Steam apps; an app never read is read in
+    # the background, and the page shows them from its next visit.
+    news: list[dict[str, Any]] = []
+    extras = request.app.get("mini_steam_extras")
+    for appid in await repo.game_steam_apps(game_id):
+        _guides_at, patches_at = await repo.steam_app_checked(appid)
+        if patches_at is None and extras is not None:
+            task = asyncio.create_task(extras.refresh_patches(appid))
+            _BACKGROUND.add(task)
+            task.add_done_callback(_BACKGROUND.discard)
+            continue
+        for post in await repo.game_patches(appid, NEWS_SHOWN):
+            news.append(
+                {
+                    "appid": appid,
+                    "gid": post.gid,
+                    "title": post.title_ru if locale == "ru" and post.title_ru else post.title,
+                    "date": post.published_at,
+                    "kind": post.kind,
+                    "image": post.image_url,
+                    "text": (post.text_ru if locale == "ru" and post.text_ru else post.text_en)
+                    or "",
+                    "url": f"https://store.steampowered.com/news/app/{appid}/view/{post.gid}",
+                }
+            )
+    news.sort(key=lambda post: post["date"] or "", reverse=True)
+
+    # What the stores say, asked again in the background when it is due.
+    collector = request.app.get("mini_store_collector")
+    if collector is not None and lists:
+        collector.ensure(str(lists[0]["platform"]), str(lists[0]["title_id"]), reason="page")
+
+    series = []
+    for one in await repo.game_page_series(game_id):
+        cards = await repo.game_cards(one["game_ids"])
+        series.append(
+            {
+                "series_id": one["series_id"],
+                "name": (one["name_ru"] if locale == "ru" and one.get("name_ru") else one["name"]),
+                "games": [game_page.card_of(cards[g]) for g in one["game_ids"] if g in cards],
+            }
+        )
+    relations = await repo.game_page_relations(game_id)
+    related_cards = await repo.game_cards([int(r["other"]) for r in relations])
+    related = [
+        {
+            "kind": row["kind"],
+            "forward": bool(row["forward"]),
+            "game": game_page.card_of(related_cards[int(row["other"])]),
+        }
+        for row in relations
+        if int(row["other"]) in related_cards
+    ]
+
+    return web.json_response(
+        {
+            "ok": True,
+            "game": {
+                "game_id": game_id,
+                "name": game["name"],
+                "name_ru": game.get("name_ru"),
+                "year": game.get("year"),
+                "last_year": game.get("last_year"),
+                "developer": game.get("developer"),
+                "publisher": game.get("publisher"),
+                "more_developers": bool(game.get("more_developers")),
+                "more_publishers": bool(game.get("more_publishers")),
+                "kind": game.get("kind"),
+            },
+            "art": art,
+            "description": game_page.description_of(versions, hltb_entry, locale),
+            "genres": game_page.genres_of(versions, hltb_entry),
+            "platforms": game_page.platforms_of(versions),
+            "screenshots": game_page.screenshots_of(versions),
+            "hltb": game_page.hltb_of(hltb_entry),
+            "lists": [
+                {
+                    "platform": row["platform"],
+                    "title_id": str(row["title_id"]),
+                    "name": row["name"],
+                    "total": int(row["total"] or 0) or None,
+                    "icon_url": game_page.https(row.get("icon_url")),
+                }
+                for row in lists
+            ],
+            "viewed_is_me": viewed == viewer,
+            "progress": progress,
+            "players": players[:PLAYERS_SHOWN],
+            "favorite": viewer is not None and await repo.is_favorite(viewer, game_id),
+            "favorites": await repo.favorite_count(game_id),
+            "news": news[:NEWS_SHOWN],
+            "dlcs": game_page.dlcs_of(await repo.game_page_dlcs(game_id), game["name"]),
+            "editions": game_page.editions_of(await repo.game_page_editions(game_id)),
+            "series": series,
+            "related": related,
+        }
+    )
+
+
+async def handle_favorite(request: web.Request) -> web.Response:
+    from bot.web.mini_api import _require_user
+
+    user = await _require_user(request)
+    if user.person_id is None:
+        raise web.HTTPForbidden(text="no person")
+    repo: Repo = request.app["mini_repo"]
+    game_id = await repo.live_game_id(_int(request.match_info.get("game_id"), "game_id"))
+    if game_id is None:
+        raise web.HTTPNotFound(text="game not found")
+    on = request.method == "PUT"
+    await repo.set_favorite(user.person_id, game_id, on)
+    return web.json_response(
+        {"ok": True, "favorite": on, "favorites": await repo.favorite_count(game_id)}
+    )
+
+
+async def handle_game_search(request: web.Request) -> web.Response:
+    """Games of our own catalog by name — never a search on the internet
+    (owner, 2026-10-25): every game anybody here played, and every one the
+    stores were asked about."""
+    from bot.web.mini_api import _require_user
+
+    await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    query = (request.query.get("q") or "").strip()
+    if len(query) < SEARCH_MIN:
+        raise web.HTTPBadRequest(text="query too short")
+    matches = game_page.rank_search(await repo.game_search_names(), query)
+    # Among names that match alike, the games people here play come first.
+    counts = await repo.game_player_counts([game for game, _rank, _length in matches])
+    matches.sort(key=lambda m: (m[1], -counts.get(m[0], 0), m[2]))
+    found = [game for game, _rank, _length in matches][:SEARCH_LIMIT]
+    cards = await repo.game_cards(found)
+    return web.json_response(
+        {
+            "ok": True,
+            "games": [
+                {**game_page.card_of(cards[game]), "players": counts.get(game, 0)}
+                for game in found
+                if game in cards
+            ],
+        }
+    )
+
+
+async def handle_favorites(request: web.Request) -> web.Response:
+    """A person's favorite games, for their profile: the viewer's own, or
+    somebody's whose activity the viewer may see."""
+    from bot.web.mini_api import _may_see_activity, _require_user
+
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    person = user.person_id
+    if request.query.get("person"):
+        person = _int(request.query.get("person"), "person")
+    if person is None:
+        return web.json_response({"ok": True, "games": []})
+    if person != user.person_id and not await _may_see_activity(repo, user.person_id, person):
+        raise web.HTTPForbidden(text="activity hidden")
+    ids = await repo.favorite_game_ids(person)
+    cards = await repo.game_cards(ids)
+    return web.json_response(
+        {"ok": True, "games": [game_page.card_of(cards[g]) for g in ids if g in cards]}
+    )

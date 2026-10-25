@@ -1,36 +1,18 @@
-import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { EffectFade } from "swiper/modules";
-import { Swiper, SwiperSlide } from "swiper/react";
-import type { Swiper as SwiperInstance } from "swiper/types";
-import "swiper/css";
-import "swiper/css/effect-fade";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchGameGuides,
   fetchGame,
-  fetchGameHltb,
-  fetchGamePatches,
   type GameAchievement,
   type GameDetails,
   type AchievementTip,
   type AchievementVideo,
   type GameGuide,
-  type GameHltb,
-  type GamePatch,
   type GameRef,
 } from "../../../api";
 import { t, type Locale } from "../../../i18n";
 import {
   RowsSkel,
   Icon,
-  Dropdown,
-  DropdownArrow,
   TierMedals,
   asTier,
   useBackHandler,
@@ -39,28 +21,10 @@ import {
 } from "../../shared/lib";
 import { COMPLETION_BADGES, PLATFORMS } from "../../shared/constants";
 import { groupLabel, pickLocale, type FilterType } from "../utils";
-import { GameHero } from "../game-hero/GameHero";
-import { HeroPeek } from "../game-hero/HeroPeek";
 import { GameAchievementRow } from "../game-achievement-row/GameAchievementRow";
 import { AchievementPage } from "../achievement-page/AchievementPage";
-import { GameTabBar } from "../game-tab-bar/GameTabBar";
-import type { PostFilter } from "../patch-notes/PatchNotes";
 import { recall, remember } from "../game-cache";
 import { openUrl } from "../rich-text/RichText";
-
-// The tabs nobody sees at first are their own chunks, fetched when opened.
-const HltbAbout = lazy(() =>
-  import("../hltb-about/HltbAbout").then((m) => ({ default: m.HltbAbout })),
-);
-const FILTER_LABEL = {
-  all: "postsAll",
-  news: "postsNews",
-  patch: "postsPatches",
-} as const;
-
-const PatchNotes = lazy(() =>
-  import("../patch-notes/PatchNotes").then((m) => ({ default: m.PatchNotes })),
-);
 
 const GUIDES_WAIT_MS = 8000;
 const GUIDES_RETRY_MS = 20000;
@@ -106,14 +70,8 @@ export function TitleSheet({
   const [myDetails, setMyDetails] = useState<GameDetails | null>(null);
   // Always opens on what was earned; the lock flips to what is still to earn.
   const [showEarned, setShowEarned] = useState(true);
-  const [postFilter, setPostFilter] = useState<PostFilter>("all");
   const showAllSecrets = initialShowSecrets;
   const [revealedIds, setRevealedIds] = useState<Set<string>>(() => new Set());
-  // Achievements / "Об игре": one Swiper, endlessly looping, switched by tab
-  // or by swipe — the same shape the profile's own carousels use.
-  const [tabSwiper, setTabSwiper] = useState<SwiperInstance | null>(null);
-  // The tab swiper sizes itself to its slide (autoHeight): a card that opens
-  // inside a slide has to tell it, or the rest of the text is cut off.
   // What the Steam guides say about each achievement: a row with a tip opens.
   const seenTips = recall<Record<string, AchievementTip>>("tips", gameKey);
   const [guideTips, setGuideTips] = useState<Record<string, AchievementTip>>(
@@ -191,21 +149,6 @@ export function TitleSheet({
 
   // The achievement whose own page is open (AchievementPage), if any.
   const [openAchievement, setOpenAchievement] = useState<string | null>(null);
-  const [tabEpoch, setTabEpoch] = useState(0);
-  const collapseAll = useCallback(() => {
-    setTabEpoch((n) => n + 1);
-  }, []);
-  const refreshTabHeight = useCallback(() => {
-    tabSwiper?.updateAutoHeight(0);
-  }, [tabSwiper]);
-  // HLTB's own hours/description (#131), fetched on its own request so a
-  // game's first-ever match never delays the achievements below —
-  // `undefined` while that request is still out, `null` once it has
-  // answered with no match.
-  const [hltbInfo, setHltbInfo] = useState<GameHltb | null | undefined>(
-    recall<GameHltb | null>("hltb", gameKey),
-  );
-
   useEffect(() => {
     let cancelled = false;
     const known = recall<GameDetails>("details", detailsKey);
@@ -231,46 +174,6 @@ export function TitleSheet({
       cancelled = true;
     };
   }, [data, game.platform, game.title_id, asked?.person_id, asked?.tg_id, detailsKey]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setHltbInfo(recall<GameHltb | null>("hltb", gameKey));
-    void fetchGameHltb(data, game.platform, game.title_id)
-      .then((res) => {
-        if (cancelled) return;
-        setHltbInfo(res.hltb);
-        remember("hltb", gameKey, res.hltb);
-      })
-      .catch(() => {
-        // Best-effort, same as the endpoint itself: a game simply keeps
-        // showing no "Об игре" tab rather than an error over its achievements.
-        if (!cancelled) setHltbInfo(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [data, game.platform, game.title_id]);
-
-  // The updates tab's number needs them before the tab is opened.
-  const [patches, setPatches] = useState<GamePatch[] | undefined>(
-    recall<GamePatch[]>("patches", gameKey),
-  );
-  useEffect(() => {
-    let cancelled = false;
-    setPatches(recall<GamePatch[]>("patches", gameKey));
-    void fetchGamePatches(data, game.platform, game.title_id)
-      .then((res) => {
-        if (cancelled) return;
-        setPatches(res.patches);
-        remember("patches", gameKey, res.patches);
-      })
-      .catch(() => {
-        if (!cancelled) setPatches([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [data, game.platform, game.title_id]);
 
   useEffect(() => {
     if (!compare || myDetails) return;
@@ -316,16 +219,6 @@ export function TitleSheet({
       ? Math.round((unlocked / total) * 100)
       : (details?.completion_percent ?? 0);
   const isCompleted = total > 0 && unlocked >= total;
-  // The day the last achievement was earned: when the game was finished.
-  const completedAt = useMemo(
-    () =>
-      achievements.reduce<string | null>(
-        (last, a) => (a.is_unlocked && a.unlocked_at && (!last || a.unlocked_at > last) ? a.unlocked_at : last),
-        null,
-      ),
-    [achievements],
-  );
-
   const scoreLines = useMemo<ScoreCupLine[]>(() => {
     const isXbox = game.platform.startsWith(PLATFORMS.XBOX);
     const isPsn = game.platform === PLATFORMS.PSN;
@@ -388,10 +281,8 @@ export function TitleSheet({
   }, [achievements]);
 
   // What was earned here, written in the bar itself (no tap, no drawer).
-  // The page is ready when its achievements, guides and updates are all known.
-  const loading = busy || !guidesReady || patches === undefined;
-  // A game with no updates has no tab for them.
-  const hasUpdates = patches !== undefined && patches.length > 0;
+  // The page is ready when its achievements and guides are known.
+  const loading = busy || !guidesReady;
   const earnedLine = loading ? null : scoreLines[0];
 
   const toggleReveal = useCallback((achId: string) => {
@@ -533,22 +424,6 @@ export function TitleSheet({
         </div>
       </header>
 
-      <HeroPeek>
-        {(open) => (
-          <GameHero
-            cover={cover}
-            pct={pct}
-            total={total}
-            isCompleted={isCompleted}
-            loading={loading}
-            locale={locale}
-            compact={!open}
-            completedAt={completedAt}
-            celebrateKey={isCompleted && !other ? `${game.platform}:${game.title_id}` : null}
-          />
-        )}
-      </HeroPeek>
-
       {loading ? (
         <>
           <div className="game-tabs-row">
@@ -568,199 +443,109 @@ export function TitleSheet({
         </>
       ) : (
         <>
-          {tabSwiper && (
-            <GameTabBar
-              swiper={tabSwiper}
-              labels={[
-                total > 0
-                  ? `${t(locale, "homeAchievements")} (${comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/${total})`
-                  : t(locale, "homeAchievements"),
-                ...(hasUpdates
-                  ? [`${t(locale, "patchesTab")} (${patches.length})`]
-                  : []),
-                t(locale, "aboutGame"),
-              ]}
-              actions={[
-                (other || (hasBoth && !comparing)) && (
-                  <div className="game-tab-actions">
-                    {other && (
-                      <button
-                        type="button"
-                        className={
-                          compare ? "game-lock-chip is-on" : "game-lock-chip"
-                        }
-                        aria-pressed={compare}
-                        aria-label={t(locale, "compare")}
-                        onClick={() => setCompare((on) => !on)}
-                      >
-                        <Icon name="compare" size={22} />
-                      </button>
-                    )}
-                    {hasBoth && !comparing && (
-                      <button
-                        type="button"
-                        className="game-lock-chip"
-                        aria-label={t(
-                          locale,
-                          earnedView ? "showLocked" : "showEarned",
-                        )}
-                        onClick={() => setShowEarned((on) => !on)}
-                      >
-                        <Icon name={earnedView ? "unlock" : "lock"} size={20} />
-                      </button>
-                    )}
-                  </div>
-                ),
-                ...(hasUpdates
-                  ? [
-                      <Dropdown<PostFilter>
-                        key="posts-filter"
-                        className="dd-trigger posts-filter"
-                        value={postFilter}
-                        options={(["all", "news", "patch"] as PostFilter[]).map((value) => ({
-                          value,
-                          label: t(locale, FILTER_LABEL[value]),
-                        }))}
-                        onChange={setPostFilter}
-                        trigger={
-                          <>
-                            {t(locale, FILTER_LABEL[postFilter])}
-                            <DropdownArrow />
-                          </>
-                        }
-                      />,
-                    ]
-                  : []),
-                null,
-              ]}
-            />
-          )}
-          <Swiper
-            key={hasUpdates ? "with-updates" : "no-updates"}
-            className="game-tab-swiper"
-            modules={[EffectFade]}
-            effect="fade"
-            fadeEffect={{ crossFade: true }}
-            loop
-            autoHeight
-            speed={320}
-            threshold={24}
-            onSlideChangeTransitionEnd={collapseAll}
-            touchAngle={35}
-            onSwiper={setTabSwiper}
-          >
-            <SwiperSlide>
-              <div className="game-tab-panel">
-                {error && (
-                  <p className="empty">
-                    {t(locale, "error")}: {error}
-                  </p>
-                )}
-                {!error && achievements.length === 0 && (
-                  <p className="empty">{t(locale, "gameEmpty")}</p>
-                )}
-                {!error &&
-                  achievements.length > 0 &&
-                  filteredAchievements.length === 0 && (
-                    <p className="empty">{t(locale, "emptyFilter")}</p>
-                  )}
-                <div className="feed">
-                  {byGroup.map((section, i) => (
-                    <section
-                      key={section.id || `group-${i}`}
-                      className="feed-day"
-                    >
-                      {section.label && (
-                        <p className="feed-day-label">{section.label}</p>
+          {/* The achievements of the list and how to get them (owner,
+              2026-10-26): the game itself — its picture, hours, story,
+              news — is the game page's, which opens this one. */}
+          <div className="game-tabs-row game-list-head">
+            <h2 className="game-list-title">
+              {total > 0
+                ? `${t(locale, "homeAchievements")} (${comparing ? `${myUnlockedIds.size} · ${unlocked}` : unlocked}/${total})`
+                : t(locale, "homeAchievements")}
+            </h2>
+              {(other || (hasBoth && !comparing)) && (
+                    <div className="game-tab-actions">
+                      {other && (
+                        <button
+                          type="button"
+                          className={
+                            compare ? "game-lock-chip is-on" : "game-lock-chip"
+                          }
+                          aria-pressed={compare}
+                          aria-label={t(locale, "compare")}
+                          onClick={() => setCompare((on) => !on)}
+                        >
+                          <Icon name="compare" size={22} />
+                        </button>
                       )}
-                      {section.rows.map((row) => {
-                        const iHave = myUnlockedIds.has(row.achievement_id);
-                        // A secret stays hidden until the "show secrets" setting or a
-                        // tap on it says otherwise — earned or not.
-                        const isRevealed =
-                          showAllSecrets || revealedIds.has(row.achievement_id);
-                        return (
-                          <GameAchievementRow
-                            key={row.achievement_id}
-                            row={row}
-                            isRevealed={isRevealed}
-                            locale={locale}
-                            onToggleReveal={toggleReveal}
-                            tip={guideTips[row.achievement_id]}
-                            hasVideo={Boolean(guideVideos[row.achievement_id]?.length)}
-                            onOpen={setOpenAchievement}
-                            fallbackIcon={cover}
-                            compare={
-                              comparing && other
-                                ? {
-                                    me: {
-                                      id: meId,
-                                      name: t(locale, "you"),
-                                      has: iHave,
-                                    },
-                                    them: {
-                                      id: other.person_id,
-                                      name: other.name,
-                                      has: row.is_unlocked,
-                                    },
-                                  }
-                                : undefined
-                            }
-                          />
-                        );
-                      })}
-                    </section>
-                  ))}
-                </div>
-              </div>
-            </SwiperSlide>
-            {hasUpdates && (
-              <SwiperSlide>
-                <div className="game-tab-panel">
-                  <Suspense fallback={null}>
-                    <PatchNotes
-                      patches={patches}
-                      filter={postFilter}
-                      locale={locale}
-                      collapseKey={tabEpoch}
-                      onLayout={refreshTabHeight}
-                      game={{ name: title, icon_url: game.icon_url ?? details?.icon_url ?? null }}
-                    />
-                  </Suspense>
-                </div>
-              </SwiperSlide>
+                      {hasBoth && !comparing && (
+                        <button
+                          type="button"
+                          className="game-lock-chip"
+                          aria-label={t(
+                            locale,
+                            earnedView ? "showLocked" : "showEarned",
+                          )}
+                          onClick={() => setShowEarned((on) => !on)}
+                        >
+                          <Icon name={earnedView ? "unlock" : "lock"} size={20} />
+                        </button>
+                      )}
+                    </div>
+  )}
+          </div>
+          <div className="game-tab-panel">
+            {error && (
+              <p className="empty">
+                {t(locale, "error")}: {error}
+              </p>
             )}
-            <SwiperSlide>
-              <div className="game-tab-panel">
-                {hltbInfo ? (
-                  <Suspense fallback={null}>
-                    <HltbAbout hltb={hltbInfo} locale={locale} />
-                  </Suspense>
-                ) : hltbInfo === null ? (
-                  <p className="empty">{t(locale, "aboutEmpty")}</p>
-                ) : (
-                  // Still out on its own request (#131) — the achievements tab
-                  // never waited on this, so it just fills in once it answers.
-                  <>
-                    {[0, 1, 2, 3, 4].map((i) => (
-                      <div key={i} className="about-game-fact">
-                        <span className="skel line" style={{ width: 70 }} />
-                        <span className="skel line" style={{ width: 120 }} />
-                      </div>
-                    ))}
-                    <span
-                      className="skel line"
-                      style={{ width: "92%", marginTop: 26 }}
-                    />
-                    <span
-                      className="skel line"
-                      style={{ width: "80%", marginTop: 6 }}
-                    />
-                  </>
-                )}
-              </div>
-            </SwiperSlide>
-          </Swiper>
+            {!error && achievements.length === 0 && (
+              <p className="empty">{t(locale, "gameEmpty")}</p>
+            )}
+            {!error &&
+              achievements.length > 0 &&
+              filteredAchievements.length === 0 && (
+                <p className="empty">{t(locale, "emptyFilter")}</p>
+              )}
+            <div className="feed">
+              {byGroup.map((section, i) => (
+                <section
+                  key={section.id || `group-${i}`}
+                  className="feed-day"
+                >
+                  {section.label && (
+                    <p className="feed-day-label">{section.label}</p>
+                  )}
+                  {section.rows.map((row) => {
+                    const iHave = myUnlockedIds.has(row.achievement_id);
+                    // A secret stays hidden until the "show secrets" setting or a
+                    // tap on it says otherwise — earned or not.
+                    const isRevealed =
+                      showAllSecrets || revealedIds.has(row.achievement_id);
+                    return (
+                      <GameAchievementRow
+                        key={row.achievement_id}
+                        row={row}
+                        isRevealed={isRevealed}
+                        locale={locale}
+                        onToggleReveal={toggleReveal}
+                        tip={guideTips[row.achievement_id]}
+                        hasVideo={Boolean(guideVideos[row.achievement_id]?.length)}
+                        onOpen={setOpenAchievement}
+                        fallbackIcon={cover}
+                        compare={
+                          comparing && other
+                            ? {
+                                me: {
+                                  id: meId,
+                                  name: t(locale, "you"),
+                                  has: iHave,
+                                },
+                                them: {
+                                  id: other.person_id,
+                                  name: other.name,
+                                  has: row.is_unlocked,
+                                },
+                              }
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
+                </section>
+              ))}
+            </div>
+          </div>
         </>
       )}
     </>
@@ -779,6 +564,8 @@ export function TitleSheet({
           tip={guideTips[shownAchievement.achievement_id]}
           videos={guideVideos[shownAchievement.achievement_id]}
           game={title}
+          gameArt={cover}
+          gameProgress={{ unlocked, total }}
           fallbackIcon={cover}
           locale={locale}
           onClose={() => setOpenAchievement(null)}

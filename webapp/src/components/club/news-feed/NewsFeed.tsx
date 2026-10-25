@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchNews, type NewsItem } from "../../../api";
 import { dayKey, dayLabel, t, timeAgo, type Locale } from "../../../i18n";
 import { NewsPage } from "../../game/news-page/NewsPage";
-import { CoverImg, EmptyState, FeedSkel, FitImg, FEED_RATIO_MAX, isWide, useImageRatio, useOpenGame } from "../../shared/lib";
+import { CoverImg, EmptyState, FeedSkel, FitImg, useOpenGame } from "../../shared/lib";
 import "../../person/feed-post/FeedPost.css";
 import "./NewsFeed.css";
 
@@ -92,8 +92,7 @@ export function NewsFeed({ data, locale, month }: { data: string; locale: Locale
   );
 }
 
-/** One post, laid out as an achievement post; its frame takes its picture's
- * proportions, within reason. */
+/** One post, laid out as an achievement post: a 4:5 frame filled top to bottom. */
 function NewsPostCard({
   item,
   locale,
@@ -108,11 +107,9 @@ function NewsPostCard({
   onOpenGame: () => void;
 }) {
   const picture = item.image ?? item.game.icon_url;
-  const ratio = useImageRatio(picture, { max: FEED_RATIO_MAX });
-  const wide = isWide(ratio);
   return (
     <article
-      className={wide ? "post is-link is-wide" : "post is-link"}
+      className="post is-link"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("button")) return;
         onOpen();
@@ -132,10 +129,9 @@ function NewsPostCard({
         </header>
         <div className="post-track news-track">
           <div className="post-slide">
-            {wide && <CoverImg src={picture} kind="game" className="post-slide-back" />}
-            <div className="post-media" style={{ aspectRatio: ratio }}>
+            <div className="post-media">
               <CoverImg src={picture} kind="game" className="post-media-back" />
-              <FitImg src={picture} kind="game" mode={wide ? "height" : "contain"} top />
+              <FitImg src={picture} kind="game" mode="cover" />
             </div>
             <div className="post-copy">
               <div className="post-title">

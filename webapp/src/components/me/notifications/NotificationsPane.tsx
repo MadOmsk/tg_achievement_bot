@@ -122,6 +122,7 @@ export function NotificationsPane({
             { value: "all", label: t(locale, "postsAll") },
             { value: "patch", label: t(locale, "notifyGameNewsPatch") },
             { value: "news", label: t(locale, "notifyGameNewsNews") },
+            { value: "favorites", label: t(locale, "notifyGameNewsFavorites") },
           ]}
           onChange={(value) => set("game_news", value === "off" ? null : value)}
         />

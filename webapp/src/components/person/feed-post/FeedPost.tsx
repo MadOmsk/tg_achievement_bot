@@ -6,7 +6,7 @@ import "swiper/css";
 import "swiper/css/effect-creative";
 import type { FeedItem } from "../../../api";
 import { t, timeAgo, type Locale } from "../../../i18n";
-import { Avatar, CoverImg, FitImg, TierDisc, asTier, gameRefOf, useOpenAchievement, useOpenGame, FEED_RATIO_MAX, isWide, useImageRatio } from "../../shared/lib";
+import { Avatar, CoverImg, FitImg, TierDisc, asTier, gameRefOf, useOpenAchievement, useOpenGame } from "../../shared/lib";
 import { HandleName } from "../../shared/lib/handle-name/HandleName";
 import { feedKey, veiled } from "../utils";
 import "./FeedPost.css";
@@ -49,15 +49,10 @@ export function FeedPost({
   const openAchievement = useOpenAchievement();
   const canOpenGame = Boolean(openGame && head.title_id);
   const canOpen = Boolean(openAchievement && head.title_id);
-  // The frame takes the first picture's proportions, and every slide shares
-  // it: a post does not change height as it is swiped. A wide one has its
-  // text under the picture rather than over it.
-  const ratio = useImageRatio(head.icon_url, { max: FEED_RATIO_MAX });
-  const wide = isWide(ratio);
 
   return (
     <article
-      className={["post", canOpen ? "is-link" : "", wide ? "is-wide" : "", many ? "has-dots" : ""].filter(Boolean).join(" ")}
+      className={["post", canOpen ? "is-link" : "", many ? "has-dots" : ""].filter(Boolean).join(" ")}
       // The post opens the achievement on show (owner, 2026-10-09); the author
       // and the game's line keep their own taps.
       onClick={
@@ -107,15 +102,10 @@ export function FeedPost({
             ].filter(Boolean);
             return (
               <SwiperSlide key={key} className="post-slide">
-                {/* The same picture once more, blurred under the whole slide: a
-                    wide post's text below the picture takes its colours. */}
-                {wide && <CoverImg src={item.icon_url} kind="achievement" className="post-slide-back" />}
-                <div className="post-media" style={{ aspectRatio: ratio }}>
+                <div className="post-media">
                   <CoverImg src={item.icon_url} kind="achievement" className="post-media-back" />
-                  {/* All of the picture; the frame is its shape, within reason. */}
-                  {/* A wide one fills its frame, its sides trimmed if it is wider still;
-                      a square or tall one is all seen, against the top. */}
-                  <FitImg src={item.icon_url} mode={wide ? "height" : "contain"} top />
+                  {/* 4:5, filled top to bottom — a landscape icon loses its sides. */}
+                  <FitImg src={item.icon_url} mode="cover" />
                   {secret && (
                     <span className="post-veil">
                       <button type="button" className="btn post-veil-open" onClick={() => onReveal(key)}>

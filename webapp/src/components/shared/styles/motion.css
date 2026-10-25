@@ -15,7 +15,6 @@
 @media (prefers-reduced-motion: reduce) {
   .btn:active,
   .dock button:active,
-  .dock-pill,
   .toggle::after,
   .skel,
   .spinner,

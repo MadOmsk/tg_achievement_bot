@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { searchHltb, type HltbHit } from "../../api";
-import { t, type Locale } from "../../i18n";
+import { gameApi, type GameCard } from "../../../api";
+import { t, type Locale } from "../../../i18n";
 
-export function useHltbSearch(
+/** Games of our own catalog by name (owner, 2026-10-25: never a search on the
+ * internet), from two letters, a moment after the last keystroke. */
+export function useGameSearch(
   data: string,
   query: string,
   locale: Locale,
   onFlash: (message: string) => void,
 ) {
-  const [hits, setHits] = useState<HltbHit[]>([]);
+  const [hits, setHits] = useState<GameCard[]>([]);
   const [busy, setBusy] = useState(false);
   const [searched, setSearched] = useState(false);
 
@@ -22,13 +24,13 @@ export function useHltbSearch(
     }
     setBusy(true);
     setSearched(false);
-    setHits([]);
     let cancelled = false;
     const id = window.setTimeout(() => {
-      void searchHltb(data, q)
+      void gameApi
+        .searchGames(data, q)
         .then((payload) => {
           if (cancelled) return;
-          setHits(payload.results);
+          setHits(payload.games);
           setSearched(true);
           setBusy(false);
         })
@@ -37,7 +39,7 @@ export function useHltbSearch(
           setBusy(false);
           onFlash(`${t(locale, "error")}: ${String(err)}`);
         });
-    }, 280);
+    }, 220);
     return () => {
       cancelled = true;
       window.clearTimeout(id);

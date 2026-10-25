@@ -30,8 +30,6 @@ from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.email_login import EmailLogin
-from bot.services.hltb import HltbError, ensure_title_match
-from bot.services.hltb import resolve as hltb_resolve
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
 from bot.services.notifier import Notifier, channel_token_valid
@@ -78,7 +76,7 @@ from bot.web.mini_chat import (
     build_summary_payload,
     chat_of_user,
 )
-from bot.web.mini_hltb import hltb_payload, setup_hltb_routes
+from bot.web.mini_game import setup_game_routes
 from bot.web.mini_me import build_me_payload
 
 log = logging.getLogger(__name__)
@@ -201,11 +199,9 @@ def setup_mini_api(
     )
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
-    app.router.add_get("/api/mini/games/{platform}/{title_id}/hltb", handle_game_hltb)
-    app.router.add_get("/api/mini/games/{platform}/{title_id}/patches", handle_game_patches)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
-    setup_hltb_routes(app)
+    setup_game_routes(app)
 
 
 def _default_notifier(settings: Settings, repo: Repo, bot: Any) -> Notifier:
@@ -1160,37 +1156,6 @@ async def handle_game_details(request: web.Request) -> web.Response:
     )
 
 
-async def handle_game_hltb(request: web.Request) -> web.Response:
-    """A game's HLTB hours/description, split off from `handle_game_details`
-    (#131) so the achievements a person actually opened the page for are
-    never held up behind it — an unmatched game's first visit costs a few
-    HLTB requests (`ensure_title_match`), which used to delay the whole
-    page. The Mini App calls this once the page itself has already
-    rendered, and fills the "Об игре" tab in when it answers."""
-    user = await _require_user(request)
-    platform = request.match_info.get("platform", "").lower()
-    title_id = request.match_info.get("title_id", "")
-    repo: Repo = request.app["mini_repo"]
-
-    hltb_block: dict[str, Any] | None = None
-    try:
-        await ensure_title_match(repo, platform, title_id)
-        match = await repo.list_hltb_match(platform, title_id)
-        if match:
-            hltb_id, _score = match
-            anthropic = request.app.get("mini_anthropic_auth")
-            result = await hltb_resolve(repo, hltb_id, anthropic_auth=anthropic)
-            hltb_block = hltb_payload(result, locale=await _user_locale(repo, user.person_id))
-    except HltbError as exc:
-        log.info("could not resolve HLTB for title %s: %s", title_id, exc)
-    except Exception:
-        # Best-effort: a bad moment here must never surface as an error the
-        # Mini App has to show — the tab just stays without an answer.
-        log.exception("HLTB match/resolve failed for title %s", title_id)
-
-    return web.json_response({"ok": True, "hltb": hltb_block})
-
-
 def _extract_init_data(request: web.Request) -> str:
     dedicated = request.headers.get(INIT_DATA_HEADER, "").strip()
     if dedicated:
@@ -1199,10 +1164,6 @@ def _extract_init_data(request: web.Request) -> str:
     if header.startswith(AUTH_HEADER_PREFIX):
         return header[len(AUTH_HEADER_PREFIX) :].strip()
     raise web.HTTPUnauthorized(text="missing initData")
-
-
-# How many of a game's patches its "Обновления" tab lists.
-PATCHES_SHOWN = 30
 
 
 def _extras(request: web.Request) -> SteamExtras:
@@ -1265,45 +1226,6 @@ async def handle_game_guides(request: web.Request) -> web.Response:
         log.exception("game guide failed for %s/%s", platform, title_id)
     return web.json_response(
         {"ok": True, "tips": tips, "videos": videos, "guide": guide, "complete": complete}
-    )
-
-
-async def handle_game_patches(request: web.Request) -> web.Response:
-    """A game's latest patches, from what is stored — poller/patch_refresh.py
-    keeps them fresh. A Steam app never read yet is read now; one with no Steam
-    page at all answers an empty list."""
-    user = await _require_user(request)
-    platform = request.match_info.get("platform", "").lower()
-    title_id = request.match_info.get("title_id", "")
-    repo: Repo = request.app["mini_repo"]
-    extras = _extras(request)
-    patches = []
-    try:
-        appid = await extras.appid(platform, title_id)
-        if appid is not None:
-            _guides_at, patches_at = await repo.steam_app_checked(appid)
-            if patches_at is None:
-                await extras.refresh_patches(appid)
-            patches = await repo.game_patches(appid, PATCHES_SHOWN)
-    except Exception:
-        log.exception("steam patches failed for title %s", title_id)
-    ru = await _user_locale(repo, user.person_id) == "ru"
-    return web.json_response(
-        {
-            "ok": True,
-            "patches": [
-                {
-                    "title": (p.title_ru if ru and p.title_ru else p.title),
-                    "date": p.published_at,
-                    "text": (p.text_ru if ru and p.text_ru else p.text_en) or "",
-                    "image": p.image_url,
-                    "kind": p.kind,
-                    # The post on Steam, for its own page's last button.
-                    "url": f"https://store.steampowered.com/news/app/{appid}/view/{p.gid}",
-                }
-                for p in patches
-            ],
-        }
     )
 
 

@@ -4,8 +4,7 @@ import { t, type Locale } from "../../i18n";
 import { Avatar, EmptyState, SearchBar } from "../../components/shared/lib";
 import { PersonSheet } from "../../components/people/person-sheet/PersonSheet";
 import { FollowButton } from "../../components/people/follow-button/FollowButton";
-import { GameHits, GameSheet, useHltbSearch } from "../../components/hltb";
-import type { HltbHit } from "../../api";
+import { GameSearchHits, useGameSearch } from "../../components/game/game-search";
 import "./People.css";
 import { HandleName } from "../../components/shared/lib/handle-name/HandleName";
 
@@ -44,8 +43,7 @@ export function People({
   const [open, setOpen] = useState<PersonRow | null>(null);
   const [leaving, setLeaving] = useState<Set<number>>(new Set());
   const searchSeq = useRef(0);
-  const [game, setGame] = useState<HltbHit | null>(null);
-  const games = useHltbSearch(data, query, locale, onFlash);
+  const games = useGameSearch(data, query, locale, onFlash);
 
   const load = useCallback(async () => {
     try {
@@ -198,12 +196,11 @@ export function People({
               <div className="people-list">{hits.map(line)}</div>
             </>
           )}
-          <GameHits
+          <GameSearchHits
             hits={games.hits}
             busy={games.busy}
             searched={games.searched}
             locale={locale}
-            onOpen={setGame}
           />
           {!games.busy && games.searched && games.hits.length === 0 && hits?.length === 0 && (
             <p className="empty">{t(locale, "noResults")}</p>
@@ -249,15 +246,6 @@ export function People({
                 }
               : undefined
           }
-        />
-      )}
-      {game && (
-        <GameSheet
-          preview={game}
-          data={data}
-          locale={locale}
-          onClose={() => setGame(null)}
-          onFlash={onFlash}
         />
       )}
     </>

@@ -12,21 +12,18 @@ export { ClubApi, clubApi } from "./club/clubApi";
 // Games API
 export * from "./games/gamesApiModels";
 export { GamesApi, gamesApi } from "./games/gamesApi";
+export * from "./game/gameApiModels";
+export { GameApi, gameApi } from "./game/gameApi";
 
 // Admin API
 export * from "./admin/adminApiModels";
 export { AdminApi, adminApi } from "./admin/adminApi";
-
-// HLTB API
-export * from "./hltb/hltbApiModels";
-export { HltbApi, hltbApi } from "./hltb/hltbApi";
 
 // Functional aliases for backward compatibility with existing components
 import { userApi } from "./user/userApi";
 import { clubApi } from "./club/clubApi";
 import { gamesApi } from "./games/gamesApi";
 import { adminApi } from "./admin/adminApi";
-import { hltbApi } from "./hltb/hltbApi";
 
 export const fetchMe = (initData: string) => userApi.fetchMe(initData);
 export const fetchAvatarBlob = (initData: string, personId: number) =>
@@ -57,12 +54,8 @@ export const fetchSummary = (...args: Parameters<typeof clubApi.fetchSummary>) =
 export const fetchPerson = (...args: Parameters<typeof clubApi.fetchPerson>) => clubApi.fetchPerson(...args);
 
 export const fetchGame = (...args: Parameters<typeof gamesApi.fetchGame>) => gamesApi.fetchGame(...args);
-export const fetchGameHltb = (...args: Parameters<typeof gamesApi.fetchGameHltb>) =>
-  gamesApi.fetchGameHltb(...args);
 export const fetchGameGuides = (...args: Parameters<typeof gamesApi.fetchGameGuides>) =>
   gamesApi.fetchGameGuides(...args);
-export const fetchGamePatches = (...args: Parameters<typeof gamesApi.fetchGamePatches>) =>
-  gamesApi.fetchGamePatches(...args);
 
 export const fetchAdminHome = (initData: string) => adminApi.fetchHome(initData);
 export const fetchAdminKeys = (initData: string) => adminApi.fetchKeys(initData);
@@ -81,5 +74,3 @@ export const fetchAdminActions = (...args: Parameters<typeof adminApi.fetchActio
 export const postAdminAction = (...args: Parameters<typeof adminApi.postAction>) => adminApi.postAction(...args);
 export const fetchAdminChats = (initData: string) => adminApi.fetchChats(initData);
 
-export const searchHltb = (...args: Parameters<typeof hltbApi.search>) => hltbApi.search(...args);
-export const resolveHltb = (...args: Parameters<typeof hltbApi.resolve>) => hltbApi.resolve(...args);

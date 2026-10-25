@@ -3,7 +3,6 @@ export const API_BASE_ROUTES = {
   CLUB: "/api/mini/club",
   GAMES: "/api/mini/games",
   ADMIN: "/api/mini/admin",
-  HLTB: "/api/mini/hltb",
 } as const;
 
 export const USER_ROUTES = {
@@ -37,12 +36,8 @@ export const CLUB_ROUTES = {
 export const GAMES_ROUTES = {
   TITLE: (platform: string, titleId: string) =>
     `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}`,
-  HLTB: (platform: string, titleId: string) =>
-    `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/hltb`,
   GUIDES: (platform: string, titleId: string) =>
     `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/guides`,
-  PATCHES: (platform: string, titleId: string) =>
-    `/${encodeURIComponent(platform)}/${encodeURIComponent(titleId)}/patches`,
 } as const;
 
 export const ADMIN_ROUTES = {
@@ -56,9 +51,4 @@ export const ADMIN_ROUTES = {
   CHATS: "/chats",
   CHAT_SETTINGS: (chatId: number) => `/chats/${chatId}/settings`,
   ACTIONS: "/actions",
-} as const;
-
-export const HLTB_ROUTES = {
-  SEARCH: "",
-  RESOLVE: (id: number) => `/${id}`,
 } as const;

@@ -4,11 +4,12 @@ import type { FeedItem, GameRef } from "../../../api";
 import type { Locale } from "../../../i18n";
 import { AchievementOpenContext, GameOpenContext } from "../../shared/lib";
 
-// The game page pulls in Swiper and its own carousels — heavy enough to
-// keep off Home's own critical bundle, loaded only once a game is actually
-// opened (including straight from a Mini App deep link).
-const loadTitleSheet = () => import("../title-sheet/TitleSheet");
-const TitleSheet = lazy(() => loadTitleSheet().then((m) => ({ default: m.TitleSheet })));
+// The game page (#147, stage 5; owner, 2026-10-25: a tap on a game opens it,
+// the achievements of a list open from it) is kept off Home's own critical
+// bundle, loaded only once a game is actually opened (including straight
+// from a Mini App deep link).
+const loadGamePage = () => import("../game-page/GamePage");
+const GamePage = lazy(() => loadGamePage().then((m) => ({ default: m.GamePage })));
 const AchievementLoader = lazy(() =>
   import("../achievement-page/AchievementLoader").then((m) => ({ default: m.AchievementLoader })),
 );
@@ -16,7 +17,7 @@ const AchievementLoader = lazy(() =>
 /** Starts fetching the game page's code — for an app opened straight on a game,
  * while it still asks who is looking. */
 export function preloadTitleSheet(): void {
-  void loadTitleSheet();
+  void loadGamePage();
 }
 
 /**
@@ -68,7 +69,7 @@ export function GameOpenProvider({
       {game &&
         createPortal(
           <Suspense fallback={null}>
-            <TitleSheet
+            <GamePage
               game={game}
               data={data}
               locale={locale}

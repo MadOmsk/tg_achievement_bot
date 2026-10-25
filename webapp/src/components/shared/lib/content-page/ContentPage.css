@@ -1,0 +1,146 @@
+/* The game a page belongs to: a soft card of its own right under the
+ * picture — the cover, the name and how far along as a bar (or «Игра» when that is not
+ * known), the arrow when it opens. The bar is the profile's. No frame, no light of its own. */
+.cpage-game {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 14px 10px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 0;
+  border-radius: 18px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+button.cpage-game:not(:disabled) {
+  cursor: pointer;
+}
+
+button.cpage-game:not(:disabled):active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.cpage-game > svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.cpage-game .cover-ph.cpage-game-art {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cpage-game-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cpage-game-copy small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cpage-game-copy strong {
+  overflow: hidden;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How far along: the profile's games bar, a little thinner. */
+.cpage-game-bar.played-bar {
+  --bar-h: 5px;
+  margin-top: 5px;
+}
+
+/* The kind, the day, the name and the line under it, as one block. */
+.cpage-title {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cpage-badge {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(226, 232, 244, 0.9);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+}
+
+/* Facts: one block, a column each, as the hours of a game always were. */
+.cpage-facts {
+  display: grid;
+  margin: 2px 0;
+  padding: 14px 0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cpage-fact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.cpage-fact + .cpage-fact {
+  border-left: 1px solid var(--hair);
+}
+
+.cpage-fact p {
+  overflow: hidden;
+  max-width: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cpage-fact strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cpage-fact strong em {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0;
+}

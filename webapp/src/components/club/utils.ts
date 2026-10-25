@@ -98,7 +98,7 @@ export function pickCount(
 /** What a member is doing right now, for a line under their name. */
 export function statusOf(member: OnlineMember | undefined): string | null {
   if (!member) return null;
-  if (member.playing) return member.title_name || null;
+  if (member.playing) return member.title_name || member.status || null;
   // "no data" (never seen online) reads as offline to the person looking.
   return member.state ? member.status || null : null;
 }

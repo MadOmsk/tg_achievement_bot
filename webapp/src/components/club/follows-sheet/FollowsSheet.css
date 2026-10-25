@@ -94,13 +94,18 @@
   margin-bottom: 8px;
 }
 
-/* The search under the page's head, a little apart from it and from the list. */
-.follows-sheet > :first-child {
+/* The list's pick, the body's first row, and the search under it. */
+.follows-pick {
+  display: flex;
+  margin: 0 0 10px;
+}
+
+.follows-sheet > :nth-child(2) {
   margin: 0 0 8px;
 }
 
-/* In the page's head: a pick, as the head's month is. */
-.page-head .dd-trigger.follows-switch {
+/* A pick as the page's own title is. */
+.follows-pick .dd-trigger.follows-switch {
   gap: 4px;
   color: var(--text);
   font-size: 0.95rem;

@@ -85,30 +85,55 @@
   justify-content: space-around;
   max-width: calc(28rem - 44px);
   margin: 0 auto;
-  padding: 4px;
-  background: rgba(10, 14, 22, 0.38);
-  backdrop-filter: blur(28px) saturate(1.25);
-  -webkit-backdrop-filter: blur(28px) saturate(1.25);
-  border: 0;
-  border-radius: 24px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  padding: 5px;
+  isolation: isolate;
+  /* Dark glass as Apple draws it (owner, 2026-10-25): what scrolls under
+   * it shows through darkened in its own colours; along the edge the glass
+   * bends it like a lens (`.has-lens`, GlassLens: Chromium only), the rim is
+   * lit along the top and fades towards the sides (::before), and a soft
+   * light sits inside the edge — no frame. */
+  background: rgba(10, 12, 18, 0.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.8);
+  backdrop-filter: blur(18px) saturate(1.8);
+  border-radius: 999px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.42),
+    inset 0 1px 1px rgba(255, 255, 255, 0.14),
+    inset 0 0 14px rgba(255, 255, 255, 0.05);
 }
 
-.dock-pill {
+/* The lens first, then a light blur: the bent rim stays legible. */
+.dock.has-lens {
+  backdrop-filter: url(#glass-lens) blur(4px) saturate(1.8) brightness(0.9);
+}
+
+.dock::before {
+  content: "";
   position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  width: calc((100% - 8px) / 4);
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  inset: 0;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    170deg,
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0.08) 38%,
+    rgba(255, 255, 255, 0.03) 62%,
+    rgba(255, 255, 255, 0.22)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
   pointer-events: none;
-  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* The tab on: its icon white, nothing drawn behind it. */
 .dock button.is-on {
-  color: #f4f6fb;
+  color: #fff;
 }
 
 .dock button:active {

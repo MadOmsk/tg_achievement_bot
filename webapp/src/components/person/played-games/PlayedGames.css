@@ -118,33 +118,11 @@
   --bar-h: 6px;
 }
 
-/* What was earned before this month is toned down; the month's own stretch
- * (var(--month) of the fill, at its end) keeps the bar's full white, with a
- * long, eased fade between the two rather than an edge. */
-.played-bar-fill {
-  background:
-    linear-gradient(
-      90deg,
-      rgba(12, 15, 22, 0.42) calc(100% - var(--month, 0%) - 56px),
-      rgba(12, 15, 22, 0.32) calc(100% - var(--month, 0%) - 40px),
-      rgba(12, 15, 22, 0.17) calc(100% - var(--month, 0%) - 22px),
-      rgba(12, 15, 22, 0.05) calc(100% - var(--month, 0%) - 8px),
-      transparent calc(100% - var(--month, 0%))
-    ),
-    linear-gradient(90deg, var(--fill-a), var(--fill-b));
-}
-
 /* Platinum is the whole bar, lit end to end, as on the game page: no month
  * stretch picked out of it. */
 .played-game.is-done .played-bar-fill {
-  --fill-a: rgba(80, 182, 218, 0.85);
-  --fill-b: rgba(226, 247, 255, 1);
-  --fill-glow: rgba(120, 214, 245, 0.7);
   overflow: hidden;
   background: linear-gradient(90deg, var(--fill-a), var(--fill-b));
-  box-shadow:
-    0 0 10px 1px var(--fill-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .played-game.is-done .played-bar-fill::after {

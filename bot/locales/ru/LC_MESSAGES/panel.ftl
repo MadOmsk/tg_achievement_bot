@@ -86,6 +86,7 @@ panel-no-presence-data = нет данных
 panel-offline = не в сети ({ $ago })
 panel-online-idle = в сети, не играет
 panel-playing = играет — { $game }
+panel-playing-unknown = играет
 panel-excluded = 🚫 исключён суперадмином
 panel-not-subscribed-anywhere = 🔘 не подписан ни в одном чате
 panel-subscribed-in = ✅ в { $chats }

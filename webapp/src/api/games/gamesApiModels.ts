@@ -1,4 +1,6 @@
 export type GameRef = {
+  /** The game itself (a search hit, a series): a ref with only this opens it. */
+  game_id?: number;
   platform: string;
   title_id: string;
   name?: string | null;
@@ -35,40 +37,6 @@ export type GameGroup = {
   name_en: string | null;
 };
 
-export type GameHltb = {
-  hltb_id: number;
-  name: string;
-  release_year: number | null;
-  main_hours: number | null;
-  extra_hours: number | null;
-  completionist_hours: number | null;
-  genre: string | null;
-  description: string | null;
-  game_url: string | null;
-  details?: GameHltbDetails | null;
-};
-
-export type HltbTimeBucket = {
-  average?: number;
-  median?: number;
-  fastest?: number;
-  slowest?: number;
-};
-
-export type HltbTimeName = "main" | "extra" | "completionist" | "all" | "coop" | "multi";
-
-/** The rest of the game's HLTB page; every field is left out when HLTB has nothing for it. */
-export type GameHltbDetails = {
-  review_score?: number;
-  developer?: string;
-  publisher?: string;
-  alias?: string;
-  releases?: Partial<Record<"world" | "na" | "eu" | "jp", string>>;
-  modes?: Array<"single" | "coop" | "multi">;
-  times?: Partial<Record<HltbTimeName, HltbTimeBucket>>;
-  speedrun?: Partial<Record<"any" | "full", { best?: number; median?: number }>>;
-};
-
 export type GameDetails = {
   ok: boolean;
   /** Whose progress this is, when not the viewer's own. */
@@ -88,27 +56,6 @@ export type GameDetails = {
   achievements_checked_at: string | null;
   groups: GameGroup[];
   achievements: GameAchievement[];
-};
-
-export type GameHltbResponse = {
-  ok: boolean;
-  hltb: GameHltb | null;
-};
-
-/** One patch from Steam's announcements: the whole post, as plain text. */
-export type GamePatch = {
-  title: string;
-  date: string;
-  text: string;
-  image?: string | null;
-  kind?: "patch" | "news";
-  /** The post on Steam. */
-  url?: string;
-};
-
-export type GamePatchesResponse = {
-  ok: boolean;
-  patches: GamePatch[];
 };
 
 /** What the Steam community's guides say about one achievement. */

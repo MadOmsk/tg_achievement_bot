@@ -1,14 +1,12 @@
-import { useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
 import type { AchievementTip, AchievementVideo, GameAchievement } from "../../../api";
 import { t, type Locale } from "../../../i18n";
-import { BackHead, CoverImg, FitImg, Icon, TierDisc, asTier, useImageRatio, openImage } from "../../shared/lib";
-import { paragraphsOf } from "../patch-notes/PatchNotes";
+import { ContentPage, Icon, TierDisc, asTier } from "../../shared/lib";
+import { paragraphsOf } from "../post-text/postText";
 import { RichLines, openUrl } from "../rich-text/RichText";
 import { pickLocale } from "../utils";
-import "../post-page/PostPage.css";
 
-function dayOf(iso: string, locale: Locale): string {
+/** "8 октября" — the year only when it is not this one. */
+function longDay(iso: string, locale: Locale): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString(locale === "en" ? "en-GB" : "ru-RU", {
@@ -60,16 +58,20 @@ function GuideVideo({ video, game, locale }: { video: AchievementVideo; game: st
   );
 }
 
-/** An achievement on a page of its own (owner, 2026-10-05), laid out as a
- * post's page: the game named in the head; its picture, all of it; its rarity,
- * its points or trophy, and when it was earned; its name and description; then
- * how to get it — the Steam guides' tip, whole, with its pictures and videos —
- * when there is one. */
+/** An achievement on a page of its own (owner, 2026-10-05), on the app's one
+ * content page (`ContentPage`, owner 2026-10-12): its rarity and worth in the
+ * bar, as a news post's page has its kind there; its picture; the game it is
+ * in; the day it was earned, its name and what it asks; then how to get it —
+ * the Steam guides' tip, whole, with
+ * its pictures and videos — when there is one. */
 export function AchievementPage({
   row,
   tip,
   videos,
   game,
+  gameArt,
+  gameProgress,
+  onOpenGame,
   fallbackIcon,
   locale,
   onClose,
@@ -78,83 +80,82 @@ export function AchievementPage({
   tip?: AchievementTip;
   /** Guide videos that name it, each from the moment it starts. */
   videos?: AchievementVideo[];
-  /** The game's name, for the head. */
+  /** The game's name. */
   game: string;
+  /** The game's picture, for its line. */
+  gameArt?: string | null;
+  /** Opens the game; without it the game's line is only a label (the page
+   * was opened from the game's own page). */
+  onOpenGame?: () => void;
+  /** How far along in the game the person whose page it is. */
+  gameProgress?: { unlocked: number; total: number } | null;
   /** Shown when the achievement has no picture of its own. */
   fallbackIcon?: string | null;
   locale: Locale;
   onClose: () => void;
 }) {
-  const page = useRef<HTMLDivElement>(null);
-  const picture = row.icon_url || fallbackIcon || null;
-  const ratio = useImageRatio(picture);
   const name = pickLocale(locale, row.name_ru, row.name_en, row.achievement_id) || t(locale, "secret");
   const description = pickLocale(locale, row.description_ru, row.description_en);
   const tier = asTier(row.trophy_type);
+
   const marks = [
     row.rarity_percent != null ? `${row.rarity_percent}%` : null,
     row.gamerscore && !tier ? `${row.gamerscore} G` : null,
   ].filter(Boolean);
+  const earned =
+    row.is_unlocked && row.unlocked_at
+      ? `${t(locale, "achEarnedOn")} ${longDay(row.unlocked_at, locale)}`
+      : t(locale, row.is_unlocked ? "achEarned" : "achNotEarned");
 
-  useEffect(() => {
-    page.current?.scrollTo(0, 0);
-  }, [row.achievement_id]);
-
-  return createPortal(
-    <div className="post-page" ref={page} data-no-pull>
-      <BackHead
-        title={game}
-        backLabel={t(locale, "back")}
-        onBack={onClose}
-        aside={
-          marks.length > 0 || tier ? (
+  return (
+    <ContentPage
+      kind={t(locale, "pageAchievement")}
+      backLabel={t(locale, "back")}
+      onClose={onClose}
+      picture={row.icon_url}
+      pictureKind="achievement"
+      fallbackPicture={fallbackIcon}
+      game={game ? { name: game, icon_url: gameArt ?? fallbackIcon ?? null, onOpen: onOpenGame, progress: gameProgress } : null}
+      gameLabel={t(locale, "pageGame")}
+      // Its rarity and worth at the bar's right, as the game page shows its
+      // score; the day it was earned on the date line, as a post's day.
+      aside={
+        marks.length > 0 || tier ? (
+          <>
+            {marks.join(" · ")}
+            {tier && <TierDisc tier={tier} size={17} />}
+          </>
+        ) : undefined
+      }
+      date={earned}
+      title={name}
+      lead={description}
+      resetKey={row.achievement_id}
+    >
+      {(tip || videos?.length) && (
+        <section className="post-page-section">
+          <h2>{t(locale, "achHowTo")}</h2>
+          {videos && videos.length > 0 && (
+            <div className="guide-videos">
+              {videos.map((video) => (
+                <GuideVideo key={`${video.id}:${video.start}`} video={video} game={game} locale={locale} />
+              ))}
+            </div>
+          )}
+          {tip && (
             <>
-              {marks.join(" · ")}
-              {tier && <TierDisc tier={tier} size={17} />}
-            </>
-          ) : undefined
-        }
-      />
-      <div className="post-page-pic" style={{ aspectRatio: ratio }} onClick={() => picture && openImage(picture)}>
-        <CoverImg src={picture} kind="achievement" className="post-page-back" />
-        <FitImg src={picture} kind="achievement" mode="contain" />
-      </div>
-      <article className="post-page-body">
-        <div className="post-page-meta">
-          <span className="post-page-date">
-            {row.is_unlocked && row.unlocked_at
-              ? `${t(locale, "achEarnedOn")} ${dayOf(row.unlocked_at, locale)}`
-              : t(locale, row.is_unlocked ? "achEarned" : "achNotEarned")}
-          </span>
-        </div>
-        <h1 className="post-page-title">{name}</h1>
-        {description && <p className="post-page-lead">{description}</p>}
-        {(tip || videos?.length) && (
-          <section className="post-page-section">
-            <h2>{t(locale, "achHowTo")}</h2>
-            {videos && videos.length > 0 && (
-              <div className="guide-videos">
-                {videos.map((video) => (
-                  <GuideVideo key={`${video.id}:${video.start}`} video={video} game={game} locale={locale} />
+              <div className="post-page-text">
+                {paragraphsOf(tip.text).map((paragraph, i) => (
+                  <p key={i}>
+                    <RichLines text={paragraph} className="rich-line" />
+                  </p>
                 ))}
               </div>
-            )}
-            {tip && (
-              <>
-                <div className="post-page-text">
-                  {paragraphsOf(tip.text).map((paragraph, i) => (
-                    <p key={i}>
-                      <RichLines text={paragraph} className="rich-line" />
-                    </p>
-                  ))}
-                </div>
-                <p className="post-page-source">{t(locale, "achTipSource")}</p>
-              </>
-            )}
-          </section>
-        )}
-      </article>
-    </div>,
-    document.body,
+              <p className="post-page-source">{t(locale, "achTipSource")}</p>
+            </>
+          )}
+        </section>
+      )}
+    </ContentPage>
   );
 }

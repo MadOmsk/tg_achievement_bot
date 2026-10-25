@@ -183,6 +183,7 @@ name, or when the tree goes stale.
 │   │   ├── advice.py             the advisers' review of the games matcher: questions, answers,
 │   │   │                         the agreement rule, `data/advice/` (#147, no DB access)
 │   │   ├── game_series.py        game series proposed from relations, labels, franchise names
+│   │   ├── game_page.py          the Mini App's game page put together from the catalog (no network)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -222,7 +223,8 @@ name, or when the tree goes stale.
 │   │
 │   ├── web/                     oauth.py (OAuth callback + Mini API mount), mini_api.py (JSON,
 │   │                            Init Data auth), mini_auth.py, mini_me.py, mini_chat.py,
-│   │                            mini_admin.py (secrets never leave it), mini_hltb.py, mini_avatars.py,
+│   │                            mini_admin.py (secrets never leave it), mini_game.py (the game page,
+│   │                            the games search, favorite games), mini_avatars.py,
 │   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
 │   │                            mini_notifications.py (the list, push subscriptions),
 │                            mini_invites.py (signing up with an invite, a member's codes),
@@ -521,6 +523,12 @@ every column. History: #106.
   `show_secrets` (Mini App only), `locale`. (`show_profile_links` is left unread:
   profile links are one admin switch, `app_settings['show_profile_links']`, on by
   default — owner, 2026-09-29.) Somebody in many chats used to set the mode in each (#126).
+- **Favorite games** (`favorite_games (person_id, game_id, anchor_key)`, migration
+  130; owner, 2026-10-25): a person's hearts on games. `anchor_key` is the
+  game's anchor version as `store:product_id:console`, and a favorite is
+  found by it first — a catalog carried over (`scripts/catalog_transfer.py`)
+  may give a game another id and the old id to another game —, else by its
+  id (a merged game leading on). A merge of two people moves them.
 - **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -644,8 +652,9 @@ every column. History: #106.
 
 ### The store side of a game (#147, stage 2; migration 091)
 
-What the stores and HLTB say about a game, collected but not shown yet
-(games and their links come in stage 3, the page in stage 5).
+What the stores and HLTB say about a game. Games and their links came in
+stage 3; the Mini App's game page (stage 5) shows them — see User interface,
+«The game page».
 
 - **A version is a store product on one console** (owner, 2026-10-08):
   `versions (store, product_id, console)` — PS4 and PS5, One and Series are two
@@ -1465,8 +1474,16 @@ isn't muted there; it wasn't already published there.
   achievement earned on each platform, whoever earned it
   (`repo.latest_per_platform`), as the whole post a chat gets
   (`Publisher.sample`: text, progress, Mini App button) — as today, then
-  on each ground — to the super-admin's own DM, recording nothing. The
-  Mini App's own pictures are not touched.
+  on each ground — to the super-admin's own DM, recording nothing.
+  **The Mini App draws a small achievement picture by the same rule**
+  (owner, 2026-10-12; `shared/lib/fit-img`, `/me`'s `picture`: `on`, `scale`,
+  `low_res` from these settings): under the limit it is not stretched over
+  the block — it is enlarged `scale` times (the 1024 px card is the
+  reference, so a 64 px icon is a quarter of the block's shorter side, never
+  past 90%), set in the middle, rounded, with a shadow, on the card's own
+  blurred copy darkened at its edges. A larger one fills the block as before.
+  This is `FitImg`'s, so a post, a gallery card and an achievement's page all
+  do it; a game's cover never.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1565,7 +1582,7 @@ elsewhere in this file still describe the bot.
   strip of people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games (HowLongToBeat, from two letters) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block is a dashed circle with a plus, the size of a face, that opens it with the field focused (owner, 2026-10-08); no platform marks beside a nickname in Home's head or a profile's — the accounts are a tap away on the card. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
+  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games of our own catalog (owner, 2026-10-25: never a search on the internet; `/api/mini/game-search`, from two letters, a tap opens the game page) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block is a dashed circle with a plus, the size of a face, that opens it with the field focused (owner, 2026-10-08); no platform marks beside a nickname in Home's head or a profile's — the accounts are a tap away on the card. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
   nickname, following, followers and shared-chat suggestions, a follow button on each
   row and a person sheet (remove follower, block).
 - **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
@@ -1768,9 +1785,9 @@ elsewhere in this file still describe the bot.
     «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
     the block is there only with Telegram linked); under a switch that is on —
     «Новые посты» (off / friends / everyone followed), new followers, new
-    friends, «Новости игр» (off / all / patches / news), and for push the Xbox
+    friends, «Новости игр» (off / all / patches / news / favorites only), and for push the Xbox
     sign-in (its Telegram message is `poller/reminders.py`'s, with the button).
-    Stored as tokens, `new_post:friends`, `game_news:patch`
+    Stored as tokens, `new_post:friends`, `game_news:patch`, `game_news:favorites`
     (`notifier.carries`); 081's `notify_posts` is no longer read. A hint under a setting
     is its row's second line, never a note under the group, unless it is about a
     choice among the group's rows. `components/me/notifications/push.ts` says why a
@@ -1841,19 +1858,39 @@ elsewhere in this file still describe the bot.
   is the same everywhere: a brighter surface and an accent edge and ring — the
   search bar shares it in its pill shape, and a settings row's number
   (`.fr-number`) in miniature. A new form never styles an input of its own.
-- **A finished game** (owner, 2026-10-06: beautiful but laconic, a real joy;
-  `game/game-hero/GameHero`): a platinum medal on the picture's lower edge — a
-  metal disc, an iridescent rim turning slowly, a breathing glow, stars twinkling round it, «Пройдено на
-  100%» and the day the last achievement came — at rest and open alike, no rays.
-  The first time one opens one's own finished game, the medal pops in with a ring
-  of sparks and a tap of the phone, once per game on the device
-  (`localStorage` `celebrated-games`).
-  A game not finished wears the same medal, quieter (owner, 2026-10-06): a dark
-  disc, its rim filled clockwise as far as the person got — white, as the
-  progress bars in the lists —, and
-  the percentage and the day of the last achievement under it (how many is in the tab's title) — the bar plate it replaced is gone. Its own effects, not
-  the platinum's: the rim fills from nothing as the page opens (`@property --p`),
-  a bright point pulses at the arc's end, and the picture dims round it.
+- **The game page** (#147, stage 5; owner, 2026-10-25/26;
+  `components/game/game-page/GamePage`, `GET /api/mini/game?game_id=` or
+  `?platform=&title_id=`, `web/mini_game.py`, `services/game_page.py`): **a tap
+  on a game anywhere opens it** (`GameOpenProvider`). One game whole, read from
+  the catalog with no network: its wide picture at the top (Xbox's or
+  PlayStation's hero art, else a Steam screenshot), and beside the box art its
+  name, the years and studio, and on a third line the HLTB score, the
+  platforms (a tap opens that store's page) and the age rating; in the head
+  the way back and the heart («В избранное», the heart alone once the picture
+  is scrolled past). Then: the progress of the reader (or of the person it was
+  opened from) as a profile's games row draws it — a count and a bar, from
+  `title_progress` as the feed —, opening **the achievements**, and the faces
+  of the people they follow who played it; the newest news post (all of them a
+  tap away); the hours; the story and facts (release, developer, publisher,
+  genres); screenshots, DLC (by the day they came out), editions (the
+  shortest name first), each series and related games (remaster, remake,
+  collection) as strips — **a strip's whole list is «Все» at its head's
+  right**, on a page of its own, by year where it has years. A game of the
+  series opens in place, the phone's back steps back through them. No «where
+  to play» block. A list in no game yet becomes a game of its own on its first
+  visit (`repo.adopt_list_as_game`); the linker places it later.
+  **The achievements** (`game/title-sheet/TitleSheet`, the page that came before)
+  are the list and its guides only — no picture, no «Об игре», no updates
+  (owner, 2026-10-26): those are the game page's. The platinum medal went
+  with that page's picture.
+- **Favorite games** (owner, 2026-10-25; `PUT|DELETE /api/mini/game/{id}/favorite`,
+  `GET /api/mini/game-favorites?person=`): a heart on a game's page puts it
+  on the person's profile, a strip under whom they follow as compact as the
+  friends' faces (`club/favorite-games/FavoriteGames`; one's own says how to
+  fill it, somebody else's empty one is not shown, and only a viewer
+  `can_view_activity` lets in sees it). A favorite's news are read every
+  hour (`poller/patch_refresh.py`), and told to whoever keeps it, played or
+  not — «Новости игр: только избранные» carries only those.
 - **The ranking** (owner, 2026-10-07): one table, no frames, a column each — the last day, the month shown
   and its year (`/club/summary`'s `year`, from 1 January to the month's end, in
   the same timezone), and the leaders by day / month / year from a dropdown.
@@ -1870,25 +1907,33 @@ elsewhere in this file still describe the bot.
   News is the month now; only the Ranking keeps a month in its head. Somebody
   else's profile has the follow control (`FollowButton`: follow, or «Подписан
   ⌄» with unfollow and block) at its head's right.
+- **One page for content** (owner, 2026-10-12;
+  `shared/lib/content-page/ContentPage`): an achievement, a patch and a news
+  post open on the same page, in the same
+  order — the picture edge to edge, the game's line (opens it), the day (a
+  post's, or the one an achievement was earned), the title and the line under
+  it, the sections or the whole text, the link
+  to where else it is read. The bar has the way back, the page's kind and, at
+  its right, an achievement's rarity and points or trophy — never as tiles
+  in the body (owner, 2026-10-12). The follows page picks its list in its
+  first row; a person's page and card keep the follow control at their head's
+  right, the achievements page its score and video guide, the notices «Прочитать все».
 - **No drawers: pages** (owner, 2026-10-07; `shared/lib/sheet/Sheet`): what rose
   from the bottom as a drawer — notifications, a person's card, follows, the
-  month's games, a ranking's lists, an achievement, an HLTB game, the merge — is
+  month's games, a ranking's lists, an achievement, the merge — is
   a page over everything, sliding in from the side, with its own scroll and a
   head with the way back (the arrow, the phone's back); `title` (or `head`) and
   `aside` name it in the head. A person's page has the person in its head — face,
   nickname, where they are — and the follow control at its right; a lone
-  game account is open, several start closed. The follows page names its list in the head and picks it at the
-  right (following / friends / followers / blocked, each with its count), and
-  searches the list shown by nickname under the head. A pick from a short list is the `Dropdown`, never a page: the
+  game account is open, several start closed. The follows page picks its list in its first row (following / friends /
+  followers / blocked, each with its count) and searches the list shown by
+  nickname under it. A pick from a short list is the `Dropdown`, never a page: the
   games block's month, the ranking's month and day / month. The day to jump to in a feed is the month's
   calendar unfolding under the day's label, the screen's width
   (`person/day-jump/DayCalendar`: days with posts enabled, with their counts).
   The feed's posts are built as the reader nears the end (`FeedPosts`, eight
   at a time, 2000px ahead), never a whole month at once — a phone's browser
-  dropped the page; a jump to a day builds up to it first. An HLTB game from
-  search is laid out as a post's page (`hltb/game-sheet/GameSheet`): the
-  picture edge to edge, year and platform, the name, the three times as one
-  table, the story, «Открыть на HowLongToBeat».
+  dropped the page; a jump to a day builds up to it first.
 - **Design**: every new screen follows the Mini App as it is — its tokens, glass
   surfaces and spacing, no extra outlines.
 
@@ -1920,6 +1965,11 @@ keyboard.
 | Steam | `personaname` → vanity → SteamID64 | no vanity: `profileurl` degrades to `/profiles/<id>/` |
 | PSN | current `onlineId` → previous `onlineId` → `account_id` | the previous id comes from the legacy endpoint, addressed by nickname, and from the value a refresh replaces |
 
+- **A game is never named by its id** (owner, 2026-10-12;
+  `util.real_game_name`): Xbox presence answers some titles with their own id
+  as the name, and a status said «играет 704208617». A name that is empty or
+  only digits is no name: the title is resolved from the cache or titlehub,
+  and failing that the line just says a game is on («играет»).
 - **Code that needs a specific value does not go through a chain** — lookup keys,
   URLs, comparisons with what a platform returned use the raw column.
 - **Never an `@`**: usernames are shown bare, because a mention pings — and `/online`
@@ -2363,9 +2413,10 @@ History: #112.
   App shows beyond the hours (rating, studio, alias, release dates, modes, each
   bucket's spread, speedruns: `details_of_entry`) is read from the columns when
   asked, kept nowhere. **HLTB's counts of its own users stay in the mirror and
-  are not sent** (the Mini App's decision, 2026-09-29). The Mini App's "Об игре"
-  tab shows genre, release, publisher, developer, modes, score and the average
-  hours.
+  are not sent** (the Mini App's decision, 2026-09-29). The Mini App's game page
+  shows the hours, the score and the age rating of the game's entry
+  (`repo.game_hltb`), read from the mirror; the app no longer searches HLTB
+  (owner, 2026-10-25).
 - HLTB is English-only, so the Russian side is Haiku's (`hltb_entries.summary_ru`),
   **lazily** — once per summary, the first time someone looks it up; the same
   English text keeps its translation (`summary_ru_of`, a hash of the text it was
@@ -2422,7 +2473,7 @@ unrelated: it stays a person picking from a candidate list.
 
 What Steam knows about a game beyond its achievements, for the Mini App's game
 page (owner, 2026-09-30): a tip for each achievement from the Steam community's
-guides, and the developer's patch notes in an "Обновления" tab. Nothing of it is
+guides, and the developer's posts in the game page's «Новости». Nothing of it is
 sent to a chat.
 
 - **Which Steam app a game is** (a `steam_twin` id of its versions, see the data
@@ -2485,7 +2536,7 @@ sent to a chat.
   picture (migration 084), its whole text (`steam_news.TEXT_CHARS` is only a
   net against a runaway post, 2026-10-12): a patch is a post tagged `patchnotes` or titled like one
   (update, patch, hotfix, a version number; not a demo or playtest), anything else
-  is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page's «Обновления» shows both, with a filter at the tab's right (all / news / patches); **«Новости»** (owner,
+  is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page shows the newest, all of them a tap away; **«Новости»** (owner,
   2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)
   shows both, untranslated, for the games the viewer and the people they follow
   earned something in within 60 days before the month's end, newest first, one
@@ -2495,7 +2546,7 @@ sent to a chat.
   A post opens whole on a page of its own over everything, the game page too
   (`components/game/news-page/NewsPage`: its own scroll and back; the picture,
   the game, the day, the title, the full text with its pictures, videos and
-  links, then «Открыть в Steam»); a patch in a game's «Обновления» opens on the
+  links, then «Открыть в Steam»); a post on the game page opens on the
   same page. Its game opens the game.
 - **An achievement has a page of its own** (owner, 2026-10-05;
   `components/game/achievement-page/AchievementPage`, on the same layout as a
@@ -2517,24 +2568,27 @@ sent to a chat.
   of a post's or an achievement's page, and a face that zooms. Never on Steam. As
   large as the screen allows, all of it; two fingers zoom and move it, a double
   tap zooms in or back; a tap at its own size or the phone's back closes it —
-  nothing is drawn over the picture. The feeds keep their taps (an achievement's post opens the achievement, a news post its page).
-- **A post's frame is its picture's shape** (owner, 2026-10-05; both feeds,
-  `shared/lib/img-ratio`): proportions read when the picture loads and
-  remembered (`localStorage`), kept between 4:5 and 1.91:1; beyond that the
-  picture is whole over its blurred copy. A picture wider than a square
-  (`isWide`) is its own height, edge to edge, and the text comes under it
-  instead of over it; a square or a tall one keeps the text over its foot. A
-  feed's frame is never wider than 1.15:1 (`FEED_RATIO_MAX`): a wider picture
-  keeps its whole height and loses a little of its sides. A post of several
-  achievements takes the first one's shape for every slide. Console exclusives have no Steam
-  app and so no news. Re-read by `poller/patch_refresh.py` for games somebody
-  earned something in over the last 30 days, every `patch_refresh_hours` (6,
-  /admin), three apps a tick.
+  nothing is drawn over the picture. Opened with a list (`openImage(src, list)`: a
+  game page's screenshots), a finger slides to the next one at its own size
+  (owner, 2026-10-26). The feeds keep their taps (an achievement's post opens the achievement, a news post its page).
+- **A post's frame is 4:5, filled top to bottom** (owner, 2026-10-10; both
+  feeds): `FitImg` `cover` — a landscape picture loses its sides rather than
+  sitting as a strip over empty dark; a small icon is the exception, set in
+  the middle on its own ground (Publication rules). The text stays on frosted
+  glass over the picture's foot. A post of several achievements shares one frame.
+  Console exclusives have no Steam app and so no news. Re-read by
+  `poller/patch_refresh.py` for games somebody earned something in over the
+  last 30 days, every `patch_refresh_hours` (6, /admin), and the apps of
+  somebody's favorite games every hour, first — three apps a tick.
 
 ### Video guides from YouTube
 
 Guide videos for an achievement, shown on its page in «Как получить» (owner,
-2026-10-06). Today one channel, TrophyTom (`services/youtube/guides.py::CHANNELS`).
+2026-10-06; **seven channels since 2026-10-12**, `services/youtube/guides.py::
+CHANNELS`: TrophyTom, PowerPyx, PS5Trophies, HarryNinetyFour,
+Maka91Productions, 100% Guides and Carrot Helper — the biggest that guide
+achievements by name, by their subscribers then; adding one is a line there
+and a look at how it words its titles).
 
 - **Read by `poller/guide_videos.py`** with the YouTube Data API key: a channel's
   whole history, eight pages of 50 a tick, the place kept
@@ -2546,7 +2600,16 @@ Guide videos for an achievement, shown on its page in «Как получить�
   transaction. Nothing is downloaded: a card links to YouTube at the moment.
 - **What a video names** (`guide_videos`, `guide_marks`, migration 086): a title
   with 🏆 names one achievement right before it ("House Flipper Remastered - Beach
-  please 🏆 Trophy / Achievement Guide"); a description's timeline names moments
+  please 🏆 Trophy / Achievement Guide"); **so does a guide phrase after the
+  name, with no 🏆** ("Mortal Shell 2 - Bag Holder Trophy / Achievement
+  Guide"; in parentheses, "… Locations (Bird's-Eye View Trophy Guide)"; the
+  part before a bare "- Trophy Guide"), and a title with **no separator**
+  ("Mortal Shell 2 Heavy Metal Trophy Guide") carries game and name as one
+  run, so its mark is *joined* (`= mortal shell 2 heavy metal`, matched by
+  trying each of the game's names before each achievement's) or, with the name
+  in parentheses, *loose* (`~name`, the title starting with a game's name).
+  A bare phrase or none ("Trophy Guide & Roadmap", "Full Game Walkthrough")
+  is a whole game. A description's timeline names moments
   ("02:42 – ACHIEVEMENT – Chainsaw Go…", "– TROPHY – … – PART 2", or a bare name in a
   whole-game video). Every timeline line is kept; collectibles and chapters match
   nothing and never show.
@@ -2555,15 +2618,17 @@ Guide videos for an achievement, shown on its page in «Как получить�
   matcher does — are one of the game's names or their edition-cut cores, so
   "Gears of War 2 - …" is never Gears of War's; a moment is an achievement's when
   its label equals the achievement's English name, normalized. Nothing is guessed:
-  a near miss shows nothing. The newest three per achievement, parts in order.
+  a near miss shows nothing. The newest three per achievement, parts in
+  order, **one from each channel before a second from the same one**.
 - `/guides` answers them as `videos` beside `tips`; a row with a tip carries the
   book mark, one with a video the video mark beside it.
 - **The game's own guide** (`videos.py::game_guide`, `guide` in `/guides`): what is
-  matched to one achievement rarely covers them all, so a game the channel has
-  videos of gets a video button in the game page's head — its whole-game video
-  when one is titled so ("Full Game", "All Achievements"), else the channel's
-  search for the game. Never on the picture: that is the game's own (a gallery
-  later).
+  matched to one achievement rarely covers them all, so a game a channel has
+  videos of gets a video button in the game page's head — a
+  whole-game video of any channel when one is titled so ("Full Game", "All
+  Achievements", "Trophy Guide & Roadmap"; never one that names an
+  achievement), else the search of the channel with most videos of it. Never
+  on the picture: that is the game's own (a gallery later).
 
 ## Versioning
 

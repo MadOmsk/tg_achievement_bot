@@ -30,7 +30,7 @@ from bot.services.profile_links import (
     platform_profile_url,
     xbox_profile_url,
 )
-from bot.util import humanize_ago
+from bot.util import humanize_ago, real_game_name
 from bot.views import Screen
 from bot.views.inline_lists import InlineListing, button_rows
 from bot.views.keyboards import (
@@ -313,11 +313,11 @@ async def _now_playing(
         return f"{tag}  ·  " + i18n.get("panel-online-idle")
     # Presence gives no name for PC titles — fall back to the cache the
     # poller fills (SPEC 4), same as the admin card.
-    game = (
-        presence.game
-        or await repo.title_name(presence.platform, presence.title_id)
-        or presence.title_id
+    game = presence.game or real_game_name(
+        await repo.title_name(presence.platform, presence.title_id)
     )
+    if game is None:
+        return f"{tag}  ·  " + i18n.get("panel-playing-unknown")
     return f"{tag}  ·  " + i18n.get("panel-playing", game=html_escape(str(game)))
 
 

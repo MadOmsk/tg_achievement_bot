@@ -1,6 +1,6 @@
 /* Cross-cutting visual families used well beyond any single feature
  * directory — hero-game/profile-hero (components/game/GameHero AND
- * components/person/HeroGame AND components/hltb/GameSheet AND
+ * components/person/HeroGame AND
  * components/shared/lib/Sheet), unlock-card/game-card (person AND
  * game AND hltb) and feed-row (club AND game AND person). Splitting
  * this further would mean picking a single, arbitrary owner for a
@@ -808,10 +808,9 @@
 
 .feed-row.is-secret .cover,
 .feed-row.is-secret .feed-cover.has-img > img {
-  filter: blur(3px) saturate(0.9);
-  /* Keep the centring translate the cover image already has, or the picture
-   * slides sideways and leaves a dark strip on the left. */
-  transform: translateX(-50%) scale(1.08);
+  /* Soft frost, same crop as a normal row — blur+scale used to halo the 56px tile. */
+  filter: blur(1.5px) brightness(0.82);
+  transform: translateX(-50%) scale(1.2);
 }
 
 .unlock-card.is-secret .profile-hero-wash,

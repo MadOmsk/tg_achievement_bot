@@ -41,7 +41,7 @@ import { Login } from "./screens/login";
 import { AddEmailScreen } from "./components/me/logins/AddEmailScreen";
 import { peopleApi } from "./api/people/peopleApi";
 import { cachedMe, forgetHome, rememberMe } from "./components/shared/lib/home-cache/homeCache";
-import { AppSkel, GameSkel, Icon, ImageViewerHost, tick, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
+import { AppSkel, GameSkel, GlassLens, Icon, ImageViewerHost, lensSupported, tick, InstallPrompt, SettingsSkel, useBackHandler, Toaster, showToast, setOwnAvatarCustom, setPictureLook, forgetAvatar, usePullToRefresh } from "./components/shared/lib";
 
 // Off Home's own critical path — loaded on first visit to each, not upfront.
 // Settings and the connect forms are a few kilobytes and sit behind the dock like
@@ -257,6 +257,9 @@ export function App() {
   }, []);
 
   const show = useCallback((me: MeResponse) => {
+    if (me.picture) {
+      setPictureLook({ on: me.picture.on, scale: me.picture.scale, lowRes: me.picture.low_res });
+    }
     setOwnAvatarCustom(Boolean(me.avatar_custom));
     setState({ status: "ok", me });
     setChatId((current) => {
@@ -734,17 +737,9 @@ export function App() {
       )}
 
       {!isConnectScreen && <InstallPrompt locale={locale} />}
+      {!isConnectScreen && <GlassLens />}
       {!isConnectScreen && (
-        <nav className="dock">
-          <span
-            className="dock-pill"
-            style={{
-              transform: `translateX(${
-                (isSettingsOrAdmin ? 3 : isPeople ? 2 : isFeed || isSummary || isNews ? 1 : 0) * 100
-              }%)`,
-            }}
-            aria-hidden
-          />
+        <nav className={lensSupported() ? "dock has-lens" : "dock"}>
           <button
             type="button"
             className={isHome && !personOpen ? "is-on" : undefined}

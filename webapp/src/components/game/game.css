@@ -1159,3 +1159,19 @@
 .feed-row.has-wrap:not(.is-secret) {
   cursor: default;
 }
+
+/* The list's own head: what is earned of how many, and the lock and compare
+ * at its right (the tabs it had went to the game page). */
+.game-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 8px;
+}
+
+.game-list-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}

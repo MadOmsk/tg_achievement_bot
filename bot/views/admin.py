@@ -46,7 +46,7 @@ from bot.services.naming import (
     xbox_nickname,
 )
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.util import humanize_ago
+from bot.util import humanize_ago, real_game_name
 from bot.views import Screen
 from bot.views.admin_settings import action_rows, setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
@@ -255,9 +255,9 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     if presence is not None:
         # Presence gives no name for PC titles, so fall back to the cache
         # the poller fills — an id in the card tells the admin nothing.
-        game = presence.title_name or ""
+        game = real_game_name(presence.title_name) or ""
         if not game and presence.title_id:
-            game = await repo.title_name("xbox", presence.title_id) or presence.title_id
+            game = real_game_name(await repo.title_name("xbox", presence.title_id)) or ""
         game = game or _("admin-no-game")
         online = (
             _(
