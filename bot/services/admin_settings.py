@@ -117,6 +117,12 @@ DEFAULT_RARITY_MODE_DEFAULT = RarityMode.ALL
 SHOW_LINKS_KEY = "show_profile_links"
 SHOW_LINKS_DEFAULT = "1"
 
+# Whether the bot asks the stores and HLTB about games on its own (#147:
+# `StoreCollector`, the octopus) — off until a super-admin switches it on,
+# so a release that carries the games catalog changes no traffic by itself.
+STORE_COLLECTION_KEY = "store_collection"
+STORE_COLLECTION_DEFAULT = "0"
+
 
 _DEFAULT_STATS_GAMES_LIMIT = 15
 

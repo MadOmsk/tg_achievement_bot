@@ -6,6 +6,7 @@ round after round while the game gains versions; another game met on the way
 from __future__ import annotations
 
 from bot.db.repo import Repo
+from bot.services.admin_settings import STORE_COLLECTION_KEY
 from bot.services.game_link import LinkReport
 from bot.services.game_match import name_key
 from bot.services.octopus import OctopusCollector, game_key, list_key, search_key
@@ -232,6 +233,11 @@ async def test_the_bots_worker_takes_its_share_and_zero_is_off(repo: Repo) -> No
     octopus = OctopusCollector(repo, Stub(repo), linker=_linker([]))  # type: ignore[arg-type]
     for n in range(3):
         await octopus.enqueue(game_key(999 + n))
+    # Store collection is off by default: the worker rests.
+    await repo.set_app_setting(PER_TICK_KEY, "2")
+    await OctopusWorker(repo, octopus).tick()
+    assert await repo.octopus_waiting() == 3
+    await repo.set_app_setting(STORE_COLLECTION_KEY, "1")
     await repo.set_app_setting(PER_TICK_KEY, "0")
     await OctopusWorker(repo, octopus).tick()
     assert await repo.octopus_waiting() == 3
@@ -249,5 +255,8 @@ async def test_a_list_collected_for_the_bot_is_queued_for_the_octopus(repo: Repo
         return CollectReport(platform, title_id)
 
     collector.collect = collect  # type: ignore[method-assign]
+    await collector._collect_logged("psn", "NPWR1", reason="page")
+    assert await repo.octopus_due(5) == []  # store collection off by default
+    await repo.set_app_setting(STORE_COLLECTION_KEY, "1")
     await collector._collect_logged("psn", "NPWR1", reason="page")
     assert await repo.octopus_due(5) == [(list_key("psn", "NPWR1"), "page")]

@@ -807,6 +807,11 @@ What the stores and HLTB say about a game, collected but not shown yet
   not change; a change, or a Steam patch in the last 30 days, sets it back to 7
   (a live-service game keeps being asked). A failure is retried in an hour, given
   up on for 30 days after three. **No whole-library walk** (owner, 2026-10-09).
+  **All of it waits for the super-admin's switch** (`store_collection`,
+  /admin → Прочее, off by default; `store_collect.collection_on`, read on
+  every run): off, neither the bot's collection nor the octopus asks a store,
+  so a release carrying the catalog changes no traffic by itself. The
+  operator's tools (`collect_game.py`, the catalog viewer) ignore it.
 - **Raw answers** are kept in `source_payloads`, zlib JSON, the latest only, not
   rewritten when the hash is the same — never as columns on `achievement_list_connectors`.
   **Prices are not kept** (owner, 2026-10-12): each store module drops its

@@ -22,6 +22,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from bot.services import edition_media
+from bot.services.admin_settings import STORE_COLLECTION_DEFAULT, STORE_COLLECTION_KEY
 from bot.services.game_link import GameLinker
 from bot.services.game_match import is_part, name_key
 from bot.services.hltb import ensure_title_match
@@ -50,6 +51,14 @@ if TYPE_CHECKING:
     from bot.db.repo import Repo
     from bot.services.psn.auth import PsnAuth
     from bot.services.steam.auth import SteamAuth
+
+
+async def collection_on(repo: Repo) -> bool:
+    """The super-admin's switch for asking the stores at all (/admin →
+    Прочее, `STORE_COLLECTION_KEY`), read on every run: off, nothing is
+    collected and the octopus rests. The operator's own tools ignore it."""
+    return bool(await repo.get_int_setting(STORE_COLLECTION_KEY, int(STORE_COLLECTION_DEFAULT)))
+
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +120,8 @@ class StoreCollector:
         self, platform: str, title_id: str, *, reason: str = "published"
     ) -> CollectReport:
         try:
+            if not await collection_on(self._repo):
+                return CollectReport(platform, title_id)
             # The octopus's key for a list (`octopus.list_key`); a key in the
             # queue already stays as it is.
             await self._repo.octopus_enqueue(f"list:{platform}:{title_id}", reason)
@@ -946,6 +957,8 @@ class StoreCollector:
 
     async def _remember_logged(self, entry: object) -> None:
         try:
+            if not await collection_on(self._repo):
+                return
             await self.remember_title(entry)
         except Exception:
             log.exception("keeping a titlehub answer failed")

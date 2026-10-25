@@ -31,6 +31,11 @@ class OctopusWorker:
         self._octopus = octopus
 
     async def tick(self) -> None:
+        # Imported here: admin_settings reads this module's default.
+        from bot.services.store_collect import collection_on
+
+        if not await collection_on(self._repo):
+            return
         per_tick = await self._repo.get_int_setting(PER_TICK_KEY, DEFAULT_PER_TICK)
         if per_tick <= 0:
             return
