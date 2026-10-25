@@ -41,6 +41,13 @@ MAJORITY_WEIGHT = 0.4
 # Two advisers (a Claude and a Gemini, with a web search) agreeing: right on
 # 14 of 15 pairs the operator answered blind (2026-10-24).
 BOTH_WEIGHT = 0.7
+# Gemini Argon alone, with a web search (owner, 2026-10-25: it answers the
+# labelling batches in place of the Claude agent, to spend fewer tokens). It
+# agreed with the web-checked Claude on 99% of the 275 "one game or not"
+# questions, but its confidence said little then: a little below the
+# operator's, and never part of the gate.
+GEMINI_WEB = "gemini-web"
+GEMINI_WEB_WEIGHT = 0.8
 # Who gave a label in the full run: all three advisers, or two of the three.
 UNANIMOUS = "advisers:3/3"
 MAJORITY = "advisers:2/3"
@@ -78,6 +85,8 @@ def label_weight(decided_by: str | None) -> float:
     """How much a label teaches: an adviser's less than the operator's, two
     of three advisers less than all three."""
     by = decided_by or ""
+    if by == GEMINI_WEB:
+        return GEMINI_WEB_WEIGHT
     if by in (UNANIMOUS, ALL_THREE):
         return UNANIMOUS_WEIGHT
     if by == BOTH:
@@ -99,7 +108,10 @@ class Example:
 
     @property
     def operator(self) -> bool:
-        return self.source not in (UNANIMOUS, MAJORITY) and self.source not in ADVISER_SOURCES
+        return (
+            self.source not in (UNANIMOUS, MAJORITY, GEMINI_WEB)
+            and self.source not in ADVISER_SOURCES
+        )
 
 
 @dataclass(slots=True)

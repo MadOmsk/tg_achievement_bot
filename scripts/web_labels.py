@@ -16,10 +16,13 @@ Two more kinds of answer (`scripts/review_questions.py`): `{"type": "hltb",
 HLTB link becomes a refusal — and `{"type": "series", "game_id",
 "series_id", "verdict": "yes" | "no"}` — a game said to be in a series or
 not, as the advisers' word (never over the operator's).
+`--source gemini-web` writes another adviser's answers (Gemini Argon,
+owner 2026-10-25): those never replace a label a pair already has.
 Run with the viewer stopped (one linker at a time).
 
 Usage:
     … -m scripts.web_labels --db data/games.db answers.json [more.json …] [--dry-run]
+        [--source gemini-web]
 """
 
 from __future__ import annotations
@@ -85,11 +88,23 @@ def label_of(answer: dict) -> tuple[int, int, str, str] | None:
 
 
 async def write(
-    db: Path, labels: list[tuple[int, int, str, str]], others: list[dict] | None = None
+    db: Path,
+    labels: list[tuple[int, int, str, str]],
+    others: list[dict] | None = None,
+    source: str = SOURCE,
 ) -> None:
     database = await Database(db).connect()
     try:
         repo = Repo(database)
+        if source != SOURCE:
+            held = {
+                frozenset((int(d["version_id"]), int(d["other_id"])))
+                for d in await repo.decisions_among(
+                    sorted({v for a, b, *_ in labels for v in (a, b)})
+                )
+            }
+            labels = [lab for lab in labels if frozenset(lab[:2]) not in held]
+            print(f"{len(labels)} of them on pairs with no label yet")
         for answer in others or []:
             if answer["type"] == "hltb" and answer.get("verdict") == "wrong":
                 await repo.unlink_version_hltb(
@@ -101,7 +116,7 @@ async def write(
                     int(answer["series_id"]),
                     answer["verdict"] == "yes",
                     source="advisers",
-                    decided_by=SOURCE,
+                    decided_by=source,
                 )
         for a, b, relation, _series in labels:
             features, model = await repo.pair_features(a, b)
@@ -111,8 +126,8 @@ async def write(
                 relation,
                 features=features,
                 model=model or MODEL,
-                decided_by=SOURCE,
-                overrule=True,
+                decided_by=source,
+                overrule=source == SOURCE,
             )
         await GameLinker(repo).link_versions(sorted({v for a, b, *_ in labels for v in (a, b)}))
         # "Another game of the series" says which, as the viewer's answer does.
@@ -128,6 +143,7 @@ def main() -> None:
     parser.add_argument("--db", required=True)
     parser.add_argument("files", nargs="+")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--source", default=SOURCE)
     args = parser.parse_args()
     labels, others = [], []
     for path in args.files:
@@ -145,7 +161,7 @@ def main() -> None:
                 labels.append(label)
     print(f"{len(labels)} labels, {len(others)} HLTB and series answers")
     if not args.dry_run:
-        asyncio.run(write(Path(args.db), labels, others))
+        asyncio.run(write(Path(args.db), labels, others, args.source))
 
 
 if __name__ == "__main__":
