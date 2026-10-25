@@ -929,6 +929,13 @@ What the stores and HLTB say about a game, collected but not shown yet
     larger graphical changes. Which one a given game is, is the labels'
     answer (the operator's, the web-checked ones), never a rule written here:
     this file keeps principles, not per-game decisions.
+  - **Where an enhanced edition goes** (owner, 2026-10-25): one sold under
+    its own product id on a platform (a store page and id of its own, apart
+    from the plain game's) is **a game of its own**, related to the original
+    as `enhanced_of`, like a remaster; one that is the same product upgraded
+    (a free update, the same id) stays inside the game with the role
+    `enhanced`. **Not built yet**: the linker still keeps every enhanced
+    edition inside its game.
   - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;
     `game_match.game_name`): the full release name, platform tails cut ("-
     Xbox Series X|S", "(PC)", "for Windows 10", "Windows 10 Edition"), when
