@@ -372,7 +372,7 @@ class RecentlyPlayedGame:
     name: str
     playtime_2weeks: int
     playtime_forever: int
-    last_played: int  # rtime_last_played in unix seconds
+    last_played: int  # rtime_last_played in unix seconds; 0 when Steam leaves it out
 
 
 async def get_recently_played_games(
