@@ -3,7 +3,7 @@
 things relate, not only enhanced editions). Four kinds, each answered by
 `scripts/web_labels.py`:
 
-- `pair` — two versions: one game, an enhanced edition, a remaster, a demo,
+- `pair` — two versions: the model's review list first, then one game, an enhanced edition, a remaster, a demo,
   another game of the series, …; the automatic relations between games
   (`game_relations`) are asked as a pair of their versions, and so are the
   versions the linker put in one game under different names;
@@ -68,6 +68,11 @@ def build(db: Path, total: int) -> list[dict]:
                     "A": _version(conn, a), "B": _version(conn, b)})  # fmt: skip
         return True
 
+    # The model's own doubtful pairs (the review list) come first, all of them.
+    for a, b, relation, prob in conn.execute(
+        "SELECT version_id, other_id, relation, p FROM match_pairs ORDER BY p DESC"
+    ):
+        pair(int(a), int(b), f"the model is unsure: {relation} {prob:.2f}")
     quota = {k: int(total * v) for k, v in SHARES.items()}
     for game, related, kind in conn.execute(
         "SELECT game_id, related_id, kind FROM game_relations WHERE source = 'auto'"

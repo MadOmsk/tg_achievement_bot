@@ -12,7 +12,8 @@ answer marked `"searched": false` is never written (owner, 2026-10-25: the
 point is that the agent looked it up — an answer from memory is not a label).
 
 Two more kinds of answer (`scripts/review_questions.py`): `{"type": "hltb",
-"version_id", "hltb_id", "verdict": "same" | "wrong"}` — a wrong automatic
+"version_id", "hltb_id", "verdict": "same" | "wrong"}` — a confirmed link
+becomes the operator's (`manual`), a wrong automatic
 HLTB link becomes a refusal — and `{"type": "series", "game_id",
 "series_id", "verdict": "yes" | "no"}` — a game said to be in a series or
 not, as the advisers' word (never over the operator's).
@@ -109,6 +110,11 @@ async def write(
             if answer["type"] == "hltb" and answer.get("verdict") == "wrong":
                 await repo.unlink_version_hltb(
                     int(answer["version_id"]), int(answer["hltb_id"]), only_auto=True
+                )
+            elif answer["type"] == "hltb" and answer.get("verdict") == "same":
+                # Confirmed: no longer an automatic guess, never asked again.
+                await repo.link_version_hltb(
+                    int(answer["version_id"]), int(answer["hltb_id"]), source="manual"
                 )
             elif answer["type"] == "series" and answer.get("verdict") in ("yes", "no"):
                 await repo.set_series_member(
