@@ -7,7 +7,9 @@ The file is a JSON array of `{"a", "b", "relation", "direction",
 remaster_of / remake_of / demo_of / extra_of / contains / series /
 not_related, `direction` "a" or "b" for the side that is the enhanced /
 remaster / … one. Only high and medium confidence answers are written, as
-`decided_by = claude-web`; each pair's versions are linked again after.
+`decided_by = claude-web`; each pair's versions are linked again after. An
+answer marked `"searched": false` is never written (owner, 2026-10-25: the
+point is that the agent looked it up — an answer from memory is not a label).
 
 Two more kinds of answer (`scripts/review_questions.py`): `{"type": "hltb",
 "version_id", "hltb_id", "verdict": "same" | "wrong"}` — a wrong automatic
@@ -48,10 +50,14 @@ RELATIONS = {
 DIRECTED = {"enhanced_of", "remaster_of", "remake_of", "demo_of", "tool_of", "extra_of", "contains"}
 
 
+def usable(answer: dict) -> bool:
+    return answer.get("confidence") in ("high", "medium") and answer.get("searched") is not False
+
+
 def label_of(answer: dict) -> tuple[int, int, str, str] | None:
     """(subject, other, relation, the series it names) of one answer, or
     None when it is not to be written."""
-    if answer.get("confidence") not in ("high", "medium"):
+    if not usable(answer):
         return None
     relation = RELATIONS.get(str(answer.get("relation")))
     if relation is None:
@@ -115,7 +121,7 @@ def main() -> None:
     for path in args.files:
         for answer in json.loads(Path(path).read_text("utf-8")):
             if answer.get("type") in ("hltb", "series"):
-                if answer.get("confidence") in ("high", "medium"):
+                if usable(answer):
                     others.append(answer)
                 continue
             label = label_of(answer)
