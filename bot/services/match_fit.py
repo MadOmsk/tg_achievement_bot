@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bot.services.advice import ADVISER_SOURCES, ALL_THREE, BOTH
-from bot.services.game_match import CLASSES, probabilities
+from bot.services.game_match import CLASSES, DIFFER_SIGNS, probabilities
 
 # What a label teaches, by who gave it (owner, 2026-10-17).
 OPERATOR_WEIGHT = 0.9
@@ -56,6 +56,18 @@ ADVISER_WEIGHT = MAJORITY_WEIGHT  # the older name, kept for its callers
 # Never fitted: how common each class is among labels is the review list's
 # doing, not the catalog's (the training audit, 2026-10-24).
 FROZEN = frozenset({"bias"})
+# Signs that two versions differ can never speak *for* one game, and signs
+# that something is not known can never speak for it more than they started
+# (2026-10-25: fitted on labels where an unnamed, undated Xbox id mostly was
+# its namesake, "year unknown" grew to +2 and "other genres" to +0.3, and
+# Valve's Deadlock became LLL games' DeadLock).
+AGAINST_SAME = DIFFER_SIGNS | {
+    "developer_differs",
+    "genres_differ",
+    "text_differ",
+    "years_gap",
+}
+UNKNOWN_SIGNS = frozenset({"year_unknown", "name_unknown"})
 # A class with fewer labels than this is pulled to its start that much
 # harder (remake 10, compilation 8, VR 3 labels in October 2026).
 FEW_LABELS = 40
@@ -179,6 +191,11 @@ def fit(
                     continue
                 moved = w[c][k] - rate * grad[c][k]
                 w[c][k] = (moved + 2 * rate * pull * start[c].get(k, 0.0)) / shrink
+        same = w["same"]
+        for k in AGAINST_SAME & same.keys():
+            same[k] = min(same[k], 0.0)
+        for k in UNKNOWN_SIGNS & same.keys():
+            same[k] = min(same[k], start["same"].get(k, 0.0))
     return w
 
 

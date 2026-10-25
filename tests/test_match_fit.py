@@ -77,3 +77,15 @@ def test_the_gate_is_the_operators_labels() -> None:
     assert verdict.passed
     adviser = [Example(e.features, e.label, 0.4, "claude+gemini") for e in _examples()]
     assert gate(held_out(adviser, WEIGHTS, epochs=50)).fitted.n == 0
+
+
+def test_a_sign_of_difference_never_speaks_for_one_game() -> None:
+    """Labels where an undated version with another genre happened to be its
+    namesake must not teach "unknown year" or "other genres" to mean one game
+    (2026-10-25: Valve's Deadlock became LLL games' DeadLock)."""
+    examples = [
+        Example({"bias": 1.0, "year_unknown": 1.0, "genres_differ": 1.0}, "same") for _ in range(30)
+    ]
+    fitted = fit(examples, WEIGHTS)
+    assert fitted["same"]["genres_differ"] <= 0.0
+    assert fitted["same"]["year_unknown"] <= WEIGHTS["same"]["year_unknown"]
