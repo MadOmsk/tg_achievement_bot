@@ -43,11 +43,21 @@ RELATIONS = {
     "demo_of": "demo_of",
     "tool_of": "tool_of",
     "extra_of": "extra_of",
+    "vr_of": "vr_of",
     "contains": "contains",
     "series": "series",
     "not_related": "other",
 }
-DIRECTED = {"enhanced_of", "remaster_of", "remake_of", "demo_of", "tool_of", "extra_of", "contains"}
+DIRECTED = {
+    "enhanced_of",
+    "remaster_of",
+    "remake_of",
+    "vr_of",
+    "demo_of",
+    "tool_of",
+    "extra_of",
+    "contains",
+}
 
 
 def usable(answer: dict) -> bool:
