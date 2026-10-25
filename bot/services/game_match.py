@@ -433,6 +433,27 @@ for _signs in WEIGHTS.values():
     for _sign in TEXT_SIGNS:
         _signs.setdefault(_sign, 0.0)
 
+# The weights in use: the hand ones above, or the fit the database holds as
+# active (`match_weights`, loaded by `game_link.load_weights` before a link).
+_active: dict[str, dict[str, float]] = WEIGHTS
+_active_id: int | None = None
+
+
+def use_weights(weights: dict[str, dict[str, float]] | None, weights_id: int | None = None) -> None:
+    """Score with these weights from now on (None: the hand weights)."""
+    global _active, _active_id
+    _active, _active_id = (weights, weights_id) if weights else (WEIGHTS, None)
+
+
+def current_weights() -> dict[str, dict[str, float]]:
+    return _active
+
+
+def model_name() -> str:
+    """Which weights scored a pair, stored beside it: `MODEL`, or the fit's id."""
+    return MODEL if _active_id is None else f"{MODEL}/w{_active_id}"
+
+
 MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
 LINK_P = 0.85  # at or above: linked (one game, or the relation)
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
@@ -741,8 +762,8 @@ def probabilities(
     f: dict[str, float], weights: dict[str, dict[str, float]] | None = None
 ) -> dict[str, float]:
     """Each class's probability (and "other"'s): a softmax over the log-odds."""
-    w = weights or WEIGHTS
-    logits = {c: sum(w[c].get(k, 0.0) * v for k, v in f.items()) for c in CLASSES}
+    w = weights or _active
+    logits = {c: sum(w.get(c, {}).get(k, 0.0) * v for k, v in f.items()) for c in CLASSES}
     logits["other"] = 0.0
     top = max(logits.values())
     exp = {c: math.exp(max(-40.0, x - top)) for c, x in logits.items()}
@@ -754,7 +775,7 @@ def compare(
     a: Candidate, b: Candidate, weights: dict[str, dict[str, float]] | None = None
 ) -> Verdict:
     """How two versions relate, and how sure the model is (`weights`: other
-    weights than `WEIGHTS`, a fit's, to see what it would change)."""
+    weights than those in use, a fit's, to see what it would change)."""
     s, o = subject_of(a, b)
     f = features(a, b)
     probs = probabilities(f, weights)
@@ -774,7 +795,7 @@ def compare(
         relation, p = best_link
     else:
         state = "apart"
-    w = (weights or WEIGHTS).get(relation, {})
+    w = (weights or _active).get(relation, {})
     reasons = [f"{relation} {p:.2f}"] + [
         f"{k} {w.get(k, 0.0) * v:+.1f}"
         for k, v in sorted(f.items(), key=lambda kv: -abs(w.get(kv[0], 0.0) * kv[1]))

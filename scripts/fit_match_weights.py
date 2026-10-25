@@ -15,13 +15,18 @@ labels held closer). Then:
   current and the fitted weights — how many would be linked, sent to review
   or kept apart otherwise, with examples.
 
-Writes the fitted weights as JSON. Changes nothing in the database.
+Writes the fitted weights as JSON. With `--save` it also keeps them in the
+database (`match_weights`) and makes them the active set — the linker's
+weights from its next link — but only when the gate passed. `--activate N`
+switches to a set kept before (`--activate hand`: back to the hand weights),
+`--list` lists them; neither fits anything.
 
-Read-only, safe beside a running bot.
+Without those flags read-only, safe beside a running bot.
 
 Usage:
     .venv/Scripts/python.exe -X utf8 -m scripts.fit_match_weights [--out weights.json]
-        [--db data/games.db] [--without model+claude+gemini] [--strength 0.001]
+        [--db data/games.db] [--without model+claude+gemini] [--strength 0.001] [--save]
+    .venv/Scripts/python.exe -X utf8 -m scripts.fit_match_weights --list | --activate N|hand
 """
 
 from __future__ import annotations
@@ -153,7 +158,43 @@ async def run(args: argparse.Namespace) -> Weights | None:
             print(f"  {n:5}  {move if isinstance(move, str) else ' → '.join(move)}")
         for line in shown:
             print(f"    {line}")
-        return {c: {k: round(v, 2) for k, v in w.items() if round(v, 2)} for c, w in fitted.items()}
+        rounded = {
+            c: {k: round(v, 2) for k, v in w.items() if round(v, 2)} for c, w in fitted.items()
+        }
+        if args.save:
+            if verdict.passed:
+                weights_id = await repo.add_match_weights(
+                    rounded,
+                    gate_before=verdict.start.accuracy,
+                    gate_after=verdict.fitted.accuracy,
+                    labels=len(learn),
+                    note=args.note,
+                    activate=True,
+                )
+                print(f"kept as set {weights_id} and made active; relink to apply")
+            else:
+                print("the gate did not pass: nothing kept")
+        return rounded
+    finally:
+        await database.close()
+
+
+async def manage(args: argparse.Namespace) -> None:
+    database = await Database(Path(args.db or get_settings().db_path)).connect()
+    try:
+        repo = Repo(database)
+        if args.activate:
+            await repo.activate_match_weights(
+                None if args.activate == "hand" else int(args.activate)
+            )
+            print(f"active: {args.activate}; relink to apply")
+        for row in await repo.match_weights_list():
+            gate = f"{row['gate_before'] or 0:.1%} → {row['gate_after'] or 0:.1%}"
+            mark = "*" if row["active"] else " "
+            print(
+                f"{mark} {row['weights_id']:3}  {row['created_at']}  gate {gate}"
+                f"  labels {row['labels']}  {row['note'] or ''}"
+            )
     finally:
         await database.close()
 
@@ -165,7 +206,14 @@ def main() -> None:
     parser.add_argument("--strength", type=float, default=0.001)
     parser.add_argument("--epochs", type=int, default=800)
     parser.add_argument("--without", action="append", help="a source not to learn from")
+    parser.add_argument("--save", action="store_true", help="keep and activate (gate passed)")
+    parser.add_argument("--note", default=None)
+    parser.add_argument("--list", action="store_true", help="the sets kept")
+    parser.add_argument("--activate", default=None, help="a kept set's id, or 'hand'")
     args = parser.parse_args()
+    if args.list or args.activate:
+        asyncio.run(manage(args))
+        return
     fitted = asyncio.run(run(args))
     if fitted is not None:
         Path(args.out).write_text(json.dumps(fitted, indent=1), encoding="utf-8")

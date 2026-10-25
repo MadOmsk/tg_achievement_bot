@@ -1009,8 +1009,14 @@ What the stores and HLTB say about a game, collected but not shown yet
     split flattered it by ~4 points) **and on the operator's labels alone**
     (`gate`; the advisers' scores are printed beside, never decide). The
     script also scores every pair the linker compares with both weights and
-    counts what would move. It changes nothing: `WEIGHTS` is edited by hand,
-    and only after a relink on a copy has been looked at.
+    counts what would move. **A fit lives in the database** (`match_weights`,
+    migration 129): `--save` keeps it and makes it the active set only when
+    the gate passed, `--activate N|hand` switches, `--list` lists; the linker
+    (and everything that scores pairs) reads the active set before it scores
+    (`game_link.load_weights`), the hand `WEIGHTS` being the prior a fit is
+    pulled towards and the fallback with none active. A pair keeps which set
+    scored it (`model_name()`, `multiclass-1/w<id>`). Relink a copy and look
+    at what moved before activating a set on the working database.
   - **Doubtful pairs go to two advisers first** (owner, 2026-10-12;
     `services/advice.py`, `scripts/advise_pairs.py`). Where the model is
     sure it decides alone; the pairs it is not sure of — the review list

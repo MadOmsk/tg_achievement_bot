@@ -460,6 +460,31 @@ async def test_a_demo_is_of_the_version_on_its_console(repo: Repo) -> None:
     assert tuple(await cur.fetchone()) == ("demo", game_series)
 
 
+async def test_the_linker_scores_with_the_active_weights_in_the_database(repo: Repo) -> None:
+    from bot.services.game_match import WEIGHTS, model_name, use_weights
+
+    a = await _version(repo, "A", "Cyberpunk 2077", "2020")
+    b = await _version(repo, "B", "Cyberpunk 2077", "2020", store="steam", console="steam")
+    linker = GameLinker(repo)
+    try:
+        # A fit that never says "one game": the pair falls apart.
+        apart = {c: dict(w) for c, w in WEIGHTS.items()}
+        apart["same"] = {"bias": -40.0}
+        kept = await repo.add_match_weights(
+            apart, gate_before=0.5, gate_after=0.6, labels=10, activate=True
+        )
+        await linker.link_versions([a, b])
+        assert model_name().endswith(f"/w{kept}")
+        assert await repo.linked_game_of(a) != await repo.linked_game_of(b)
+        # Back to the hand weights: one game again.
+        await repo.activate_match_weights(None)
+        await linker.link_versions([a, b])
+        assert await repo.linked_game_of(a) == await repo.linked_game_of(b)
+        assert [r["active"] for r in await repo.match_weights_list()] == [0]
+    finally:
+        use_weights(None)
+
+
 async def test_a_game_keeps_its_id_through_a_rebuild(repo: Repo) -> None:
     a = await _version(repo, "A", "Cyberpunk 2077", "2020")
     b = await _version(repo, "B", "Cyberpunk 2077", "2020", store="steam", console="steam")

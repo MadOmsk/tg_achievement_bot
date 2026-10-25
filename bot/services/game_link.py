@@ -27,7 +27,6 @@ from typing import TYPE_CHECKING
 from bot.services.game_match import (
     DIFFER_SIGNS,
     LINK_P,
-    MODEL,
     RELATIONS,
     VETO_P,
     Candidate,
@@ -41,7 +40,9 @@ from bot.services.game_match import (
     is_enhanced,
     is_extra,
     kind_of,
+    model_name,
     plain_text,
+    use_weights,
 )
 from bot.services.game_series import SeriesBuilder
 from bot.services.hltb_match import normalize
@@ -112,6 +113,7 @@ class GameLinker:
 
     async def _link_locked(self, rows: list[dict], seed_ids: list[int]) -> LinkReport:
         report = LinkReport()
+        await load_weights(self._repo)
         candidates = {int(r["version_id"]): _candidate(r) for r in rows}
         seeds = [candidates[v] for v in seed_ids if v in candidates]
         if not seeds:
@@ -195,7 +197,10 @@ class GameLinker:
             review = _review(verdicts, game_of, relations, labelled, decided)
             await self._repo.write_review(
                 list(around),
-                [(v.subject, v.other, v.relation, v.p, v.probs, v.features, MODEL) for v in review],
+                [
+                    (v.subject, v.other, v.relation, v.p, v.probs, v.features, model_name())
+                    for v in review
+                ],
             )
             report.review = [(v.subject, v.other, v.relation, v.p) for v in review]
         await self._repo.drop_empty_games()
@@ -231,9 +236,17 @@ class GameLinker:
             c.achievements = frozenset(normalize(n) for n in found if n)
 
 
+async def load_weights(repo: Repo) -> None:
+    """Score with the fit the database holds as active, else the hand weights."""
+    active = await repo.active_match_weights()
+    use_weights(active[1] if active else None, active[0] if active else None)
+
+
 async def load_candidates(repo: Repo, version_ids: list[int]) -> dict[int, Candidate]:
     """These versions as the model reads them, achievements' names loaded —
-    for scoring a pair outside a linking run (fitting the weights)."""
+    for scoring a pair outside a linking run (fitting the weights), with the
+    weights the linker would use."""
+    await load_weights(repo)
     rows = await repo.match_rows()
     wanted = set(version_ids)
     candidates = {int(r["version_id"]): _candidate(r) for r in rows if r["version_id"] in wanted}

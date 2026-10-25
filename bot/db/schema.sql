@@ -1504,3 +1504,15 @@ CREATE TABLE IF NOT EXISTS octopus_queue (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_octopus_queue_due ON octopus_queue(due_at);
+
+-- The games matcher's fitted weights (129): each fit kept, one active.
+CREATE TABLE IF NOT EXISTS match_weights (
+    weights_id   INTEGER PRIMARY KEY,
+    weights      TEXT NOT NULL,     -- JSON: class -> sign -> weight
+    gate_before  REAL,              -- the operator's labels, held out: right before the fit
+    gate_after   REAL,              -- … and after it
+    labels       INTEGER,           -- how many labels it was fitted on
+    note         TEXT,
+    created_at   TEXT NOT NULL,
+    active       INTEGER NOT NULL DEFAULT 0
+);

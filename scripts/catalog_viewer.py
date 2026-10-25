@@ -1729,12 +1729,13 @@ async def rules(request: web.Request) -> web.Response:
     """The model's signs and each class's weight for each, as it decides now."""
     from bot.services import game_match as m
 
+    w = m.current_weights()
     signs = list(dict.fromkeys(k for c in m.CLASSES for k in m.WEIGHTS[c]))
     head = "".join(f"<th>{escape(c)}</th>" for c in m.CLASSES)
     rows = "".join(
         f"<tr><td>{escape(k)}</td>"
         + "".join(
-            f"<td align=right>{m.WEIGHTS[c][k]:+.1f}</td>" if k in m.WEIGHTS[c] else "<td></td>"
+            f"<td align=right>{w[c][k]:+.1f}</td>" if k in w.get(c, {}) else "<td></td>"
             for c in m.CLASSES
         )
         + "</tr>"
@@ -1750,7 +1751,7 @@ async def rules(request: web.Request) -> web.Response:
         f" one game from the surest pair down, never across a pair below {m.VETO_P:.0%}"
         " <i>same</i> or a label saying no; a remaster, remake or VR version relates to the"
         " earliest original, a compilation to each part. The operator's labels come first,"
-        f" and are what the weights will be fitted to. Model: {escape(m.MODEL)}.</p>"
+        f" and are what the weights will be fitted to. Model: {escape(m.model_name())}.</p>"
         "<p>name = similarity − 0.8; years_gap counts the years past the first (at most 9);"
         f" achievements are compared when both lists have {m.ACHIEVEMENTS_MIN}+ names.</p>"
         f"<div class=scroll><table><tr><th>sign</th>{head}</tr>{rows}</table></div>"
@@ -3716,6 +3717,9 @@ async def _open(app: web.Application) -> None:
     database = await Database(Path(app["db_path"])).connect()
     repo = Repo(database)
     app["database"], app["repo"] = database, repo
+    from bot.services.game_link import load_weights
+
+    await load_weights(repo)  # the rules page shows the weights in use
     settings = get_settings()
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
     steam = SteamAuth(repo, cipher, env_key=_secret(settings.steam_api_key))

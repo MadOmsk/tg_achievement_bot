@@ -81,6 +81,58 @@ class _GamesRepo:
                             found.setdefault((platform, str(row[0])), []).append(str(row[1]))
         return found
 
+    # --------------------------------------------------------------- weights
+
+    async def active_match_weights(self) -> tuple[int, dict[str, dict[str, float]]] | None:
+        """The fitted weights the linker uses (129), with their id; None: the
+        hand weights."""
+        cursor = await self._conn.execute(
+            "SELECT weights_id, weights FROM match_weights WHERE active = 1"
+            " ORDER BY weights_id DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        return (int(row[0]), json.loads(row[1])) if row else None
+
+    async def match_weights_list(self) -> list[dict[str, Any]]:
+        cursor = await self._conn.execute(
+            "SELECT weights_id, gate_before, gate_after, labels, note, created_at, active"
+            " FROM match_weights ORDER BY weights_id DESC"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def add_match_weights(
+        self,
+        weights: dict[str, dict[str, float]],
+        *,
+        gate_before: float | None,
+        gate_after: float | None,
+        labels: int,
+        note: str | None = None,
+        activate: bool = False,
+    ) -> int:
+        async with self.transaction():
+            cursor = await self._conn.execute(
+                "INSERT INTO match_weights (weights, gate_before, gate_after, labels, note,"
+                " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (json.dumps(weights), gate_before, gate_after, labels, note, utcnow_iso()),
+            )
+            weights_id = int(cursor.lastrowid)
+            if activate:
+                await self._activate_match_weights(weights_id)
+        return weights_id
+
+    async def activate_match_weights(self, weights_id: int | None) -> None:
+        """Make one set active (None: back to the hand weights)."""
+        async with self.transaction():
+            await self._activate_match_weights(weights_id)
+
+    async def _activate_match_weights(self, weights_id: int | None) -> None:
+        await self._conn.execute("UPDATE match_weights SET active = 0 WHERE active = 1")
+        if weights_id is not None:
+            await self._conn.execute(
+                "UPDATE match_weights SET active = 1 WHERE weights_id = ?", (weights_id,)
+            )
+
     # ---------------------------------------------------------------- labels
 
     async def decisions_among(self, version_ids: list[int]) -> list[dict[str, Any]]:
