@@ -286,6 +286,11 @@ admin-psn-level-tag = уровень { $level }
 
 admin-nowhere = нигде
 admin-subscribed = Подписан: { $chats }
+admin-rarity-title = Публикация
+admin-rarity = Публикация: { $mode }
+admin-rarity-all = все
+admin-rarity-rare = редкие
+admin-rarity-hidden = никакие
 admin-excluded = 🚫 Исключён из системы: не опрашивается и не публикуется.
 admin-restore = ↩️ Вернуть
 admin-exclude = 🚫 Исключить из системы

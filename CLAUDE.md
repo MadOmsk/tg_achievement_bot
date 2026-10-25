@@ -2086,6 +2086,8 @@ keyboard.
   never `@N`), email — each linked or "— нет"; a new way in is one more entry
   there. Then one block per platform in the display order — nickname,
   lifetime count with completions (🌀/👾/💠) and level, today's count, diagnostics.
+  Under them the chats subscribed to and the person's rarity mode («Публикация:
+  все / редкие / никакие»; owner, 2026-10-25), on both panels' cards.
 - **"🔄 Обновить"** is the only UI path besides `/panel`'s sync that calls a platform
   outside a background job: presence, the current game, then a catch-up since the
   newest stored unlock (publication inside `catchup_publish_window_hours`). For PSN it

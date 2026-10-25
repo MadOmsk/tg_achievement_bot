@@ -63,6 +63,7 @@ export function AdminUserDetail({
               label={t(locale, "myChats")}
               value={user.chats.join(", ") || t(locale, "notSubscribed")}
             />
+            <InfoRow label={user.rarity.title} value={user.rarity.value} />
           </Group>
 
           {user.is_excluded && (

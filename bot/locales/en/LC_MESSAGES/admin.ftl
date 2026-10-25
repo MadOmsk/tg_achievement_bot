@@ -286,6 +286,11 @@ admin-psn-level-tag = level { $level }
 
 admin-nowhere = nowhere
 admin-subscribed = Subscribed: { $chats }
+admin-rarity-title = Posting
+admin-rarity = Posting: { $mode }
+admin-rarity-all = all
+admin-rarity-rare = rare
+admin-rarity-hidden = none
 admin-excluded = 🚫 Excluded from the system: not polled, not published.
 admin-restore = ↩️ Restore
 admin-exclude = 🚫 Exclude from the system

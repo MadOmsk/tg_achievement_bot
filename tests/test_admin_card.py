@@ -429,3 +429,20 @@ async def test_admin_delete_user_flow(repo: Repo, settings, i18n, monkeypatch) -
     assert done.answers
     assert await repo.get_user(await repo.person_id(7)) is None
     assert "a:users:0" in _callback_datas(drawn[-1][1]) or drawn[-1][0]
+
+
+async def test_the_card_shows_the_persons_rarity_mode(repo: Repo) -> None:
+    """Both admin cards say what the person publishes: all, rare or none."""
+    from bot.web.mini_admin import build_admin_user
+
+    await repo.ensure_user(8, "rare_one", "R", None)
+    person = await repo.person_id(8)
+    await repo.link_xbox_account(person, XUID, "GamerTag", 0)
+    text, _markup = await render_user_card(repo, person, locale="ru")
+    assert "Публикация: все" in text
+
+    await repo.update_user_settings(person, rarity_mode="rare")
+    text, _markup = await render_user_card(repo, person, locale="ru")
+    assert "Публикация: редкие" in text
+    card = await build_admin_user(repo, person, locale="en")
+    assert card is not None and card["rarity"] == {"title": "Posting", "value": "rare"}
