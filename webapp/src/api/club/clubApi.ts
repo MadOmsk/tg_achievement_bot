@@ -1,7 +1,6 @@
-import type { NewsPost } from "../../components/game/news-page/NewsPage";
 import { BaseApi } from "../base/baseApi";
-import { API_BASE_ROUTES, CLUB_ROUTES } from "../../components/shared/constants/routes";
-import type { FeedResponse, NewsResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
+import { API_BASE_ROUTES, CLUB_ROUTES } from "../../core/constants/routes";
+import type { FeedResponse, NewsPost, NewsResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
 
 /** One chat, or the people you follow (#157). */
 function scopeQuery(scope: number | "following"): Record<string, string | number> {

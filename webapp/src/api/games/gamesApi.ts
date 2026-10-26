@@ -2,7 +2,7 @@ import { BaseApi } from "../base/baseApi";
 import {
   API_BASE_ROUTES,
   GAMES_ROUTES,
-} from "../../components/shared/constants/routes";
+} from "../../core/constants/routes";
 import type {
   GameDetails,
   GameGuidesResponse,

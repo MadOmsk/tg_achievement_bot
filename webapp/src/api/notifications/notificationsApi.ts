@@ -1,5 +1,5 @@
 import { BaseApi } from "../base/baseApi";
-import { API_BASE_ROUTES } from "../../components/shared/constants/routes";
+import { API_BASE_ROUTES } from "../../core/constants/routes";
 
 /** One of the app's own notifications (#164), already worded by the server. */
 export type NotificationItem = {

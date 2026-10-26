@@ -1,5 +1,5 @@
 import { BaseApi } from "../base/baseApi";
-import { API_BASE_ROUTES } from "../../components/shared/constants/routes";
+import { API_BASE_ROUTES } from "../../core/constants/routes";
 
 /** What one person is to another, from the viewer's side (#157). */
 export type Relation = {

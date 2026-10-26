@@ -144,3 +144,16 @@ export type NewsResponse = {
   current_month: string;
   months: string[];
 };
+
+/** A game's developer post, opened whole. */
+export type NewsPost = {
+  title: string;
+  /** ISO date. */
+  date: string;
+  /** The whole post: pictures and videos on lines of their own. */
+  text: string;
+  image: string | null;
+  /** The post on Steam. */
+  url: string;
+  kind?: "patch" | "news";
+};

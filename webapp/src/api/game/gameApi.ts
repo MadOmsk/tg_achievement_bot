@@ -1,5 +1,5 @@
 import { BaseApi } from "../base/baseApi";
-import { API_BASE_ROUTES } from "../../components/shared/constants/routes";
+import { API_BASE_ROUTES } from "../../core/constants/routes";
 import type { GameCard, GamePage } from "./gameApiModels";
 
 /** The game page, the games search and favorite games (#147, stage 5). */

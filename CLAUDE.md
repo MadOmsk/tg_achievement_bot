@@ -19,8 +19,7 @@ inside the safe zone; `badge-96.png` is the white U for a push's one-colour
 badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
 `any` icon that Android draws on its launch splash. The sign-in screens write
 the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
-letters kept in `public/fonts` — `shared/lib/wordmark/Wordmark`; its U alone,
-`UMark`, is the install banner's mark) are what the Mini App,
+letters kept in `public/fonts`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
 
@@ -93,9 +92,12 @@ name, or when the tree goes stale.
 ├── CLAUDE.md                  this file
 ├── pyproject.toml             dependencies, ruff, pytest config
 ├── manage.ps1 / manage.bat    the dev server's process manager and its double-click dashboard
-├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot
+├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot;
+│                              `src/` holds `api/`, `i18n/`, `core/` — the interface is being redesigned
 ├── docs/                      guides for whoever runs a server, English and Russian
 │                              (`mail-setup.md` / `.ru.md`: the mail server for email sign-in)
+│                              (`mini-app-spec.md`: what the Mini App does, for its design;
+│                              `mini-app-design-brief.md`: the task for that design)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -1476,14 +1478,12 @@ isn't muted there; it wasn't already published there.
   (`Publisher.sample`: text, progress, Mini App button) — as today, then
   on each ground — to the super-admin's own DM, recording nothing.
   **The Mini App draws a small achievement picture by the same rule**
-  (owner, 2026-10-12; `shared/lib/fit-img`, `/me`'s `picture`: `on`, `scale`,
-  `low_res` from these settings): under the limit it is not stretched over
-  the block — it is enlarged `scale` times (the 1024 px card is the
-  reference, so a 64 px icon is a quarter of the block's shorter side, never
-  past 90%), set in the middle, rounded, with a shadow, on the card's own
-  blurred copy darkened at its edges. A larger one fills the block as before.
-  This is `FitImg`'s, so a post, a gallery card and an achievement's page all
-  do it; a game's cover never.
+  (owner, 2026-10-12; `/me`'s `picture`: `on`, `scale`, `low_res` from these
+  settings): under the limit it is not stretched over the block — it is
+  enlarged `scale` times (the 1024 px card is the reference, so a 64 px icon is
+  a quarter of the block's shorter side, never past 90%) and set in the middle
+  on a ground of its own. A larger one fills the block. Every achievement
+  picture does it; a game's cover never.
 - **Delivery** goes through a send queue under Telegram's group rate limit. A 403
   means the bot was removed: deactivate the chat. Every send is logged
   (`bot_messages`) for cleanup and deletion.
@@ -1575,16 +1575,26 @@ elsewhere in this file still describe the bot.
 - **Publishing** (shipped): Settings → «Посты в чатах» has the rarity mode, a
   switch per chat and a switch per game account (#20). Settings → Профиль →
   Приватность has the one privacy setting and the list of blocked people.
-- **The Mini App's dock** (shipped): Home · Feed · People · Settings. The statistics
-  became "Рейтинг" beside the feed (a `Достижения | Новости | Рейтинг` switch in the page head — the feed is «Достижения», game news «Новости»; one
-  dock tab; the `summary` screen name and `?t=summary` links still work).
+- **The Mini App's interface is designed again from nothing** (owner,
+  2026-10-26; branch `feature/organic-ui`): `docs/mini-app-spec.md` says what it
+  does — every screen's job, the flows, the rules, the endpoints — and nothing of
+  how it looks; `docs/mini-app-design-brief.md` is the task for the new design.
+  The previous interface is in git (`f49fa3b`), for behaviour only. `webapp/src`
+  keeps `api/`, `i18n/` and `core/` (constants, deep links and the place a reload
+  returns to, the back stack, passkeys, push, the install prompt, the contexts
+  that open a game) and a bare `App.tsx`. Fixed: the name Unlocked and its logo,
+  and a glass bottom bar. Where a rule below names a screen, it says what the
+  screen must do, not how it looks.
   **Scope** (owner, 2026-10-02): there is no chat picker — the Feed, the Ranking, Home's
-  strip of people and `/club/online` are always about oneself plus the followed people
+  people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
-  `subscriptions`, chat id 0). Chats only help to find people to follow. The dock's third tab is «Поиск» (owner, 2026-10-02): games of our own catalog (owner, 2026-10-25: never a search on the internet; `/api/mini/game-search`, from two letters, a tap opens the game page) and people (by nickname, from three); with an empty query, following / followers / shared-chat suggestions. Home's empty friends block is a dashed circle with a plus, the size of a face, that opens it with the field focused (owner, 2026-10-08); no platform marks beside a nickname in Home's head or a profile's — the accounts are a tap away on the card. In the Feed, tapping an author opens their profile; a profile's nickname, and one's own avatar on Home, open the card (`PersonSheet`, `/api/mini/people/{id}`) — one's own without the follow button and counts. On a card the counts open that person's following / followers, and a profile shows whom they follow as Home does (`/api/mini/people/{id}/following|followers`, only to a viewer `can_view_activity` lets in). The digits of a nickname read quieter (`HandleName`). The Feed / Ranking switch is the page title as a dropdown, and every pick-one-of-a-list control is the shared `Dropdown` (`components/shared/lib/dropdown`), never a native select. A person with no linked account sees a «Подключи аккаунт» card; no chat is needed to use the app. The People tab (`webapp/src/screens/people`) has search by
-  nickname, following, followers and shared-chat suggestions, a follow button on each
-  row and a person sheet (remove follower, block).
+  `subscriptions`, chat id 0). Chats only help to find people to follow. Search
+  is of our own catalog (owner, 2026-10-25: never the internet;
+  `/api/mini/game-search`, from two letters) and of people by nickname (from
+  three). A person's card is `/api/mini/people/{id}`; whom somebody follows and
+  who follows them, `/api/mini/people/{id}/following|followers`, only to a viewer
+  `can_view_activity` lets in. No chat is needed to use the app.
 - **Browser sign-in** (shipped; Telegram by migration 074, email by 079): in a plain
   browser the Mini App shows a sign-in screen with Telegram's Login Widget and, when
   a mail server is set up (`/api/mini/auth/config` says `email`), an address field. `POST
@@ -1629,10 +1639,6 @@ elsewhere in this file still describe the bot.
     `unavailable`, `send_failed`, `wrong_code`, `expired`, `taken`, `already`,
     `last_login`, `admin`, `in_telegram`, `not_linked`; a `taken` that a merge can
     answer carries a `merge` preview (`GET|POST|DELETE /api/mini/me/merge`).
-    On the sign-in screen, once a code went out only the code is on the screen
-    («Введи код из письма») — not the address step's text nor Telegram's widget;
-    the forms are `noValidate`, so a bad address is worded by the app, never by
-    the browser's bubble.
   - **Invites** (owner, 2026-10-05; `services/invites.py`, `web/mini_invites.py`,
     `db/repo/_invites.py`, migration 082): for now **somebody new signs up in a
     browser only with a code** — by email, or by the Login Widget. Inside
@@ -1688,13 +1694,10 @@ elsewhere in this file still describe the bot.
     the nickname, accounts, history and follows stay, and that Telegram account
     becomes a new person if it opens the bot again (`repo.remove_telegram`). A login
     that belongs to another person is refused (`taken`).
-  - **In the Mini App** one form does both jobs: `components/me/logins/EmailCodeForm`
-    (address, then the code, which sends itself on the sixth digit; a resend
-    countdown; errors worded from the codes above) on the sign-in screen and in
-    Settings → «Вход» (`LoginsPane`); the Login Widget is `shared/lib/telegram-login`.
-    A person without Telegram sees Publishing's chats replaced by «привяжи Telegram».
-    A first nickname for such a person comes from the part of the address before
-    the @. `ApiError` keeps a refusal's `error` and body for the screens.
+  - A person without Telegram has no chats to publish to: the app offers to link
+    Telegram there. A first nickname for such a person comes from the part of the
+    address before the @. `ApiError` keeps a refusal's `error` and body for the
+    screens.
 - **The Mini App names people by person id** (#156): every person in its JSON
   (feed items, ranking rows, `/online` rows, a person's page, `/me`) carries
   `person_id`, and the app keys faces, profiles, lists and "is this me" by it — a
@@ -1750,8 +1753,8 @@ elsewhere in this file still describe the bot.
     post itself** (owner, 2026-10-08): the notice keeps its `appid` and `gid`,
     the list hands them on as `news`, a push's link carries `n=appid:gid`, and
     `GET /api/mini/club/news/post?appid=&gid=[&title_id=]` gives the post (and
-    the game's name and picture for its head); the post's page opens on its own
-    (`NewsPostLoader`), its game a tap on its head — never the game page under
+    the game's name and picture); the post opens on its own, its game a tap
+    away — never the game page under
     it, which a phone's back would close first. A notice from before keeps
     opening the game.
   - **Web Push without a new dependency**: `services/webpush.py` seals a message
@@ -1768,30 +1771,14 @@ elsewhere in this file still describe the bot.
   - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
     `POST|DELETE /api/mini/push/subscription`; the switches through
     `PATCH /api/mini/settings`; `/me` carries `notifications_unread`.
-  - **In the Mini App**: a bell on Home with the unread count opens the list. A
-    notice is read once tapped (`POST …/read` with `ids`), or all at once by
-    «Прочитать все» (no `ids`). A tap opens what it is about: a new post's game
-    on the author's progress (`game` in the list, `g=` beside `p=` in a push's
-    URL — `Kind.game`), else the person. A row is drawn as an activity feed's (owner, 2026-10-06;
-    `listed()` gives `bold`, `lead`, `detail`, `image`): grouped by day; a face —
-    the person's, or the game's cover for its news — with a coloured mark of
-    what it is about (cup, people, a handshake for a friend, news); one line, «**Anastasiafil** получает
-    «…» и ещё 2» or «**Gears of War: E-Day** — новый патч»; under it the game or the post; how long ago at the right. Unread rows are in full light with a small
-    accent dot left of the face; read ones step back. The list scrolls inside the
-    sheet. A friend's face carries no mark of its own (owner, 2026-10-08:
-    marks on every face cluttered the lists); friends only come first in the
-    strips and lists, and the handshake marks a «new friend» notice.
-    Settings → «Уведомления» (owner, 2026-10-06): two blocks with the same rows,
-    «Пуши» (this device's switch: subscribed or not) and «Telegram» (its switch;
-    the block is there only with Telegram linked); under a switch that is on —
-    «Новые посты» (off / friends / everyone followed), new followers, new
-    friends, «Новости игр» (off / all / patches / news / favorites only), and for push the Xbox
-    sign-in (its Telegram message is `poller/reminders.py`'s, with the button).
-    Stored as tokens, `new_post:friends`, `game_news:patch`, `game_news:favorites`
-    (`notifier.carries`); 081's `notify_posts` is no longer read. A hint under a setting
-    is its row's second line, never a note under the group, unless it is about a
-    choice among the group's rows. `components/me/notifications/push.ts` says why a
-    device cannot get pushes, each worded: inside Telegram (the bot's DMs are the
+  - **Reading them**: a notice is read once tapped (`POST …/read` with `ids`), or
+    all at once (no `ids`). A tap opens what it is about: a new post's game on the
+    author's progress (`game` in the list, `g=` beside `p=` in a push's URL —
+    `Kind.game`), else the person. `listed()` words each notice as `bold`,
+    `lead`, `detail` and `image`. The channels' choices are stored as tokens,
+    `new_post:friends`, `game_news:patch`, `game_news:favorites`
+    (`notifier.carries`); 081's `notify_posts` is no longer read. `core/push.ts`
+    says why a device cannot get pushes: inside Telegram (the bot's DMs are the
     notices there), an iPhone page not on the Home Screen (Safari pushes only
     then), a browser without push, push not set up on the server, or blocked in
     the browser.
@@ -1800,26 +1787,14 @@ elsewhere in this file still describe the bot.
     offline cache**, so a deploy is never hidden behind an old copy. It is
     registered only outside Telegram. Paths are relative or `BASE_URL`, since
     production serves the app under `/app/`. A browser that can install it gets
-    a banner above the dock (`shared/lib/install-prompt`): Chromium's own install
-    dialog behind «Установить» (`beforeinstallprompt`, caught at start-up in
-    `main.tsx`), on an iPhone the Share → Add to Home Screen steps. Never inside
-    Telegram or once installed; closed, it rests 14 days (`localStorage`).
-- **Settings, top to bottom** (owner, 2026-10-05): the home is rows that open
-  screens and nothing else — a switch or a picker lives one screen in. Each row
-  starts with its glyph (`RowGlyph`, bare, no tile; the profile row with the
-  face) and says in its second line what is inside. The profile card opens
-  «Профиль» — «Как видят другие», «Вход», «Приватность», the game accounts, then
-  «Выйти» / «Удалить аккаунт»; then «Посты в чатах» (what of yours goes to the
-  chats — named so, not «Публикация», to tell it from what is sent to you),
-  «Уведомления», «Общие» (language, timezone, secret achievements); the admin's
-  screens, the API load on «Ключи» beside the keys; «Пригласить друга» last. Inside a screen, a row
-  shows its current choice on the right where there is one. Back from a
-  profile screen is the profile; back from connecting an account opens it too
-  (its notes are there). The follows page also lists the people one blocked.
+    offered it (`core/install.ts`: Chromium's own install dialog,
+    `beforeinstallprompt`, caught at start-up in `main.tsx`; on an iPhone the
+    Share → Add to Home Screen steps) — never inside Telegram or once installed;
+    dismissed, it rests 14 days.
 - **The phone's "back" steps back inside the app** (owner, 2026-10-05;
-  `shared/lib/back-stack`): Android's back in the installed app, and Telegram's
+  `core/back-stack.ts`): Android's back in the installed app, and Telegram's
   header button (`BackButton`) inside Telegram, close the topmost open layer —
-  a screen with a back arrow (`BackHead`), a sheet, the game page, a person's
+  a screen with a back arrow, a sheet, the game page, a person's
   page, then any tab back to Home — and only then leave. Each layer calls
   `useBackHandler`; a new layer that reuses a component (one arrow, another
   title) passes `layer` so it counts as new. The history holds **one entry per open
@@ -1828,114 +1803,29 @@ elsewhere in this file still describe the bot.
   the second back. Changes are reconciled once a moment's layers settle (a
   layer closing as another opens is no step at all), and nothing is pushed
   while a step back of our own is on its way. A new screen with its own way out registers too.
-- **A reload comes back where it was** (owner, 2026-10-06; `App.tsx::PLACE_KEY`):
+- **A reload comes back where it was** (owner, 2026-10-06; `core/launch.ts::PLACE_KEY`):
   the screen, the person and the game open are kept in `sessionStorage` for the
   tab's session, and a reload with no link of its own (`c`, `p`, `u`, `t`, `g`,
   a start parameter) opens them again instead of Home. A link always wins;
   connecting an account starts over at Home.
-- **Settings and admin screens share one vocabulary** (owner, 2026-10-02):
-  `webapp/src/components/shared/lib/form-rows` — `Group` (title, rows, hint), `NavRow`,
-  `InfoRow`, `ToggleRow`, `ChoiceRow` (2–3 short options), `SelectRow` (many),
-  `NumberRow`, `CheckRow`, `RowLink`, and `SettingsSkel` while loading. A screen
-  composes these and never styles a row of its own; destructive actions are red rows in
-  a last group of their own. The Mini App's admin draws its settings from the
-  server (`/api/mini/admin/settings`, `/api/mini/admin/chats/{id}/settings`;
-  `components/admin/admin-settings-form`): a number with its bounds, a switch,
-  a pick from a list — never a list of settings of its own.
-- **Actions look one way each** (owner, 2026-10-02; `components/shared/styles/base.css`):
-  `.btn` is a pill without an outline — the action ("Подписаться", "Подключить");
-  `.btn.is-quiet` is the paler pill of a state that opens choices ("Друзья ⌄");
-  `.btn.is-wide` is a form's own action, the whole width under its field;
-  `.see-all` is blue text with → for going somewhere ("Все →", "Искать →");
-  `DropdownArrow` ⌄ marks anything picked from a list (dropdowns, the month), and the
-  row `Chevron` → a row that opens a screen. The follow control is one component,
-  `FollowButton`: follow at once, and behind "Друзья ⌄" unfollow and block.
-- **One text field** (owner, 2026-10-05; `base.css`): every place one types —
-  sign-in and email, the nickname (`.is-big`), a sign-in code (`.is-code`), a
-  Steam/PSN link, an admin key — is `<label className="field"><input/></label>`,
-  with `.field-note` under it (`.is-error` for what went wrong, and the field
-  takes `.is-error` too) and a `.btn.is-wide`, stacked by `.form-stack`. Focus
-  is the same everywhere: a brighter surface and an accent edge and ring — the
-  search bar shares it in its pill shape, and a settings row's number
-  (`.fr-number`) in miniature. A new form never styles an input of its own.
 - **The game page** (#147, stage 5; owner, 2026-10-25/26;
-  `components/game/game-page/GamePage`, `GET /api/mini/game?game_id=` or
-  `?platform=&title_id=`, `web/mini_game.py`, `services/game_page.py`): **a tap
-  on a game anywhere opens it** (`GameOpenProvider`). One game whole, read from
-  the catalog with no network: its wide picture at the top (Xbox's or
-  PlayStation's hero art, else a Steam screenshot), and beside the box art its
-  name, the years and studio, and on a third line the HLTB score, the
-  platforms (a tap opens that store's page) and the age rating; in the head
-  the way back and the heart («В избранное», the heart alone once the picture
-  is scrolled past). Then: the progress of the reader (or of the person it was
-  opened from) as a profile's games row draws it — a count and a bar, from
-  `title_progress` as the feed —, opening **the achievements**, and the faces
-  of the people they follow who played it; the newest news post (all of them a
-  tap away); the hours; the story and facts (release, developer, publisher,
-  genres); screenshots, DLC (by the day they came out), editions (the
-  shortest name first), each series (the newest game first) and related games (remaster, remake,
-  collection) as strips — **a strip's whole list is «Все» at its head's
-  right**, on a page of its own, by year where it has years. A game of the
-  series opens in place, the phone's back steps back through them. No «where
-  to play» block. A list in no game yet becomes a game of its own on its first
-  visit (`repo.adopt_list_as_game`); the linker places it later.
-  **The achievements** (`game/title-sheet/TitleSheet`, the page that came before)
-  are the list and its guides only — no picture, no «Об игре», no updates
-  (owner, 2026-10-26): those are the game page's. The platinum medal went
-  with that page's picture.
+  `GET /api/mini/game?game_id=` or `?platform=&title_id=`, `web/mini_game.py`,
+  `services/game_page.py`): a tap on a game anywhere opens it. One game whole,
+  read from the catalog with no network (`docs/mini-app-spec.md` lists its
+  parts). DLC by the day they came out, editions the shortest name first, a
+  series its newest game first; a game of a series opens in place and back
+  steps back through them. A list in no game yet becomes a game of its own on
+  its first visit (`repo.adopt_list_as_game`); the linker places it later.
+  **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
+  the list and its guides only (owner, 2026-10-26).
 - **Favorite games** (owner, 2026-10-25; `PUT|DELETE /api/mini/game/{id}/favorite`,
-  `GET /api/mini/game-favorites?person=`): a heart on a game's page puts it
-  on the person's profile, a strip under whom they follow as compact as the
-  friends' faces (`club/favorite-games/FavoriteGames`; one's own says how to
-  fill it, somebody else's empty one is not shown, and only a viewer
-  `can_view_activity` lets in sees it). A favorite's news are read every
-  hour (`poller/patch_refresh.py`), and told to whoever keeps it, played or
-  not — «Новости игр: только избранные» carries only those.
-- **The ranking** (owner, 2026-10-07): one table, no frames, a column each — the last day, the month shown
-  and its year (`/club/summary`'s `year`, from 1 January to the month's end, in
-  the same timezone), and the leaders by day / month / year from a dropdown.
-  «Охотятся вместе» lists each achievement once, with the faces of everybody
-  who earned it (as the game page's compare), the most shared first; its page is
-  titled «Охотятся вместе», the game under the head.
-- **No global month** (owner, 2026-10-09): no month chip in a page's head.
-  Home and a profile open on the month now, their gallery stays on it, and
-  the «Игры» block picks its own month at its right
-  (`person/games-section/GamesSection`, a past month read with
-  `/club/people?month=`; the sort toggle left of it). The Feed
-  changes month in its day calendar — its arrows walk every month with posts
-  and load the one stepped to, the calendar staying open as its days fill in.
-  News is the month now; only the Ranking keeps a month in its head. Somebody
-  else's profile has the follow control (`FollowButton`: follow, or «Подписан
-  ⌄» with unfollow and block) at its head's right.
-- **One page for content** (owner, 2026-10-12;
-  `shared/lib/content-page/ContentPage`): an achievement, a patch and a news
-  post open on the same page, in the same
-  order — the picture edge to edge, the game's line (opens it), the day (a
-  post's, or the one an achievement was earned), the title and the line under
-  it, the sections or the whole text, the link
-  to where else it is read. The bar has the way back, the page's kind and, at
-  its right, an achievement's rarity and points or trophy — never as tiles
-  in the body (owner, 2026-10-12). The follows page picks its list in its
-  first row; a person's page and card keep the follow control at their head's
-  right, the achievements page its score and video guide, the notices «Прочитать все».
-- **No drawers: pages** (owner, 2026-10-07; `shared/lib/sheet/Sheet`): what rose
-  from the bottom as a drawer — notifications, a person's card, follows, the
-  month's games, a ranking's lists, an achievement, the merge — is
-  a page over everything, sliding in from the side, with its own scroll and a
-  head with the way back (the arrow, the phone's back); `title` (or `head`) and
-  `aside` name it in the head. A person's page has the person in its head — face,
-  nickname, where they are — and the follow control at its right; a lone
-  game account is open, several start closed. The follows page picks its list in its first row (following / friends /
-  followers / blocked, each with its count) and searches the list shown by
-  nickname under it. A pick from a short list is the `Dropdown`, never a page: the
-  games block's month, the ranking's month and day / month. The day to jump to in a feed is the month's
-  calendar unfolding under the day's label, the screen's width
-  (`person/day-jump/DayCalendar`: days with posts enabled, with their counts).
-  The feed's posts are built as the reader nears the end (`FeedPosts`, eight
-  at a time, 2000px ahead), never a whole month at once — a phone's browser
-  dropped the page; a jump to a day builds up to it first.
-- **Design**: every new screen follows the Mini App as it is — its tokens, glass
-  surfaces and spacing, no extra outlines.
+  `GET /api/mini/game-favorites?person=`): a heart on a game's page puts it on
+  the person's profile, seen only by a viewer `can_view_activity` lets in. A
+  favorite's news are read every hour (`poller/patch_refresh.py`), and told to
+  whoever keeps it, played or not — «Новости игр: только избранные» carries
+  only those.
+- **The ranking's year** is `/club/summary`'s `year`, from 1 January to the end
+  of the month shown, in the same timezone (owner, 2026-10-07).
 
 ### Naming people and accounts (#51)
 
@@ -2092,7 +1982,7 @@ keyboard.
     `Confirm` (the words, the "yes", the next step) until the last step, then
     `Done`. The bot draws a confirmation as a screen («Да / Отмена»,
     `a:x:<scope>:<target>:<action>:<step>`), the Mini App as a dialog
-    (`GET|POST /api/mini/admin/actions`, `components/admin/admin-actions`); the
+    (`GET|POST /api/mini/admin/actions`); the
     steps and the words are the server's. Today: exclude / restore, refresh and
     reset an account (reset asks once, naming it), take a chosen picture down,
     delete a person (asks twice); globally, the notification test (in
@@ -2117,7 +2007,7 @@ keyboard.
   not know yet (a list of games, free text, a date, …) is not drawn ad hoc
   either: the kind is added **once, for both** — a `Kind` with its parsing in
   `admin_registry.py`, its drawing in `views/admin_settings.py` and in
-  `components/admin/admin-settings-form` — and from then on every setting of
+  the Mini App's admin — and from then on every setting of
   that kind appears in both panels by itself.
 - **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
   set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
@@ -2522,7 +2412,7 @@ sent to a chat.
 - **Links, videos, pictures** stay in the text: a link as `[label](url)`, a video (a
   guide's embedded player, a post's `[previewyoutube]`) and a picture (a guide's
   screenshot, a post's `[img]`) as their address alone on a line — the Mini App draws a link, a video card and a
-  picture (`webapp/src/components/game/rich-text/RichText.tsx`).
+  picture.
 - **Steam's community site refuses bursts** (429): guide pages are read one at a
   time, 2.5 s apart, for the whole bot; a refusal pauses every read for 90 s. Pages
   are kept under `data/steam_guides/` for a week, so a re-read costs no request; the
@@ -2540,43 +2430,24 @@ sent to a chat.
   2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)
   shows both, untranslated, for the games the viewer and the people they follow
   earned something in within 60 days before the month's end, newest first, one
-  card per post however many of our games are that Steam app, laid out as the
-  achievements' posts are (days; the game's face and name where a post has its
-  author; the picture edge to edge, all of it seen; the text on frosted glass).
-  A post opens whole on a page of its own over everything, the game page too
-  (`components/game/news-page/NewsPage`: its own scroll and back; the picture,
-  the game, the day, the title, the full text with its pictures, videos and
-  links, then «Открыть в Steam»); a post on the game page opens on the
-  same page. Its game opens the game.
-- **An achievement has a page of its own** (owner, 2026-10-05;
-  `components/game/achievement-page/AchievementPage`, on the same layout as a
-  post's page, `components/game/post-page/PostPage.css`): a row on the game page
-  opens it (a secret one is revealed first), and so does a tap on a post in
-  the Feed, a card in Home's gallery or a row of the Ranking's lists («Охотятся
-  вместе», rare finds) (owner, 2026-10-09;
-  `AchievementLoader`, opened through `useOpenAchievement` like a game) — over
-  everything, on its own; the post's or card's game line is what opens the game. The game in the head, its rarity and
-  points (or trophy) at the head's right, as the game page shows its score; the
-  picture whole; when it was earned; its name and description; then «Как
-  получить», the Steam guides' tip whole, when there is one — a row with a tip
-  carries the book mark. A post's page keeps the head for the game alone: its kind
-  («Патч», «Новость») sits at the right of the date line, as in the list of
-  updates (owner, 2026-10-06).
-- **A picture opens in the app, full screen** (owner, 2026-10-05;
-  `shared/lib/image-viewer`: `openImage(src)`, one `ImageViewerHost` in the app
-  shell): the pictures in a guide's tip, a post or a patch, the picture at the top
+  card per post however many of our games are that Steam app. A post opens
+  whole, its game a tap away.
+- **An achievement has a page of its own** (owner, 2026-10-05): opened from its
+  row in a list (a secret one revealed first), a post in the Feed, Home's
+  gallery and the Ranking's lists (owner, 2026-10-09;
+  `core/game-open.tsx::useOpenAchievement`, as a game is opened) — its game
+  (which opens the game), rarity and points or trophy, the picture whole, when
+  it was earned, its name and description, then «Как получить»: the videos and
+  the Steam guides' tip whole, when there is one.
+- **A picture opens in the app, full screen** (owner, 2026-10-05): the pictures in
+  a guide's tip, a post or a patch, the picture at the top
   of a post's or an achievement's page, and a face that zooms. Never on Steam. As
   large as the screen allows, all of it; two fingers zoom and move it, a double
   tap zooms in or back; a tap at its own size or the phone's back closes it —
   nothing is drawn over the picture. Opened with a list (`openImage(src, list)`: a
   game page's screenshots), a finger slides to the next one at its own size
   (owner, 2026-10-26). The feeds keep their taps (an achievement's post opens the achievement, a news post its page).
-- **A post's frame is 4:5, filled top to bottom** (owner, 2026-10-10; both
-  feeds): `FitImg` `cover` — a landscape picture loses its sides rather than
-  sitting as a strip over empty dark; a small icon is the exception, set in
-  the middle on its own ground (Publication rules). The text stays on frosted
-  glass over the picture's foot. A post of several achievements shares one frame.
-  Console exclusives have no Steam app and so no news. Re-read by
+- **Re-reading**: console exclusives have no Steam app and so no news. Posts are re-read by
   `poller/patch_refresh.py` for games somebody earned something in over the
   last 30 days, every `patch_refresh_hours` (6, /admin), and the apps of
   somebody's favorite games every hour, first — three apps a tick.

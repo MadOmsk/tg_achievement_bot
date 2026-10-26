@@ -1,7 +1,7 @@
 import { ru, type TranslationKey } from "./locales/ru";
 import { en } from "./locales/en";
-import type { TimezoneOption } from "../components/shared/constants/timezones";
-import { RARITY_MODES } from "../components/shared/constants/rarity";
+import type { TimezoneOption } from "../core/constants/timezones";
+import { RARITY_MODES } from "../core/constants/rarity";
 
 export type Locale = "ru" | "en";
 
