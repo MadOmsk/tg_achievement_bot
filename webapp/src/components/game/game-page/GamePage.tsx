@@ -115,14 +115,22 @@ function platformChips(platforms: GamePlatform[]): { label: string; url: string 
   return chips;
 }
 
-/** Items by the year they came out, the years in order, none last. */
-function byYear<T>(items: T[], yearOf: (item: T) => string | null | undefined): [string, T[]][] {
+/** Items by the year they came out, the years in order (`newest` first when
+ * asked), none last. */
+function byYear<T>(
+  items: T[],
+  yearOf: (item: T) => string | null | undefined,
+  newest = false,
+): [string, T[]][] {
   const groups = new Map<string, T[]>();
   for (const item of items) {
     const year = yearOf(item)?.slice(0, 4) || "";
     groups.set(year, [...(groups.get(year) ?? []), item]);
   }
-  return [...groups.entries()].sort(([a], [b]) => (a || "9999").localeCompare(b || "9999"));
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (!a || !b) return a ? -1 : b ? 1 : 0;
+    return newest ? b.localeCompare(a) : a.localeCompare(b);
+  });
 }
 
 type ListOpen = "screens" | "news" | "dlc" | "editions" | { series: number } | null;
@@ -531,7 +539,7 @@ export function GamePage({
       )}
       {page && seriesOpen && (
         <Sheet title={seriesOpen.name} onClose={() => setListOpen(null)}>
-          {byYear(seriesOpen.games, (card) => (card.year ? String(card.year) : null)).map(
+          {byYear(seriesOpen.games, (card) => (card.year ? String(card.year) : null), true).map(
             ([year, cards]) => (
               <YearGroup key={year} year={year}>
                 {cards.map((card) => (

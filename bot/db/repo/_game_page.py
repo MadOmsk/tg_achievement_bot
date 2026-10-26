@@ -130,7 +130,7 @@ class _GamePageRepo:
         return [dict(row) for row in await cursor.fetchall()]
 
     async def game_page_series(self, game_id: int) -> list[dict[str, Any]]:
-        """The series the game is in, each with its games' ids by year."""
+        """The series the game is in, each with its games' ids, the newest first."""
         cursor = await self._conn.execute(
             "SELECT s.series_id, s.name, s.name_ru FROM game_series gs"
             " JOIN series s ON s.series_id = gs.series_id"
@@ -144,7 +144,8 @@ class _GamePageRepo:
                 "SELECT g.game_id FROM game_series gs JOIN games g ON g.game_id = gs.game_id"
                 " WHERE gs.series_id = ? AND gs.member = 1 AND g.merged_into IS NULL"
                 "   AND g.kind <> 'extra'"
-                " ORDER BY g.year IS NULL, g.year, g.game_id",
+                # Newest first (owner, 2026-10-26); a game of no known year last.
+                " ORDER BY g.year IS NULL, g.year DESC, g.game_id DESC",
                 (one["series_id"],),
             )
             one["game_ids"] = [int(row["game_id"]) for row in await cursor.fetchall()]

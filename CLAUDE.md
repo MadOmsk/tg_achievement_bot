@@ -1873,7 +1873,7 @@ elsewhere in this file still describe the bot.
   of the people they follow who played it; the newest news post (all of them a
   tap away); the hours; the story and facts (release, developer, publisher,
   genres); screenshots, DLC (by the day they came out), editions (the
-  shortest name first), each series and related games (remaster, remake,
+  shortest name first), each series (the newest game first) and related games (remaster, remake,
   collection) as strips — **a strip's whole list is «Все» at its head's
   right**, on a page of its own, by year where it has years. A game of the
   series opens in place, the phone's back steps back through them. No «where
