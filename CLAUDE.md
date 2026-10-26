@@ -734,7 +734,11 @@ What the stores and HLTB say about a game, collected but not shown yet
     item keeps its version link; `reparse_stored` re-reads kept ones last
     (`classify_editions`, a kind set by hand kept); a save that gives no scope
     keeps it. An add-on sold only on its own is
-    not found this way. `9998-12-30` is "not on sale", no date. Trailers are
+    not found this way. `9998-12-30` is "not on sale", no date. Each price period is an
+    availability with its own end, so an answer is judged on sale **as of when
+    it was given** — a stored one re-read later keeps its time
+    (`sold(product, now)`; 2026-10-26: a re-parse read 548 games as off sale,
+    mended by `scripts/xbox_on_sale.py`). Trailers are
     `CMSVideos`' https HLS/DASH links with their poster (the old `Videos` are
     http Smooth Streaming, unplayable); links only, nothing downloaded.
     Its cross-gen set (`versions.cross_gen_set`, 098) is one game on One and

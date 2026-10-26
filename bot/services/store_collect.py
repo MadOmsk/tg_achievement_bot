@@ -762,7 +762,8 @@ class StoreCollector:
         addons_done: set[str] = set()
         for subject in await repo.payload_subjects("xbox_catalog", "xbox_title:"):
             found = xbox_catalog.without_prices(await repo.payload(subject, "xbox_catalog") or [])
-            await repo.save_payload(subject, "xbox_catalog", found)
+            answered = await repo.payload_fetched_at(subject, "xbox_catalog")
+            await repo.save_payload(subject, "xbox_catalog", found, fetched_at=answered)
             await self._remember_x360(found)
             title_id = subject.split(":", 1)[1]
             owners = {str(p.get("ProductId")) for p in found if p.get("ProductId")}
@@ -772,7 +773,7 @@ class StoreCollector:
                     "Application",
                 ) or xbox_catalog.bundle_items(product):
                     continue
-                versions = xbox_catalog.parse_product(product)
+                versions = xbox_catalog.parse_product(product, answered)
                 ids = await self._save_xbox_versions(
                     versions,
                     "xbox_modern",
@@ -834,10 +835,11 @@ class StoreCollector:
         kept = await self._repo.payload(subject, "xbox_catalog")
         if not isinstance(kept, dict):
             return
+        answered = await self._repo.payload_fetched_at(subject, "xbox_catalog")
         editions = xbox_catalog.without_prices(kept.get("editions") or [])
         found = xbox_catalog.without_prices(kept.get("addons") or [])
         await self._repo.save_payload(
-            subject, "xbox_catalog", {"editions": editions, "addons": found}
+            subject, "xbox_catalog", {"editions": editions, "addons": found}, fetched_at=answered
         )
         await self._remember_x360(editions + found)
         mine = (owners or set()) | {product_id}
@@ -849,7 +851,7 @@ class StoreCollector:
         for version_id in version_ids:
             await self._repo.delete_dlcs(version_id, foreign)
         for product in found:
-            addon = xbox_catalog.parse_addon(product)
+            addon = xbox_catalog.parse_addon(product, answered)
             if addon is None or not xbox_catalog.belongs_to(product, mine):
                 continue
             for version_id in version_ids:
@@ -858,7 +860,11 @@ class StoreCollector:
             if xbox_catalog.bundle_items(edition):
                 name = xbox_catalog.title_of(edition)
                 await self._repo.save_edition(
-                    "xbox", str(edition.get("ProductId")), name, None, xbox_catalog.sold(edition)
+                    "xbox",
+                    str(edition.get("ProductId")),
+                    name,
+                    None,
+                    xbox_catalog.sold(edition, answered),
                 )
 
     # ------------------------------------------------------------ Xbox 360 (owner, 2026-10-12)
@@ -1219,6 +1225,7 @@ async def link_x360_product(repo: Repo, title_id: str) -> int | None:
     labels kept (`save_version`). None when there is none, or nobody here has
     the list. No request."""
     products = await repo.payload(f"x360:{title_id}", "xbox_catalog") or []
+    answered = await repo.payload_fetched_at(f"x360:{title_id}", "xbox_catalog")
     selling = [
         p
         for p in products
@@ -1227,9 +1234,11 @@ async def link_x360_product(repo: Repo, title_id: str) -> int | None:
     if not selling or await repo.title_record("xbox_360", title_id) is None:
         return None
     # Two selling products would be a mystery: the one sold now, else the first.
-    product = sorted(selling, key=lambda p: (not xbox_catalog.sold(p), str(p.get("ProductId"))))[0]
+    product = sorted(
+        selling, key=lambda p: (not xbox_catalog.sold(p, answered), str(p.get("ProductId")))
+    )[0]
     return await repo.save_version(
-        xbox_catalog.parse_x360(product), platform="xbox_360", title_id=title_id
+        xbox_catalog.parse_x360(product, answered), platform="xbox_360", title_id=title_id
     )
 
 

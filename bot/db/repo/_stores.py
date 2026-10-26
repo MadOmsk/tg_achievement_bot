@@ -115,9 +115,13 @@ class _StoresRepo:
 
     # ------------------------------------------------------------ payloads
 
-    async def save_payload(self, subject: str, source: str, payload: Any) -> bool:
+    async def save_payload(
+        self, subject: str, source: str, payload: Any, *, fetched_at: str | None = None
+    ) -> bool:
         """Keep a source's answer (compressed, the latest only). True when it
-        differs from the one kept — the signal that the game changed."""
+        differs from the one kept — the signal that the game changed.
+        `fetched_at`: when it was given, for an answer rewritten later (a
+        re-parse keeps its time; otherwise it is now)."""
         text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
         cursor = await self._conn.execute(
@@ -132,7 +136,13 @@ class _StoresRepo:
             " VALUES (?, ?, ?, ?, ?) ON CONFLICT(subject, source) DO UPDATE SET"
             "  fetched_at = excluded.fetched_at, sha256 = excluded.sha256,"
             "  payload = excluded.payload",
-            (subject, source, utcnow_iso(), digest, zlib.compress(text.encode("utf-8"), 9)),
+            (
+                subject,
+                source,
+                fetched_at or utcnow_iso(),
+                digest,
+                zlib.compress(text.encode("utf-8"), 9),
+            ),
         )
         await self._conn.commit()
         return row is not None
@@ -153,6 +163,15 @@ class _StoresRepo:
         )
         row = await cursor.fetchone()
         return json.loads(zlib.decompress(row["payload"]).decode("utf-8")) if row else None
+
+    async def payload_fetched_at(self, subject: str, source: str) -> str | None:
+        """When the kept answer was given."""
+        cursor = await self._conn.execute(
+            "SELECT fetched_at FROM source_payloads WHERE subject = ? AND source = ?",
+            (subject, source),
+        )
+        row = await cursor.fetchone()
+        return str(row[0]) if row else None
 
     # ------------------------------------------------------------ versions
 
