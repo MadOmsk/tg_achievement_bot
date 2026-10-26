@@ -89,3 +89,35 @@ def test_a_sign_of_difference_never_speaks_for_one_game() -> None:
     fitted = fit(examples, WEIGHTS)
     assert fitted["same"]["genres_differ"] <= 0.0
     assert fitted["same"]["year_unknown"] <= WEIGHTS["same"]["year_unknown"]
+
+
+def test_the_frozen_set_is_the_yardstick_with_recall_per_class() -> None:
+    """The same pairs judge fit after fit, whoever labelled them; recall is
+    reported per class (#218 step 0)."""
+    from bot.services.match_fit import gate, held_out, macro
+
+    examples = [
+        Example(e.features, e.label, e.weight, "claude+gemini", (("game", i),), (i, i + 100))
+        for i, e in enumerate(_examples())
+    ]
+    rows = held_out(examples, WEIGHTS, strength=0.01, rate=0.2, epochs=300)
+    assert gate(rows).fitted.n == 0  # advisers' labels: not the operator's
+    frozen = {(i, i + 100) for i in range(0, 24, 2)}
+    verdict = gate(rows, frozen)
+    assert verdict.yardstick == "frozen" and verdict.fitted.n == 12
+    assert set(verdict.recall_fitted) == {"same", "other"}
+    assert 0.0 <= macro(verdict.recall_fitted) <= 1.0
+
+
+def test_a_fit_that_loses_a_class_is_refused() -> None:
+    from bot.services.match_fit import Gate, Score
+
+    better = Score(0.9, 0.2, 40)
+    verdict = Gate(
+        Score(0.8, 0.5, 40),
+        better,
+        {},
+        recall_start={"same": (0.9, 30), "remaster_of": (0.5, 10)},
+        recall_fitted={"same": (1.0, 30), "remaster_of": (0.3, 10)},
+    )
+    assert verdict.lost == ["remaster_of"] and not verdict.passed

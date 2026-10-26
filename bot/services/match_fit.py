@@ -117,6 +117,8 @@ class Example:
     # What it is about — the games of its two versions: labels sharing one
     # are held out together.
     groups: tuple[object, ...] = field(default_factory=tuple)
+    # The labelled pair `(version_id, other_id)`, for the frozen set.
+    pair: tuple[int, int] | None = None
 
     @property
     def operator(self) -> bool:
@@ -318,33 +320,82 @@ def _score(rows: list[tuple[Example, dict[str, float]]]) -> Score:
     return Score(right / len(rows), loss / len(rows), len(rows))
 
 
+# A class's recall may not fall by more than this on the yardstick, once it
+# has `RECALL_MIN_N` labels there (fewer: noise, reported only).
+RECALL_SLACK = 0.02
+RECALL_MIN_N = 10
+
+
+def recall(rows: list[tuple[Example, dict[str, float]]]) -> dict[str, tuple[float, int]]:
+    """Each label's class: the share answered right, and how many."""
+    seen: Counter[str] = Counter()
+    right: Counter[str] = Counter()
+    for e, p in rows:
+        seen[e.label] += 1
+        right[e.label] += max(p, key=p.__getitem__) == e.label
+    return {c: (right[c] / seen[c], seen[c]) for c in sorted(seen)}
+
+
+def macro(by_class: dict[str, tuple[float, int]]) -> float:
+    """The classes' recall averaged, each class counting once."""
+    return sum(r for r, _n in by_class.values()) / len(by_class) if by_class else 0.0
+
+
 @dataclass(slots=True)
 class Gate:
-    start: Score  # the operator's held-out labels, the start's answers
+    start: Score  # the yardstick's held-out labels, the start's answers
     fitted: Score  # … the fitted weights'
     by_source: dict[str, tuple[Score, Score]]
+    # On the yardstick: each class's recall, before and after.
+    recall_start: dict[str, tuple[float, int]] = field(default_factory=dict)
+    recall_fitted: dict[str, tuple[float, int]] = field(default_factory=dict)
+    # The operator's own (viewer) labels on the yardstick, before and after.
+    viewer: tuple[Score, Score] | None = None
+    # Which labels it is judged on: the frozen set, or the operator's labels.
+    yardstick: str = "operator"
+
+    @property
+    def lost(self) -> list[str]:
+        """Classes whose recall fell by more than the slack."""
+        return [
+            c
+            for c, (was, n) in self.recall_start.items()
+            if n >= RECALL_MIN_N and self.recall_fitted.get(c, (0.0, 0))[0] < was - RECALL_SLACK
+        ]
 
     @property
     def passed(self) -> bool:
-        """The fit answers the operator better: a lower log-loss, and no
-        fewer right."""
+        """The fit answers the yardstick better: a lower log-loss, no fewer
+        right, and no class's recall lost."""
         return (
             self.fitted.n > 0
             and self.fitted.log_loss < self.start.log_loss
             and self.fitted.accuracy >= self.start.accuracy
+            and not self.lost
         )
 
 
-def gate(rows: list[HeldOut]) -> Gate:
-    """Whether fitted weights may replace the start: judged on the
-    operator's labels only; every source's scores beside, for reading."""
+def gate(rows: list[HeldOut], frozen: set[tuple[int, int]] | None = None) -> Gate:
+    """Whether fitted weights may replace the start, judged on a yardstick:
+    the frozen set of pairs when one is given (the same pairs fit after fit,
+    their labels as they stand now), else the operator's labels; every
+    source's scores beside, for reading."""
     by: dict[str, list[HeldOut]] = {}
     for r in rows:
         by.setdefault(r.example.source or "?", []).append(r)
-    operator = [r for r in rows if r.example.operator]
+    if frozen is not None:
+        judged = [
+            r
+            for r in rows
+            if r.example.pair is not None
+            and (r.example.pair in frozen or r.example.pair[::-1] in frozen)
+        ]
+    else:
+        judged = [r for r in rows if r.example.operator]
+    viewer = [r for r in judged if r.example.source == "viewer"]
     return Gate(
-        _score([(r.example, r.start) for r in operator]),
-        _score([(r.example, r.fitted) for r in operator]),
+        _score([(r.example, r.start) for r in judged]),
+        _score([(r.example, r.fitted) for r in judged]),
         {
             src: (
                 _score([(r.example, r.start) for r in rs]),
@@ -352,4 +403,11 @@ def gate(rows: list[HeldOut]) -> Gate:
             )
             for src, rs in sorted(by.items())
         },
+        recall([(r.example, r.start) for r in judged]),
+        recall([(r.example, r.fitted) for r in judged]),
+        (
+            _score([(r.example, r.start) for r in viewer]),
+            _score([(r.example, r.fitted) for r in viewer]),
+        ),
+        "frozen" if frozen is not None else "operator",
     )

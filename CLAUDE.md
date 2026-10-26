@@ -1032,7 +1032,13 @@ What the stores and HLTB say about a game, collected but not shown yet
     harder. A label weighs by who gave it (`label_weight`). **A fit is judged
     held out by game** (labels joined by a game sit in one fold — a random
     split flattered it by ~4 points) **and on the operator's labels alone**
-    (`gate`; the advisers' scores are printed beside, never decide). The
+    (`gate`; the advisers' scores are printed beside, never decide) — or,
+    once frozen, **on a fixed set of pairs** (`--freeze-eval`,
+    `data/advice/eval_set.json`; #218: the operator's set grew harder with
+    every batch, so fits could not be compared), their labels as they stand.
+    It prints each class's recall, their average and the viewer's labels
+    alone, and **refuses a fit that loses a class** (recall down more than
+    2 points on 10+ labels). The
     script also scores every pair the linker compares with both weights and
     counts what would move. **A fit lives in the database** (`match_weights`,
     migration 129): `--save` keeps it and makes it the active set only when
