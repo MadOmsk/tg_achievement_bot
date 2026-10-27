@@ -539,7 +539,7 @@ every column. History: #106.
   list on one platform and keeps that list's own facts — the platform's name
   for it, its size, platforms, when it was checked. A game's name, cover and
   description are `games` and `versions`; a screen never presents a row of it
-  as a game. A stand-in version's name follows its list's (a trigger).
+  as a game. A stand-in version's name follows its list's (a trigger); a list's own id is never a name (migration 130: an adviser cannot look a number up), the English name stands in, and `scripts/restore_list_names.py` takes names another copy learned.
   The code says `titles` in places (variables, `title_id`, `titles_on`): the
   name of the thing before it was renamed, not another table.
 - One row per list (one achievement list on one platform),
