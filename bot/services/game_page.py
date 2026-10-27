@@ -18,6 +18,7 @@ from bot.util import looks_russian
 # fallback ("covered") and says nothing a known store does not.
 _SHOWN_ROLES = ("version", "enhanced")
 SCREENSHOTS_SHOWN = 12
+VIDEOS_SHOWN = 6
 NEWS_SHOWN = 3
 # A version's description is a store's blurb; anything this short is a tagline.
 _MIN_DESCRIPTION = 60
@@ -213,6 +214,39 @@ def screenshots_of(versions: list[dict[str, Any]]) -> list[str]:
     return shots[:SCREENSHOTS_SHOWN]
 
 
+def videos_of(versions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The trailers the stores keep links to (owner, 2026-10-26: the game
+    page's gallery plays them): a file where the store has one (PSN's mp4),
+    else its HLS stream, with the picture shown before it plays; each once,
+    Xbox's first (they come with a poster), then Steam's, then PSN's."""
+    videos: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for store in ("xbox", "steam", "psn"):
+        for version in versions:
+            if version.get("store") != store:
+                continue
+            for raw in _media(version.get("media")).get("videos") or []:
+                if not isinstance(raw, dict):
+                    continue
+                url = https(raw.get("url"))
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                hls = https(raw.get("hls")) or (url if ".m3u8" in url else None)
+                mp4 = url if ".mp4" in url.split("?")[0] else None
+                if not (hls or mp4):
+                    continue
+                videos.append(
+                    {
+                        "name": raw.get("name") or None,
+                        "mp4": mp4,
+                        "hls": hls,
+                        "poster": https(raw.get("poster") or raw.get("thumbnail")),
+                    }
+                )
+    return videos[:VIDEOS_SHOWN]
+
+
 _DLC_NOISE = re.compile(r"[^\w]+", re.UNICODE)
 
 
@@ -320,10 +354,14 @@ def hltb_of(entry: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 _SEARCH_NOISE = re.compile(r"[^\w]+", re.UNICODE)
+# Dots inside a word and apostrophes are part of it: "S.T.A.L.K.E.R." is
+# found as "stalker", "Assassin's" as "assassins" (owner, 2026-10-27).
+_SEARCH_JOINED = re.compile(r"(?<=\w)[.'’](?=\w)", re.UNICODE)
 
 
 def search_key(text: str) -> str:
-    return _SEARCH_NOISE.sub(" ", text.casefold().replace("ё", "е")).strip()
+    folded = _SEARCH_JOINED.sub("", text.casefold().replace("ё", "е"))
+    return _SEARCH_NOISE.sub(" ", folded).strip()
 
 
 def rank_search(names: list[tuple[int, str]], query: str) -> list[tuple[int, int, int]]:

@@ -9,9 +9,10 @@ filters, personal stats, an admin panel, daily summaries, HowLongToBeat lookup,
 and a Telegram Mini App.
 
 **The app is called Unlocked** (owner, 2026-10-05): it is no longer only a bot.
-The name and the logo (owner, 2026-10-07: the "U" of Unlocked as an open
-shackle, in the platinum medal's colours, its tip glowing like the end of a
-progress arc, on the app's own dark ground with a cool glow above and a lilac one below;
+The name and the logo (owner, 2026-10-26, redrawn for design E: the "U" of
+Unlocked as an open shackle — its right leg shorter — in flat lilac
+(`#eaddff`), a pink four-point sparkle (`#efb8dc`) beside the right leg, on a
+flat violet ground (`#4f378b`);
 `webapp/public/logo.svg`, a rounded tile; `logo-192/512.png` are rendered from
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
@@ -74,7 +75,9 @@ Python 3.12+, aiogram 3, aiohttp (OAuth callback + Mini App API), httpx (platfor
 HTTP clients), Pillow (re-encoding uploaded avatars), aiosqlite, APScheduler (`AsyncIOScheduler`), pydantic v2 +
 pydantic-settings, cryptography Fernet, xbox-webapi-python, the official Steam Web
 API, psnawp (PSN), howlongtobeatpy, pytest + pytest-asyncio + ruff. The Mini App is
-Vite + React (`webapp/`).
+Vite + React (`webapp/`), with hls.js playing the stores' HLS trailers wherever
+the browser has Media Source (Android's WebView claims HLS and fails on their
+fMP4 streams; loaded only when a trailer opens).
 
 ## Repository layout
 
@@ -93,11 +96,13 @@ name, or when the tree goes stale.
 ├── pyproject.toml             dependencies, ruff, pytest config
 ├── manage.ps1 / manage.bat    the dev server's process manager and its double-click dashboard
 ├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot;
-│                              `src/` holds `api/`, `i18n/`, `core/` — the interface is being redesigned
+│                              `src/`: `api/`, `i18n/`, `core/` (behaviour), `styles/` + `ui/` (the
+│                              design system, the one source of look), `parts/`, `screens/`, `app/` (shell)
 ├── docs/                      guides for whoever runs a server, English and Russian
 │                              (`mail-setup.md` / `.ru.md`: the mail server for email sign-in)
 │                              (`mini-app-spec.md`: what the Mini App does, for its design;
-│                              `mini-app-design-brief.md`: the task for that design)
+│                              `mini-app-design-brief.md`: the task for that design;
+│                              `design-system.md`: the look, its tokens, components, rules)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -1579,19 +1584,44 @@ elsewhere in this file still describe the bot.
   2026-10-26; branch `feature/organic-ui`): `docs/mini-app-spec.md` says what it
   does — every screen's job, the flows, the rules, the endpoints — and nothing of
   how it looks; `docs/mini-app-design-brief.md` is the task for the new design.
-  The previous interface is in git (`f49fa3b`), for behaviour only. `webapp/src`
-  keeps `api/`, `i18n/` and `core/` (constants, deep links and the place a reload
-  returns to, the back stack, passkeys, push, the install prompt, the contexts
-  that open a game) and a bare `App.tsx`. Fixed: the name Unlocked and its logo,
-  and a glass bottom bar. Where a rule below names a screen, it says what the
-  screen must do, not how it looks.
+  The previous interface is in git (`f49fa3b`), for behaviour only. **The new
+  one is design E, "Expressive"** (owner, 2026-10-26, chosen from mockups):
+  Material 3 Expressive's language in the app's own violet — a tonal scheme from
+  the logo's lilac (a pink accent on the search button), shapes that morph
+  (faces cut as scalloped "cookies", a flower for rarity), progress as a running
+  wave, connected button groups, Roboto Flex whose width is a voice (narrow
+  numbers, wide headlines); dark first, the same scheme light. **Three
+  palettes** — Violet (the default), Mint, Amber — and a mode (auto, light,
+  dark), picked in Settings → General and kept on the device. How to make
+  anything new look like the rest is `docs/design-system.md` (its rarity tiers —
+  blue, purple, orange — are the app's Fortnite note). A game's page
+  takes a muted tonal scheme from its own art (`app/artTheme.ts`; stores whose
+  pictures refuse CORS — PSN — keep the violet). **Its one source** is
+  `webapp/src/styles/tokens.css` (colour, radii, spacing, motion; the theme set
+  on `<html data-theme>` from Telegram's scheme inside it, the system's
+  elsewhere) and the components of `src/ui/` (Face, AchPic/Cover with the
+  small-picture rule, Wave, Button, Segmented, Group/Row, Toggle, Field, Page,
+  Sheet, Confirm, BottomBar, Viewer, RichText, Toast); a screen never styles a
+  control of its own. `src/parts/` holds what several screens share (a post, an
+  achievement row, months, the month's games, the follow button), `src/screens/`
+  one folder per screen, `src/app/` the shell (the run mode — Telegram, browser
+  or installed — the layer stack, the context). Tabs: Главная · Лента ·
+  Рейтинг, search a separate button. **The feed groups an achievement got by
+  several people within ten minutes into one post «вместе»** (owner,
+  2026-10-26), and **mixes in the news of the viewer's favorite games only**,
+  laid out as a post (the game in a person's place); every post of one game is
+  on its page — there is no news tab (owner, 2026-10-26). A post, a news post
+  and an achievement open as one kind of page (`ui/Hero.tsx`: the picture under
+  the see-through bar, kind and date, the title, the game a tap away). Where a rule below names a screen, it says what the screen must
+  do, not how it looks.
   **Scope** (owner, 2026-10-02): there is no chat picker — the Feed, the Ranking, Home's
   people and `/club/online` are always about oneself plus the followed people
   whose privacy lets the viewer see them (`?scope=following`, answered by the same
   queries through `_sql.member_source`, a list of people standing in for
   `subscriptions`, chat id 0). Chats only help to find people to follow. Search
   is of our own catalog (owner, 2026-10-25: never the internet;
-  `/api/mini/game-search`, from two letters) and of people by nickname (from
+  `/api/mini/game-search`, from two letters; a dotted or apostrophed name
+  reads as one word — «stalker» finds S.T.A.L.K.E.R.) and of people by nickname (from
   three). A person's card is `/api/mini/people/{id}`; whom somebody follows and
   who follows them, `/api/mini/people/{id}/following|followers`, only to a viewer
   `can_view_activity` lets in. No chat is needed to use the app.
@@ -1774,7 +1804,9 @@ elsewhere in this file still describe the bot.
   - **Reading them**: a notice is read once tapped (`POST …/read` with `ids`), or
     all at once (no `ids`). A tap opens what it is about: a new post's game on the
     author's progress (`game` in the list, `g=` beside `p=` in a push's URL —
-    `Kind.game`), else the person. `listed()` words each notice as `bold`,
+    `Kind.game`), and the very achievement a new post names when the notice
+    carries it (`achievement_id`, `a=` in a push's URL; owner, 2026-10-26),
+    else the person. `listed()` words each notice as `bold`,
     `lead`, `detail` and `image`. The channels' choices are stored as tokens,
     `new_post:friends`, `game_news:patch`, `game_news:favorites`
     (`notifier.carries`); 081's `notify_posts` is no longer read. `core/push.ts`
@@ -1816,6 +1848,11 @@ elsewhere in this file still describe the bot.
   series its newest game first; a game of a series opens in place and back
   steps back through them. A list in no game yet becomes a game of its own on
   its first visit (`repo.adopt_list_as_game`); the linker places it later.
+  **Its gallery** (a rail on the page, all of it on a page of its own with
+  videos and pictures apart) **plays the stores' trailers** before the screenshots (owner,
+  2026-10-26; `game_page.videos_of`: PSN's mp4, else Xbox's and Steam's HLS,
+  each with its picture, six at most), in the app, full screen — links only,
+  nothing is downloaded.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
 - **Favorite games** (owner, 2026-10-25; `PUT|DELETE /api/mini/game/{id}/favorite`,
@@ -2426,12 +2463,13 @@ sent to a chat.
   picture (migration 084), its whole text (`steam_news.TEXT_CHARS` is only a
   net against a runaway post, 2026-10-12): a patch is a post tagged `patchnotes` or titled like one
   (update, patch, hotfix, a version number; not a demo or playtest), anything else
-  is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page shows the newest, all of them a tap away; **«Новости»** (owner,
-  2026-10-05; `repo.games_news`, `GET /api/mini/club/news?scope=following&month=`)
-  shows both, untranslated, for the games the viewer and the people they follow
-  earned something in within 60 days before the month's end, newest first, one
-  card per post however many of our games are that Steam app. A post opens
-  whole, its game a tap away.
+  is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page shows the newest, all of them a tap away; the feed (owner,
+  2026-10-26; `repo.favorite_games_news`, `GET /api/mini/club/news?scope=following&favorites=1&month=`)
+  mixes in both, untranslated, for the viewer's favorite games, newest first, one
+  card per post however many of our games are that Steam app. Without
+  `favorites` the route still answers the games the viewer's circle earned
+  something in within 60 days (`repo.games_news`). A post opens whole, its game
+  a tap away.
 - **An achievement has a page of its own** (owner, 2026-10-05): opened from its
   row in a list (a secret one revealed first), a post in the Feed, Home's
   gallery and the Ranking's lists (owner, 2026-10-09;

@@ -1,12 +1,16 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { applyPalette } from "./app/env";
 import { captureInstallPrompt } from "./core/install";
 
 const root = document.getElementById("root");
 if (!root) {
   throw new Error("#root missing");
 }
+
+// The palette this device picked, before the first paint, so it never flashes.
+applyPalette();
 
 window.Telegram?.WebApp?.ready();
 window.Telegram?.WebApp?.expand();

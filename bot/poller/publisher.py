@@ -428,6 +428,8 @@ class Publisher:
                     len(achievements),
                     achievement=shown.name if shown else None,
                     icon=shown.icon_url if shown else None,
+                    # A tap opens it, a secret one veiled on its page.
+                    achievement_id=(shown or first).achievement_id,
                 )
             except Exception:
                 log.exception("post notices for person_id=%s failed", person_id)

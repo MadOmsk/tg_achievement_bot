@@ -119,6 +119,11 @@ export type SummaryResponse = {
   year?: SummaryMember[];
   year_key?: number;
   games: SummaryGame[];
+  /** The month's unlocks of everybody, newest first ("hunting together" is
+   * read from them). */
+  recent?: FeedItem[];
+  /** The month's rarest finds. */
+  rares?: FeedItem[];
 };
 
 /** A post of a game's developer on Steam (owner, 2026-10-05), untranslated. */

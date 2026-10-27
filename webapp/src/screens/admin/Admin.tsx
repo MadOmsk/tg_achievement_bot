@@ -1,0 +1,495 @@
+import { useState } from "react";
+import {
+  adminApi,
+  ApiError,
+  type AdminAction,
+  type AdminCredential,
+  type AdminSetting,
+  type AdminSettings,
+} from "../../api";
+import { useApp } from "../../app/context";
+import { useLoad } from "../../app/useLoad";
+import { ADMIN_SCREENS, type AdminScreen } from "../../core/constants";
+import { formatWhen, num } from "../../i18n";
+import { Button, Empty, Field, Group, Row, Toggle } from "../../ui/Controls";
+import { Face } from "../../ui/Face";
+import { Icon } from "../../ui/Icon";
+import { Confirm, Page, Sheet } from "../../ui/Page";
+import "../settings/Settings.css";
+import "../people/People.css";
+import "./Admin.css";
+
+export function AdminPage({ screen, onClose, layer }: { screen: AdminScreen | null; onClose: () => void; layer: string }) {
+  const { tr } = useApp();
+  const title = !screen
+    ? tr("admin")
+    : screen.name === ADMIN_SCREENS.KEYS
+      ? tr("adminKeys")
+      : screen.name === ADMIN_SCREENS.SETTINGS
+        ? tr("adminSettings")
+        : screen.name === ADMIN_SCREENS.USERS || screen.name === ADMIN_SCREENS.USER
+          ? tr("adminUsers")
+          : tr("adminChats");
+  return (
+    <Page title={title} onBack={onClose} layer={layer} className="admin">
+      {!screen && <AdminHomeView />}
+      {screen?.name === ADMIN_SCREENS.KEYS && <KeysView />}
+      {screen?.name === ADMIN_SCREENS.SETTINGS && <GlobalSettingsView />}
+      {screen?.name === ADMIN_SCREENS.USERS && <UsersView />}
+      {screen?.name === ADMIN_SCREENS.USER && <UserView personId={screen.personId} onGone={onClose} />}
+      {screen?.name === ADMIN_SCREENS.CHATS && <ChatsView />}
+      {screen?.name === ADMIN_SCREENS.CHAT && <ChatView chatId={screen.chatId} onGone={onClose} />}
+    </Page>
+  );
+}
+
+function AdminHomeView() {
+  const { data, tr, open, locale } = useApp();
+  const home = useLoad("admin-home", () => adminApi.fetchHome(data));
+  const h = home.data;
+  return (
+    <>
+      {h && (
+        <div className="adm-counts">
+          {(
+            [
+              [h.users, tr("adminUsers")],
+              [h.xbox_linked, "Xbox"],
+              [h.psn_linked, "PlayStation"],
+              [h.steam_linked, "Steam"],
+              [h.chats, tr("adminChats")],
+            ] as const
+          ).map(([n, label]) => (
+            <div key={label}>
+              <b className="t-num">{num(n, locale)}</b>
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!h && home.loading && <span className="adm-skel skel" />}
+      <Group>
+        <Row lead={<Icon name="key" />} title={tr("adminKeys")} sub={tr("adminKeysSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.KEYS } })} />
+        <Row lead={<Icon name="settings" />} title={tr("adminSettings")} sub={tr("adminSettingsSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.SETTINGS } })} />
+        <Row lead={<Icon name="people" />} title={tr("adminUsers")} sub={tr("adminUsersSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.USERS } })} />
+        <Row lead={<Icon name="share" />} title={tr("adminChats")} sub={tr("adminChatsSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.CHATS } })} />
+      </Group>
+      {h && (
+        <Group title={tr("groupGeneral")}>
+          {h.credentials.map((c) => (
+            <CredentialRow key={c.name} c={c} />
+          ))}
+          <Row
+            lead={<Icon name="mail" />}
+            title={h.mail.server ?? tr("emailUnavailable")}
+            sub={`${h.mail.hour}/${h.mail.hour_limit} · ${h.mail.day}/${h.mail.day_limit}`}
+          />
+        </Group>
+      )}
+      {h && h.usage.length > 0 && (
+        <Group title={tr("groupApi")}>
+          {h.usage.map((u) => (
+            <Row key={u.label} title={u.label} sub={u.value} />
+          ))}
+        </Group>
+      )}
+    </>
+  );
+}
+
+function CredentialRow({ c, onClick }: { c: AdminCredential; onClick?: () => void }) {
+  const { tr, locale } = useApp();
+  const state = !c.configured ? tr("keyUnset") : c.status === "invalid" ? tr("keyDead") : tr("keySet");
+  return (
+    <Row
+      lead={<span className={`adm-dot${!c.configured ? "" : c.status === "invalid" ? " adm-dot-bad" : " adm-dot-ok"}`} />}
+      title={c.label}
+      sub={`${state}${c.checked_at ? ` · ${formatWhen(c.checked_at, locale)}` : ""}`}
+      chevron={Boolean(onClick)}
+      onClick={onClick}
+    />
+  );
+}
+
+function KeysView() {
+  const { data, tr, toast } = useApp();
+  const keys = useLoad("admin-keys", () => adminApi.fetchKeys(data));
+  const [edit, setEdit] = useState<AdminCredential | null>(null);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [clear, setClear] = useState<AdminCredential | null>(null);
+  return (
+    <>
+      <Group>
+        {(keys.data?.keys ?? []).map((c) => (
+          <CredentialRow
+            key={c.name}
+            c={c}
+            onClick={() => {
+              setEdit(c);
+              setValue("");
+              setError(null);
+            }}
+          />
+        ))}
+      </Group>
+      {edit && (
+        <Sheet title={edit.label} onClose={() => setEdit(null)} layer="key">
+          <form
+            className="adm-sheet"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(null);
+              try {
+                keys.set(await adminApi.putKey(data, edit.name, value.trim()));
+                setEdit(null);
+              } catch (err) {
+                setError(err instanceof ApiError && err.status === 400 ? tr("keyInvalid") : tr("keySetupError"));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <p className="t-body">{edit.hint}</p>
+            <Field
+              type="password"
+              autoComplete="off"
+              placeholder={tr("keyNew")}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              hint={tr("pasteKey")}
+              error={error}
+            />
+            <div className="set-buttons">
+              {edit.configured && (
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setClear(edit);
+                    setEdit(null);
+                  }}
+                >
+                  {tr("clearKey")}
+                </Button>
+              )}
+              <Button type="submit" busy={busy} disabled={!value.trim()}>
+                {tr("setKey")}
+              </Button>
+            </div>
+          </form>
+        </Sheet>
+      )}
+      {clear && (
+        <Confirm
+          text={`${tr("confirmClear")}\n${clear.label}`}
+          yes={tr("clearKey")}
+          no={tr("cancel")}
+          danger
+          onYes={async () => {
+            const c = clear;
+            setClear(null);
+            try {
+              keys.set(await adminApi.deleteKey(data, c.name));
+            } catch {
+              toast(tr("somethingWrong"), "error");
+            }
+          }}
+          onNo={() => setClear(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/** One setting of the server's registry, drawn by its kind. */
+function SettingRow({ s, onSave }: { s: AdminSetting; onSave: (value: AdminSetting["value"]) => Promise<void> }) {
+  const { tr } = useApp();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(String(s.value));
+  const [error, setError] = useState<string | null>(null);
+  const shown =
+    s.options.find((o) => o.value === s.value)?.label ??
+    (s.value === 0 && s.zero_means
+      ? tr(s.zero_means === "unlimited" ? "limitZeroUnlimited" : s.zero_means === "off" ? "limitZeroOff" : "limitZeroNoDelay")
+      : String(s.value));
+  if (s.kind === "bool") {
+    return <Row title={s.label} sub={s.hint} trail={<Toggle checked={Boolean(s.value)} label={s.label} onChange={(v) => void onSave(v)} />} />;
+  }
+  const options =
+    s.options.length > 0
+      ? s.options
+      : s.kind === "hour"
+        ? Array.from({ length: 24 }, (_, h) => ({ value: h, label: `${String(h).padStart(2, "0")}:00` }))
+        : null;
+  return (
+    <>
+      <Row title={s.label} sub={s.hint} trail={<span className="adm-value">{shown}</span>} chevron onClick={() => setOpen(true)} />
+      {open && (
+        <Sheet title={s.label} onClose={() => setOpen(false)} layer={`set:${s.key}`}>
+          {options ? (
+            <div className="set-list">
+              {options.map((o) => (
+                <button
+                  key={String(o.value)}
+                  type="button"
+                  className={`set-pick${o.value === s.value ? " set-pick-on" : ""}`}
+                  onClick={async () => {
+                    setOpen(false);
+                    await onSave(o.value);
+                  }}
+                >
+                  {o.label}
+                  {o.value === s.value && <Icon name="check" size={20} />}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <form
+              className="adm-sheet"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const n = Number(text.replace(",", "."));
+                if (!text.trim() || Number.isNaN(n)) return setError(tr("valueInvalid"));
+                try {
+                  await onSave(s.kind === "int" ? Math.round(n) : n);
+                  setOpen(false);
+                } catch {
+                  setError(tr("valueInvalid"));
+                }
+              }}
+            >
+              {s.hint && <p className="t-body">{s.hint}</p>}
+              <Field
+                inputMode="decimal"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                error={error}
+                hint={[
+                  s.min != null || s.max != null ? `${s.min ?? ""}…${s.max ?? ""}` : null,
+                  s.zero_means
+                    ? tr(s.zero_means === "unlimited" ? "limitZeroUnlimited" : s.zero_means === "off" ? "limitZeroOff" : "limitZeroNoDelay")
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              />
+              <Button type="submit">{tr("save")}</Button>
+            </form>
+          )}
+        </Sheet>
+      )}
+    </>
+  );
+}
+
+function SettingsGroups({ settings, save }: { settings: AdminSettings; save: (key: string, value: AdminSetting["value"]) => Promise<void> }) {
+  return (
+    <>
+      {settings.groups.map((g) => (
+        <Group key={g.id} title={g.title}>
+          {g.items.map((s) => (
+            <SettingRow key={s.key} s={s} onSave={(v) => save(s.key, v)} />
+          ))}
+        </Group>
+      ))}
+    </>
+  );
+}
+
+function GlobalSettingsView() {
+  const { data, tr, toast } = useApp();
+  const settings = useLoad("admin-settings", () => adminApi.fetchSettings(data));
+  const actions = useLoad("admin-actions-global", () => adminApi.fetchActions(data, "global", "all"));
+  if (!settings.data) return settings.loading ? <span className="adm-skel skel" /> : <Empty icon="refresh" title={tr("loadFailed")} />;
+  return (
+    <>
+      <SettingsGroups
+        settings={settings.data}
+        save={async (key, value) => {
+          try {
+            settings.set(await adminApi.patchSetting(data, key, value));
+          } catch (err) {
+            toast(tr("somethingWrong"), "error");
+            throw err;
+          }
+        }}
+      />
+      {(actions.data?.actions.length ?? 0) > 0 && <Actions actions={actions.data!.actions} onGone={() => undefined} />}
+    </>
+  );
+}
+
+function UsersView() {
+  const { data, tr, open, locale } = useApp();
+  const users = useLoad("admin-users", () => adminApi.fetchUsers(data));
+  const [q, setQ] = useState("");
+  const list = (users.data?.users ?? []).filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <>
+      <div className="fl-search">
+        <Field icon="search" placeholder={tr("searchPeople")} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      {!users.data && users.loading && <span className="adm-skel skel" />}
+      {users.data && list.length === 0 && <Empty icon="people" title={tr("noUsers")} />}
+      <Group>
+        {list.map((u) => (
+          <Row
+            key={u.person_id}
+            lead={<Face personId={u.person_id} name={u.name} size={40} dim={u.is_excluded} />}
+            title={u.name}
+            sub={[
+              [u.xbox && "Xbox", u.psn && "PS", u.steam && "Steam"].filter(Boolean).join(" · ") || tr("noPlatformsShort"),
+              `${tr("usersToday")} ${u.today} · ${tr("usersMonth")} ${u.month}`,
+              u.last_online_at ? formatWhen(u.last_online_at, locale) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            chevron
+            onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.USER, personId: u.person_id } })}
+          />
+        ))}
+      </Group>
+    </>
+  );
+}
+
+function UserView({ personId, onGone }: { personId: number; onGone: () => void }) {
+  const { data, tr } = useApp();
+  const card = useLoad(`admin-user:${personId}`, () => adminApi.fetchUser(data, personId));
+  const actions = useLoad(`admin-actions-user:${personId}`, () => adminApi.fetchActions(data, "user", `p${personId}`));
+  const c = card.data;
+  if (!c) return card.loading ? <span className="adm-skel skel" /> : <Empty icon="refresh" title={tr("loadFailed")} />;
+  const platform = (label: string, info: Record<string, unknown> | null) =>
+    info ? (
+      <Group key={label} title={label}>
+        {Object.entries(info)
+          .filter(([, v]) => v !== null && v !== "" && typeof v !== "object")
+          .map(([k, v]) => (
+            <Row key={k} title={String(v)} sub={k} />
+          ))}
+      </Group>
+    ) : null;
+  return (
+    <>
+      <div className="adm-person">
+        <Face personId={c.person_id} name={c.name} size={72} dim={c.is_excluded} />
+        <p className="t-title">{c.name}</p>
+        <p className="t-meta">id {c.person_id}</p>
+      </div>
+      <Group title={tr("adminLoginsGroup")}>
+        {c.logins.map((l) => (
+          <Row key={l.kind} title={l.label} sub={l.linked ? (l.value ?? tr("telegramLinked")) : "— " + tr("keyUnset")} />
+        ))}
+      </Group>
+      {platform("Xbox", c.xbox)}
+      {platform("PlayStation", c.psn)}
+      {platform("Steam", c.steam)}
+      <Group title={tr("publishing")}>
+        <Row title={c.rarity.title} sub={c.rarity.value} />
+        {c.chats.map((name) => (
+          <Row key={name} title={name} />
+        ))}
+      </Group>
+      {actions.data && <Actions actions={actions.data.actions} onGone={onGone} onDone={card.reload} />}
+    </>
+  );
+}
+
+function ChatsView() {
+  const { data, tr, open } = useApp();
+  const chats = useLoad("admin-chats", () => adminApi.fetchChats(data));
+  return (
+    <>
+      {!chats.data && chats.loading && <span className="adm-skel skel" />}
+      <Group>
+        {(chats.data?.chats ?? []).map((c) => (
+          <Row
+            key={c.chat_id}
+            lead={<span className={`adm-dot${c.is_active ? " adm-dot-ok" : ""}`} />}
+            title={c.title ?? String(c.chat_id)}
+            sub={`${c.is_active ? tr("chatActive") : tr("chatInactive")} · ${c.subscribers} ${tr("subscribers")}`}
+            chevron
+            onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.CHAT, chatId: c.chat_id } })}
+          />
+        ))}
+      </Group>
+    </>
+  );
+}
+
+function ChatView({ chatId, onGone }: { chatId: number; onGone: () => void }) {
+  const { data, tr, toast } = useApp();
+  const settings = useLoad(`admin-chat:${chatId}`, () => adminApi.fetchChatSettings(data, chatId));
+  const actions = useLoad(`admin-actions-chat:${chatId}`, () => adminApi.fetchActions(data, "chat", String(chatId)));
+  return (
+    <>
+      {!settings.data && settings.loading && <span className="adm-skel skel" />}
+      {settings.data && (
+        <SettingsGroups
+          settings={settings.data}
+          save={async (key, value) => {
+            try {
+              settings.set(await adminApi.patchChatSetting(data, chatId, key, value));
+            } catch (err) {
+              toast(tr("somethingWrong"), "error");
+              throw err;
+            }
+          }}
+        />
+      )}
+      {actions.data && <Actions actions={actions.data.actions} onGone={onGone} />}
+    </>
+  );
+}
+
+/** A card's actions, grouped by section; each asks as many times as the server says. */
+function Actions({ actions, onGone, onDone }: { actions: AdminAction[]; onGone: () => void; onDone?: () => void }) {
+  const { data, tr, toast } = useApp();
+  const [ask, setAsk] = useState<{ action: AdminAction; text: string; yes: string; step: number } | null>(null);
+  const run = async (action: AdminAction, step: number) => {
+    try {
+      const res = await adminApi.postAction(data, { scope: action.scope, target: action.target, action: action.id, step });
+      if (res.confirm) {
+        setAsk({ action, text: res.confirm.text, yes: res.confirm.yes, step: res.confirm.step });
+        return;
+      }
+      if (res.done?.text) toast(res.done.text, res.done.ok ? "info" : "error");
+      if (res.done?.gone) onGone();
+      else onDone?.();
+    } catch {
+      toast(tr("somethingWrong"), "error");
+    }
+  };
+  const sections = new Map<string, AdminAction[]>();
+  for (const a of actions) {
+    const key = a.section_title ?? "";
+    sections.set(key, [...(sections.get(key) ?? []), a]);
+  }
+  return (
+    <>
+      {[...sections.entries()].map(([title, list]) => (
+        <Group key={title} title={title || undefined}>
+          {list.map((a) => (
+            <Row key={`${a.scope}:${a.target}:${a.id}`} title={a.label} danger={a.danger} onClick={() => void run(a, 0)} />
+          ))}
+        </Group>
+      ))}
+      {ask && (
+        <Confirm
+          text={ask.text}
+          yes={ask.yes}
+          no={tr("cancel")}
+          danger={ask.action.danger}
+          onYes={() => {
+            const a = ask;
+            setAsk(null);
+            void run(a.action, a.step);
+          }}
+          onNo={() => setAsk(null)}
+        />
+      )}
+    </>
+  );
+}

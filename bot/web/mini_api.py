@@ -698,7 +698,8 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
 async def handle_club_news(request: web.Request) -> web.Response:
     """Game news (owner, 2026-10-05): what the developers of the games the
     viewer and the people they follow play posted on Steam that month. Only the
-    viewer's own circle — no chat has news of its own."""
+    viewer's own circle — no chat has news of its own. `?favorites=1`: only the
+    viewer's favorite games', as the feed shows them (owner, 2026-10-26)."""
     scoped = await _following_scope(request)
     if scoped is None:
         raise web.HTTPBadRequest(text="news is scope=following only")
@@ -710,6 +711,7 @@ async def handle_club_news(request: web.Request) -> web.Response:
             month=request.query.get("month") or None,
             tz_of=tz,
             locale=await _user_locale(repo, user.person_id),
+            favorites_of=user.person_id if request.query.get("favorites") == "1" else None,
         )
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc

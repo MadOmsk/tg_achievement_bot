@@ -1,4 +1,6 @@
 import type { FeedResponse, MeResponse, OnlineMember, PersonPayload, SummaryResponse } from "../api";
+import type { GameCard } from "../api/game/gameApiModels";
+import type { People } from "../api/people/peopleApi";
 
 /**
  * The last Home this device was shown, kept between openings (owner,
@@ -16,6 +18,8 @@ export type HomeParts = {
   online?: { members: OnlineMember[] };
   summary?: SummaryResponse;
   mine?: PersonPayload;
+  favs?: { ok: boolean; games: GameCard[] };
+  following?: People;
 };
 
 type Stored = { who: string; at: number; me: MeResponse; home: HomeParts };

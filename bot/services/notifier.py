@@ -241,6 +241,7 @@ class Notifier:
         count: int,
         achievement: str | None = None,
         icon: str | None = None,
+        achievement_id: str | None = None,
     ) -> None:
         """Tell the people following `author` about new achievements in one game,
         if they may see the author's activity: kept in each one's list, sent on
@@ -276,6 +277,8 @@ class Notifier:
                     # For the list: what was earned, and its picture.
                     **({"achievement": achievement} if achievement else {}),
                     **({"icon": icon} if icon else {}),
+                    # What a tap opens: that achievement (owner, 2026-10-26).
+                    **({"achievement_id": achievement_id} if achievement_id else {}),
                 )
             except Exception:
                 log.exception("post notice to person_id=%s failed", recipient)
@@ -400,14 +403,18 @@ class Notifier:
             log.info("notification DM to person_id=%s not sent: %r", person_id, exc)
 
     def _url_for(self, kind: str, data: dict[str, Any]) -> str:
-        """Where a tap opens: a game's post, over its game; the game the notice
-        is about, on that person's progress; else the person; else the app."""
+        """Where a tap opens: a game's post, over its game; the achievement a
+        new post names; the game the notice is about, on that person's progress;
+        else the person; else the app."""
         spec = KINDS.get(kind, UNKNOWN)
         query: dict[str, str] = {}
         if spec.person_field and data.get(spec.person_field) is not None:
             query["p"] = str(data[spec.person_field])
         if spec.game and data.get("platform") and data.get("title_id"):
             query["g"] = f"{data['platform']}:{data['title_id']}"
+            if data.get("achievement_id"):
+                # The achievement the notice names opens, over its game.
+                query["a"] = str(data["achievement_id"])
         if kind == "game_news" and data.get("appid") and data.get("gid"):
             # The post itself opens, over its game (owner, 2026-10-08).
             query["n"] = f"{data['appid']}:{data['gid']}"

@@ -1,0 +1,173 @@
+.pp-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px var(--gutter) 0;
+  text-align: center;
+}
+
+.pp-face {
+  border-radius: 50%;
+}
+
+.pp-name {
+  font-size: 32px;
+  font-weight: 800;
+  font-stretch: 115%;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.pp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pp-counts {
+  display: flex;
+  gap: 3px;
+  margin: 18px 12px 0;
+}
+
+.pp-counts > * {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 64px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-size: 12px;
+  color: var(--on-surface-2);
+}
+
+.pp-counts > :first-child {
+  border-radius: var(--r-l) 8px 8px var(--r-l);
+}
+
+.pp-counts > :last-child {
+  border-radius: 8px var(--r-l) var(--r-l) 8px;
+}
+
+.pp-counts b {
+  font-size: 22px;
+  color: var(--on-surface);
+}
+
+.pp-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px var(--gutter) 0;
+}
+
+.pp-follow {
+  display: flex;
+  gap: 2px;
+}
+
+.pp-follow .btn {
+  min-width: 180px;
+}
+
+.pp-follow > .btn:not(:only-child) {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.pp-follow > .ibtn {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+
+.pp-months {
+  padding: 0 var(--gutter) 12px;
+}
+
+.pp-more {
+  padding: 4px 12px 0;
+}
+
+.fl-tabs {
+  padding: 4px var(--gutter) 0;
+}
+
+.fl-search {
+  padding: 12px 12px 14px;
+}
+
+.sp-field {
+  position: relative;
+}
+
+.sp-busy {
+  position: absolute;
+  right: 28px;
+  top: 30px;
+}
+
+.person-line {
+  gap: 10px;
+  padding: 8px 12px 8px 14px;
+}
+
+.person-line-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.pp-skel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-top: 14px;
+}
+
+.pp-skel .pp-counts {
+  align-self: stretch;
+  margin-top: 2px;
+}
+
+.pp-skel .pp-counts > .skel {
+  height: 64px;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%;
+}
+
+
+.pp-hero {
+  margin-top: 6px;
+}
+
+.pp-counts > .pp-count-follow {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.pp-counts > .pp-count-follow.pp-count-on {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.pp-follow-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}

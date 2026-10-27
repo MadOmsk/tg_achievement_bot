@@ -1,0 +1,76 @@
+.tabs {
+  position: fixed;
+  inset: 0;
+}
+
+.tab {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: var(--bar-room);
+  -webkit-overflow-scrolling: touch;
+}
+
+.tab-active {
+  animation: tab-in var(--t-mid) var(--spring-soft);
+}
+
+.splash,
+.boot-error {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+}
+
+.splash-logo {
+  width: 96px;
+  height: 96px;
+  animation: splash 1.6s var(--spring-soft) infinite alternate;
+}
+
+@keyframes splash {
+  from {
+    transform: scale(0.94);
+    opacity: 0.75;
+  }
+}
+
+.boot-error .btn {
+  margin-top: 12px;
+}
+
+.layer-covered .page {
+  animation: none;
+}
+
+.layer > .page {
+  transition:
+    transform var(--t-slow) var(--spring-soft),
+    filter var(--t-slow);
+}
+
+/* The page under the top one steps back and dims, as in a stack. */
+.layer-covered > .page {
+  transform: translateX(-8%);
+  filter: brightness(0.7);
+}
+
+.layer-leaving > .page {
+  animation: slide-out var(--t-mid) var(--spring-soft) forwards;
+}
+
+.screen-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(var(--safe-top) + 18px) var(--gutter) 0;
+}

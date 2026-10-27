@@ -203,6 +203,7 @@ async def handle_game_page(request: web.Request) -> web.Response:
             "genres": game_page.genres_of(versions, hltb_entry),
             "platforms": game_page.platforms_of(versions),
             "screenshots": game_page.screenshots_of(versions),
+            "videos": game_page.videos_of(versions),
             "hltb": game_page.hltb_of(hltb_entry),
             "lists": [
                 {

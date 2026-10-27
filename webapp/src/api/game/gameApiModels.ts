@@ -79,6 +79,8 @@ export type GamePage = {
   genres: string[];
   platforms: GamePlatform[];
   screenshots: string[];
+  /** The stores' trailers: a file or an HLS stream, with a picture. */
+  videos?: { name: string | null; mp4: string | null; hls: string | null; poster: string | null }[];
   hltb: {
     hltb_id: number;
     main: number | null;

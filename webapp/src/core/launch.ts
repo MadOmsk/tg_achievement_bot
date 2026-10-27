@@ -71,6 +71,8 @@ export function launchContext(): {
   /** A game's post a push opens (`n=appid:gid`, owner 2026-10-08), its game
    * in its head. */
   news: { appid: number; gid: string; game: GameRef | null } | null;
+  /** A push about a new post names its achievement (`a=`). */
+  achievement?: string | null;
   /** The screen a reload comes back to. */
   screen?: string;
 } {
@@ -140,5 +142,6 @@ export function launchContext(): {
     // head — not the game page under it, which took the phone's first back.
     news: newsMatch ? { appid: Number(newsMatch[1]), gid: newsMatch[2], game: gameRef } : null,
     game: newsMatch ? null : gameRef,
+    achievement: gameRef ? q.get("a") : null,
   };
 }

@@ -1,0 +1,231 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--surface);
+}
+
+body {
+  color: var(--on-surface);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+p,
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.t-display {
+  font-size: 112px;
+  line-height: 0.9;
+  font-weight: 850;
+  font-stretch: 40%;
+  letter-spacing: -0.02em;
+}
+
+.t-headline {
+  font-size: 40px;
+  line-height: 1;
+  font-weight: 800;
+  font-stretch: 120%;
+  letter-spacing: -0.01em;
+}
+
+.t-title {
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 700;
+  font-stretch: 115%;
+}
+
+.t-label {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.t-body {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--on-surface-2);
+}
+
+.t-meta {
+  font-size: 13px;
+  color: var(--on-surface-3);
+}
+
+.t-num {
+  font-weight: 800;
+  font-stretch: 50%;
+  line-height: 1;
+}
+
+.shape-cookie12 {
+  -webkit-mask: url("./shapes/cookie12.svg") center / contain no-repeat;
+  mask: url("./shapes/cookie12.svg") center / contain no-repeat;
+}
+
+.shape-cookie9 {
+  -webkit-mask: url("./shapes/cookie9.svg") center / contain no-repeat;
+  mask: url("./shapes/cookie9.svg") center / contain no-repeat;
+}
+
+.shape-clover4 {
+  -webkit-mask: url("./shapes/clover4.svg") center / contain no-repeat;
+  mask: url("./shapes/clover4.svg") center / contain no-repeat;
+}
+
+.shape-flower6 {
+  -webkit-mask: url("./shapes/flower6.svg") center / contain no-repeat;
+  mask: url("./shapes/flower6.svg") center / contain no-repeat;
+}
+
+.clamp-1 {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.skel {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%;
+  animation: skel 1.4s linear infinite;
+}
+
+@keyframes skel {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+/* One motion for every page (owner, 2026-10-27): it comes in from the right
+   a little way, growing out of a fade; it leaves the same way back. */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(28%) scale(0.98);
+  }
+}
+
+@keyframes slide-out {
+  to {
+    opacity: 0;
+    transform: translateX(28%) scale(0.98);
+  }
+}
+
+@keyframes tab-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 120ms !important;
+    animation-name: fade-in !important;
+    transition-duration: 0ms !important;
+  }
+}

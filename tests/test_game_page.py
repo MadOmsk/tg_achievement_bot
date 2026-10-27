@@ -3,6 +3,7 @@ stage 5; owner, 2026-10-25)."""
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
 
 from aiohttp import web
@@ -181,6 +182,14 @@ async def test_favorites_and_their_news(repo: Repo, settings) -> None:
     [played] = await repo.notifications_of(player)
     assert played.data["favorite"] is False
 
+    # The feed mixes in the fan's favorites' posts, named by the game.
+    await repo.save_game_patches(620, [post])
+    await repo.save_game_patches(999, [dataclasses.replace(post, gid="x")])
+    [news] = await repo.favorite_games_news(
+        await repo.favorite_game_ids(fan), since="2000-01-01", until="2999-01-01", limit=10
+    )
+    assert (news.gid, news.platform, news.title_id, news.game) == ("p1", "steam", "620", "Portal 2")
+
     await repo.set_favorite(fan, game, False)
     assert await repo.favorite_game_ids(fan) == []
 
@@ -241,3 +250,54 @@ async def test_the_page_search_and_favorite_routes(repo: Repo, settings) -> None
         assert mine["games"] == []
     finally:
         await client.close()
+
+
+def test_videos_are_a_file_or_a_stream_with_a_picture_each_once() -> None:
+    versions = [
+        {
+            "store": "psn",
+            "media": {
+                "videos": [
+                    {
+                        "url": "https://p/t.mp4",
+                        "hls": "https://p/m.m3u8",
+                        "poster": "https://p/p.png",
+                    }
+                ]
+            },
+        },
+        {
+            "store": "steam",
+            "media": {
+                "videos": [
+                    {
+                        "name": "Trailer",
+                        "url": "https://s/hls_264_master.m3u8?t=1",
+                        "thumbnail": "https://s/movie.jpg",
+                    },
+                    {"url": "http://old/smooth.ism/manifest"},
+                ]
+            },
+        },
+        {"store": "steam", "media": {"videos": [{"url": "https://s/hls_264_master.m3u8?t=1"}]}},
+    ]
+    assert game_page.videos_of(versions) == [
+        {
+            "name": "Trailer",
+            "mp4": None,
+            "hls": "https://s/hls_264_master.m3u8?t=1",
+            "poster": "https://s/movie.jpg",
+        },
+        {
+            "name": None,
+            "mp4": "https://p/t.mp4",
+            "hls": "https://p/m.m3u8",
+            "poster": "https://p/p.png",
+        },
+    ]
+
+
+def test_search_reads_a_dotted_name_as_one_word() -> None:
+    names = [(1, "S.T.A.L.K.E.R. 2: Heart of Chornobyl"), (2, "Assassin's Creed")]
+    assert [g for g, _r, _l in game_page.rank_search(names, "stalker")] == [1]
+    assert [g for g, _r, _l in game_page.rank_search(names, "assassins")] == [2]

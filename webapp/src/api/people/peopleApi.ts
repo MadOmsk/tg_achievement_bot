@@ -63,7 +63,7 @@ export type PersonProfile = PersonRow & {
 
 export type ActivityVisible = "all" | "friends" | "nobody";
 
-type People = { people: PersonRow[] };
+export type People = { people: PersonRow[] };
 type Rel = { relation: Relation };
 
 export class PeopleApi extends BaseApi {

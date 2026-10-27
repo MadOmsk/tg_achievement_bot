@@ -579,21 +579,35 @@ def _news_excerpt(text: str | None) -> str:
 
 
 async def build_news_payload(
-    repo: Repo, *, members: list[int], month: str | None, tz_of: int | None, locale: str
+    repo: Repo,
+    *,
+    members: list[int],
+    month: str | None,
+    tz_of: int | None,
+    locale: str,
+    favorites_of: int | None = None,
 ) -> dict[str, Any]:
+    """The month's developer posts: of the games the viewer's circle played, or,
+    with `favorites_of`, of that person's favorite games only — what the feed
+    mixes in (owner, 2026-10-26)."""
     key, _since, until, current, _month_num = await _club_month(
         repo, MEMBERS_CHAT, month, tz_of=tz_of, scoped=True
     )
     year, month_num = (int(part) for part in key.split("-"))
     first = f"{key}-01"
     after = f"{year + month_num // 12:04d}-{month_num % 12 + 1:02d}-01"
-    rows = await repo.games_news(
-        members,
-        played_since=(until - timedelta(days=NEWS_PLAYED_DAYS)).isoformat(timespec="seconds"),
-        since=first,
-        until=after,
-        limit=NEWS_MAX,
-    )
+    if favorites_of is not None:
+        rows = await repo.favorite_games_news(
+            await repo.favorite_game_ids(favorites_of), since=first, until=after, limit=NEWS_MAX
+        )
+    else:
+        rows = await repo.games_news(
+            members,
+            played_since=(until - timedelta(days=NEWS_PLAYED_DAYS)).isoformat(timespec="seconds"),
+            since=first,
+            until=after,
+            limit=NEWS_MAX,
+        )
     return {
         "items": [
             {

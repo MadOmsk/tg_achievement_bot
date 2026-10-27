@@ -40,8 +40,12 @@ export class ClubApi extends BaseApi {
     });
   }
 
-  fetchNews(initData: string, opts?: { month?: string }): Promise<NewsResponse> {
-    return this.get<NewsResponse>(initData, CLUB_ROUTES.NEWS, { scope: "following", month: opts?.month });
+  fetchNews(initData: string, opts?: { month?: string; favorites?: boolean }): Promise<NewsResponse> {
+    return this.get<NewsResponse>(initData, CLUB_ROUTES.NEWS, {
+      scope: "following",
+      month: opts?.month,
+      favorites: opts?.favorites ? "1" : undefined,
+    });
   }
 
   fetchOnline(

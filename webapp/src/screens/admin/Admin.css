@@ -1,0 +1,93 @@
+.admin .group {
+  margin-top: 20px;
+}
+
+.adm-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  margin: 8px 12px 0;
+}
+
+.adm-counts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-size: 12px;
+  color: var(--on-surface-2);
+}
+
+.adm-counts > div:first-child {
+  grid-column: span 3;
+  border-radius: var(--r-l) var(--r-l) 8px 8px;
+  background: var(--primary-container);
+  color: var(--on-primary-container-2);
+}
+
+.adm-counts > div:first-child b {
+  font-size: 48px;
+  color: var(--on-primary-container);
+}
+
+.adm-counts > div:last-child {
+  border-radius: 8px 8px var(--r-l) 8px;
+}
+
+.adm-counts > div:nth-last-child(2) {
+  border-radius: 8px 8px 8px var(--r-l);
+}
+
+.adm-counts b {
+  font-size: 26px;
+  color: var(--on-surface);
+}
+
+.adm-skel {
+  display: block;
+  height: 220px;
+  margin: 12px;
+  border-radius: var(--r-xl);
+}
+
+.adm-dot {
+  width: 12px;
+  height: 12px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--outline);
+}
+
+.adm-dot-ok {
+  background: var(--primary);
+}
+
+.adm-dot-bad {
+  background: var(--error);
+}
+
+.adm-value {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  color: var(--primary);
+}
+
+.adm-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 20px 8px;
+}
+
+.adm-person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 0;
+}
