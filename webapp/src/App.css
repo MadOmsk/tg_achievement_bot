@@ -47,7 +47,8 @@
   margin-top: 12px;
 }
 
-.layer-covered .page {
+.layer-covered .page,
+.layer-seen .page {
   animation: none;
 }
 

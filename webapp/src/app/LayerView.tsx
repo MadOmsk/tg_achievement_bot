@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { Layer } from "./layers";
 
 // Every page over the tabs is its own chunk, fetched the first time it
@@ -92,6 +92,13 @@ export function LayerView({
   const key = layerKey(layer);
   // Closing plays the page's way out before it goes.
   const [leaving, setLeaving] = useState(false);
+  // A page plays its way in once: coming back to it (a back from the page
+  // above) shows it as it was, with no motion again.
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const id = window.setTimeout(() => setSeen(true), 600);
+    return () => window.clearTimeout(id);
+  }, []);
   const done = useRef(false);
   const close = useCallback(() => {
     if (done.current) return;
@@ -139,7 +146,7 @@ export function LayerView({
     }
   })();
   return (
-    <div className={`layer${covered ? " layer-covered" : ""}${leaving ? " layer-leaving" : ""}`}>
+    <div className={`layer${covered ? " layer-covered" : ""}${seen ? " layer-seen" : ""}${leaving ? " layer-leaving" : ""}`}>
       <Suspense fallback={null}>{body}</Suspense>
     </div>
   );
