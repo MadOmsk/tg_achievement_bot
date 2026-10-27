@@ -1154,17 +1154,63 @@
   color: var(--on-tertiary-container);
 }
 
-.gp-progress-lists {
-  padding: 14px 14px 0;
-}
 
-.list-plats {
+
+
+.list-who {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  padding: 14px var(--gutter) 0;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.gp-other-plats {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--on-surface-3);
+.plat-pick.list-plat {
+  height: 30px;
+  padding: 0 8px 0 3px;
+  gap: 6px;
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.gp-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 16px 18px 0;
+}
+
+.gp-progress-head .gp-progress-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gp-progress-go {
+  margin-left: auto;
+  display: flex;
+}
+
+.gp-progress-head + .gp-progress-main {
+  padding-top: 8px;
+  border-radius: 0;
+}
+
+.gp-progress-done .gp-progress-head {
+  padding-right: 90px;
+}
+
+.plat-pick.gp-progress-plat {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 8px 0 3px;
+  gap: 6px;
+  border-radius: 15px;
+  background: var(--surface-3);
+  font-size: 13px;
+  font-weight: 650;
 }

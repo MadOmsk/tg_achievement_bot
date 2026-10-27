@@ -648,4 +648,5 @@ loading: "Gathering the crew…",
   passToTheme: "To the “{name}” theme:",
   passOpen: "Open the season pass",
   passHow: "Play, earn achievements and collect points: every level unlocks a new app theme. The rarer the achievement, the more points it's worth. A new season starts every month, and the themes you claim stay yours.",
+  pickPlatform: "Platform",
 };

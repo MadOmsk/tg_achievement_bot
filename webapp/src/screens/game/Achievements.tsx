@@ -8,7 +8,7 @@ import { groupLabel } from "../../core/game-utils";
 import { recall, remember } from "../../core/game-cache";
 import { dayLabel, num, plural } from "../../i18n";
 import { AchRow } from "../../parts/AchRow";
-import { PlatformTabs } from "../../parts/PlatformTabs";
+import { PlatformPicker } from "../../parts/PlatformPicker";
 import { DoneMark } from "../../parts/DoneMark";
 import { Button, Empty, Segmented } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
@@ -37,7 +37,7 @@ export function Achievements({
   name: string | null;
   cover?: string | null;
   person: { id: number; name: string } | null;
-  lists?: { platform: string; title_id: string; count?: number }[];
+  lists?: { platform: string; title_id: string; count?: number; total?: number | null }[];
   onClose: () => void;
   layer: string;
 }) {
@@ -157,10 +157,27 @@ export function Achievements({
           {done && <DoneMark size={52} className="list-done" />}
         </span>
         <p className="list-name t-title clamp-2">{gameName}</p>
-        {theirs && (
-          <span className="list-owner">
-            <Face personId={theirs.id} name={theirs.name} size={22} />
-            {theirs.name}
+        {(theirs || (lists && lists.length > 1)) && (
+          <span className="list-who">
+            {theirs && (
+              <span className="list-owner">
+                <Face personId={theirs.id} name={theirs.name} size={22} />
+                {theirs.name}
+              </span>
+            )}
+            {lists && lists.length > 1 && (
+            <PlatformPicker
+              className="list-plat"
+              lists={lists}
+              value={`${platform}:${titleId}`}
+              onChange={(v) => {
+                const next = lists.find((l) => `${l.platform}:${l.title_id}` === v);
+                if (!next) return;
+                setFilter(null);
+                setShownList({ platform: next.platform, titleId: next.title_id });
+              }}
+            />
+          )}
           </span>
         )}
         {!d && (
@@ -185,19 +202,6 @@ export function Achievements({
           </span>
         )}
       </Hero>
-      {lists && lists.length > 1 && (
-        <PlatformTabs
-          className="list-plats"
-          lists={lists}
-          value={`${platform}:${titleId}`}
-          onChange={(v) => {
-            const next = lists.find((l) => `${l.platform}:${l.title_id}` === v);
-            if (!next) return;
-            setFilter(null);
-            setShownList({ platform: next.platform, titleId: next.title_id });
-          }}
-        />
-      )}
       {guides?.guide && (
         <div className="list-guide">
           <GuideVideo guide={guides.guide} />
