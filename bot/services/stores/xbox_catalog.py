@@ -64,15 +64,15 @@ async def products_for_title(title_id: str) -> list[dict]:
     return without_prices(list((response.json() or {}).get("Products") or []))
 
 
-async def search(name: str, families: str = "Games") -> list[dict]:
+async def search(name: str) -> list[dict]:
     """The catalog's products for a name (its autosuggest): `ProductId`,
-    `Title`, `Type`. 360 games played on One are here under ids of their own;
-    `families="Durables"` gives add-ons."""
+    `Title`, `Type` — games, and add-ons typed `Durable`. 360 games played on
+    One are here under ids of their own."""
     await LIMITER.acquire()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         response = await client.get(
             f"{CATALOG.rsplit('/', 1)[0]}/productFamilies/autosuggest",
-            params={"query": name, "productFamilyNames": families, **_PARAMS},
+            params={"query": name, "productFamilyNames": "Games", **_PARAMS},
         )
     response.raise_for_status()
     found: list[dict] = []
@@ -88,7 +88,9 @@ async def search_addons(name: str) -> list[str]:
     3's Season Pass, BP0MGTDNQP50, names the 360 product as its parent)."""
     return [
         str(p["ProductId"])
-        for p in await search(name, "Durables")
+        # Autosuggest hands add-ons out among the "Games" family's products
+        # (typed `Durable`); its "Durables" family answers nothing.
+        for p in await search(name)
         if p.get("Type") == "Durable" and p.get("ProductId")
     ]
 

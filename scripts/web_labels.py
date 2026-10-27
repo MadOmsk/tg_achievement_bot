@@ -18,7 +18,9 @@ HLTB link becomes a refusal — and `{"type": "series", "game_id",
 "series_id", "verdict": "yes" | "no"}` — a game said to be in a series or
 not, as the advisers' word (never over the operator's).
 `--source gemini-web` writes another adviser's answers (Gemini Argon,
-owner 2026-10-25): those never replace a label a pair already has.
+owner 2026-10-25): those never replace a label a pair already has, unless
+`--overrule` (owner, 2026-10-27: Gemini's answer taken where two advisers
+differed).
 Run with the viewer stopped (one linker at a time).
 
 Usage:
@@ -97,11 +99,14 @@ async def write(
     labels: list[tuple[int, int, str, str]],
     others: list[dict] | None = None,
     source: str = SOURCE,
+    overrule: bool | None = None,
 ) -> None:
     database = await Database(db).connect()
     try:
         repo = Repo(database)
-        if source != SOURCE:
+        if overrule is None:
+            overrule = source == SOURCE
+        if not overrule:
             held = {
                 frozenset((int(d["version_id"]), int(d["other_id"])))
                 for d in await repo.decisions_among(
@@ -137,7 +142,7 @@ async def write(
                 features=features,
                 model=model or MODEL,
                 decided_by=source,
-                overrule=source == SOURCE,
+                overrule=overrule,
             )
         await GameLinker(repo).link_versions(sorted({v for a, b, *_ in labels for v in (a, b)}))
         touched = {v for a, b, *_ in labels for v in (a, b)}
@@ -158,6 +163,9 @@ def main() -> None:
     parser.add_argument("files", nargs="+")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--source", default=SOURCE)
+    parser.add_argument(
+        "--overrule", action="store_true", help="replace the labels pairs have, whoever's"
+    )
     args = parser.parse_args()
     labels, others = [], []
     for path in args.files:
@@ -175,7 +183,7 @@ def main() -> None:
                 labels.append(label)
     print(f"{len(labels)} labels, {len(others)} HLTB and series answers")
     if not args.dry_run:
-        asyncio.run(write(Path(args.db), labels, others, args.source))
+        asyncio.run(write(Path(args.db), labels, others, args.source, args.overrule or None))
 
 
 if __name__ == "__main__":

@@ -735,7 +735,7 @@ What the stores and HLTB say about a game, collected but not shown yet
     item keeps its version link; `reparse_stored` re-reads kept ones last
     (`classify_editions`, a kind set by hand kept); a save that gives no scope
     keeps it. **An add-on sold only on its own** is in no edition: the
-    catalog's add-on search (`search_addons`, autosuggest's Durables) by the
+    catalog's add-on search (`search_addons`: autosuggest's `Durable` products) by the
     game's names finds it, kept when it names the game's product as its
     parent (owner, 2026-10-27; `_xbox_addons_alone`, when due) — the only
     way to a **360 game's** add-ons (Gears of War 3's Season Pass), for its
