@@ -43,6 +43,8 @@ SOURCE = "claude-web"
 RELATIONS = {
     "same": "same",
     "enhanced": "enhanced_of",
+    "enhanced_of": "enhanced_of",
+    "mode_of": "mode_of",
     "remaster_of": "remaster_of",
     "remake_of": "remake_of",
     "demo_of": "demo_of",
@@ -61,6 +63,7 @@ DIRECTED = {
     "vr_of",
     "demo_of",
     "tool_of",
+    "mode_of",
     "extra_of",
     "pass_of",
     "contains",

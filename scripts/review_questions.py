@@ -17,20 +17,28 @@ Nothing already labelled is asked again. Read-only, safe beside the viewer.
 
 `--recheck` asks instead about every relation the linker set by itself
 (`to_recheck`; owner, 2026-10-27): the model's answer is its first guess,
-written so the catalog has one, and settled by the advisers' labels.
+written so the catalog has one, and settled by the advisers' labels — and
+about the old labels the owner's definitions changed (`to_relabel`): an
+edition labelled "same" before an enhanced edition was an answer of its own.
+`--prompt` also writes the file to hand each adviser (`<out stem>.<adviser>.md`),
+whose answer file is named after the model that answered
+(`<out stem>.<model>.json`).
 
 Usage:
     … -m scripts.review_questions --db data/games.db --out questions.json [--total 500]
     … -m scripts.review_questions --db data/games.db --out recheck.json --recheck
+        [--prompt gemini,claude]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 from pathlib import Path
 
+from bot.services.advice import DEFINITIONS
 from scripts.advise_pairs import read_only_uri
 
 SHARES = {"relations": 0.1, "hltb": 0.15, "series": 0.3}  # the rest: pairs in one game
@@ -40,6 +48,14 @@ PART_ROLES = ("enhanced", "demo", "tool", "mode", "extra", "pass")
 # What to ask beside a VR version (owner, 2026-10-27): a VR version of the
 # very game, or another game of its series made for VR.
 VR_QUESTION = "the VR version of this very game, or another game of its series made for VR?"
+# The words of an edition's name (owner, 2026-10-27: a pair labelled "same"
+# where one side is named so is asked again under the enhanced definition).
+EDITION_WORDS = re.compile(
+    r"game of the year|\bgoty\b|complete|definitive|director.?s cut|enhanced|special edition"
+    r"|anniversary|ultimate edition|deluxe|gold edition|legendary edition|royal edition"
+    r"|extended|redux|final cut|premium edition",
+    re.I,
+)
 
 
 def _version(conn: sqlite3.Connection, vid: int) -> dict:
@@ -93,6 +109,21 @@ def to_recheck(conn: sqlite3.Connection) -> list[tuple[int, int, str]]:
     return found
 
 
+def to_relabel(conn: sqlite3.Connection) -> list[tuple[int, int]]:
+    """The labels "same" between an edition and a version not named so —
+    given before the enhanced edition had an answer of its own."""
+    found = []
+    for a, b, na, nb in conn.execute(
+        "SELECT d.version_id, d.other_id, va.name, vb.name FROM match_decisions d"
+        " JOIN versions va ON va.version_id = d.version_id"
+        " JOIN versions vb ON vb.version_id = d.other_id"
+        " WHERE d.relation = 'same' ORDER BY d.version_id, d.other_id"
+    ):
+        if bool(EDITION_WORDS.search(na or "")) != bool(EDITION_WORDS.search(nb or "")):
+            found.append((int(a), int(b)))
+    return found
+
+
 def recheck_questions(db: Path) -> list[dict]:
     conn = sqlite3.connect(read_only_uri(db), uri=True)
     conn.row_factory = sqlite3.Row
@@ -103,8 +134,101 @@ def recheck_questions(db: Path) -> list[dict]:
         if relation == "vr_of":
             q["question"] = VR_QUESTION
         out.append(q)
+    for a, b in to_relabel(conn):
+        out.append({"type": "pair", "a": a, "b": b,
+                    "asked_for": "relabel: an edition labelled before the enhanced definition",
+                    "A": _version(conn, a), "B": _version(conn, b)})  # fmt: skip
     conn.close()
     return out
+
+
+PROMPT = """# Recheck game-catalog pairs — web search required
+
+You label how two store versions of video games relate, for a small games catalog.
+Your answers train a matching model, so a wrong answer is worse than none.
+
+**Look each one up on the web.** Use web search for EVERY question — store pages
+(Steam, Microsoft Store, PlayStation Store), Wikipedia, MobyGames, HowLongToBeat,
+PSNProfiles, TrueAchievements, publisher announcements. An answer from memory alone
+must be marked `"searched": false` and will be thrown away. Never invent a source URL:
+`source` is a page you actually opened or a search result you actually saw.
+
+## Input
+
+A JSON array of `pair` questions at the end of this file: two versions `A` and `B`
+(name, console, store, product id, release date, developer, publisher, and the game
+the catalog filed them under). `asked_for` says why it is asked; it is not the answer,
+and a guess of the model's it names may well be wrong. A `question` field, where there
+is one, is the one thing to settle. The store data may be incomplete or wrong (a
+store's date is often a re-release's); rely on what the sources say about the games.
+
+## Relations
+
+Use these definitions exactly as written:
+
+- same: one game — the same release on another console or store, a regional id, a
+  standard or Deluxe edition sold under one id, a port however late. Two demos of one
+  game are `same`.
+{definitions}
+- demo_of: a demo, beta, trial, playtest, prologue or tech test of the other.
+- tool_of: an editor, creation kit, SDK, benchmark or dedicated server for the other.
+- mode_of: a launcher of one mode of the other ("Call of Duty: Black Ops II - Zombies").
+- extra_of: a soundtrack, an artbook or a DLC of the other, sold as its own product.
+- pass_of: a friend's pass — a free copy to play the whole game with its owner.
+- contains: a compilation or collection that holds the other; a compilation holds at
+  least two games.
+- vr_of: the VR version of this very game; another game of its series made for VR is
+  `series`.
+- series: different games of one series — sequels, prequels, spin-offs, a reboot that
+  is a new game (give `series_name`).
+- not_related: unrelated.
+
+For a directed relation (enhanced_of, remaster_of, remake_of, demo_of, tool_of,
+mode_of, extra_of, pass_of, contains, vr_of) give `direction`: `"a"` if A is the
+enhanced edition / remaster / remake / demo / … / compilation / VR version, `"b"` if
+B is; null for every other answer.
+
+## Confidence — doubt is welcome
+
+`high` answers go straight into training; `low` and `medium` are checked again. Use
+`high` only when a source you opened says it in so many words. Say `medium` or `low`
+when you identified a version only by its name or date, when the answer is a judgement
+between two close relations (same or enhanced, enhanced or remaster, remaster or
+remake), when sources disagree, or when you found the game but not this release.
+
+## Output
+
+{count} questions. Answer every one and give the whole answer as ONE file named
+**`{stem}.<model>.json`**, where `<model>` is your own exact model name and version
+(for example `{example}`), in lower case with hyphens. The file is a JSON array, one
+object per question, in the questions' order:
+
+`{{"a": <A version_id>, "b": <B version_id>, "relation": "...", "direction":
+"a"|"b"|null, "series_name": "..."|null, "confidence": "high"|"medium"|"low",
+"searched": true|false, "why": "<one sentence>", "source": "<url>", "model": "<model>"}}`
+
+If the questions do not all fit in one reply, work through them in parts as large as
+you can, and say at the end of each part which pair you stopped at; I will reply
+"continue". The final file must hold every answer, the earlier parts' included.
+
+## Questions
+
+```json
+{questions}
+```
+"""
+EXAMPLES = {"gemini": "gemini-3-pro", "claude": "claude-opus-5-5"}
+
+
+def prompt(questions: list[dict], stem: str, adviser: str) -> str:
+    """The file to hand one adviser, with the owner's definitions as they stand."""
+    return PROMPT.format(
+        definitions=DEFINITIONS,
+        count=len(questions),
+        stem=stem,
+        example=EXAMPLES.get(adviser, adviser),
+        questions=json.dumps(questions, ensure_ascii=False, indent=1),
+    )
 
 
 def build(db: Path, total: int) -> list[dict]:
@@ -212,11 +336,17 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--total", type=int, default=500)
     parser.add_argument("--recheck", action="store_true")
+    parser.add_argument("--prompt", default="", help="advisers to write a file for: gemini,claude")
     args = parser.parse_args()
     questions = (
         recheck_questions(Path(args.db)) if args.recheck else build(Path(args.db), args.total)
     )
-    Path(args.out).write_text(json.dumps(questions, ensure_ascii=False, indent=1), "utf-8")
+    out = Path(args.out)
+    out.write_text(json.dumps(questions, ensure_ascii=False, indent=1), "utf-8")
+    for adviser in filter(None, args.prompt.split(",")):
+        path = out.with_name(f"{out.stem}.{adviser}.md")
+        path.write_text(prompt(questions, out.stem, adviser), "utf-8")
+        print(f"for {adviser}: {path}")
     counts: dict[str, int] = {}
     for q in questions:
         counts[q["type"]] = counts.get(q["type"], 0) + 1

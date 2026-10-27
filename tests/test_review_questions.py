@@ -2,7 +2,8 @@
 
 import sqlite3
 
-from scripts.review_questions import to_recheck
+from bot.services.advice import DEFINITIONS
+from scripts.review_questions import prompt, to_recheck, to_relabel
 
 
 def _db() -> sqlite3.Connection:
@@ -36,3 +37,19 @@ def test_what_the_linker_set_alone_is_rechecked() -> None:
     """An automatic relation between games, and a role in a game, until a
     label settles it; the operator's own (manual) relation is not asked."""
     assert to_recheck(_db()) == [(2, 1, "remaster_of"), (4, 3, "enhanced_of")]
+
+
+def test_an_edition_labelled_same_is_asked_again() -> None:
+    """Under the enhanced definition an edition's old "same" is in doubt;
+    two plain names, or two editions, are not."""
+    conn = _db()
+    conn.executescript(
+        "INSERT INTO match_decisions VALUES (4, 3, 'same'), (6, 3, 'same'), (7, 4, 'same');"
+    )
+    assert to_relabel(conn) == [(4, 3)]
+
+
+def test_the_prompt_gives_the_definitions_as_they_stand() -> None:
+    text = prompt([{"type": "pair", "a": 1, "b": 2}], "2026-10-27-recheck", "gemini")
+    assert DEFINITIONS in text
+    assert "2026-10-27-recheck.<model>.json" in text
