@@ -218,3 +218,19 @@
   background: var(--secondary-container);
   color: var(--on-secondary-container);
 }
+
+.pp-skel-name {
+  display: block;
+  width: 180px;
+  height: 30px;
+  margin: 16px auto 0;
+  border-radius: 15px;
+}
+
+.pp-skel-chip {
+  display: block;
+  width: 116px;
+  height: 32px;
+  margin: 0 auto;
+  border-radius: var(--r-full);
+}

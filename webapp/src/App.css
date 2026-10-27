@@ -52,6 +52,11 @@
   animation: none;
 }
 
+/* The ground that slides in while a page's code arrives keeps its motion. */
+.layer-seen .page-waiting {
+  animation: slide-in var(--t-mid) var(--spring-soft);
+}
+
 .layer > .page {
   transition: transform var(--t-mid) var(--spring-soft);
 }

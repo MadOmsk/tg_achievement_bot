@@ -7,6 +7,14 @@ export function faceUrl(personId: number): string {
   return `${API_BASE_ROUTES.MINI}${USER_ROUTES.AVATAR(personId)}`;
 }
 
+/** The names faces were drawn with, so a page about a person can name them
+ * while their card is on its way. */
+const seenNames = new Map<number, string>();
+
+export function knownName(personId: number): string | undefined {
+  return seenNames.get(personId);
+}
+
 function initials(name: string): string {
   const clean = name.replace(/#\d+$/, "").trim();
   return (clean.slice(0, 2) || "?").toUpperCase();
@@ -31,6 +39,7 @@ export function Face({
   version?: number;
 }) {
   const [failed, setFailed] = useState(false);
+  if (name && name !== "?") seenNames.set(personId, name);
   const ring = presence ? Math.max(3, Math.round(size * 0.08)) : 0;
   const inner = size - ring * 2;
   const src = `${faceUrl(personId)}${version ? `?v=${version}` : ""}`;

@@ -13,7 +13,7 @@ import { AchTile } from "../../parts/AchTile";
 import { achOfFeed } from "../../app/views";
 import { AccountChip } from "../../parts/AccountCard";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
-import { Face, faceUrl } from "../../ui/Face";
+import { Face, faceUrl, knownName } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
 import { BarAction, Confirm, Page, Sheet } from "../../ui/Page";
 import { openImage } from "../../ui/Viewer";
@@ -44,7 +44,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
   const rel = relation ?? c?.relation ?? null;
   const a = activity.data;
   const hidden = Boolean(a?.hidden) || (c ? !c.can_view && !self : false);
-  const name = c?.handle ?? a?.name ?? "";
+  const name = c?.handle ?? a?.name ?? knownName(personId) ?? "";
   const presence = a?.presence ?? c?.activity?.presence ?? null;
 
   const block = async (on: boolean) => {
@@ -92,7 +92,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
         <button type="button" className="pp-face" onClick={() => openImage(faceUrl(personId))} aria-label={name}>
           <Face personId={personId} name={name || "?"} size={112} presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
-        <h1 className="pp-name">{name}</h1>
+        {name ? <h1 className="pp-name">{name}</h1> : <span className="skel pp-skel-name" />}
         {!hidden && (c?.activity?.platforms?.length ?? 0) > 0 && (
           <div className="pp-accs">
             {c!.activity!.platforms.map((p) => (
@@ -114,7 +114,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
 
       {!c && (
         <div className="pp-skel" aria-hidden="true">
-          <span className="skel skel-line" style={{ width: 160, height: 28 }} />
+          <span className="skel pp-skel-chip" />
           <div className="pp-counts">
             {[0, 1, 2].map((i) => (
               <span key={i} className="skel" />

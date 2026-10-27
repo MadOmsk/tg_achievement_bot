@@ -11,8 +11,9 @@ and a Telegram Mini App.
 **The app is called Unlocked** (owner, 2026-10-05): it is no longer only a bot.
 The name and the logo (owner, 2026-10-26, redrawn for design E: the "U" of
 Unlocked as an open shackle — its right leg shorter — in flat lilac
-(`#eaddff`), a pink four-point sparkle (`#efb8dc`) beside the right leg, on a
-flat violet ground (`#4f378b`);
+(`#eaddff`), a pink four-point sparkle (`#efb8dc`, softly glowing) beside the right leg,
+on a deep violet ground lit from the top left (`#7457c9` → `#4f378b` →
+`#2f1d63`) with a soft lilac glow behind the U (owner, 2026-10-27);
 `webapp/public/logo.svg`, a rounded tile; `logo-192/512.png` are rendered from
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark

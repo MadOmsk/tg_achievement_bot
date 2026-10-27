@@ -80,6 +80,15 @@ function layerKey(layer: Layer): string {
   }
 }
 
+/** A page whose code is still on its way: the page's ground slides in in its
+ * place, and the page, once here, takes over without sliding in again. */
+function Waiting({ onShown }: { onShown: () => void }) {
+  useEffect(() => {
+    onShown();
+  }, [onShown]);
+  return <div className="page page-waiting" />;
+}
+
 export function LayerView({
   layer,
   covered,
@@ -147,7 +156,7 @@ export function LayerView({
   })();
   return (
     <div className={`layer${covered ? " layer-covered" : ""}${seen ? " layer-seen" : ""}${leaving ? " layer-leaving" : ""}`}>
-      <Suspense fallback={<div className="page" />}>{body}</Suspense>
+      <Suspense fallback={<Waiting onShown={() => setSeen(true)} />}>{body}</Suspense>
     </div>
   );
 }

@@ -170,18 +170,51 @@ h3 {
   white-space: nowrap;
 }
 
+/* What is on its way, in the app's own way: its shape tinted with the
+   page's colour, a soft light travelling across it on a slant, the shape
+   breathing a little — never a flat grey box. */
 .skel {
-  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
-  background-size: 200% 100%;
-  animation: skel 1.4s linear infinite;
+  background:
+    linear-gradient(
+      110deg,
+      transparent 30%,
+      color-mix(in srgb, var(--primary) 14%, transparent) 45%,
+      color-mix(in srgb, var(--on-surface) 10%, transparent) 50%,
+      color-mix(in srgb, var(--primary) 14%, transparent) 55%,
+      transparent 70%
+    ),
+    color-mix(in srgb, var(--primary) 6%, var(--surface-2));
+  background-size:
+    250% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+  animation:
+    skel 1.8s var(--spring-soft) infinite,
+    skel-breathe 1.8s ease-in-out infinite;
 }
 
 @keyframes skel {
   from {
-    background-position: 100% 0;
+    background-position:
+      120% 0,
+      0 0;
   }
   to {
-    background-position: -100% 0;
+    background-position:
+      -120% 0,
+      0 0;
+  }
+}
+
+@keyframes skel-breathe {
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: skel-breathe 1.8s ease-in-out infinite;
   }
 }
 
