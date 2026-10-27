@@ -9,7 +9,8 @@ DLC, editions and HowLongToBeat. A chain with a goal, not a crawl:
    a search, then one game per distinct find; a game → its anchor version.
 2. **Anchor → the game** it is in (the linker makes one if none).
 3. **Each version of that game expanded**: its list or product collected (own
-   product, sibling products by id, HLTB, DLC, editions), and the game searched
+   product, sibling products by id, HLTB, DLC, editions; an Xbox product's
+   add-ons sold alone, a 360 game's above all), and the game searched
    by every different name it goes by; then **the linker**
    (`game_link.link_and_spread`) over this game's neighbourhood. What it puts
    in *this* game is a version; another game — a remaster, a remake, a
@@ -371,6 +372,9 @@ class OctopusCollector:
             collected = await self._collector.collect_steam_app(
                 str(row["product_id"]), found=("octopus", report.entry), force=force
             )
+        elif row["store"] == "xbox":
+            # A product found by name: its add-ons sold alone (2026-10-27).
+            collected = await self._collector.xbox_product_addons(row, force=force)
         else:
             return []
         report.errors += collected.errors

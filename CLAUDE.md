@@ -734,8 +734,12 @@ What the stores and HLTB say about a game, collected but not shown yet
     (`part`s); no game → `addon_pack` (shown with the game's DLC). Every game
     item keeps its version link; `reparse_stored` re-reads kept ones last
     (`classify_editions`, a kind set by hand kept); a save that gives no scope
-    keeps it. An add-on sold only on its own is
-    not found this way. `9998-12-30` is "not on sale", no date. Each price period is an
+    keeps it. **An add-on sold only on its own** is in no edition: the
+    catalog's add-on search (`search_addons`, autosuggest's Durables) by the
+    game's names finds it, kept when it names the game's product as its
+    parent (owner, 2026-10-27; `_xbox_addons_alone`, when due) — the only
+    way to a **360 game's** add-ons (Gears of War 3's Season Pass), for its
+    list, a modern list and the octopus's store-only Xbox products alike. `9998-12-30` is "not on sale", no date. Each price period is an
     availability with its own end, so an answer is judged on sale **as of when
     it was given** — a stored one re-read later keeps its time
     (`sold(product, now)`; 2026-10-26: a re-parse read 548 games as off sale,

@@ -64,20 +64,33 @@ async def products_for_title(title_id: str) -> list[dict]:
     return without_prices(list((response.json() or {}).get("Products") or []))
 
 
-async def search(name: str) -> list[dict]:
-    """The catalog's games for a name (its autosuggest): `ProductId`, `Title`,
-    `Type`. 360 games played on One are here under ids of their own."""
+async def search(name: str, families: str = "Games") -> list[dict]:
+    """The catalog's products for a name (its autosuggest): `ProductId`,
+    `Title`, `Type`. 360 games played on One are here under ids of their own;
+    `families="Durables"` gives add-ons."""
     await LIMITER.acquire()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         response = await client.get(
             f"{CATALOG.rsplit('/', 1)[0]}/productFamilies/autosuggest",
-            params={"query": name, "productFamilyNames": "Games", **_PARAMS},
+            params={"query": name, "productFamilyNames": families, **_PARAMS},
         )
     response.raise_for_status()
     found: list[dict] = []
     for family in (response.json() or {}).get("Results") or []:
         found += [p for p in family.get("Products") or [] if p.get("ProductId")]
     return found
+
+
+async def search_addons(name: str) -> list[str]:
+    """The ids of the add-ons the catalog suggests for a name. An add-on sold
+    only on its own is in no edition, so this is the way to it — a 360
+    game's above all, which has no editions (owner, 2026-10-27: Gears of War
+    3's Season Pass, BP0MGTDNQP50, names the 360 product as its parent)."""
+    return [
+        str(p["ProductId"])
+        for p in await search(name, "Durables")
+        if p.get("Type") == "Durable" and p.get("ProductId")
+    ]
 
 
 async def products(big_ids: list[str]) -> list[dict]:
