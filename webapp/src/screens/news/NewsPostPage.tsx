@@ -1,4 +1,5 @@
 import { clubApi, type NewsItem } from "../../api";
+import { gameArtOf, useArtTheme } from "../../app/artTheme";
 import { useApp } from "../../app/context";
 import { KindChip } from "../../parts/KindChip";
 import { openExternal } from "../../app/env";
@@ -42,6 +43,7 @@ export function NewsPostPage({
   const gameName = item?.game.name ?? fetched.data?.game?.name ?? game?.name ?? null;
   const gameIcon = item?.game.icon_url ?? fetched.data?.game?.icon_url ?? game?.icon_url ?? null;
   const ref = item?.game ?? game;
+  const theme = useArtTheme(gameArtOf(ref ? `${ref.platform}:${ref.title_id}` : null, gameName) ?? gameIcon);
   const text = post?.image
     ? post.text
         .split("\n")
@@ -55,7 +57,7 @@ export function NewsPostPage({
       : undefined;
 
   return (
-    <Page title={gameName ?? tr("newsPost")} onBack={onClose} hero layer={layer}>
+    <Page title={gameName ?? tr("newsPost")} onBack={onClose} hero layer={layer} style={theme.style}>
       {!post && fetched.loading && <div className="np-skel skel" />}
       {!post && fetched.error ? <Empty icon="refresh" title={tr("loadFailed")} action={<Button variant="tonal" onClick={fetched.reload}>{tr("retry")}</Button>} /> : null}
       {post && (

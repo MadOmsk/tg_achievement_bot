@@ -125,6 +125,24 @@ function scheme(h: number, light: boolean): CSSProperties {
   return vars as CSSProperties;
 }
 
+/** Which picture a game's page took its colours from, by the game's
+ * lists and its name: the pages inside a game (its achievements, one
+ * achievement, its gallery, a post of its) take the same colours. */
+const gameArt = new Map<string, string>();
+
+export function rememberGameArt(keys: Array<string | null | undefined>, url: string | null | undefined): void {
+  if (!url) return;
+  for (const k of keys) if (k) gameArt.set(k, url);
+}
+
+export function gameArtOf(...keys: Array<string | null | undefined>): string | undefined {
+  for (const k of keys) {
+    const url = k ? gameArt.get(k) : undefined;
+    if (url) return url;
+  }
+  return undefined;
+}
+
 /** The page's own colours from its picture (owner's design E), set on the
  * page's root so every part of it draws in them. `settled` once the colour is
  * known or known to be unknowable — or a short wait ran out —, so the page can

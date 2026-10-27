@@ -281,7 +281,7 @@
 
 .swatches {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -332,6 +332,22 @@
 
 .swatch-rose .swatch-dot {
   background: linear-gradient(135deg, #ffb1c2 0 50%, #b8d0ff 50%);
+}
+
+.swatch-forest .swatch-dot {
+  background: linear-gradient(135deg, #a8ebb1 0 50%, #f2dfa6 50%);
+}
+
+.swatch-garnet .swatch-dot {
+  background: linear-gradient(135deg, #efa4ae 0 50%, #a6d9f2 50%);
+}
+
+.swatch-lilac .swatch-dot {
+  background: linear-gradient(135deg, #a8b1eb 0 50%, #f2a6cc 50%);
+}
+
+.swatch-graphite .swatch-dot {
+  background: linear-gradient(135deg, #c3c9d0 0 50%, #a6ecf2 50%);
 }
 
 .swatch-dot svg {

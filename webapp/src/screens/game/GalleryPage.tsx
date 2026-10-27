@@ -1,3 +1,4 @@
+import { gameArtOf, useArtTheme } from "../../app/artTheme";
 import { useState } from "react";
 import { useApp } from "../../app/context";
 import { Segmented } from "../../ui/Controls";
@@ -31,8 +32,9 @@ export function GalleryPage({
   const both = videos.length > 0 && screenshots.length > 0;
   const [show, setShow] = useState<Show>("all");
   const list = show === "videos" ? videos : show === "shots" ? screenshots : [...videos, ...screenshots];
+  const theme = useArtTheme(gameArtOf(game) ?? cover);
   return (
-    <Page title={game} onBack={onClose} hero layer={layer} className="list-page">
+    <Page title={game} onBack={onClose} hero layer={layer} className="list-page" style={theme.style}>
       <Hero ground={cover}>
         <Cover src={cover} className="gallery-cover" />
         <p className="list-name t-title clamp-2">{game}</p>

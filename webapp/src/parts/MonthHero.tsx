@@ -1,43 +1,18 @@
 import { useState } from "react";
-import { clubApi, type FeedItem, type PersonPayload } from "../api";
+import { clubApi, type PersonPayload } from "../api";
 import { useLoad } from "../app/useLoad";
 import { useApp } from "../app/context";
 import { tick } from "../core/haptic";
 import { formatMonth } from "../core/people-utils";
 import { num, plural } from "../i18n";
+import { Face } from "../ui/Face";
 import { Icon } from "../ui/Icon";
 import { MonthSheet } from "./Months";
 
-/** The month as one bar a day: how much was earned, today marked, the days
- * still to come left faint. */
-function MonthBars({ feed, month }: { feed: FeedItem[]; month: string }) {
-  const [year, m] = month.split("-").map(Number);
-  const days = new Date(year, m, 0).getDate();
-  const today = new Date();
-  const isNow = today.getFullYear() === year && today.getMonth() + 1 === m;
-  const counts = new Array(days).fill(0);
-  for (const item of feed) {
-    if (!item.unlocked_at) continue;
-    const d = new Date(item.unlocked_at);
-    if (d.getFullYear() === year && d.getMonth() + 1 === m) counts[d.getDate() - 1] += 1;
-  }
-  const top = Math.max(1, ...counts);
-  return (
-    <div className="home-bars" aria-hidden="true">
-      {counts.map((n, i) => (
-        <span
-          key={i}
-          className={`home-bar${n ? " home-bar-on" : ""}${isNow && i + 1 === today.getDate() ? " home-bar-today" : ""}${isNow && i + 1 > today.getDate() ? " home-bar-later" : ""}`}
-          style={{ height: n ? `${Math.max(18, (n / top) * 100)}%` : undefined }}
-        />
-      ))}
-    </div>
-  );
-}
-
 /** A person's month as one card, by what matters: how many achievements
  * (the points and the games small beside), the place among the people
- * followed and the race with the one just above or below, the month by day. Home
+ * followed, and those people in a row — each with their place and how many
+ * the person lacks to pass them (+) or leads them by (−). Home
  * shows the viewer's, a person's page that person's. */
 export function MonthHero({
   payload,
@@ -55,26 +30,16 @@ export function MonthHero({
   /** Whose month it is: their place among the people the viewer follows. */
   personId?: number;
 }) {
-  const { data, tr, locale } = useApp();
+  const { data, tr, locale, open, me } = useApp();
   const summary = useLoad(personId ? `summary:${month}:hero` : null, () => clubApi.fetchSummary(data, "following", { month }));
   const leaders = [...(summary.data?.month ?? [])].filter((r) => r.count > 0).sort((a, b) => b.count - a.count || b.score - a.score);
   const place = personId ? leaders.findIndex((r) => r.person_id === personId) + 1 : 0;
-  // The race: who is just above (and how many it takes to pass them), or —
-  // for the first — who is just below and how far behind.
-  const rival = place > 1 ? leaders[place - 2] : place === 1 ? leaders[1] : undefined;
+  // Until both the month and the race are in, the card keeps their shapes.
+  const ready = Boolean(payload) && (!personId || Boolean(summary.data) || Boolean(summary.error));
   const mine = place > 0 ? leaders[place - 1].count : 0;
-  const gap = rival ? (place > 1 ? rival.count - mine + 1 : mine - rival.count) : 0;
   const [pick, setPick] = useState(false);
   const list = months?.length ? months : [month];
-  const at = list.indexOf(month);
-  const older = at >= 0 ? list[at + 1] : undefined;
-  const newer = at > 0 ? list[at - 1] : undefined;
   const label = formatMonth(month, locale, "sheet");
-  const go = (m: string | undefined) => {
-    if (!m || !onMonth) return;
-    tick();
-    onMonth(m);
-  };
   return (
     <section className="home-hero">
       <span className="home-hero-deco shape-clover4" aria-hidden="true" />
@@ -84,14 +49,6 @@ export function MonthHero({
             {label.toUpperCase()}
             <Icon name="down" size={18} />
           </button>
-          <span className="home-hero-arrows">
-            <button type="button" className="home-hero-arrow" aria-label={tr("pickMonth")} disabled={!older} onClick={() => go(older)}>
-              <Icon name="back" size={20} />
-            </button>
-            <button type="button" className="home-hero-arrow" aria-label={tr("pickMonth")} disabled={!newer} onClick={() => go(newer)}>
-              <Icon name="forward" size={20} />
-            </button>
-          </span>
         </div>
       ) : (
         <p className="home-hero-month">{label.split(" ")[0].toUpperCase()}</p>
@@ -100,43 +57,74 @@ export function MonthHero({
       <div className="home-hero-main">
         <div className="home-hero-text">
           {payload ? (
-            <>
-              <p className="t-display home-hero-num">{num(payload.month.count, locale)}</p>
-              <p className="home-hero-line">
-                {plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}
-                {payload.month.score > 0 && ` · +${num(payload.month.score, locale)} G`}
-                {` · ${payload.games.length} ${plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}`}
-              </p>
-            </>
+            <p className="t-display home-hero-num">{num(payload.month.count, locale)}</p>
           ) : (
-            <>
-              <span className="home-hero-ghost home-hero-ghost-num" />
-              <span className="home-hero-ghost home-hero-ghost-line" />
-            </>
+            <span className="home-hero-ghost home-hero-ghost-num" />
           )}
         </div>
-        {place > 0 && (
+        {!ready && <span className="home-hero-ghost home-hero-ghost-medal shape-flower6" />}
+        {ready && place > 0 && (
           <span key={`${month}:${place}`} className={`home-hero-medal shape-flower6${place <= 3 ? ` home-hero-medal-${place}` : ""}`}>
             <b className="t-num">{place}</b>
             <span>{tr("heroPlaceWord")}</span>
           </span>
         )}
       </div>
-      {place > 0 && (
-        <div className="home-hero-race">
-          <Icon name={place === 1 ? "trophy" : "rank"} size={16} />
-          <span className="home-hero-race-line clamp-1">
-            {!rival
-              ? tr("heroAlone")
-              : place > 1
-                ? tr("heroToNext").replace("{n}", num(gap, locale)).replace("{name}", rival.name)
-                : gap > 0
-                  ? tr("heroAhead").replace("{n}", num(gap, locale)).replace("{name}", rival.name)
-                  : tr("heroTied").replace("{name}", rival.name)}
+      {payload ? (
+        <p className="home-hero-line">
+          <span>{plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}</span>
+          {payload.month.score > 0 && (
+            <span>
+              <b className="t-num">+{num(payload.month.score, locale)}</b> G
+            </span>
+          )}
+          <span>
+            <b className="t-num">{num(payload.games.length, locale)}</b>{" "}
+            {plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}
           </span>
+        </p>
+      ) : (
+        <span className="home-hero-ghost home-hero-ghost-line" />
+      )}
+      {!ready && (
+        <div className="home-hero-people rail" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span key={i} className="home-hero-person home-hero-person-ghost">
+              <span className="home-hero-ghost home-hero-ghost-face shape-cookie12" />
+              <span className="home-hero-ghost home-hero-ghost-chip" />
+            </span>
+          ))}
         </div>
       )}
-      <MonthBars feed={payload?.feed ?? []} month={month} />
+      {ready && place > 0 && leaders.length > 1 && (
+        <div className="home-hero-people rail">
+          {leaders.map((r, i) => {
+            const isMe = r.person_id === personId;
+            const diff = r.count - mine;
+            return (
+              <button
+                key={r.person_id}
+                type="button"
+                className={`home-hero-person${i < 3 ? ` home-hero-person-${i + 1}` : ""}${isMe ? " home-hero-person-me" : ""}`}
+                onClick={() => {
+                  tick();
+                  open({ kind: "person", personId: r.person_id });
+                }}
+              >
+                <span className="home-hero-person-face">
+                  <span className="home-hero-person-ring shape-cookie12">
+                    <Face personId={r.person_id} name={r.name} size={54} />
+                  </span>
+                  <span className="home-hero-person-at t-num">{i + 1}</span>
+                </span>
+                <span className={`home-hero-person-gap t-num${isMe ? "" : diff >= 0 ? " home-hero-person-ahead" : " home-hero-person-behind"}`}>
+                  {isMe ? (personId === me.person_id ? tr("you") : num(r.count, locale)) : diff >= 0 ? `+${num(diff + 1, locale)}` : `−${num(-diff, locale)}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

@@ -1594,13 +1594,15 @@ elsewhere in this file still describe the bot.
   the logo's lilac (a pink accent on the search button), shapes that morph
   (faces cut as scalloped "cookies", a flower for rarity), progress as a running
   wave, connected button groups, Roboto Flex whose width is a voice (narrow
-  numbers, wide headlines); dark first, the same scheme light. **Five
-  palettes** — Violet (the default), Mint, Amber, Ocean, Rose — and a mode (auto, light,
+  numbers, wide headlines); dark first, the same scheme light. **Nine
+  palettes** — Violet (the default), Lilac, Ocean, Mint, Forest, Amber, Garnet, Rose,
+  Graphite — and a mode (auto, light,
   dark), picked in Settings → Appearance and kept on the device. How to make
   anything new look like the rest is `docs/design-system.md` (its rarity tiers —
   blue, purple, orange — are the app's Fortnite note). A game's page
   takes a muted tonal scheme from its own art (`app/artTheme.ts`; stores whose
-  pictures refuse CORS — PSN — keep the violet). **Its one source** is
+  pictures refuse CORS — PSN — keep the violet), and the pages inside the game
+  (its achievements, one achievement, its gallery, a post) take the same. **Its one source** is
   `webapp/src/styles/tokens.css` (colour, radii, spacing, motion; the theme set
   on `<html data-theme>` from Telegram's scheme inside it, the system's
   elsewhere) and the components of `src/ui/` (Face, AchPic/Cover with the

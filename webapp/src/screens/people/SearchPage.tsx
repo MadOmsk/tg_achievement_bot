@@ -69,6 +69,17 @@ export function SearchPage({ onClose, layer }: { onClose: () => void; layer: str
             <Row lead={<Icon name="people" />} title={tr("peopleFollowing")} chevron onClick={() => open({ kind: "follows", personId: null, which: "following" })} />
             <Row lead={<Icon name="user" />} title={tr("peopleFollowers")} chevron onClick={() => open({ kind: "follows", personId: null, which: "followers" })} />
           </Group>
+          {!summary.data && summary.loading && (
+            <Section title={tr("trending")}>
+              <div className="group" aria-hidden="true">
+                <div className="group-items">
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} className="row skel" style={{ height: 72 }} />
+                  ))}
+                </div>
+              </div>
+            </Section>
+          )}
           {trending.length > 0 && (
             <Section title={tr("trending")}>
               <div className="group">

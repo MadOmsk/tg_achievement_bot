@@ -20,30 +20,15 @@ export function PlatformMark({ platform, size = 44 }: { platform: string; size?:
   );
 }
 
-/** One game account on a person's card, one line: the platform's mark, the
- * nickname with its platform under it, and the one number that platform is
- * known by (gamerscore, level) on the right. */
-export function AccountCard({ p }: { p: Platform }) {
+/** The same account as a short chip under a person's name: the platform's
+ * mark and the one number it is known by (the nickname when it has none). */
+export function AccountChip({ p }: { p: Platform }) {
   const { tr, locale } = useApp();
-  const name = MARK[p.platform]?.name ?? p.platform;
-  const score = p.gamerscore
-    ? { value: num(p.gamerscore, locale), unit: "G" }
-    : p.trophy_level
-      ? { value: String(p.trophy_level), unit: tr("level") }
-      : null;
+  const score = p.gamerscore ? `${num(p.gamerscore, locale)} G` : p.trophy_level ? `${tr("level")} ${p.trophy_level}` : null;
   return (
-    <div className="row acc-card">
-      <PlatformMark platform={p.platform} size={36} />
-      <span className="row-text">
-        <span className="row-title clamp-1">{p.name}</span>
-        <span className="row-sub">{name}</span>
-      </span>
-      {score && (
-        <span className="acc-score">
-          <b className="t-num">{score.value}</b>
-          <span>{score.unit}</span>
-        </span>
-      )}
-    </div>
+    <span className="acc-chip">
+      <PlatformMark platform={p.platform} size={22} />
+      <span className="acc-chip-score t-num">{score ?? p.name}</span>
+    </span>
   );
 }

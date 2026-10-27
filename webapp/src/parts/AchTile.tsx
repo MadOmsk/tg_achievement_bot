@@ -1,24 +1,26 @@
 import type { AchView } from "../app/layers";
 import { useApp } from "../app/context";
-import { isVeiled, rareLevel } from "../app/views";
+import { isVeiled, rareLevel, TIER_NAME } from "../app/views";
 import { tick } from "../core/haptic";
-import { pct } from "../i18n";
+import { num, pct } from "../i18n";
 import { Face } from "../ui/Face";
 import { AchPic } from "../ui/Pic";
-import { AchMarks, isWideArt } from "./AchRow";
+import { isWideArt } from "./AchRow";
+import { capital } from "./Months";
+import { Icon } from "../ui/Icon";
 
 /** One achievement as a card of a rail — Home's latest, the hunts, the rare
- * finds: its picture (a rare one framed in its tier's colour), name, game,
- * then who got it or what it is worth. One shape for every rail. */
+ * finds: its picture with its rarity on the corner, name, game, then who got
+ * it or its tier and worth. One shape for every rail. */
 export function AchTile({
   ach,
   people,
-  badge = false,
+  badge = true,
 }: {
   ach: AchView;
   /** Who got it, when the card is about people. */
   people?: Array<{ id: number; name: string; at?: string | null }>;
-  /** The rarity as a flower on the picture's corner. */
+  /** The rarity as a flower on the picture's corner (on by default). */
   badge?: boolean;
 }) {
   const { tr, locale, open, me } = useApp();
@@ -44,11 +46,15 @@ export function AchTile({
           veiled={veiled}
           className={isWideArt(ach.platform) ? "tile-pic" : "tile-pic tile-pic-sq"}
         />
-        {badge && ach.rarity != null && (
+        {badge && (ach.rarity != null || level) && (
           <span className={`tile-badge shape-flower6 tile-badge-${level ?? "plain"}`}>
-            <b className="t-num">{pct(ach.rarity, locale)}</b>
+            {ach.rarity != null ? <b className="t-num">{pct(ach.rarity, locale)}</b> : <Icon name="trophy" size={20} />}
           </span>
         )}
+      </span>
+      <span className="tile-kicker">
+        <span className={level ? `mark-${level}` : ""}>{capital(tr(TIER_NAME[level ?? "common"]))}</span>
+        {ach.gamerscore ? <span className="tile-worth">{num(ach.gamerscore, locale)} G</span> : null}
       </span>
       <span className="tile-name clamp-2">{veiled ? tr("secretAchievement") : ach.name}</span>
       <span className="tile-game clamp-1">{ach.game}</span>
@@ -66,9 +72,7 @@ export function AchTile({
               (people.length > 1 ? ` +${people.length - 1}` : "")}
           </span>
         </span>
-      ) : (
-        <AchMarks ach={ach} plain />
-      )}
+      ) : null}
     </button>
   );
 }

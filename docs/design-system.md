@@ -59,15 +59,20 @@ Chips are four kinds: `chip-outline` (a fact: a genre, points),
 A game's page takes its scheme from its art, so on it a toggle or a mark
 uses the scheme's roles (`primary-container`), never the shared pink.
 
-**Palettes.** Five, picked in Settings → Appearance and kept on the
+**Palettes.** Nine, picked in Settings → Appearance («Внешний вид») and kept on the
 device (`app/env.ts::look`, `localStorage`): **Violet** (the default, the
 logo's lilac with a pink accent), **Mint** (teal with coral), **Amber** (warm
-orange with coral), **Ocean** (blue with gold), **Rose** (pink with blue). Each has a dark and a light form; the mode is Auto
+orange with coral), **Ocean** (blue with gold), **Rose** (pink with blue),
+**Lilac** (lilac-blue with pink), **Forest** (green with amber), **Garnet** (red with
+sky), **Graphite** (neutral grey with cyan). Each has a dark and a light form; the mode is Auto
 (Telegram's own scheme inside it, the system's elsewhere), Light or Dark. A
 palette is one block of tokens in `tokens.css` under
 `:root[data-palette="…"]` and its `[data-theme="light"]` twin — a new palette
 is two such blocks and a swatch, nothing else. **A game's page takes a muted
-scheme from its own art** (`app/artTheme.ts`), over whichever palette is on.
+scheme from its own art** (`app/artTheme.ts`), over whichever palette is on,
+and so do the pages inside it — its achievements, one achievement, its
+gallery, a post of its (`rememberGameArt` / `gameArtOf`: the same picture,
+so the same colours).
 
 Platform marks keep the platforms' own colours (Xbox green, PlayStation blue,
 Steam slate); nothing else is coloured outside the tokens.
@@ -201,6 +206,11 @@ section that shows a part of a long list gives its whole as such a page
   got it, a video): `LinkCard` — picture, title, a line, and a round
   `primary-container` mark of where it goes (forward, play). Several in a row
   join as one group (`.link-cards`).
+- **A page's own action rides up into its bar once the page scrolls**
+  (owner, 2026-10-27; `BarAction` in `ui/Page.tsx`): a compact twin of it —
+  following a person, a game's heart — appears in the bar's right corner, so
+  the action stays a tap away. The app's way for every page with an action in
+  its head; a new one wraps its twin in `BarAction` and nothing else.
 - **A row of a settings group** goes on with a plain chevron (`Row chevron`).
 - **A card that is itself the way in** (the progress card of a game) carries
   the same round mark in its corner, never a second button saying the same.

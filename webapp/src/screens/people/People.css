@@ -61,6 +61,33 @@
   color: var(--on-surface);
 }
 
+/* A person's game accounts in one short line under the name. */
+.pp-accs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.acc-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 12px 0 5px;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.acc-chip-score {
+  font-weight: 700;
+}
+
 .pp-actions {
   display: flex;
   flex-direction: column;
@@ -170,4 +197,24 @@
   align-items: center;
   gap: 2px;
   white-space: nowrap;
+}
+
+/* The follow choice in the bar once the page scrolls: a small pill, filled
+   while not following, tonal once following. */
+.pp-bar-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border-radius: var(--r-full);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.pp-bar-on {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
 }

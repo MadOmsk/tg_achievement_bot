@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { gamesApi } from "../../api";
+import { gameArtOf, useArtTheme } from "../../app/artTheme";
 import { useApp } from "../../app/context";
 import { openExternal } from "../../app/env";
 import type { AchView } from "../../app/layers";
@@ -52,9 +53,10 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
   const tip = guides.data?.tips[ach.achievementId]?.text;
   const videos = guides.data?.videos?.[ach.achievementId] ?? [];
   const rare = rareLevel(ach.rarity, ach);
+  const theme = useArtTheme(gameArtOf(`${ach.platform}:${ach.titleId}`, ach.game) ?? ach.gameIcon);
 
   return (
-    <Page title={ach.game ?? tr("pageAchievement")} onBack={onClose} hero layer={layer} className="ach-page">
+    <Page title={ach.game ?? tr("pageAchievement")} onBack={onClose} hero layer={layer} className="ach-page" style={theme.style}>
       <div className="ap-head">
         <Hero full={isWideArt(ach.platform)} ground={veiled ? null : ach.icon} onOpen={!veiled && ach.icon ? () => openImage(ach.icon!) : undefined}>
           <AchPic src={ach.icon} veiled={veiled} className={isWideArt(ach.platform) ? "hero-ach" : "hero-ach hero-ach-sq"} />

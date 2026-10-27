@@ -674,6 +674,24 @@ button.chip {
     box-shadow var(--t-fast);
 }
 
+/* A page's action riding up into its bar once its place in the page has
+   scrolled up under the bar (BarAction). */
+.bar-action {
+  display: flex;
+  opacity: 0;
+  transform: translateY(24px) scale(0.6);
+  pointer-events: none;
+  transition:
+    opacity var(--t-fast),
+    transform var(--t-mid) var(--spring);
+}
+
+.bar-action-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
 .appbar-solid {
   box-shadow: 0 1px 0 var(--outline-soft);
 }
@@ -753,6 +771,14 @@ button.chip {
   background: var(--surface-2);
   padding-bottom: calc(16px + var(--safe-bottom));
   animation: sheet-up var(--t-slow) var(--spring-soft);
+}
+
+.sheet {
+  transition: transform var(--t-mid) var(--spring-soft);
+}
+
+.sheet-pulled {
+  transition: none;
 }
 
 .sheet-grab {

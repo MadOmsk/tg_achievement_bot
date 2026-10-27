@@ -116,6 +116,11 @@ export function Feed({ refreshKey }: { refreshKey: number }) {
 
       {!feed.data && feed.loading && (
         <div className="feed-skel">
+          <div className="days rail" aria-hidden="true">
+            {Array.from({ length: 8 }, (_, i) => (
+              <span key={i} className="day skel" />
+            ))}
+          </div>
           <span className="skel skel-line feed-skel-day" />
           <MagazineSkel />
           <MagazineSkel />

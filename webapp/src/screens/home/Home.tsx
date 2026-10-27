@@ -93,12 +93,20 @@ export function Home({ refreshKey }: { refreshKey: number }) {
             <Face personId={me.person_id} name={me.handle?.display ?? ""} size={48} />
           </span>
           <span className="home-me-text">
-            <span className="t-meta">
-              {mePresence?.playing && mePresence.title_name
-                ? `${tr("playing")} · ${mePresence.title_name}`
-                : tr("homeHello")}
-            </span>
-            <span className="home-me-name clamp-1">{me.handle?.display}</span>
+            {mePresence?.playing && mePresence.title_name ? (
+              <>
+                <span className="home-me-name clamp-1">{me.handle?.display}</span>
+                <span className="home-me-status">
+                  <span className="home-me-dot" />
+                  <span className="clamp-1">{mePresence.title_name}</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="t-meta">{tr("homeHello")}</span>
+                <span className="home-me-name clamp-1">{me.handle?.display}</span>
+              </>
+            )}
           </span>
         </button>
         <IconButton

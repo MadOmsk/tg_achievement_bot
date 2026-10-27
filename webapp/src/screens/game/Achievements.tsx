@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { gamesApi, type GameAchievement, type GameDetails, type GameGuidesResponse } from "../../api";
+import { gameArtOf, useArtTheme } from "../../app/artTheme";
 import { useApp } from "../../app/context";
 import { useLoad } from "../../app/useLoad";
 import { achOfList } from "../../app/views";
@@ -139,8 +140,9 @@ export function Achievements({
   const done = Boolean(d && d.achievements_total > 0 && d.achievements_unlocked >= d.achievements_total);
   const share = d && d.achievements_total ? Math.round((d.achievements_unlocked / d.achievements_total) * 100) : null;
 
+  const theme = useArtTheme(gameArtOf(`${platform}:${titleId}`, gameName) ?? d?.icon_url ?? cover);
   return (
-    <Page title={gameName} onBack={onClose} hero layer={layer} className="list-page">
+    <Page title={gameName} onBack={onClose} hero layer={layer} className="list-page" style={theme.style}>
       <Hero ground={d?.icon_url ?? cover}>
         <span className="list-ring">
           <WaveRing value={d?.achievements_unlocked ?? 0} total={d?.achievements_total ?? 0} size={184}>

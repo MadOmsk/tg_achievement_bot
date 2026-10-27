@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "../app/context";
-import { formatMonth } from "../core/people-utils";
+import { tick } from "../core/haptic";
+import { currentMonth, formatMonth } from "../core/people-utils";
 import { Segmented } from "../ui/Controls";
 import { Icon } from "../ui/Icon";
 import { Sheet } from "../ui/Page";
@@ -33,25 +34,7 @@ export function MonthSwitch({
         value={value}
         onChange={onChange}
       />
-      {all && (
-        <Sheet title={tr("pickMonth")} onClose={() => setAll(false)} layer="months">
-          <div className="months-grid">
-            {list.map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={m === value ? "months-on" : ""}
-                onClick={() => {
-                  setAll(false);
-                  onChange(m);
-                }}
-              >
-                {capital(formatMonth(m, locale, "sheet"))}
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
+      {all && <MonthSheet months={list} value={value} onChange={onChange} onClose={() => setAll(false)} />}
     </div>
   );
 }
@@ -98,25 +81,43 @@ export function MonthSheet({
   onClose: () => void;
 }) {
   const { locale, tr } = useApp();
+  const now = currentMonth();
+  const years = [...new Set(months.map((m) => m.slice(0, 4)))].sort().reverse();
   return (
     <Sheet title={tr("pickMonth")} onClose={onClose} layer="months">
-      <div className="months-grid">
-        {months.map((m) => (
-          <button
-            key={m}
-            type="button"
-            className={m === value ? "months-on" : ""}
-            onClick={() => {
-              onClose();
-              onChange(m);
-            }}
-          >
-            {capital(formatMonth(m, locale, "sheet"))}
-          </button>
-        ))}
-      </div>
+      {years.map((y) => (
+        <section key={y} className="months-year">
+          <h3 className="months-year-title t-num">{y}</h3>
+          <div className="months-grid">
+            {months
+              .filter((m) => m.startsWith(y))
+              .sort()
+              .reverse()
+              .map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`${m === value ? "months-on" : ""}${m === now ? " months-now" : ""}`}
+                  onClick={() => {
+                    tick();
+                    onClose();
+                    onChange(m);
+                  }}
+                >
+                  {capital(monthOnly(m, locale))}
+                </button>
+              ))}
+          </div>
+        </section>
+      ))}
     </Sheet>
   );
+}
+
+/** A month's name alone, as a calendar heads it: «Октябрь», «October». */
+function monthOnly(month: string, locale: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(locale === "en" ? "en-GB" : "ru-RU", { month: "long" });
 }
 
 /** The last `n` months, this one first, for a screen whose answer lists none. */

@@ -1,8 +1,7 @@
-import { useState } from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState } from "react";
 import { gameApi, type GameCard, type GamePage as GamePageData, type GameRef } from "../../api";
 import { useApp } from "../../app/context";
-import { useArtTheme } from "../../app/artTheme";
+import { rememberGameArt, useArtTheme } from "../../app/artTheme";
 import { openExternal } from "../../app/env";
 import { useLoad } from "../../app/useLoad";
 import { recall, remember } from "../../core/game-cache";
@@ -15,7 +14,7 @@ import { NewsCard } from "../news/News";
 import { Button, Chip, Empty, Section } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
-import { Page } from "../../ui/Page";
+import { BarAction, Page } from "../../ui/Page";
 import { MediaTile } from "./MediaTile";
 import { Cover } from "../../ui/Pic";
 import type { Media } from "../../ui/Viewer";
@@ -58,6 +57,12 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
   const hero = g?.art.hero || g?.art.header || g?.art.poster || null;
   const art = g?.art.hero || g?.art.header || g?.art.poster;
   const theme = useArtTheme(art);
+  if (g && art) {
+    rememberGameArt(
+      [g.game.name, `${gameRef.platform}:${gameRef.title_id}`, ...g.lists.map((l) => `${l.platform}:${l.title_id}`)],
+      art,
+    );
+  }
   const name = g?.game.name ?? gameRef.name ?? "";
   const ready = Boolean(g) && (theme.settled || !art);
 
@@ -89,8 +94,10 @@ function GameSkeleton({ name, cover }: { name: string; cover: string | null }) {
         <div className="gp-titles">
           {name ? <h1 className="gp-title clamp-3">{name}</h1> : <span className="skel skel-line" style={{ width: "80%", height: 22 }} />}
           <span className="skel skel-line" style={{ width: "60%" }} />
-          <span className="skel gp-skel-pill" />
         </div>
+        <span className="gp-fav-wrap">
+          <span className="skel gp-skel-heart shape-cookie9" />
+        </span>
       </div>
       <div className="gp-chips">
         {[86, 64, 74, 96].map((w) => (
@@ -136,8 +143,6 @@ function GameBody({
   const [allDlc, setAllDlc] = useState(false);
   const [fav, setFav] = useState({ on: g.favorite, count: g.favorites });
   const [busy, setBusy] = useState(false);
-  // Where the heart goes once the head scrolls away: the page's bar.
-  const [bar, setBar] = useState<HTMLElement | null>(null);
   const gallery: Media[] = [...(g.videos ?? []), ...g.screenshots];
 
   const studio = [
@@ -188,6 +193,7 @@ function GameBody({
   };
 
   const others = g.players.filter((p) => p.person_id !== (progress?.person_id ?? me.person_id));
+  const heartAt = useRef<HTMLSpanElement>(null);
   const heart = (where: "head" | "bar") => (
     <button
       type="button"
@@ -202,20 +208,14 @@ function GameBody({
   );
   return (
     <>
-      {bar && createPortal(heart("bar"), bar)}
-      <div
-        className="gp-head"
-        ref={(node) => {
-          const found = node?.closest(".page")?.querySelector<HTMLElement>(".appbar-actions") ?? null;
-          if (found !== bar) setBar(found);
-        }}
-      >
+      <BarAction anchor={heartAt}>{heart("bar")}</BarAction>
+      <div className="gp-head">
         <Cover src={g.art.poster} className="gp-poster" />
         <div className="gp-titles">
           <h1 className="gp-title clamp-3">{locale === "ru" && g.game.name_ru ? g.game.name_ru : g.game.name}</h1>
           <p className="gp-sub clamp-2">{[years(g.game), studio].filter(Boolean).join(" · ")}</p>
         </div>
-        <span className="gp-fav-wrap">
+        <span className="gp-fav-wrap" ref={heartAt}>
           {heart("head")}
           {fav.count > 0 && <span className="gp-fav-count t-num">{fav.count}</span>}
         </span>

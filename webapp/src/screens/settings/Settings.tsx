@@ -146,6 +146,10 @@ const PALETTE_NAMES = {
   ember: "paletteEmber",
   ocean: "paletteOcean",
   rose: "paletteRose",
+  forest: "paletteForest",
+  garnet: "paletteGarnet",
+  lilac: "paletteLilac",
+  graphite: "paletteGraphite",
 } as const;
 
 function AppearancePane() {

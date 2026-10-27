@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useBackHandler } from "../core/back-stack";
 import { t } from "../i18n";
@@ -7,6 +7,45 @@ import { IconButton } from "./Controls";
 const inTelegram = () => Boolean(window.Telegram?.WebApp?.initData);
 /** The page's language is set from the person's (App sets `<html lang>`). */
 const word = (key: "back" | "close") => t(document.documentElement.lang === "en" ? "en" : "ru", key);
+
+/** Where a page's bar keeps its actions, for `BarAction`. */
+const BarSlot = createContext<HTMLElement | null>(null);
+
+/** A page's own action — following a person, a game's heart — riding up into
+ * the page's bar once its place in the page (`anchor`) has scrolled up under
+ * the bar, so it stays a tap away (the app's way, for every page with an
+ * action in its head). Its place in the page stays as it is; the bar shows
+ * this compact twin. */
+export function BarAction({ children, anchor }: { children: ReactNode; anchor: RefObject<HTMLElement | null> }) {
+  const slot = useContext(BarSlot);
+  const [shown, setShown] = useState(false);
+  // The anchor may come after the page does (a person's card loads first):
+  // look for it after every render, watch it once it is there.
+  const watched = useRef<{ node: HTMLElement; io: IntersectionObserver } | null>(null);
+  useEffect(() => {
+    const node = anchor.current;
+    if (watched.current?.node === node) return;
+    watched.current?.io.disconnect();
+    watched.current = null;
+    const scroller = node?.closest<HTMLElement>("[data-scroll]");
+    if (!node || !scroller) return;
+    const bar = slot?.closest<HTMLElement>(".appbar")?.offsetHeight ?? 64;
+    const io = new IntersectionObserver(
+      ([e]) => setShown(!e.isIntersecting && e.boundingClientRect.top < (e.rootBounds?.top ?? 0) + bar),
+      { root: scroller, rootMargin: `-${bar}px 0px 0px 0px` },
+    );
+    io.observe(node);
+    watched.current = { node, io };
+  });
+  useEffect(
+    () => () => {
+      watched.current?.io.disconnect();
+      watched.current = null;
+    },
+    [],
+  );
+  return slot ? createPortal(<span className={`bar-action${shown ? " bar-action-on" : ""}`}>{children}</span>, slot) : null;
+}
 
 /** A page opened over the tabs: slides in from the side, scrolls on its own,
  * and the phone's back (or Telegram's header button) closes it. Inside
@@ -39,6 +78,7 @@ export function Page({
   useBackHandler(true, onBack, layer);
   const scroller = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     scroller.current?.scrollTo(0, 0);
   }, [layer]);
@@ -58,10 +98,12 @@ export function Page({
               <span className="appbar-spacer" />
             )}
             <span className="appbar-title clamp-1">{title}</span>
-            <span className="appbar-actions">{actions}</span>
+            <span className="appbar-actions" ref={setSlot}>
+              {actions}
+            </span>
           </header>
         )}
-        {children}
+        <BarSlot.Provider value={slot}>{children}</BarSlot.Provider>
       </div>
     </div>
   );
@@ -80,14 +122,52 @@ export function Sheet({
   layer?: string;
 }) {
   useBackHandler(true, onClose, layer);
+  // Pulled down — from its top, or from its list scrolled to the top — the
+  // sheet follows the finger and, past a short way, goes.
+  const sheet = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; dy: number } | null>(null);
+  const [pull, setPull] = useState(0);
+  const start = (y: number, fromBody: boolean) => {
+    if (fromBody && (body.current?.scrollTop ?? 0) > 0) return;
+    drag.current = { y, dy: 0 };
+  };
+  const move = (y: number) => {
+    if (!drag.current) return;
+    drag.current.dy = Math.max(0, y - drag.current.y);
+    setPull(drag.current.dy);
+  };
+  const end = () => {
+    if (!drag.current) return;
+    const far = drag.current.dy > Math.min(120, (sheet.current?.offsetHeight ?? 400) * 0.25);
+    drag.current = null;
+    setPull(0);
+    if (far) onClose();
+  };
   // Over everything, the toolbar included: a page is a layer of its own.
   return createPortal(
     <div className="sheet-wrap" role="dialog" aria-modal="true">
-      <button type="button" className="sheet-scrim" aria-label={word("close")} onClick={onClose} />
-      <div className="sheet">
+      <button
+        type="button"
+        className="sheet-scrim"
+        aria-label={word("close")}
+        onClick={onClose}
+        style={pull ? { opacity: Math.max(0.2, 1 - pull / 300) } : undefined}
+      />
+      <div
+        ref={sheet}
+        className={`sheet${pull ? " sheet-pulled" : ""}`}
+        style={pull ? { transform: `translateY(${pull}px)` } : undefined}
+        onTouchStart={(e) => start(e.touches[0].clientY, body.current?.contains(e.target as Node) ?? false)}
+        onTouchMove={(e) => move(e.touches[0].clientY)}
+        onTouchEnd={end}
+        onTouchCancel={end}
+      >
         <span className="sheet-grab" />
         {title && <h2 className="sheet-title t-title">{title}</h2>}
-        <div className="sheet-body">{children}</div>
+        <div ref={body} className="sheet-body">
+          {children}
+        </div>
       </div>
     </div>,
     document.body,

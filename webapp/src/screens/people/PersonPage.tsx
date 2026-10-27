@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { clubApi, gameApi } from "../../api";
 import { peopleApi, type PersonProfile, type Relation } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
@@ -9,19 +9,17 @@ import { num } from "../../i18n";
 import { FAVORITES_CHANGED, FOLLOWS_CHANGED } from "../../parts/FollowButton";
 import { monthName, recentMonths } from "../../parts/Months";
 import { gameLines, MonthGames } from "../../parts/MonthGames";
-import { MagazinePost, MagazineSkel } from "../../parts/MagazinePost";
-import { toPosts } from "../../parts/posts";
-import { AccountCard } from "../../parts/AccountCard";
+import { AchTile } from "../../parts/AchTile";
+import { achOfFeed } from "../../app/views";
+import { AccountChip } from "../../parts/AccountCard";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
 import { Face, faceUrl } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
-import { Confirm, Page, Sheet } from "../../ui/Page";
+import { BarAction, Confirm, Page, Sheet } from "../../ui/Page";
 import { openImage } from "../../ui/Viewer";
 import { FavoriteGames } from "../../parts/FavoriteGames";
 import { MonthHero } from "../../parts/MonthHero";
 import "./People.css";
-
-const POSTS_SHOWN = 6;
 
 export function PersonPage({ personId, onClose, layer }: { personId: number; onClose: () => void; layer: string }) {
   const { data, tr, locale, me, open, toast } = useApp();
@@ -40,13 +38,12 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
   const [menu, setMenu] = useState(false);
   const [askBlock, setAskBlock] = useState(false);
   const [askUnfollow, setAskUnfollow] = useState(false);
-  const [allPosts, setAllPosts] = useState(false);
+  const followAt = useRef<HTMLButtonElement>(null);
 
   const c = card.data;
   const rel = relation ?? c?.relation ?? null;
   const a = activity.data;
   const hidden = Boolean(a?.hidden) || (c ? !c.can_view && !self : false);
-  const posts = useMemo(() => toPosts(a?.feed ?? []), [a]);
   const name = c?.handle ?? a?.name ?? "";
   const presence = a?.presence ?? c?.activity?.presence ?? null;
 
@@ -96,8 +93,14 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
           <Face personId={personId} name={name || "?"} size={112} presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
         <h1 className="pp-name">{name}</h1>
+        {!hidden && (c?.activity?.platforms?.length ?? 0) > 0 && (
+          <div className="pp-accs">
+            {c!.activity!.platforms.map((p) => (
+              <AccountChip key={`${p.platform}:${p.name}`} p={p} />
+            ))}
+          </div>
+        )}
         <div className="pp-tags">
-          {rel?.friends && <span className="chip chip-secondary">{tr("friendsBtn")}</span>}
           {!rel?.friends && rel?.followed_by && <span className="chip chip-outline">{tr("followsYou")}</span>}
           {rel?.blocked && <span className="chip chip-outline chip-danger">{tr("stateBlocked")}</span>}
           {presence?.playing && presence.title_name && (
@@ -131,6 +134,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
           </button>
           {!self && rel && !rel.blocked && (
             <button
+              ref={followAt}
               type="button"
               className={`pp-count-follow${rel.following ? " pp-count-on" : ""}`}
               onClick={() => {
@@ -150,6 +154,22 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
             </button>
           )}
         </div>
+      )}
+      {!self && rel && !rel.blocked && (
+        <BarAction anchor={followAt}>
+          <button
+            type="button"
+            className={`pp-bar-follow${rel.following ? " pp-bar-on" : ""}`}
+            aria-label={rel.friends ? tr("friendsBtn") : rel.following ? tr("followingBtn") : tr("follow")}
+            onClick={() => {
+              tick();
+              setMenu(true);
+            }}
+          >
+            <Icon name={rel.following ? "check" : "plus"} size={18} />
+            <span>{rel.friends ? tr("friendsBtn") : rel.following ? tr("followingBtn") : tr("follow")}</span>
+          </button>
+        </BarAction>
       )}
       {!self && rel?.blocked && (
         <div className="pp-actions">
@@ -229,10 +249,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
             payload={a}
             month={month}
             months={a?.months?.length ? a.months : recentMonths(12)}
-            onMonth={(m) => {
-              setAllPosts(false);
-              setMonth(m);
-            }}
+            onMonth={setMonth}
             personId={personId}
           />
         </div>
@@ -240,42 +257,20 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
 
       {hidden && <Empty icon="lock" title={tr("activityHidden")} text={tr("activityHiddenHint")} />}
 
-      {!hidden && c?.activity?.platforms && c.activity.platforms.length > 0 && (
-        <Section title={tr("accounts")}>
-          <div className="group">
-            <div className="group-items">
-              {c.activity.platforms.map((p) => (
-                <AccountCard key={`${p.platform}:${p.name}`} p={p} />
-              ))}
-            </div>
-          </div>
-        </Section>
-      )}
 
       {!hidden && (
         <Section title={tr("recentUnlocks")}>
-          {!a && activity.loading && (
-            <>
-              <MagazineSkel />
-              <MagazineSkel />
-            </>
-          )}
-          {a && posts.length === 0 && <Empty icon="trophy" title={tr("emptyPersonTitle")} />}
-          {(allPosts ? posts : posts.slice(0, POSTS_SHOWN)).map((p) => (
-            <MagazinePost key={p.key} post={p} />
-          ))}
-          {posts.length > POSTS_SHOWN && !allPosts && (
-            <div className="pp-more">
-              <Button
-                variant="tonal"
-                wide
-                onClick={() => {
-                  tick();
-                  setAllPosts(true);
-                }}
-              >
-                {tr("seeAll")} · {posts.length}
-              </Button>
+          {a && (a.feed ?? []).length === 0 ? (
+            <Empty icon="trophy" title={tr("emptyPersonTitle")} />
+          ) : (
+            <div className="rail">
+              {(a ? a.feed.slice(0, 12) : Array.from({ length: 3 }, () => null)).map((item, i) =>
+                item ? (
+                  <AchTile key={`${item.title_id}:${item.achievement_id}`} ach={achOfFeed(item)} />
+                ) : (
+                  <span key={i} className="tile tile-skel skel" />
+                ),
+              )}
             </div>
           )}
         </Section>

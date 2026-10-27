@@ -111,18 +111,51 @@
   justify-content: center;
 }
 
+/* The months a list has, newest first, a year at a time: the year's number,
+   then its months three to a row — the chosen one filled, this month marked. */
+.months-year + .months-year {
+  margin-top: 14px;
+}
+
+.months-year-title {
+  padding: 0 24px 8px;
+  font-size: 15px;
+  color: var(--on-surface-3);
+}
+
 .months-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  padding: 0 16px 8px;
+  padding: 0 16px 4px;
 }
 
 .months-grid button {
-  height: 52px;
+  position: relative;
+  height: 48px;
   border-radius: var(--r-m);
   background: var(--surface-3);
+  font-size: 14px;
   font-weight: 650;
+  transition:
+    border-radius var(--t-mid) var(--spring),
+    background var(--t-fast);
+}
+
+.months-grid button:active {
+  border-radius: var(--r-s);
+}
+
+.months-grid .months-now::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--primary);
 }
 
 .months-grid .months-on {
@@ -314,27 +347,6 @@
   color: var(--on-steam);
 }
 
-.row.acc-card {
-  gap: 12px;
-  min-height: 64px;
-  padding: 10px 16px 10px 12px;
-}
-
-.acc-score {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  flex: 0 0 auto;
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--on-surface-3);
-}
-
-.acc-score b {
-  font-size: 20px;
-  color: var(--on-surface);
-}
-
 .done-mark {
   display: inline-flex;
   align-items: center;
@@ -500,31 +512,6 @@
   color: inherit;
 }
 
-.home-hero-arrows {
-  display: flex;
-  gap: 4px;
-}
-
-.home-hero-arrow {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--on-primary-container) 12%, transparent);
-  color: inherit;
-  transition: transform var(--t-fast) var(--spring), opacity var(--t-fast);
-}
-
-.home-hero-arrow:active:not(:disabled) {
-  transform: scale(0.9);
-}
-
-.home-hero-arrow:disabled {
-  opacity: 0.3;
-}
-
 .home-hero-main {
   display: flex;
   align-items: center;
@@ -582,26 +569,116 @@
 }
 
 /* Who is just above or below, and how close: one pill. */
-.home-hero-race {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  height: 36px;
-  margin-top: 14px;
-  padding: 0 14px 0 12px;
-  border-radius: var(--r-full);
-  background: color-mix(in srgb, var(--on-primary-container) 12%, transparent);
+/* The people followed in a row, by place: a large face in a ring of the
+   podium's colour for the first three (mythic, legendary, rare), the place
+   on its corner, and under it a chip of how many the person lacks to pass
+   them (+) or leads them by (−). The person's own ring is lit. */
+.home-hero-people {
+  gap: 10px;
+  margin: 18px -16px 0;
+  padding: 2px 16px 2px;
 }
 
-.home-hero-race svg {
+.home-hero-person {
+  --ring: color-mix(in srgb, var(--on-primary-container) 18%, transparent);
   flex: 0 0 auto;
+  width: 66px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  transition: transform var(--t-fast) var(--spring);
 }
 
-.home-hero-race-line {
-  min-width: 0;
-  font-size: 13.5px;
-  font-weight: 650;
+.home-hero-person:active {
+  transform: scale(0.94);
+}
+
+.home-hero-person-1 {
+  --ring: var(--tier-mythic);
+}
+
+.home-hero-person-2 {
+  --ring: var(--tier-legendary);
+}
+
+.home-hero-person-3 {
+  --ring: var(--tier-epic);
+}
+
+.home-hero-person-me {
+  --ring: var(--on-primary-container);
+}
+
+.home-hero-person-face {
+  position: relative;
+  display: flex;
+}
+
+.home-hero-person-ring {
+  display: flex;
+  padding: 3px;
+  background: var(--ring);
+}
+
+.home-hero-person-at {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--primary-container-2);
+  box-shadow: 0 0 0 2px var(--primary-container);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.home-hero-person-1 .home-hero-person-at {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.home-hero-person-2 .home-hero-person-at {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.home-hero-person-3 .home-hero-person-at {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+.home-hero-person-gap {
+  min-width: 40px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 12.5px;
+  line-height: 1;
+  background: color-mix(in srgb, var(--on-primary-container) 10%, transparent);
+}
+
+.home-hero-person-me .home-hero-person-gap {
+  background: var(--on-primary-container);
+  color: var(--primary-container);
+}
+
+.home-hero-person-ahead {
+  color: var(--on-primary-container);
+}
+
+.home-hero-person-behind {
+  color: var(--on-primary-container-2);
+  background: transparent;
 }
 
 .home-hero-text {
@@ -620,10 +697,24 @@
   color: var(--on-primary-container);
 }
 
+/* The month's figures beside the count: the words quiet, the numbers lit. */
 .home-hero-line {
-  margin-top: 6px;
+  display: flex;
+  white-space: nowrap;
+  margin-top: 8px;
   font-size: 14px;
   color: var(--on-primary-container-2);
+}
+
+.home-hero-line > span + span::before {
+  content: "·";
+  margin: 0 7px;
+  opacity: 0.6;
+}
+
+.home-hero-line b {
+  font-size: 15px;
+  color: var(--on-primary-container);
 }
 
 .home-hero .home-hero-ghost {
@@ -639,6 +730,28 @@
   border-radius: var(--r-m);
 }
 
+.home-hero-ghost-medal {
+  flex: 0 0 auto;
+  width: 104px;
+  height: 104px;
+  margin-right: 4px;
+}
+
+.home-hero-person-ghost {
+  pointer-events: none;
+}
+
+.home-hero-ghost-face {
+  width: 60px;
+  height: 60px;
+}
+
+.home-hero-ghost-chip {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+}
+
 .home-hero-ghost-line {
   width: 110px;
   height: 14px;
@@ -650,33 +763,6 @@
   50% {
     opacity: 0.5;
   }
-}
-
-.home-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 44px;
-  margin-top: 16px;
-}
-
-.home-bar {
-  flex: 1;
-  height: 4px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--on-primary-container) 18%, transparent);
-}
-
-.home-bar-on {
-  background: var(--on-primary-container);
-}
-
-.home-bar-today {
-  box-shadow: 0 0 0 2px var(--tertiary);
-}
-
-.home-bar-later {
-  background: color-mix(in srgb, var(--on-primary-container) 8%, transparent);
 }
 
 .row-sub.acc-facts {
@@ -776,6 +862,22 @@
   padding: 0 4px;
   font-size: 12.5px;
   color: var(--on-surface-3);
+}
+
+.tile-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  padding: 0 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.tile-worth::before {
+  content: "·";
+  margin-right: 6px;
 }
 
 .tile .marks-plain,

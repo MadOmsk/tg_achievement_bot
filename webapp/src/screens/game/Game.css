@@ -52,11 +52,10 @@
   gap: 10px;
 }
 
-.gp-skel-pill {
+.gp-skel-heart {
   display: block;
-  width: 150px;
-  height: 40px;
-  border-radius: 20px;
+  width: 48px;
+  height: 48px;
 }
 
 .gp-skel-chip {
@@ -197,29 +196,12 @@
 }
 
 /* Once the page scrolls, the heart moves up into the bar. */
-.page:has(.appbar-solid) .gp-fav-head {
-  opacity: 0;
-  transform: translateY(-24px) scale(0.6);
-  pointer-events: none;
-}
 
-.page:has(.appbar-solid) .gp-fav-count {
-  opacity: 0;
-}
 
 .gp-fav-bar {
   width: 44px;
   height: 44px;
   box-shadow: none;
-  opacity: 0;
-  transform: translateY(24px) scale(0.6);
-  pointer-events: none;
-}
-
-.appbar-solid .gp-fav-bar {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
 }
 
 .gp-fav:active {

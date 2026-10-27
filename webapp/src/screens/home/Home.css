@@ -42,6 +42,26 @@
   font-stretch: 110%;
 }
 
+/* What the person is playing, under the name: one line, a live dot. */
+.home-me-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--on-surface-2);
+}
+
+.home-me-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
 .home-welcome {
   margin: 16px 12px 0;
   padding: 22px 20px;
