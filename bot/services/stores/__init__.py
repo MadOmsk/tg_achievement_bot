@@ -133,13 +133,14 @@ def stand_in_for(record: dict[str, object]) -> StoreVersion:
         store=store_of(platform, platforms),
         product_id=str(record["title_id"]),
         console=console_of(platform, platforms),
-        # A list whose name was lost ("?" on production's PSN lists) is
-        # named by its English name.
+        # A list whose name was lost ("?" on production's PSN lists, its own
+        # id where the game's name was never learned) is named by its
+        # English name.
         name=next(
             (
                 str(n)
                 for n in (record.get("name"), record.get("name_en"))
-                if n and normalize(str(n))
+                if n and normalize(str(n)) and str(n) != str(record["title_id"])
             ),
             None,
         ),

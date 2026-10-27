@@ -1430,12 +1430,14 @@ CREATE TABLE IF NOT EXISTS game_series (
 );
 CREATE INDEX IF NOT EXISTS idx_game_series_series ON game_series(series_id);
 
--- A stand-in version is named by its list (117): the name follows the list's.
+-- A stand-in version is named by its list (117): the name follows the list's;
+-- the list's own id is no name (130).
 CREATE TRIGGER IF NOT EXISTS list_name_reaches_its_stand_ins
 AFTER UPDATE OF name, name_ru, name_en ON achievement_list_connectors
 BEGIN
     UPDATE versions SET
         name = CASE WHEN NEW.name IS NOT NULL AND NEW.name NOT IN ('', '?')
+                         AND NEW.name <> NEW.title_id
                     THEN NEW.name ELSE COALESCE(NEW.name_en, name) END,
         name_ru = NEW.name_ru
     WHERE stand_in = 1 AND platform = NEW.platform AND title_id = NEW.title_id;
