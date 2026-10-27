@@ -56,9 +56,19 @@ class _GamePageRepo:
             return None
         record = await self.title_record(platform, title_id) or {}
         name = str(record.get("name_en") or record.get("name") or title_id)
+        marks = ",".join("?" * len(versions))
         async with self.transaction():
+            # Two visits at once: the first one's game stands (the block holds
+            # the connection, so this look and the insert are one step).
+            cursor = await self._conn.execute(
+                f"SELECT game_id FROM versions WHERE version_id IN ({marks})"
+                " AND game_id IS NOT NULL LIMIT 1",
+                versions,
+            )
+            taken = await cursor.fetchone()
+            if taken is not None:
+                return await self.live_game_id(int(taken[0]))
             game = await self.create_game(name, None, versions[0])
-            marks = ",".join("?" * len(versions))
             await self._conn.execute(
                 f"UPDATE versions SET game_id = ?, role = 'version' WHERE version_id IN ({marks})"
                 " AND game_id IS NULL",
@@ -308,23 +318,36 @@ class _GamePageRepo:
                 ),
             )
         else:
-            await self._conn.execute(
-                "DELETE FROM favorite_games WHERE person_id = ? AND game_id = ?",
-                (person_id, game_id),
-            )
+            # Every row of this person's that is this game now — one stored
+            # under an id merged into it, or found by its anchor, included:
+            # deleting by the id alone left such a heart on for good.
+            stored = [
+                row_game
+                for person, row_game, game in await self._favorites_resolved(person_id)
+                if person == person_id and game == game_id
+            ]
+            marks = ",".join("?" * len(stored))
+            if stored:
+                await self._conn.execute(
+                    f"DELETE FROM favorite_games WHERE person_id = ? AND game_id IN ({marks})",
+                    (person_id, *stored),
+                )
         await self._conn.commit()
 
-    async def favorite_game_ids(self, person_id: int) -> list[int]:
-        """A person's favorite games, the latest first, each as the game it is
-        now — found by its anchor first (a catalog carried over may give the
-        same game another id, and the old id to another game), else by its id,
-        a merged one leading to the game it went into."""
+    async def _favorites_resolved(self, person_id: int | None = None) -> list[tuple[int, int, int]]:
+        """`(person, stored game id, the game it is now)` of every favorite (or
+        one person's), the latest first — found by its anchor first (a catalog
+        carried over may give the same game another id, and the old id to
+        another game), else by its id, a merged one leading to the game it
+        went into. Rows whose game is gone are left out. Every reader of
+        favorites goes through this, so a merge never splits what they see."""
+        where, args = ("WHERE person_id = ?", (person_id,)) if person_id is not None else ("", ())
         cursor = await self._conn.execute(
-            "SELECT game_id, anchor_key FROM favorite_games WHERE person_id = ?"
+            f"SELECT person_id, game_id, anchor_key FROM favorite_games {where}"
             " ORDER BY created_at DESC, game_id DESC",
-            (person_id,),
+            args,
         )
-        found: list[int] = []
+        resolved: list[tuple[int, int, int]] = []
         for row in await cursor.fetchall():
             game = None
             if row["anchor_key"]:
@@ -338,7 +361,15 @@ class _GamePageRepo:
                 game = await self.live_game_id(int(hit[0])) if hit else None
             if game is None:
                 game = await self.live_game_id(int(row["game_id"]))
-            if game is not None and game not in found:
+            if game is not None:
+                resolved.append((int(row["person_id"]), int(row["game_id"]), game))
+        return resolved
+
+    async def favorite_game_ids(self, person_id: int) -> list[int]:
+        """A person's favorite games, the latest first, each as the game it is now."""
+        found: list[int] = []
+        for _person, _stored, game in await self._favorites_resolved(person_id):
+            if game not in found:
                 found.append(game)
         return found
 
@@ -346,23 +377,14 @@ class _GamePageRepo:
         return game_id in await self.favorite_game_ids(person_id)
 
     async def favorite_count(self, game_id: int) -> int:
-        cursor = await self._conn.execute(
-            "SELECT COUNT(*) FROM favorite_games WHERE game_id = ?", (game_id,)
-        )
-        row = await cursor.fetchone()
-        return int(row[0]) if row else 0
+        return len({p for p, _stored, game in await self._favorites_resolved() if game == game_id})
 
     async def favorite_steam_apps(self) -> list[int]:
         """The Steam apps of every game somebody keeps as a favorite."""
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT CAST(v.product_id AS INTEGER) FROM favorite_games f"
-            " JOIN versions v ON v.game_id = f.game_id WHERE v.store = 'steam'"
-            " UNION"
-            " SELECT DISTINCT CAST(json_extract(j.value, '$[1]') AS INTEGER) FROM favorite_games f"
-            " JOIN versions v ON v.game_id = f.game_id, json_each(v.store_ids) j"
-            " WHERE json_extract(j.value, '$[0]') = 'steam_twin'",
-        )
-        return [int(row[0]) for row in await cursor.fetchall() if row[0]]
+        apps: list[int] = []
+        for game in dict.fromkeys(g for _p, _s, g in await self._favorites_resolved()):
+            apps.extend(a for a in await self.game_steam_apps(game) if a not in apps)
+        return apps
 
     async def favorite_apps_due(self, *, stale_before: str, limit: int) -> list[int]:
         """Favorites' Steam apps whose news were last read before `stale_before`
@@ -382,18 +404,22 @@ class _GamePageRepo:
     async def favoriters_of_app(self, appid: int) -> list[tuple[int, int, str]]:
         """Who keeps a game of this Steam app as a favorite:
         `(person_id, game_id, game name)`."""
-        cursor = await self._conn.execute(
-            "SELECT DISTINCT f.person_id, g.game_id, g.name FROM favorite_games f"
-            " JOIN games g ON g.game_id = f.game_id"
-            " JOIN users u ON u.id = f.person_id AND u.is_excluded = 0"
-            " JOIN versions v ON v.game_id = f.game_id"
-            " WHERE (v.store = 'steam' AND CAST(v.product_id AS INTEGER) = ?)"
-            "  OR EXISTS (SELECT 1 FROM json_each(v.store_ids) j"
-            "    WHERE json_extract(j.value, '$[0]') = 'steam_twin'"
-            "      AND CAST(json_extract(j.value, '$[1]') AS INTEGER) = ?)",
-            (appid, appid),
-        )
-        return [(int(r[0]), int(r[1]), str(r[2])) for r in await cursor.fetchall()]
+        found: list[tuple[int, int, str]] = []
+        apps_of: dict[int, list[int]] = {}
+        for person, _stored, game in await self._favorites_resolved():
+            if game not in apps_of:
+                apps_of[game] = await self.game_steam_apps(game)
+            if appid not in apps_of[game]:
+                continue
+            cursor = await self._conn.execute(
+                "SELECT g.name FROM games g JOIN users u ON u.id = ? AND u.is_excluded = 0"
+                " WHERE g.game_id = ?",
+                (person, game),
+            )
+            row = await cursor.fetchone()
+            if row is not None and (person, game, str(row[0])) not in found:
+                found.append((person, game, str(row[0])))
+        return found
 
     async def game_list_of(self, game_id: int) -> tuple[str, str] | None:
         """One achievement list of the game, for a link that needs one: the

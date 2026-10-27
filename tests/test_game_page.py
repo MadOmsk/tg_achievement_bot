@@ -3,6 +3,7 @@ stage 5; owner, 2026-10-25)."""
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from datetime import UTC, datetime
 
@@ -192,6 +193,37 @@ async def test_favorites_and_their_news(repo: Repo, settings) -> None:
 
     await repo.set_favorite(fan, game, False)
     assert await repo.favorite_game_ids(fan) == []
+
+
+async def test_a_favorite_of_a_game_merged_away_is_still_that_game(repo: Repo) -> None:
+    """Merged after the heart was given: it is counted, its news found, and
+    taking it off works — the row stays under the old id."""
+    await _player(repo)
+    fan = await repo.ensure_user(2, "bob")
+    assert fan is not None
+    kept = await repo.adopt_list_as_game("steam", "620")
+    gone = await repo.create_game("Portal 2 (old)", None)
+    assert kept is not None
+    await repo.set_favorite(fan, gone, True)
+    await repo.merge_game_into(gone, kept)
+
+    assert await repo.favorite_game_ids(fan) == [kept]
+    assert await repo.is_favorite(fan, kept)
+    assert await repo.favorite_count(kept) == 1
+    assert await repo.favorite_steam_apps() == [620]
+    assert [(p, g) for p, g, _name in await repo.favoriters_of_app(620)] == [(fan, kept)]
+
+    await repo.set_favorite(fan, kept, False)
+    assert await repo.favorite_game_ids(fan) == []
+    assert await repo.favorite_count(kept) == 0
+
+
+async def test_a_list_adopted_twice_is_one_game(repo: Repo) -> None:
+    await _player(repo)
+    first, second = await asyncio.gather(
+        repo.adopt_list_as_game("steam", "620"), repo.adopt_list_as_game("steam", "620")
+    )
+    assert first == second is not None
 
 
 async def test_a_favorite_whose_id_is_gone_is_found_by_its_anchor(repo: Repo) -> None:

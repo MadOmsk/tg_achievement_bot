@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from aiohttp import web
@@ -26,6 +27,10 @@ NEWS_SHOWN = game_page.NEWS_SHOWN
 
 # Background reads started from a page, kept so they are not collected mid-run.
 _BACKGROUND: set[asyncio.Task] = set()
+# A Steam app's first news read is started once in this long, however many
+# visits ask (several at once, or Steam failing and every visit retrying).
+NEWS_READ_RETRY_SECONDS = 600
+_news_read_at: dict[int, float] = {}
 
 
 def setup_game_routes(app: web.Application) -> None:
@@ -135,10 +140,15 @@ async def handle_game_page(request: web.Request) -> web.Response:
     extras = request.app.get("mini_steam_extras")
     for appid in await repo.game_steam_apps(game_id):
         _guides_at, patches_at = await repo.steam_app_checked(appid)
-        if patches_at is None and extras is not None:
-            task = asyncio.create_task(extras.refresh_patches(appid))
-            _BACKGROUND.add(task)
-            task.add_done_callback(_BACKGROUND.discard)
+        if patches_at is None:
+            now = time.monotonic()
+            if extras is not None and now - _news_read_at.get(appid, -1e9) >= (
+                NEWS_READ_RETRY_SECONDS
+            ):
+                _news_read_at[appid] = now
+                task = asyncio.create_task(extras.refresh_patches(appid))
+                _BACKGROUND.add(task)
+                task.add_done_callback(_BACKGROUND.discard)
             continue
         for post in await repo.game_patches(appid, NEWS_SHOWN):
             news.append(
