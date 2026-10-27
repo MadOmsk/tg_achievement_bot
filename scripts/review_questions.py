@@ -340,9 +340,12 @@ def score(questions: list[dict], answers: list[dict]) -> tuple[list[str], list[d
     """How an adviser did on the pairs of known answer (report lines), and
     its answers on the rest — the ones to write."""
     known = {(q["a"], q["b"]): q["known"] for q in questions if "known" in q}
+    asked = {(q["a"], q["b"]) for q in questions}
     report, right, kept = [], 0, []
     for ans in answers:
         pair = (int(ans["a"]), int(ans["b"]))
+        if pair not in asked:
+            continue  # a pair nobody asked about is no answer
         if pair not in known:
             kept.append(ans)
             continue
