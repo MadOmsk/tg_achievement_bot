@@ -171,9 +171,10 @@ def fit(
     examples: list[Example],
     start: Weights,
     *,
-    strength: float = 0.001,
+    strength: float = 0.0001,
     rate: float = 0.5,
-    epochs: int = 800,
+    epochs: int = 3000,
+    tol: float = 1e-4,
     frozen: frozenset[str] = FROZEN,
     strengths: dict[str, float] | None = None,
 ) -> Weights:
@@ -184,7 +185,9 @@ def fit(
     signs, starting at 0, could not show what they are worth). The pull
     is weak: held out, 0.02 → 80%, 0.005 → 83%, 0.001 → 85% right on 677
     labels — the labels, not the start, should speak. `frozen` signs keep
-    their start; `strengths` gives a class its own pull (`class_strengths`)."""
+    their start; `strengths` gives a class its own pull (`class_strengths`).
+    It runs until no weight moves by `tol` in a pass, `epochs` at most
+    (#218: 800 fixed passes stopped short; 1e-3 → 1e-4 gained a point)."""
     signs = sorted(
         {k for e in examples for k in e.features} | {k for c in CLASSES for k in start[c]}
     )
@@ -193,6 +196,7 @@ def fit(
         return w
     n = sum(e.weight for e in examples) or 1.0
     for _ in range(epochs):
+        moved_most = 0.0
         grad = {c: dict.fromkeys(signs, 0.0) for c in CLASSES}
         for e in examples:
             probs = probabilities(e.features, w)
@@ -210,13 +214,54 @@ def fit(
                 if k in frozen:
                     continue
                 moved = w[c][k] - rate * grad[c][k]
-                w[c][k] = (moved + 2 * rate * pull * start[c].get(k, 0.0)) / shrink
+                now = (moved + 2 * rate * pull * start[c].get(k, 0.0)) / shrink
+                moved_most = max(moved_most, abs(now - w[c][k]))
+                w[c][k] = now
         same = w["same"]
         for k in AGAINST_SAME & same.keys():
             same[k] = min(same[k], 0.0)
         for k in UNKNOWN_SIGNS & same.keys():
             same[k] = min(same[k], start["same"].get(k, 0.0))
+        if moved_most < tol:
+            break
     return w
+
+
+def tempered(probs: dict[str, float], t: float) -> dict[str, float]:
+    """Probabilities with their log-odds divided by `t`."""
+    raised = {c: max(p, 1e-300) ** (1.0 / t) for c, p in probs.items()}
+    total = sum(raised.values())
+    return {c: v / total for c, v in raised.items()}
+
+
+def temperature(rows: list[HeldOut]) -> float:
+    """The one temperature that makes the held-out answers mean what they
+    say (#218: p ≥ 0.95 was right 89% of the time): the `t` whose
+    `tempered` probabilities lose least on the labels. It never changes
+    which class is likeliest."""
+
+    def loss(t: float) -> float:
+        return -sum(
+            math.log(max(tempered(r.fitted, t).get(r.example.label, 0.0), 1e-12)) for r in rows
+        )
+
+    grid = [round(0.5 + 0.05 * i, 2) for i in range(71)]  # 0.5 … 4.0
+    return min(grid, key=loss) if rows else 1.0
+
+
+def calibrated(weights: Weights, t: float) -> Weights:
+    """The weights scaled by 1/`t`: every log-odds is a sum of weights, and
+    "other" is 0, so this is `tempered` built in."""
+    return {c: {k: v / t for k, v in w.items()} for c, w in weights.items()}
+
+
+def reliability(rows: list[HeldOut], t: float = 1.0, at: float = 0.95) -> tuple[float, int]:
+    """How often an answer at least `at` sure is right, and how many there are."""
+    sure = [r for r in rows if max((p := tempered(r.fitted, t)).values()) >= at]
+    right = sum(
+        1 for r in sure if max((p := tempered(r.fitted, t)), key=p.__getitem__) == r.example.label
+    )
+    return (right / len(sure) if sure else 0.0), len(sure)
 
 
 def cross_validate(

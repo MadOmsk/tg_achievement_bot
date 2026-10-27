@@ -121,3 +121,31 @@ def test_a_fit_that_loses_a_class_is_refused() -> None:
         recall_fitted={"same": (1.0, 30), "remaster_of": (0.3, 10)},
     )
     assert verdict.lost == ["remaster_of"] and not verdict.passed
+
+
+def test_a_fit_stops_once_settled() -> None:
+    """It runs until no weight moves by `tol` (#218), not a fixed count."""
+    settled = fit(_examples(), WEIGHTS, strength=0.01, rate=0.2, epochs=20000, tol=1e-3)
+    longer = fit(_examples(), WEIGHTS, strength=0.01, rate=0.2, epochs=20000, tol=1e-6)
+    gap = max(abs(settled[c][k] - longer[c][k]) for c in settled for k in settled[c])
+    assert gap < 0.5
+
+
+def test_a_temperature_makes_overconfident_answers_honest() -> None:
+    """Answers 99% sure and right three times in four: the temperature
+    softens them, never changes which class wins, and the weights scaled
+    by it answer the same (#218)."""
+    from bot.services.game_match import probabilities
+    from bot.services.match_fit import HeldOut, calibrated, temperature, tempered
+
+    sure = {"same": 0.99, "other": 0.01}
+    rows = [HeldOut(Example({}, "same"), sure, sure) for _ in range(3)]
+    rows.append(HeldOut(Example({}, "other"), sure, sure))
+    t = temperature(rows)
+    assert t > 1.5
+    soft = tempered(sure, t)
+    assert 0.6 < soft["same"] < 0.9 and max(soft, key=soft.__getitem__) == "same"
+    f = {"bias": 1.0, "name": 0.5}
+    w = {c: dict(v) for c, v in WEIGHTS.items()}
+    p, q = tempered(probabilities(f, w), 2.0), probabilities(f, calibrated(w, 2.0))
+    assert all(abs(p[c] - q[c]) < 1e-9 for c in p)

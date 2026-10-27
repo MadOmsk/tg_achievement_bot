@@ -990,9 +990,11 @@ What the stores and HLTB say about a game, collected but not shown yet
     could be one game (a telling word of the name — none in more than
     `COMMON_WORD` versions —, a store's group or cross-gen set, an HLTB entry,
     one list) is read from its subject's side (the VR one, the compilation, the
-    later one); each class sums its `WEIGHTS` over the pair's signs and a
+    later one) — and each directed class from whichever side makes it likelier,
+    the relation pointing from there (#218: `subject_of` is a guess); each class sums its `WEIGHTS` over the pair's signs and a
     softmax against "other" gives probabilities (owner, 2026-10-10: every rule a
-    weight, nothing certain). The likeliest at `LINK_P` (0.85) and `CLOSE_CALL`
+    weight, nothing certain). The likeliest at `LINK_P` (0.95 while the fit runs
+    overconfident, #218) and `CLOSE_CALL`
     ahead is taken; from `REVIEW_P` (0.15) the pair goes to the **review list**
     (`match_pairs`, one per pair of games). Versions join a game from the surest
     pair down, **never across a veto** (a pair under `VETO_P` "same" that
@@ -1030,9 +1032,11 @@ What the stores and HLTB say about a game, collected but not shown yet
 
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own
-    version as the subject), and the weights are fitted by gradient descent
-    **pulled towards the current ones** (a proximal step, `strength` 0.001,
-    step 0.5, 800 passes); **the bias is never fitted** (labels come from the
+    version as the subject; scored from both sides as the linker reads it),
+    and the weights are fitted by gradient descent **pulled towards the
+    current ones** (a proximal step, `strength` 0.0001, step 0.5, until no
+    weight moves by `tol`); then **one temperature** fitted on the held-out
+    answers scales every weight, so a probability means what it says (#218); **the bias is never fitted** (labels come from the
     review list), and a class with fewer than `FEW_LABELS` labels is pulled
     harder. A label weighs by who gave it (`label_weight`). **A fit is judged
     held out by game** (labels joined by a game sit in one fold — a random

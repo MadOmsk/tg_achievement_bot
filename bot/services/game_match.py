@@ -459,7 +459,9 @@ def model_name() -> str:
 
 
 MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
-LINK_P = 0.85  # at or above: linked (one game, or the relation)
+# At or above: linked (one game, or the relation). 0.95 while the fit's
+# probabilities run overconfident (#218: wrong links on the gate 8.9% → 6.8%).
+LINK_P = 0.95
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
 CLOSE_CALL = 0.2  # two classes this close: the operator decides
 VETO_P = 0.05  # below this "same", two clusters never join (unless one list)

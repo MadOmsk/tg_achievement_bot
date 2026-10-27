@@ -48,7 +48,9 @@ from bot.services.game_match import WEIGHTS, Candidate, compare, features, subje
 from bot.services.match_fit import (
     LABEL_CLASS,
     Example,
+    HeldOut,
     Weights,
+    calibrated,
     changes,
     class_strengths,
     fit,
@@ -56,6 +58,9 @@ from bot.services.match_fit import (
     held_out,
     label_weight,
     macro,
+    reliability,
+    temperature,
+    tempered,
 )
 
 logging.basicConfig(level="WARNING")
@@ -163,6 +168,14 @@ async def run(args: argparse.Namespace) -> Weights | None:
         frozen = _frozen(Path(args.eval or args.freeze_eval or _default_eval(args)))
 
         rows = held_out(examples, WEIGHTS, train=lambda e: e.source not in without, **kw)
+        t = temperature(rows)
+        sure, sure_n = reliability(rows)
+        rows = [HeldOut(r.example, r.start, tempered(r.fitted, t)) for r in rows]
+        sure_t, sure_t_n = reliability(rows)
+        print(
+            f"temperature {t:.2f}: p >= 0.95 right {sure:.1%} of {sure_n}"
+            f" → {sure_t:.1%} of {sure_t_n}"
+        )
         verdict = gate(rows, frozen)
         print("held out by game (right · log-loss), current → fitted:")
         for src, (was, now) in verdict.by_source.items():
@@ -193,7 +206,7 @@ async def run(args: argparse.Namespace) -> Weights | None:
         if args.quick:
             return None
 
-        fitted = fit(learn, WEIGHTS, **kw)
+        fitted = calibrated(fit(learn, WEIGHTS, **kw), t)
         print("weights that moved most:")
         for cls, sign, was, now in changes(WEIGHTS, fitted, at_least=0.3)[:30]:
             print(f"  {cls:12} {sign:26} {was:+6.2f} → {now:+6.2f}")
@@ -265,8 +278,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="match_weights.fitted.json")
     parser.add_argument("--db", default=None)
-    parser.add_argument("--strength", type=float, default=0.001)
-    parser.add_argument("--epochs", type=int, default=800)
+    parser.add_argument("--strength", type=float, default=0.0001)
+    parser.add_argument("--epochs", type=int, default=3000, help="at most; stops when settled")
     parser.add_argument("--without", action="append", help="a source not to learn from")
     parser.add_argument("--save", action="store_true", help="keep and activate (gate passed)")
     parser.add_argument("--freeze-eval", help="write the operator's pairs as the yardstick")
