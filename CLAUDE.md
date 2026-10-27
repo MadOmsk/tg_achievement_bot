@@ -948,20 +948,27 @@ What the stores and HLTB say about a game, collected but not shown yet
     `game_match.is_enhanced`, or an `enhanced_of` label — one game to a fit).
     A pack a store sells around one version is an edition (`editions`), not a
     version. Such a game is named by its own release.
-  - **Enhanced or remaster** (owner, 2026-10-25): an enhanced edition is the
-    same game with minimal changes but added content (its DLC, a Director's
-    Cut's chapter, modest resolution or frame-rate work); a remaster means
-    larger graphical changes. Which one a given game is, is the labels'
-    answer (the operator's, the web-checked ones), never a rule written here:
-    this file keeps principles, not per-game decisions.
+  - **Enhanced, remaster, remake** (owner, 2026-10-27):
+    - an **enhanced edition** is an edition under an id of its own in a
+      store, mostly the game with added content, with no focus on better
+      graphics (GOTY, Complete, Definitive, Director's Cut);
+    - a **remaster** is a release with improved graphics that keeps the
+      original's main assets, not rebuilt;
+    - a **remake** is a game made on the basis of an old one.
+
+    **Every instruction to a model that labels pairs gives these
+    definitions as they stand** — the advisers' prompt (`advice.DEFINITIONS`
+    inside `advice.RULES`), the web-searching agents', Gemini's. Which one a
+    given game is, is the labels' answer, never a rule written here: this
+    file keeps principles, not per-game decisions.
   - **Where an enhanced edition goes** (owner, 2026-10-25): one sold under
     its own product id on a platform (a store page and id of its own, apart
     from the plain game's) is **a game of its own**, related to the original
     as `enhanced_of`, like a remaster; one that is the same product upgraded
     (a free update, the same id) stays inside the game with the role
     `enhanced`. Built as a split after joining (`game_link._split_enhanced`;
-    #218): the model joins an enhanced edition to its game as before (its
-    labels teach "same"); then, where one store sells both the plain game
+    #218): the model joins an enhanced edition to its game (its own class,
+    `enhanced_of`, joins like "same"); then, where one store sells both the plain game
     and the enhanced one, every enhanced version of the group leaves it for
     a game of its own, related `enhanced_of` (a family relation for series
     too). Where no store sells both — Steam sells only the Complete Edition

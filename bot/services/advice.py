@@ -54,12 +54,23 @@ AUDIT_SEED = 147
 # Relations one side has *of* the other: "first" when the first side is the
 # demo / remaster / compilation … of the second.
 DIRECTED = frozenset(
-    {"demo_of", "tool_of", "mode_of", "extra_of", "remaster_of", "remake_of", "contains", "vr_of"}
+    {
+        "demo_of",
+        "tool_of",
+        "mode_of",
+        "extra_of",
+        "enhanced_of",
+        "remaster_of",
+        "remake_of",
+        "contains",
+        "vr_of",
+    }
 )
 # Answers that relate nothing; they agree with one another.
 UNRELATED = frozenset({"series", "not_related", "extra"})
 _GAME_ANSWERS = frozenset(
-    {"same", "extra_of", "remaster_of", "remake_of", "contains", "vr_of", "unsure"} | UNRELATED
+    {"same", "extra_of", "enhanced_of", "remaster_of", "remake_of", "contains", "vr_of", "unsure"}
+    | UNRELATED
 )
 ALLOWED: dict[str, frozenset[str]] = {
     "games": _GAME_ANSWERS,
@@ -79,6 +90,7 @@ _SYNONYMS = {
     "same_game": "same",
     "not_a_game": "extra",
     "not a game": "extra",
+    "enhanced": "enhanced_of",
     "remaster": "remaster_of",
     "remake": "remake_of",
     "demo": "demo_of",
@@ -100,6 +112,7 @@ _CLASS = {
     "tool_of": "same",
     "mode_of": "same",
     "extra_of": "same",
+    "enhanced_of": "enhanced_of",
     "remaster_of": "remaster_of",
     "remake_of": "remake_of",
     "contains": "contains",
@@ -238,16 +251,40 @@ def audit_picked(pair_id: str, fraction: float = AUDIT_FRACTION, seed: int = AUD
 
 # ---------------------------------------------------------------- prompts
 
-RULES = """You check pairs for a video game database. Each question has an id (copy it
+# What an enhanced edition, a remaster and a remake are (owner, 2026-10-27).
+# Every prompt that asks an adviser how two releases relate — this one, the
+# web-searching agents', Gemini's — gives these words as they stand.
+DEFINITIONS = """\
+- enhanced_of: an edition sold under its own id in a store (its own product, store page or
+  achievement list), mostly the game with added content (its DLC, new chapters, modes),
+  without a focus on better graphics: Game of the Year, Complete, Definitive, Director's
+  Cut, Special Edition. Ghost of Tsushima Director's Cut is an enhanced edition of Ghost of
+  Tsushima. An edition that is only the same product upgraded (a free update, the same id)
+  is "same".
+- remaster_of: a re-release with improved graphics that keeps the original's main assets
+  (its levels, models, animation, design), not rebuilt. A remaster of a remake is a
+  remaster of the remake (Gears of War: Reloaded is a remaster of Gears of War: Ultimate
+  Edition). A next-generation release is a remaster when it is a separate product sold
+  beside the previous release with better graphics; it is the same game when one product
+  runs on both generations (Smart Delivery, cross-buy) or it replaced the previous release
+  by an update.
+- remake_of: a new game made on the basis of an old one, its assets made anew (Resident
+  Evil 4 of 2023 is a remake of Resident Evil 4 of 2005). A remake is an original of its
+  own. The word "Remake" in a name marks one; "Intergrade", "Director's Cut" or "Special
+  Edition" alone do not (Final Fantasy VII Remake and its Intergrade are two games, both
+  remakes of Final Fantasy VII)."""
+
+RULES = (
+    """You check pairs for a video game database. Each question has an id (copy it
 exactly), a type, a FIRST side and a SECOND side.
 
 Types and the answers each allows:
 - games: two games, each with its releases.
-  same | extra_of | remaster_of | remake_of | contains | vr_of | series | not_related | extra
-  | unsure
+  same | extra_of | enhanced_of | remaster_of | remake_of | contains | vr_of | series
+  | not_related | extra | unsure
 - versions: one release (FIRST) against a game (SECOND, with its releases).
-  same | demo_of | tool_of | mode_of | extra_of | remaster_of | remake_of | contains | vr_of
-  | series | not_related | extra | unsure
+  same | demo_of | tool_of | mode_of | extra_of | enhanced_of | remaster_of | remake_of
+  | contains | vr_of | series | not_related | extra | unsure
 - hltb: one of our games (FIRST) against a HowLongToBeat entry (SECOND).
   same (the entry is this very game) | not_related (another game, a DLC, another release
   of the series, or FIRST is a demo, a beta or a trial: HowLongToBeat times the game) |
@@ -257,26 +294,19 @@ Types and the answers each allows:
 
 What the answers mean:
 - same: one game. A port is the same game however late (PS4 and PS5, Xbox One and Series,
-  PC and console, another store, a re-listing); a GOTY / Complete / Deluxe edition is the
-  same game.
+  PC and console, another store, a re-listing); a Deluxe edition that is the game with a
+  bonus pack under one id is the same game.
 - demo_of: a demo, beta, trial, playtest, tech test or Insider build of the other. extra_of:
   a soundtrack or an artbook of the other (a part of that game). tool_of: an editor,
   creation kit, SDK or dedicated server for it. mode_of: a launcher of one mode of it
   ("Call of Duty: Black Ops II - Zombies").
-- remaster_of: the same game re-released with better technology, its design kept; an
-  enhanced re-release counts. A remaster of a remake is a remaster of the remake (Gears of
-  War: Reloaded is a remaster of Gears of War: Ultimate Edition). A next-generation
-  release is a remaster when it is a separate product (its own store page and
-  achievement list, a subtitle or "Remastered") sold beside the previous release; it is
-  the same game when one product runs on both generations (Smart Delivery, cross-buy) or
-  it replaced the previous release by an update.
-- remake_of: rebuilt from the ground up (Resident Evil 4 of 2023 is a remake of Resident
-  Evil 4 of 2005). A remake is an original of its own. The word "Remake" in a name marks
-  one; "Intergrade", "Director's Cut" or "Special Edition" alone do not (Final Fantasy VII
-  Remake and its Intergrade are two games, both remakes of Final Fantasy VII).
+"""
+    + DEFINITIONS
+    + """
 - contains: a compilation or collection that holds the other; a compilation holds at least
   two games.
-- vr_of: the VR version of the other.
+- vr_of: the VR version of this very game; another game of its series made for VR is
+  series.
 - series: different games of one series: sequels, prequels, spin-offs, a reboot that is a
   new game. A game is in several series: its franchise's (Call of Duty), a local one inside
   it (Modern Warfare), and for a LEGO game the series LEGO beside its licence's (LEGO Star
@@ -286,10 +316,10 @@ What the answers mean:
   artbook of another game, a companion app, a video.
 - unsure: you cannot tell.
 
-Direction, for demo_of, tool_of, mode_of, extra_of, remaster_of, remake_of, contains and
-vr_of only: "first" when FIRST is the demo / tool / mode / extra / remaster / remake /
-compilation / VR version of SECOND, "second" when SECOND is that of FIRST; null for every
-other answer.
+Direction, for demo_of, tool_of, mode_of, extra_of, enhanced_of, remaster_of, remake_of,
+contains and vr_of only: "first" when FIRST is the demo / tool / mode / extra / enhanced
+edition / remaster / remake / compilation / VR version of SECOND, "second" when SECOND is
+that of FIRST; null for every other answer.
 
 The sides are described from store data, which may be incomplete or wrong (a store's date
 is often a re-release). Rely on what you know about the real games. When you are not
@@ -299,6 +329,7 @@ unsure one.
 Reply with only a JSON array, one object per question, nothing else:
 [{"pair_id": "<id>", "relation": "<answer>", "direction": "first" | "second" | null,
   "confidence": "high" | "medium" | "low", "why": "at most 20 words"}]"""
+)
 
 _ADVISER_NOTE = {
     "claude": (
