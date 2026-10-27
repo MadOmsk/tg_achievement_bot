@@ -334,22 +334,25 @@
   background: linear-gradient(135deg, #ffb1c2 0 50%, #b8d0ff 50%);
 }
 
-.swatch-forest .swatch-dot {
-  background: linear-gradient(135deg, #a8ebb1 0 50%, #f2dfa6 50%);
-}
-
-.swatch-garnet .swatch-dot {
-  background: linear-gradient(135deg, #efa4ae 0 50%, #a6d9f2 50%);
-}
-
-.swatch-lilac .swatch-dot {
-  background: linear-gradient(135deg, #a8b1eb 0 50%, #f2a6cc 50%);
-}
-
 .swatch-graphite .swatch-dot {
   background: linear-gradient(135deg, #c3c9d0 0 50%, #a6ecf2 50%);
 }
 
 .swatch-dot svg {
   color: #1d1b20;
+}
+
+.swatch-shut {
+  color: var(--on-surface-3);
+}
+
+.swatch-shut .swatch-dot {
+  filter: grayscale(0.6) brightness(0.6);
+}
+
+.swatch-level {
+  margin-top: -4px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--on-surface-3);
 }

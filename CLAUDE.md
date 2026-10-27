@@ -236,7 +236,8 @@ name, or when the tree goes stale.
 │   │                            mini_session.py (the cookie), mini_logins.py (email, the logins kept),
 │   │                            mini_notifications.py (the list, push subscriptions),
 │                            mini_invites.py (signing up with an invite, a member's codes),
-│                            mini_passkeys.py (adding, listing, signing in with passkeys)
+│                            mini_passkeys.py (adding, listing, signing in with passkeys),
+│                            mini_pass.py (the season pass: its state, claiming a theme)
 │   │
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
@@ -537,6 +538,9 @@ every column. History: #106.
   found by it first — a catalog carried over (`scripts/catalog_transfer.py`)
   may give a game another id and the old id to another game —, else by its
   id (a merged game leading on). A merge of two people moves them.
+- **Season pass claims** (`pass_claims (person_id, palette, month)`, migration
+  131; owner, 2026-10-27): the themes a person claimed, each checked against
+  the month's points by the server (User interface: the season pass).
 - **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -1550,7 +1554,12 @@ elsewhere in this file still describe the bot.
     down from the user card in `/admin` («🖼 Сбросить аватар», `a:avclr:`), and
     deleting the account removes the file. `/api/mini/avatar/p/{person_id}` (and, for
     links already out, `/api/mini/avatar/{tg_id}`) serves the
-    chosen picture first, with an ETag and `no-cache` so a change shows at once.
+    chosen picture first, with an ETag and `no-cache` so a change shows at once;
+    then the Telegram photo kept on disk (`users.photo_path`), then Telegram by
+    `file_id`, and last the game accounts' pictures (`accounts.avatar_path`,
+    Xbox, PlayStation, Steam) — owner, 2026-10-27: a `file_id` opens only for
+    the bot that saw it, so the test server on a copy of production showed no
+    faces (`repo.face_paths`).
   - Endpoints: `PUT /api/mini/me/handle` (`error` is `invalid` or `too_soon`),
     `POST /api/mini/me/handle/confirm`; `/me` carries a `handle` object.
 - **Follows, as on Xbox** (backend shipped, migration 073): following is one-way and
@@ -1595,12 +1604,17 @@ elsewhere in this file still describe the bot.
   the logo's lilac (a pink accent on the search button), shapes that morph
   (faces cut as scalloped "cookies", a flower for rarity), progress as a running
   wave, connected button groups, Roboto Flex whose width is a voice (narrow
-  numbers, wide headlines); dark first, the same scheme light. **Nine
-  palettes** — Violet (the default), Lilac, Ocean, Mint, Forest, Amber, Garnet, Rose,
-  Graphite — and a mode (auto, light,
+  numbers, wide headlines); dark first, the same scheme light. **Six
+  palettes** — Violet (the default, always open), then Graphite, Ocean, Mint,
+  Amber, Rose, each opened by the season pass — and a mode (auto, light,
   dark), picked in Settings → Appearance and kept on the device. How to make
   anything new look like the rest is `docs/design-system.md` (its rarity tiers —
-  blue, purple, orange — are the app's Fortnite note). A game's page
+  mythic green, legendary orange, rare purple — are the app's Fortnite note).
+  **The app counts its own points, not G** (owner, 2026-10-27): an
+  achievement is worth 10, 20 (≤10 %), 30 (≤1 %) or 50 (an Xbox Mythic, a
+  PSN platinum) on every platform (`_sql.points`, `views.POINTS`); the
+  Ranking, Home's month card and the race count them. The bot's chat
+  messages keep G. A game's page
   takes a muted tonal scheme from its own art (`app/artTheme.ts`; stores whose
   pictures refuse CORS — PSN — keep the violet), and the pages inside the game
   (its achievements, one achievement, its gallery, a post) take the same. **Its one source** is
@@ -1862,12 +1876,28 @@ elsewhere in this file still describe the bot.
   nothing is downloaded.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
+  **A game played on several platforms is one list each, never summed**
+  (owner, 2026-10-27): `progress` and every player carry `lists`, the most
+  earned first (`repo.game_players`); the progress card and the achievements
+  page switch between them, the most earned shown first.
 - **Favorite games** (owner, 2026-10-25; `PUT|DELETE /api/mini/game/{id}/favorite`,
   `GET /api/mini/game-favorites?person=`): a heart on a game's page puts it on
   the person's profile, seen only by a viewer `can_view_activity` lets in. A
   favorite's news are read every hour (`poller/patch_refresh.py`), and told to
   whoever keeps it, played or not — «Новости игр: только избранные» carries
   only those.
+- **The season pass** (owner, 2026-10-27; `bot/services/season_pass.py`,
+  `web/mini_pass.py`, `core/pass.ts`, `screens/pass/`, migration 131): the
+  month's points (`repo.points_for_person`, the person's own calendar month)
+  climb five levels, the calmest theme first and the most colourful last, each
+  giving one of the app's themes to claim («Получить», with a burst). **The
+  server is the judge**: `POST /api/mini/pass/claim` refuses a theme whose
+  points are not reached, and `pass_claims (person_id, palette, month)` keeps a
+  claim for good (a merge moves them); `GET /api/mini/pass` is the state every
+  screen reads. Violet is everybody's; every other theme opens in Settings →
+  Appearance only once claimed, and a theme on the device the server does not
+  give is taken off. Home's month card shows the season in place of the
+  race, and a tap opens the pass. Every month runs the same levels again.
 - **The ranking's year** is `/club/summary`'s `year`, from 1 January to the end
   of the month shown, in the same timezone (owner, 2026-10-07).
 

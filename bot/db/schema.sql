@@ -867,6 +867,16 @@ CREATE TABLE IF NOT EXISTS favorite_games (
 );
 CREATE INDEX IF NOT EXISTS idx_favorite_games_game ON favorite_games (game_id);
 
+-- The season pass (131; owner, 2026-10-27): the themes a person claimed,
+-- checked against the month's points by the server, kept for good.
+CREATE TABLE IF NOT EXISTS pass_claims (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    palette    TEXT NOT NULL,
+    month      TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, palette)
+);
+
 CREATE TABLE IF NOT EXISTS blocks (
     person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

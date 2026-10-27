@@ -10,6 +10,8 @@ import { dayLabel, num, type TranslationKey } from "../../i18n";
 import { consoleLabel } from "../../parts/platforms";
 import { FAVORITES_CHANGED } from "../../parts/FollowButton";
 import { DoneMark } from "../../parts/DoneMark";
+import { PLATFORM_SHORT } from "../../parts/AchRow";
+import { PlatformTabs } from "../../parts/PlatformTabs";
 import { NewsCard } from "../news/News";
 import { Button, Chip, Empty, Section } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
@@ -143,6 +145,7 @@ function GameBody({
   const [allDlc, setAllDlc] = useState(false);
   const [fav, setFav] = useState({ on: g.favorite, count: g.favorites });
   const [busy, setBusy] = useState(false);
+  const [pickedList, setPickedList] = useState<string | null>(null);
   const gallery: Media[] = [...(g.videos ?? []), ...g.screenshots];
 
   const studio = [
@@ -151,7 +154,12 @@ function GameBody({
   ]
     .filter(Boolean)
     .join(" · ");
-  const progress = g.progress;
+  // A game played on several platforms: one list's progress at a time, the
+  // most earned first (two lists are never summed).
+  const lead = g.progress;
+  const played = lead?.lists ?? [];
+  const picked = played.find((l) => `${l.platform}:${l.title_id}` === pickedList);
+  const progress = lead && picked ? { ...lead, ...picked } : lead;
   const done = Boolean(progress?.total && progress.count >= progress.total);
   const list = progress
     ? { platform: progress.platform, title_id: progress.title_id, name: g.game.name, total: progress.total, icon_url: null }
@@ -170,6 +178,7 @@ function GameBody({
       name: g.game.name,
       cover: g.art.poster,
       person: personId ? { id: personId, name: personName ?? "" } : whose,
+      lists: played.length > 1 ? played : undefined,
     });
   };
 
@@ -251,6 +260,14 @@ function GameBody({
 
       {progress && (
         <section className={`gp-progress${done ? " gp-progress-done" : ""}`}>
+          {played.length > 1 && (
+            <PlatformTabs
+              className="gp-progress-lists"
+              lists={played}
+              value={`${progress!.platform}:${progress!.title_id}`}
+              onChange={setPickedList}
+            />
+          )}
           {done ? (
             <button type="button" className="gp-progress-main" onClick={() => openList()}>
               <DoneMark size={56} className="gp-done-mark" />
@@ -306,13 +323,24 @@ function GameBody({
                     className="gp-other"
                     onClick={() => {
                       tick();
-                      open({ kind: "achievements", platform: p.platform, titleId: p.title_id, name: g.game.name, cover: g.art.poster, person: { id: p.person_id, name: p.name } });
+                      open({
+                        kind: "achievements",
+                        platform: p.platform,
+                        titleId: p.title_id,
+                        name: g.game.name,
+                        cover: g.art.poster,
+                        person: { id: p.person_id, name: p.name },
+                        lists: (p.lists?.length ?? 0) > 1 ? p.lists : undefined,
+                      });
                     }}
                   >
                     <Face personId={p.person_id} name={p.name} size={32} />
                     <span className="gp-other-text">
                       <span className="clamp-1">{p.name}</span>
                       <b className="t-num">{p.count}</b>
+                      {(p.lists?.length ?? 0) > 1 && (
+                        <span className="gp-other-plats">{p.lists!.map((l) => PLATFORM_SHORT[l.platform] ?? l.platform).join(" · ")}</span>
+                      )}
                     </span>
                   </button>
                 ))}

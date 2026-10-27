@@ -33,7 +33,7 @@ function hunts(items: FeedItem[], min = 2): Hunt[] {
   return [...map.values()].filter((h) => h.people.length >= min).sort((a, b) => b.people.length - a.people.length);
 }
 
-const sum = (rows: SummaryMember[] | undefined) => (rows ?? []).reduce((n, r) => n + r.count, 0);
+const sum = (rows: SummaryMember[] | undefined) => (rows ?? []).reduce((n, r) => n + (r.points ?? 0), 0);
 
 /** The months of the last three years up to this one, newest first. */
 function lastMonths(now: string): string[] {
@@ -58,10 +58,9 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
   const s = summary.data;
   const together = useMemo(() => hunts(s?.recent ?? []), [s]);
   const rows = (board === "day" ? s?.day : board === "year" ? s?.year : s?.month) ?? [];
-  const leaders = [...rows].sort((a, b) => b.count - a.count || b.score - a.score);
-  const myPlace = leaders.findIndex((r) => r.person_id === me.person_id && r.count > 0) + 1;
+  const leaders = [...rows].sort((a, b) => (b.points ?? 0) - (a.points ?? 0) || b.count - a.count);
   const total = sum(rows);
-  const mine = rows.find((r) => r.person_id === me.person_id)?.count ?? 0;
+  const mine = rows.find((r) => r.person_id === me.person_id)?.points ?? 0;
   const podium = leaders.filter((r) => r.count > 0).slice(0, 3);
   const rest = leaders.slice(podium.length);
 
@@ -130,7 +129,6 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
 
       <Section
         title={tr("leaders")}
-        action={myPlace > 0 ? <span className="rank-place-chip">{tr("rankYouPlace").replace("{n}", String(myPlace))}</span> : null}
       >
         {podium.length > 0 && (
           <div className="podium">
@@ -154,7 +152,7 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
                   </span>
                   <span className="podium-name clamp-1">{r.person_id === me.person_id ? tr("you") : r.name}</span>
                   <span className="podium-block">
-                    <b className="t-num">{num(r.count, locale)}</b>
+                    <b className="t-num">{num(r.points ?? 0, locale)}</b>
                   </span>
                 </button>
               );
@@ -182,13 +180,13 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
                 <span className="row-text">
                   <span className="row-title clamp-1">{r.name}</span>
                   <span className="row-sub">
-                    {r.score > 0 && `${num(r.score, locale)} G`}
+                    {num(r.count, locale)} {plural(locale, r.count, ["achOne", "achFew", "achMany"])}
                     {r.rare > 0 && ` · ${tr("factRare").toLowerCase()} ${r.rare}`}
                   </span>
                 </span>
                 <span className="leader-count">
-                  <b className="t-num">{num(r.count, locale)}</b>
-                  <span>{plural(locale, r.count, ["achOne", "achFew", "achMany"])}</span>
+                  <b className="t-num">{num(r.points ?? 0, locale)}</b>
+                  <span>{plural(locale, r.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}</span>
                 </span>
               </button>
               );

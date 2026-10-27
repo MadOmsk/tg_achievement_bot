@@ -226,7 +226,8 @@ class _GamePageRepo:
 
     async def game_players(self, game_id: int, person_ids: list[int]) -> list[dict[str, Any]]:
         """Of these people, who earned something in the game: how many, when
-        last, and on which list most — the most first."""
+        last, and on which list most — the most first; `lists` holds every
+        list each played, the most first (one game on Xbox and Steam)."""
         if not person_ids:
             return []
         marks = ",".join("?" * len(person_ids))
@@ -245,16 +246,18 @@ class _GamePageRepo:
         best: dict[int, dict[str, Any]] = {}
         for row in await cursor.fetchall():
             person = int(row["person_id"])
-            current = best.get(person)
             item = dict(row)
+            current = best.get(person)
             if current is None:
-                best[person] = item
+                best[person] = {**item, "lists": [item]}
                 continue
+            current["lists"].append(item)
+            last = max(item["last"] or "", current["last"] or "")
             if item["n"] > current["n"]:
-                item["last"] = max(item["last"] or "", current["last"] or "")
-                best[person] = item
-            else:
-                current["last"] = max(item["last"] or "", current["last"] or "")
+                best[person] = {**item, "lists": current["lists"]}
+            best[person]["last"] = last
+        for row in best.values():
+            row["lists"].sort(key=lambda r: -r["n"])
         return sorted(best.values(), key=lambda r: (-r["n"], r["person_id"]))
 
     async def game_search_names(self) -> list[tuple[int, str]]:

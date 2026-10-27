@@ -1008,3 +1008,39 @@
   padding: 0;
   border-radius: 6px 20px 20px 6px;
 }
+
+.plat-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px 0 5px;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  color: var(--on-surface-2);
+  font-size: 13px;
+  font-weight: 650;
+  transition: background var(--dur-s, 0.2s), color var(--dur-s, 0.2s);
+}
+
+.plat-tab b {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--on-surface);
+}
+
+.plat-tab-on {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  box-shadow: inset 0 0 0 1.5px var(--primary);
+}
+
+.plat-tab-on b {
+  color: var(--on-primary-container);
+}

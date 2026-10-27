@@ -3,11 +3,12 @@ import { gamesApi, type GameAchievement, type GameDetails, type GameGuidesRespon
 import { gameArtOf, useArtTheme } from "../../app/artTheme";
 import { useApp } from "../../app/context";
 import { useLoad } from "../../app/useLoad";
-import { achOfList } from "../../app/views";
+import { achOfList, pointsOf } from "../../app/views";
 import { groupLabel } from "../../core/game-utils";
 import { recall, remember } from "../../core/game-cache";
-import { dayLabel, num } from "../../i18n";
+import { dayLabel, num, plural } from "../../i18n";
 import { AchRow } from "../../parts/AchRow";
+import { PlatformTabs } from "../../parts/PlatformTabs";
 import { DoneMark } from "../../parts/DoneMark";
 import { Button, Empty, Segmented } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
@@ -22,11 +23,12 @@ import "./Game.css";
 type Filter = "earned" | "left";
 
 export function Achievements({
-  platform,
-  titleId,
+  platform: firstPlatform,
+  titleId: firstTitle,
   name,
   cover,
   person,
+  lists,
   onClose,
   layer,
 }: {
@@ -35,10 +37,14 @@ export function Achievements({
   name: string | null;
   cover?: string | null;
   person: { id: number; name: string } | null;
+  lists?: { platform: string; title_id: string; count?: number }[];
   onClose: () => void;
   layer: string;
 }) {
   const { data, tr, locale, me } = useApp();
+  // A game played on several platforms has a list on each: one shown at a time.
+  const [shownList, setShownList] = useState({ platform: firstPlatform, titleId: firstTitle });
+  const { platform, titleId } = shownList;
   const theirs = person && person.id !== me.person_id ? person : null;
   const key = `${platform}:${titleId}:${theirs?.id ?? "me"}`;
   const list = useLoad<GameDetails>(
@@ -97,11 +103,11 @@ export function Achievements({
   const score = useMemo(() => {
     if (!d) return null;
     const got = d.achievements.filter((a) => a.is_unlocked);
-    const gs = got.reduce((n, a) => n + (a.gamerscore ?? 0), 0);
-    const allGs = d.achievements.reduce((n, a) => n + (a.gamerscore ?? 0), 0);
-    const tiers = { platinum: 0, gold: 0, silver: 0, bronze: 0 } as Record<string, number>;
-    for (const a of got) if (a.trophy_type) tiers[a.trophy_type.toLowerCase()] = (tiers[a.trophy_type.toLowerCase()] ?? 0) + 1;
-    return { gs, allGs, tiers };
+    // The app's own points, earned of all the list's (`views.POINTS`).
+    const worth = (a: GameAchievement) => pointsOf(a.rarity_percent, { trophy: a.trophy_type });
+    const pts = got.reduce((n, a) => n + worth(a), 0);
+    const allPts = d.achievements.reduce((n, a) => n + worth(a), 0);
+    return { pts, allPts };
   }, [d]);
 
   const row = (a: GameAchievement) => {
@@ -171,26 +177,27 @@ export function Achievements({
               <small>/{d.achievements_total}</small>
             </b>
             {share != null && !done && <span className="list-pct">{`${share} %`}</span>}
-            {score && score.allGs > 0 && (
+            {score && score.allPts > 0 && (
               <span className="list-gs">
-                {num(score.gs, locale)} / {num(score.allGs, locale)} G
-              </span>
-            )}
-            {score && score.allGs === 0 && (
-              <span className="list-tiers">
-                {(["platinum", "gold", "silver", "bronze"] as const).map((t) =>
-                  score.tiers[t] ? (
-                    <span key={t}>
-                      <span className={`tier tier-${t}`} />
-                      {score.tiers[t]}
-                    </span>
-                  ) : null,
-                )}
+                {num(score.pts, locale)} / {num(score.allPts, locale)} {plural(locale, score.allPts, ["ptsOne", "ptsFew", "ptsMany"])}
               </span>
             )}
           </span>
         )}
       </Hero>
+      {lists && lists.length > 1 && (
+        <PlatformTabs
+          className="list-plats"
+          lists={lists}
+          value={`${platform}:${titleId}`}
+          onChange={(v) => {
+            const next = lists.find((l) => `${l.platform}:${l.title_id}` === v);
+            if (!next) return;
+            setFilter(null);
+            setShownList({ platform: next.platform, titleId: next.title_id });
+          }}
+        />
+      )}
       {guides?.guide && (
         <div className="list-guide">
           <GuideVideo guide={guides.guide} />

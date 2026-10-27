@@ -5,10 +5,10 @@ import { useApp } from "../../app/context";
 import { openExternal } from "../../app/env";
 import type { AchView } from "../../app/layers";
 import { useLoad } from "../../app/useLoad";
-import { isVeiled, rareLevel, revealed, TIER_NAME } from "../../app/views";
+import { isVeiled, pointsOf, rareLevel, revealed, TIER_NAME } from "../../app/views";
 import { clockOf } from "../../core/post-text";
 import { tick } from "../../core/haptic";
-import { dayLabel, num, pct } from "../../i18n";
+import { dayLabel, num, pct, plural } from "../../i18n";
 import { isWideArt } from "../../parts/AchRow";
 import { GameLink } from "../../parts/GameLink";
 import { capital } from "../../parts/Months";
@@ -74,7 +74,9 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
             {rare ? <span className="rare-mark shape-flower6" /> : <Icon name="trophy" size={14} />}
             {capital(tr(TIER_NAME[rare ?? "common"]))}
           </span>
-          {ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
+          <span className="chip chip-outline">
+            {num(pointsOf(ach.rarity, ach), locale)} {plural(locale, pointsOf(ach.rarity, ach), ["ptsOne", "ptsFew", "ptsMany"])}
+          </span>
           {!ach.unlockedAt && <span>{tr("achNotEarned")}</span>}
         </div>
 

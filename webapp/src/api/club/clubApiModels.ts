@@ -48,6 +48,7 @@ export type SummaryMember = {
   name: string;
   count: number;
   score: number;
+  points?: number;
   rare: number;
   xbox: number;
   steam: number;
@@ -89,7 +90,7 @@ export type PersonPayload = {
   }>;
   today: { count: number; score: number; xbox: number; steam: number; psn: number };
   week: { count: number; xbox: number; steam: number; psn: number };
-  month: { count: number; score: number; xbox: number; steam: number; psn: number };
+  month: { count: number; score: number; points?: number; xbox: number; steam: number; psn: number };
   month_key?: string;
   current_month?: string;
   months?: string[];

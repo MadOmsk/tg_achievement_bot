@@ -25,6 +25,7 @@ from bot.db.repo._sql import (
     earned_at,
     earned_since,
     member_source,
+    points,
     rarity,
     rarity_cache_join,
 )
@@ -74,6 +75,7 @@ class _ChatStatsRepo:
             "       steam.display_name AS steam_name, psn.display_name AS psn_name,"
             "       COUNT(s.achievement_id) AS cnt,"
             "       COALESCE(SUM(s.gamerscore), 0) AS score,"
+            f"       COALESCE(SUM({points()}), 0) AS points,"
             f"       SUM(CASE WHEN {rarity()} IS NOT NULL AND {rarity()} <= ?"
             "                THEN 1 ELSE 0 END) AS rare,"
             "       SUM(CASE WHEN s.platform IN ('xbox_modern', 'xbox_360') THEN 1 ELSE 0 END)"
@@ -122,6 +124,7 @@ class _ChatStatsRepo:
                 psn_name=row["psn_name"],
                 count=int(row["cnt"]),
                 score=int(row["score"]),
+                points=int(row["points"] or 0),
                 rare=int(row["rare"] or 0),
                 xbox_count=int(row["xbox_count"] or 0),
                 steam_count=int(row["steam_count"] or 0),

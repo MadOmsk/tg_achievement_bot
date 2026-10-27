@@ -1,6 +1,6 @@
 import type { NewsItem } from "../api";
 import { useApp } from "../app/context";
-import { achOfFeed, isVeiled, rareLevel, TIER_NAME } from "../app/views";
+import { achOfFeed, isVeiled, pointsOf, rareLevel, TIER_NAME } from "../app/views";
 import { clockOf } from "../core/post-text";
 import { tick } from "../core/haptic";
 import { dayKey, num, pct, plural, t, timeAgo, type Locale } from "../i18n";
@@ -99,7 +99,10 @@ export function MagazinePost({ post }: { post: PostData }) {
       <button type="button" className="mag-body" onClick={() => openEvent(lead)}>
         <span className="mag-kicker">
           <span className={`mag-tier${tier ? ` mark-${tier}` : ""}`}>{capital(tr(TIER_NAME[tier ?? "common"]))}</span>
-          {item.gamerscore ? <span className="mag-worth">{num(item.gamerscore, locale)} G</span> : null}
+          <span className="mag-worth">
+            {num(pointsOf(item.rarity_percent, { trophy: item.trophy_type, mythic: item.mythic }), locale)}{" "}
+            {plural(locale, pointsOf(item.rarity_percent, { trophy: item.trophy_type, mythic: item.mythic }), ["ptsOne", "ptsFew", "ptsMany"])}
+          </span>
         </span>
         <span className="mag-name t-card clamp-2">{veiled ? tr("secretAchievement") : item.name}</span>
         {!veiled && item.description && <span className="mag-desc clamp-2">{item.description}</span>}

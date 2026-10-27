@@ -1,0 +1,426 @@
+.pass-tier-common {
+  --tier-color: var(--primary);
+}
+
+.pass-tier-rare {
+  --tier-color: var(--tier-epic);
+}
+
+.pass-tier-legendary {
+  --tier-color: var(--tier-legendary);
+}
+
+.pass-tier-mythic {
+  --tier-color: var(--tier-mythic);
+}
+
+/* The showcase: the theme picked on the track */
+
+.pass-spot {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 12px 0;
+  padding: 28px 18px 22px;
+  border-radius: var(--r-xl);
+  background: color-mix(in srgb, var(--tier-color) 10%, var(--surface-1));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tier-color) 35%, transparent);
+  text-align: center;
+  animation: pass-in 0.35s var(--ease-out, ease-out);
+}
+
+@keyframes pass-in {
+  from {
+    opacity: 0.4;
+    transform: scale(0.98);
+  }
+}
+
+.pass-spot-wait {
+  height: 340px;
+}
+
+.pass-spot > * {
+  position: relative;
+}
+
+.pass-spot > .pass-spot-glow,
+.pass-spot > .pass-spot-rays {
+  position: absolute;
+  pointer-events: none;
+}
+
+.pass-spot-glow {
+  left: 50%;
+  top: -60px;
+  width: 340px;
+  height: 340px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--tier-color) 38%, transparent), transparent 62%);
+}
+
+.pass-spot-rays {
+  left: 50%;
+  top: 94px;
+  width: 520px;
+  height: 520px;
+  margin: -260px 0 0 -260px;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--tier-color) 14%, transparent) 0 8deg, transparent 8deg 22deg);
+  -webkit-mask: radial-gradient(circle, #000 18%, transparent 62%);
+  mask: radial-gradient(circle, #000 18%, transparent 62%);
+  animation: pass-spin 40s linear infinite;
+}
+
+@keyframes pass-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pass-spot-art {
+  position: relative;
+  margin-bottom: 12px;
+  animation: pass-float 3.2s ease-in-out infinite;
+}
+
+@keyframes pass-float {
+  50% {
+    transform: translateY(-6px) rotate(6deg);
+  }
+}
+
+.pass-art {
+  display: flex;
+}
+
+.pass-spot-art .pass-art {
+  filter: drop-shadow(0 10px 24px color-mix(in srgb, var(--tier-color) 45%, transparent));
+}
+
+.pass-spot-lock {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--on-surface);
+  box-shadow: 0 0 0 4px var(--surface-1);
+}
+
+.pass-tier-word {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tier-color);
+}
+
+.pass-spot-name {
+  font-size: 28px;
+  font-weight: 900;
+  font-stretch: 115%;
+  line-height: 1.1;
+}
+
+.pass-spot-left,
+.pass-have {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 9px 16px;
+  border-radius: var(--r-full);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+
+.pass-spot-left {
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+  color: var(--on-surface-2);
+}
+
+.pass-have {
+  background: color-mix(in srgb, var(--tier-color) 18%, transparent);
+  color: var(--tier-color);
+}
+
+.pass-claim {
+  margin-top: 12px;
+  min-width: 200px;
+  animation: pass-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pass-pulse {
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--primary) 18%, transparent);
+  }
+}
+
+/* A claim: the theme pops, a ring runs out, sparks fly. */
+
+.pass-spot-burst {
+  animation: pass-flash 0.9s ease-out;
+}
+
+@keyframes pass-flash {
+  0% {
+    background: color-mix(in srgb, var(--tier-color) 45%, var(--surface-1));
+  }
+}
+
+.pass-spot-burst .pass-spot-art {
+  animation: pass-pop 0.8s cubic-bezier(0.2, 1.6, 0.4, 1), pass-float 3.2s 0.8s ease-in-out infinite;
+}
+
+@keyframes pass-pop {
+  0% {
+    transform: scale(0.6) rotate(-40deg);
+  }
+  60% {
+    transform: scale(1.22) rotate(12deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+
+.pass-spot-burst .pass-spot-art::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  border: 3px solid var(--tier-color);
+  animation: pass-ring 0.8s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes pass-ring {
+  from {
+    opacity: 1;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.1);
+  }
+}
+
+.pass-sparks {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+}
+
+.pass-sparks i {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px;
+  border-radius: 3px;
+  background: var(--tier-color);
+  opacity: 0;
+  animation: pass-spark 0.9s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+.pass-sparks i:nth-child(3n) {
+  background: var(--tertiary);
+  border-radius: 50%;
+}
+
+.pass-sparks i:nth-child(3n + 1) {
+  background: var(--primary);
+  width: 6px;
+  height: 14px;
+}
+
+@keyframes pass-spark {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(0.4);
+  }
+}
+
+/* Under the showcase: the month's points and the season's days */
+
+.pass-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px var(--gutter) 4px;
+  font-size: 14px;
+  color: var(--on-surface-3);
+}
+
+.pass-stats b {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--on-surface);
+}
+
+.pass-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  color: var(--on-surface-2);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+/* The track: every level in one row, the line from the first to the last. */
+
+.pass-track {
+  position: relative;
+  margin: 10px 12px 20px;
+}
+
+.pass-line {
+  position: absolute;
+  top: 28px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-3);
+}
+
+.pass-line-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--tertiary));
+  transition: width 0.6s var(--ease-out, ease-out);
+}
+
+.pass-stops {
+  position: relative;
+  display: grid;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pass-stops li {
+  display: flex;
+  justify-content: center;
+}
+
+.pass-stop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 4px;
+}
+
+.pass-stop-art {
+  position: relative;
+  padding: 4px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: box-shadow var(--t-fast, 0.15s);
+}
+
+.pass-stop:not(.pass-stop-have):not(.pass-stop-due) .pass-art {
+  filter: grayscale(0.75) brightness(0.55);
+}
+
+.pass-stop-on .pass-stop-art {
+  box-shadow: 0 0 0 2.5px var(--tier-color);
+}
+
+.pass-stop-due .pass-art {
+  animation: pass-float 2.4s ease-in-out infinite;
+}
+
+.pass-stop-mark {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--on-surface-2);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.pass-stop-mark-have {
+  background: var(--tier-color);
+  color: #111;
+}
+
+.pass-stop-mark-due {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.pass-stop-pts {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--on-surface-3);
+}
+
+.pass-stop-on .pass-stop-pts {
+  color: var(--tier-color);
+}
+
+.hero-pass {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  margin-top: 16px;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--on-primary-container) 12%, transparent);
+  color: var(--on-primary-container);
+  font-size: 14.5px;
+  font-weight: 800;
+  transition: transform var(--t-fast, 0.15s);
+}
+
+.hero-pass:active {
+  transform: scale(0.97);
+}
+
+.hero-pass-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-full);
+  background: var(--on-primary-container);
+  color: var(--primary-container);
+  font-size: 12px;
+}
+
+.pass-how {
+  margin: 0 var(--gutter) 32px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--on-surface-3);
+  text-align: center;
+}

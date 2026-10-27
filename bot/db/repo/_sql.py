@@ -301,6 +301,27 @@ def rarity(prefix: str = "s.") -> str:
     return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"
 
 
+# The app's own points (owner, 2026-10-27), one scale for every platform in
+# place of Xbox's gamerscore: a common achievement 10, a rare one (10 % and
+# under) 20, a legendary one (1 % and under) 30, a mythic one (Xbox's Mythic,
+# PSN's platinum) 50 — the Mini App's tiers (`views.rareLevel`). Tens, so a
+# step between can come later.
+POINTS_COMMON, POINTS_RARE, POINTS_LEGENDARY, POINTS_MYTHIC = 10, 20, 30, 50
+
+
+def points(prefix: str = "s.") -> str:
+    """One row's points; 0 for the empty side of a LEFT JOIN. Needs
+    `rarity_cache_join(prefix)` in the query."""
+    r = rarity(prefix)
+    return (
+        f"CASE WHEN {prefix}achievement_id IS NULL THEN 0"
+        f" WHEN {prefix}mythic = 1 OR {prefix}trophy_type = 'platinum' THEN {POINTS_MYTHIC}"
+        f" WHEN {r} IS NOT NULL AND {r} <= 1 THEN {POINTS_LEGENDARY}"
+        f" WHEN {r} IS NOT NULL AND {r} <= 10 THEN {POINTS_RARE}"
+        f" ELSE {POINTS_COMMON} END"
+    )
+
+
 # The rarity threshold, one for every chat (owner, 2026-10-01): read where a
 # chat's settings are read, so every caller that took the chat's own value
 # gets the global one. chat_settings.rare_threshold_percent is left unread.
