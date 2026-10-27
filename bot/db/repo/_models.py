@@ -489,6 +489,8 @@ class ChatMemberStat:
     count: int
     score: int
     rare: int
+    #: The app's own points for the window (`_sql.points`).
+    points: int = 0
     # Behind `count`'s single combined total (2026-09-05 follow-up) — a
     # parenthetical next to it, not a second sort key or a second row.
     xbox_count: int = 0
@@ -568,6 +570,8 @@ class RecentAchievement:
     device: str | None = None
     # Available platforms for the game (JSON / comma list)
     game_platforms: str | None = None
+    #: Xbox's Mythic: the last of a game's base list to be earned (migration 123).
+    mythic: bool = False
     # The person's own id (#156): what the Mini App names people by.
     person_id: int | None = None
 

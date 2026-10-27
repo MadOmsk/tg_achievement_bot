@@ -1,5 +1,5 @@
 import { BaseApi } from "../base/baseApi";
-import { ADMIN_ROUTES, API_BASE_ROUTES } from "../../components/shared/constants/routes";
+import { ADMIN_ROUTES, API_BASE_ROUTES } from "../../core/constants/routes";
 import type {
   AdminAction,
   AdminActionStep,

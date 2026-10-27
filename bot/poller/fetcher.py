@@ -27,7 +27,7 @@ from bot.services.xbox.client import (
     XboxClient,
 )
 from bot.services.xbox.models import ParsedAchievement
-from bot.util import parse_iso, utcnow, utcnow_iso
+from bot.util import parse_iso, real_game_name, utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -617,7 +617,7 @@ class Fetcher:
             )
         await self.refresh_title_history(person_id, xuid)
 
-        where = snapshot.title_name or snapshot.title_id or _("fetcher-no-game")
+        where = real_game_name(snapshot.title_name) or _("fetcher-no-game")
         state = (
             _("fetcher-online", where=where)
             if snapshot.state == PresenceState.ONLINE

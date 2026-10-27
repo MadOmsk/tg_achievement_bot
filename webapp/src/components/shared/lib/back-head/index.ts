@@ -1,1 +1,0 @@
-export { BackHead } from "./BackHead";

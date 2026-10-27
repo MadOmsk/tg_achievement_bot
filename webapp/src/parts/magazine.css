@@ -1,0 +1,267 @@
+/* The feed's card, a magazine's: who and when, the achievement large with
+   its rarity on the corner, its name and marks, the rest. A shade above the
+   page's cards, so each post stands on its own. */
+.mag {
+  margin: 0 12px 14px;
+  padding: 14px 14px 16px;
+  border-radius: var(--r-l);
+  background: var(--surface-2);
+}
+
+/* A rare, legendary or mythic post: the barest wash of its tier's colour. */
+.mag-rare {
+  background: color-mix(in srgb, var(--tier-epic) 6%, var(--surface-2));
+}
+
+.mag-legendary {
+  background: color-mix(in srgb, var(--tier-legendary) 6%, var(--surface-2));
+}
+
+.mag-mythic {
+  background: color-mix(in srgb, var(--tier-mythic) 6%, var(--surface-2));
+}
+
+.mag-by {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px 12px;
+}
+
+.mag-faces {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+/* Two who got it together: their faces side by side, the second over the
+   first's edge, each ringed in the card's colour. */
+.mag-faces-duo > * {
+  display: flex;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+
+.mag-faces-duo > * + * {
+  margin-left: -14px;
+}
+
+.mag-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mag-names-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mag-art {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.mag-pic {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-m);
+}
+
+/* A news post with no picture of its own: the game's cover on its own
+   blurred colours. */
+.mag-pic-game {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.mag-pic-ground {
+  position: absolute;
+  inset: -20%;
+  width: 140%;
+  height: 140%;
+  object-fit: cover;
+  filter: blur(28px) saturate(1.3) brightness(0.7);
+}
+
+.mag-pic-cover {
+  position: relative;
+  height: 72%;
+  aspect-ratio: 1;
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-2);
+}
+
+.mag-pic-sq {
+  aspect-ratio: 4 / 3;
+}
+
+.mag-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -14px;
+  width: 58px;
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+
+.mag-together-badge {
+  position: absolute;
+  right: 58px;
+  bottom: -10px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tertiary-container);
+  color: var(--on-tertiary-container);
+}
+
+.mag-together-alone {
+  right: -6px;
+}
+
+.mag-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 56px 0 2px;
+  text-align: left;
+}
+
+.mag-strip {
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 -14px;
+  padding: 0 14px 2px;
+}
+
+.mag-thumb {
+  flex: 0 0 auto;
+  width: 128px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.mag-thumb-pic {
+  display: block;
+  width: 128px;
+  height: 80px;
+  margin-bottom: 2px;
+  border-radius: var(--r-s);
+}
+
+.mag-thumb-sq {
+  width: 96px;
+}
+
+.mag-thumb-sq .mag-thumb-pic {
+  width: 96px;
+  height: 96px;
+}
+
+.mag-skel .mag-body {
+  gap: 8px;
+}
+
+.mag-kicker .mag-tier + .mag-worth::before {
+  content: "·";
+  margin-right: 8px;
+}
+
+/* A developer's post takes the rarity's place: what it is, on the corner and
+   above the title, in the colours a patch and news have everywhere. */
+.mag-kind-patch {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.mag-kind-news {
+  background: var(--tertiary-container);
+  color: var(--on-tertiary-container);
+}
+
+/* The card's text, from the type scale: who (a label), the game and the time
+   (meta), the achievement's name (the card's title), what it asks (body). */
+.mag-by-cover {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-s);
+}
+
+.mag-names {
+  min-width: 0;
+  text-align: left;
+}
+
+.mag-sub,
+.mag-time,
+.mag-more,
+.mag-thumb-rarity {
+  font-size: 13px;
+  color: var(--on-surface-3);
+}
+
+.mag-sub {
+  min-width: 0;
+  text-align: left;
+}
+
+.mag-time {
+  flex: 0 0 auto;
+}
+
+.mag-more {
+  margin: 16px 2px 8px;
+  font-weight: 650;
+}
+
+.mag-thumb-rarity {
+  font-weight: 650;
+}
+
+.mag-thumb-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.mag-desc {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--on-surface-2);
+}
+
+.mag-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--on-surface-3);
+}
+
+.mag-kicker:empty {
+  display: none;
+}
+

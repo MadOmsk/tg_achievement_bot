@@ -355,6 +355,64 @@ class _SteamRepo:
             for row in await cursor.fetchall()
         ]
 
+    async def favorite_games_news(
+        self, game_ids: list[int], *, since: str, until: str, limit: int
+    ) -> list[GameNewsRow]:
+        """The developers' posts dated in [since, until) about these games
+        (somebody's favorites, owner, 2026-10-26), newest first, one row per
+        post; each names the game by the list most people here played."""
+        if not game_ids:
+            return []
+        cursor = await self._conn.execute(
+            "WITH fav(game_id) AS (SELECT value FROM json_each(?)), apps AS ("
+            "  SELECT f.game_id, CAST(v.product_id AS INTEGER) AS appid FROM fav f"
+            "  JOIN versions v ON v.game_id = f.game_id WHERE v.store = 'steam'"
+            "  UNION"
+            "  SELECT f.game_id, CAST(json_extract(j.value, '$[1]') AS INTEGER) FROM fav f"
+            "  JOIN versions v ON v.game_id = f.game_id, json_each(v.store_ids) j"
+            "  WHERE json_extract(j.value, '$[0]') = 'steam_twin'"
+            ") "
+            "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
+            "       gp.text_en, gp.image_url, MIN(a.game_id) AS game_id,"
+            "       g.name AS game_name, g.name_ru AS game_name_ru "
+            "FROM game_patches gp JOIN apps a ON a.appid = gp.steam_appid "
+            "JOIN games g ON g.game_id = a.game_id "
+            "WHERE gp.published_at >= ? AND gp.published_at < ? "
+            "GROUP BY gp.steam_appid, gp.gid "
+            "ORDER BY gp.published_at DESC, gp.steam_appid, gp.gid "
+            "LIMIT ?",
+            (f"[{','.join(str(int(g)) for g in game_ids)}]", since, until, limit),
+        )
+        rows = await cursor.fetchall()
+        lists: dict[int, tuple[str, str] | None] = {}
+        for row in rows:
+            game_id = int(row["game_id"])
+            if game_id not in lists:
+                lists[game_id] = await self.game_list_of(game_id)
+        out: list[GameNewsRow] = []
+        for row in rows:
+            key = lists[int(row["game_id"])]
+            if key is None:
+                continue
+            out.append(
+                GameNewsRow(
+                    steam_appid=int(row["steam_appid"]),
+                    gid=row["gid"],
+                    kind=row["kind"],
+                    title=row["title"],
+                    published_at=row["published_at"],
+                    text_en=row["text_en"],
+                    image_url=row["image_url"],
+                    platform=key[0],
+                    title_id=str(key[1]),
+                    game=row["game_name"],
+                    game_ru=row["game_name_ru"],
+                    game_en=row["game_name"],
+                    game_icon_url=await self.title_icon_url(key[0], key[1]),
+                )
+            )
+        return out
+
     async def game_patch(self, appid: int, gid: str) -> StoredPatch | None:
         """One post of a game's developer, as a notice about it opens it."""
         cursor = await self._conn.execute(

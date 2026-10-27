@@ -274,7 +274,14 @@ async def test_publishing_tells_followers_without_waiting_for_them(repo: Repo, m
     await asyncio.sleep(0)
     first = achievement("a1", None)
     assert told == [
-        (7, "xbox_360", "1", "Halo 3", 2, {"achievement": first.name, "icon": first.icon_url})
+        (
+            7,
+            "xbox_360",
+            "1",
+            "Halo 3",
+            2,
+            {"achievement": first.name, "icon": first.icon_url, "achievement_id": "a1"},
+        )
     ]
 
 
@@ -287,9 +294,16 @@ async def test_a_post_opens_its_game_on_the_authors_progress(repo: Repo, setting
         )
         == f"{APP_URL}?p={ada}&g=xbox_modern%3A42"
     )
+    assert (
+        notifier._url_for(
+            "new_post",
+            {"person_id": ada, "platform": "xbox_modern", "title_id": "42", "achievement_id": "7"},
+        )
+        == f"{APP_URL}?p={ada}&g=xbox_modern%3A42&a=7"
+    )
     assert notifier._url_for("new_follower", {"person_id": ada}) == f"{APP_URL}?p={ada}"
 
-    await notifier.tell_about_post(ada, "xbox_modern", "42", "Halo", 1)
+    await notifier.tell_about_post(ada, "xbox_modern", "42", "Halo", 1, achievement_id="7")
     await notifier.notify(bob, "new_follower", person_id=ada, name="ada")
     app = web.Application(middlewares=[cors_middleware()])
     setup_mini_api(app, settings, repo, notifications=notifier)
@@ -302,6 +316,7 @@ async def test_a_post_opens_its_game_on_the_authors_progress(repo: Repo, setting
         listing = await (await client.get("/api/mini/notifications")).json()
         follower, post = listing["items"]
         assert post["game"] == {"platform": "xbox_modern", "title_id": "42", "name": "Halo"}
+        assert post["achievement_id"] == "7"
         assert follower["game"] is None
         assert listing["unread"] == 2
 
@@ -357,7 +372,7 @@ async def test_the_list_names_the_achievement_and_never_a_secret_one(
     shown = replace(achievement("a2", None), name="Open Door", icon_url="https://x/i.png")
     await pub.publish(7, "x1", "ada", [secret, shown], "Halo 3")
     await asyncio.sleep(0)
-    assert told == [{"achievement": "Open Door", "icon": "https://x/i.png"}]
+    assert told == [{"achievement": "Open Door", "icon": "https://x/i.png", "achievement_id": "a2"}]
 
     data = {
         "person_id": 7,

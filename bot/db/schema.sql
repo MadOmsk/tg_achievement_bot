@@ -855,6 +855,28 @@ CREATE TABLE IF NOT EXISTS follows (
 );
 CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows (followee_id);
 
+-- A person's favorite games (130; owner, 2026-10-25): on their profile, their
+-- news read every hour. `anchor_key` (store:product_id:console of the game's
+-- anchor version) finds the game again when a carried-over catalog changed ids.
+CREATE TABLE IF NOT EXISTS favorite_games (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id    INTEGER NOT NULL,
+    anchor_key TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, game_id)
+);
+CREATE INDEX IF NOT EXISTS idx_favorite_games_game ON favorite_games (game_id);
+
+-- The season pass (131; owner, 2026-10-27): the themes a person claimed,
+-- checked against the month's points by the server, kept for good.
+CREATE TABLE IF NOT EXISTS pass_claims (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    palette    TEXT NOT NULL,
+    month      TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, palette)
+);
+
 CREATE TABLE IF NOT EXISTS blocks (
     person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

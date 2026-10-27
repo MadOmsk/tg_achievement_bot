@@ -1,7 +1,7 @@
 import { ru, type TranslationKey } from "./locales/ru";
 import { en } from "./locales/en";
-import type { TimezoneOption } from "../components/shared/constants/timezones";
-import { RARITY_MODES } from "../components/shared/constants/rarity";
+import type { TimezoneOption } from "../core/constants/timezones";
+import { RARITY_MODES } from "../core/constants/rarity";
 
 export type Locale = "ru" | "en";
 
@@ -10,6 +10,37 @@ const catalogs = { ru, en };
 export function t(locale: string, key: TranslationKey): string {
   const cat = locale === "en" ? catalogs.en : catalogs.ru;
   return cat[key];
+}
+
+/** A counted word: Russian's one/few/many ("1 достижение, 3 достижения, 5
+ * достижений"), English's one/other (the `few` key doubles as plural). */
+export function plural(
+  locale: string,
+  n: number,
+  keys: [TranslationKey, TranslationKey, TranslationKey],
+): string {
+  const [one, few, many] = keys;
+  if (locale === "en") return t(locale, n === 1 ? one : few);
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return t(locale, one);
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return t(locale, few);
+  return t(locale, many);
+}
+
+/** A number as the reader writes it: "2 100", "2,100". */
+export function num(n: number | null | undefined, locale: string): string {
+  return (n ?? 0).toLocaleString(locale === "en" ? "en-US" : "ru-RU");
+}
+
+/** A rarity as a percentage: "0,04 %", "21,7 %". */
+export function pct(value: number | null | undefined, locale: string): string {
+  if (value == null) return "";
+  const digits = value < 1 ? 2 : value < 10 ? 1 : 0;
+  return `${value.toLocaleString(locale === "en" ? "en-US" : "ru-RU", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: 0,
+  })} %`;
 }
 
 export function formatOffset(minutes: number | null | undefined, locale: string): string {

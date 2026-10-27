@@ -3,7 +3,8 @@
 `A.B.C.D`, and every part answers a question somebody actually asked during
 an outage:
 
-- **A** — the architecture. Bumped by hand, on a rewrite. It is `1`.
+- **A** — the architecture. Bumped by hand, on a rewrite. It is `2`
+  since 2.0 (the games catalog and the new Mini App, owner 2026-10-27).
 - **B** — the minor release line: `TRUNK_LINE` on `main`, one above it on
   every working branch, so the test server already reads the line its work will
   ship in. Only a release that starts a new minor bumps `TRUNK_LINE`.
@@ -41,13 +42,13 @@ import subprocess
 from functools import cache
 from pathlib import Path
 
-MAJOR = 1
+MAJOR = 2
 
 #: The line of work `main` is on, and the only part of this file a person
 #: edits — when the owner decides a release starts a new minor. Working
-#: branches read one above it (see `line()`). Production has been `7` since
-#: release 1.7.
-TRUNK_LINE = 8
+#: branches read one above it (see `line()`). A new major starts it again
+#: at `0` (release 2.0).
+TRUNK_LINE = 0
 
 #: The branch that *is* production (2026-09-18): merging into it is the
 #: release, and everything else is by definition a line of work above it.

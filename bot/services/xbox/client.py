@@ -31,6 +31,7 @@ from bot.services.xbox.models import (
     parse_achievements,
     parse_rarity_with_title,
 )
+from bot.util import real_game_name
 
 log = logging.getLogger(__name__)
 
@@ -694,7 +695,7 @@ def _current_title(item: object) -> tuple[str | None, str | None, str | None]:
             name = getattr(title, "name", None)
             if name and name.strip().lower() in _SYSTEM_TITLE_NAMES:
                 continue
-            return str(title.id), name, getattr(device, "type", None)
+            return str(title.id), real_game_name(name), getattr(device, "type", None)
     return None, None, None
 
 

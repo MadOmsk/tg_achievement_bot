@@ -1,68 +1,236 @@
-.people-list {
-  margin: 0 0 8px;
+.pp-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 8px var(--gutter) 0;
+  text-align: center;
 }
 
-.people-line {
+.pp-face {
+  border-radius: 50%;
+}
+
+.pp-name {
+  font-size: 32px;
+  font-weight: 800;
+  font-stretch: 115%;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.pp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pp-counts {
+  display: flex;
+  gap: 3px;
+  margin: 18px 12px 0;
+}
+
+.pp-counts > * {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 64px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-size: 12px;
+  color: var(--on-surface-2);
+}
+
+.pp-counts > :first-child {
+  border-radius: var(--r-l) 8px 8px var(--r-l);
+}
+
+.pp-counts > :last-child {
+  border-radius: 8px var(--r-l) var(--r-l) 8px;
+}
+
+.pp-counts b {
+  font-size: 22px;
+  color: var(--on-surface);
+}
+
+/* A person's game accounts in one short line under the name. */
+.pp-accs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.acc-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 12px 0 5px;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.acc-chip-score {
+  font-weight: 700;
+}
+
+.pp-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px var(--gutter) 0;
+}
+
+.pp-follow {
+  display: flex;
+  gap: 2px;
+}
+
+.pp-follow .btn {
+  min-width: 180px;
+}
+
+.pp-follow > .btn:not(:only-child) {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.pp-follow > .ibtn {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+
+.pp-months {
+  padding: 0 var(--gutter) 12px;
+}
+
+.pp-more {
+  padding: 4px 12px 0;
+}
+
+.fl-tabs {
+  padding: 4px var(--gutter) 0;
+}
+
+.fl-search {
+  padding: 12px 12px 14px;
+}
+
+.sp-field {
+  position: relative;
+}
+
+.sp-busy {
+  position: absolute;
+  right: 28px;
+  top: 30px;
+}
+
+.person-line {
+  gap: 10px;
+  padding: 8px 12px 8px 14px;
+}
+
+.person-line-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  border-bottom: 1px solid var(--hair);
+  text-align: left;
 }
 
-.people-line:last-child {
-  border-bottom: 0;
+.pp-skel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-top: 14px;
 }
 
-.people-line .picker-row {
-  flex: 1;
-  min-width: 0;
-  border-bottom: 0;
+.pp-skel .pp-counts {
+  align-self: stretch;
+  margin-top: 2px;
 }
 
-.people-line .picker-row-copy {
-  min-width: 0;
+.pp-skel .pp-counts > .skel {
+  height: 64px;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%;
 }
 
-.people-line .follow-btn {
-  flex: none;
+
+.pp-hero {
+  margin-top: 6px;
 }
 
-.follow-btn.is-on {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--muted);
+.pp-counts > .pp-count-follow {
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
-.people-hint {
-  margin: 16px 0;
-  color: var(--muted);
-  font-size: 0.85rem;
+.pp-counts > .pp-count-follow.pp-count-on {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
 }
 
-.feed-switch {
-  padding-left: 3px;
+.pp-follow-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
 }
 
-.people-head {
-  margin-top: 8px;
+/* The follow choice in the bar once the page scrolls: a small pill, filled
+   while not following, tonal once following. */
+.pp-bar-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border-radius: var(--r-full);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 13.5px;
+  font-weight: 700;
 }
 
-.people-list + .people-head {
-  margin-top: 24px;
+.pp-bar-on {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
 }
 
-/* A suggestion just followed folds away. */
-.people-line {
-  max-height: 80px;
-  transition:
-    max-height 0.32s ease,
-    opacity 0.24s ease,
-    transform 0.32s ease;
+.pp-skel-name {
+  display: block;
+  width: 180px;
+  height: 30px;
+  margin: 16px auto 0;
+  border-radius: 15px;
 }
 
-.people-line.is-leaving {
-  max-height: 0;
-  opacity: 0;
-  transform: translateX(24px);
-  overflow: hidden;
-  border-bottom-color: transparent;
+.pp-skel-chip {
+  display: block;
+  width: 116px;
+  height: 32px;
+  margin: 0 auto;
+  border-radius: var(--r-full);
 }

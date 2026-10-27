@@ -1,1 +1,0 @@
-export { FitImg } from "./FitImg";

@@ -18,6 +18,7 @@ from bot.db.repo._sql import (
     earned_at,
     earned_date_is_real,
     earned_since,
+    points,
     rarity,
     rarity_cache_join,
 )
@@ -195,6 +196,28 @@ class _StatsRepo:
         so it never contributes to the sum, by construction, not by a check
         here."""
         return await self._counts(OWNED_BY_PERSON_EXISTS, [person_id], since, until)
+
+    async def points_for_person(
+        self, person_id: int, since: datetime | None, until: datetime | None = None
+    ) -> int:
+        """The app's own points (`_sql.points`) of what a person earned in a
+        window, every platform on one scale."""
+        query = (
+            f"SELECT COALESCE(SUM({points('seen_achievements.')}), 0) FROM seen_achievements "
+            + rarity_cache_join("seen_achievements.")
+            + "WHERE "
+            + OWNED_BY_PERSON_EXISTS
+        )
+        params: list[object] = [person_id]
+        if since is not None:
+            query += f" AND {earned_since('seen_achievements.')}"
+            params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at('seen_achievements.')} < ?"
+            params.append(_iso(until))
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
 
     async def achievement_platform_breakdown(
         self, person_id: int, since: datetime | None, until: datetime | None = None

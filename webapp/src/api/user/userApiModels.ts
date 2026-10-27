@@ -97,6 +97,8 @@ export type MeResponse = {
   person_id: number;
   /** The app's own notices not yet seen (#164). */
   notifications_unread?: number;
+  /** How a small achievement picture is drawn — the admin's, as in the posts. */
+  picture?: { on: boolean; scale: number; low_res: number };
   /** No email yet and not put off: the app asks for one once (owner, 2026-10-05). */
   email_prompt?: boolean;
   /** None for a person who signed in by email and has no Telegram (#162). */
