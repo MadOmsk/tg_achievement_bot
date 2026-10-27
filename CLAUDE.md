@@ -2581,7 +2581,8 @@ and a look at how it words its titles).
 **`A.B.C.D`** (#56) from `bot/version.py`, shown at the end of `/help` and the hub
 and logged at startup (`… is up (v1.4.3.058)`). History: #112.
 
-- **A** — the architecture; by hand, on a rewrite.
+- **A** — the architecture; by hand, on a rewrite. `2` since 2.0 (the games
+  catalog and the new Mini App; owner, 2026-10-27), which started B again at 0.
 - **B** — the minor line: `TRUNK_LINE` on `main`, **one above it on every working
   branch**, so the test server reads the line its work will ship in and "which bot is
   this" is answerable from the version. Only a release that starts a new minor bumps
