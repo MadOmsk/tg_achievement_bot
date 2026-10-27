@@ -911,3 +911,26 @@ async def test_saving_an_edition_again_keeps_what_it_was_read_to_be(repo: Repo) 
     await repo.save_edition("xbox", "B", "A Bundle", None)
     cursor = await repo._conn.execute("SELECT scope FROM editions WHERE edition_id = ?", (edition,))
     assert (await cursor.fetchone())[0] == "bundle"
+
+
+async def test_a_stored_xbox_answer_is_judged_on_sale_as_of_when_it_was_given(repo: Repo) -> None:
+    """Each price period is an availability with its own end: a re-parse
+    read later must not find every period over (2026-10-26)."""
+    product = _xbox_product(XboxConsoleGenOptimized=["ConsoleGen8"])
+    product["DisplaySkuAvailabilities"] = [
+        _sku(trial=False, actions=["Purchase"], end="2026-10-15T09:59:59Z")
+    ]
+    assert xbox_catalog.sold(product, "2026-10-12T18:00:00+00:00")
+    assert not xbox_catalog.sold(product, "2026-10-26T00:00:00+00:00")
+
+    await repo.save_payload(
+        "xbox_title:1799887933", "xbox_catalog", [product], fetched_at="2026-10-12T18:00:00+00:00"
+    )
+    await StoreCollector(repo).reparse_stored()
+    [version] = await repo.versions_of_product("xbox", str(product["ProductId"]))
+    assert version["on_sale"] == 1
+    # The re-parse keeps when the answer was given.
+    assert (
+        await repo.payload_fetched_at("xbox_title:1799887933", "xbox_catalog")
+        == "2026-10-12T18:00:00+00:00"
+    )

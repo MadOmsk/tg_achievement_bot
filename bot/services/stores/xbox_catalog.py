@@ -114,8 +114,9 @@ def consoles_of(product: dict) -> tuple[list[str], list[str]]:
     return consoles, also_on
 
 
-def parse_product(product: dict) -> list[StoreVersion]:
-    """One version per console the product is made for (`consoles_of`)."""
+def parse_product(product: dict, now: str | None = None) -> list[StoreVersion]:
+    """One version per console the product is made for (`consoles_of`);
+    `now`: when the answer was given, for whether it was on sale (`sold`)."""
     props = product.get("Properties") or {}
     local = (product.get("LocalizedProperties") or [{}])[0]
     market = (product.get("MarketProperties") or [{}])[0]
@@ -148,7 +149,7 @@ def parse_product(product: dict) -> list[StoreVersion]:
             if r.get("RelatedProductId") and r.get("RelationshipType") in ("Bundle", "AddOn")
         ],
     }
-    on_sale = sold(product)
+    on_sale = sold(product, now)
     return [
         StoreVersion(
             store="xbox",
@@ -169,7 +170,10 @@ def sold(product: dict, now: str | None = None) -> bool:
     buy it (`Purchase` — free games and pre-orders too) and is current. A
     trial's "Purchase" is the trial (The Crew, Destiny: delisted, their free
     trial still "for sale"); a product off sale keeps only Browse, License,
-    Redeem. Prices take no part (they are not kept)."""
+    Redeem. Prices take no part (they are not kept). Each price period is an
+    availability of its own with its own end, so `now` is when the answer
+    was given: a stored answer read later would find every period over
+    (2026-10-26: 404 games read as off sale)."""
     today = now or utcnow_iso()
     for sku in product.get("DisplaySkuAvailabilities") or []:
         if ((sku.get("Sku") or {}).get("Properties") or {}).get("IsTrial"):
@@ -251,7 +255,7 @@ def offers_purchase(product: dict) -> bool:
     )
 
 
-def parse_x360(product: dict) -> StoreVersion:
+def parse_x360(product: dict, now: str | None = None) -> StoreVersion:
     """A 360 game as its backward-compatible product describes it: the 360
     version (a 360 game is 360 even played on One, #114), its store page
     that product. No release day: the product's is when it came back."""
@@ -268,7 +272,7 @@ def parse_x360(product: dict) -> StoreVersion:
         description_en=_text(local.get("ShortDescription"))
         or _text(local.get("ProductDescription")),
         media=_media(local),
-        on_sale=sold(product),
+        on_sale=sold(product, now),
         store_ids=[("xbox_product", big_id)],
     )
 
@@ -299,7 +303,7 @@ def _sku_flag(product: dict, name: str) -> bool:
     )
 
 
-def parse_addon(product: dict) -> StoreDlc | None:
+def parse_addon(product: dict, now: str | None = None) -> StoreDlc | None:
     """An add-on of a game, or None for what is not one: a game bundle, a
     consumable (currency, packs), a product with no name."""
     if str(product.get("ProductType") or "") != "Durable":
@@ -326,7 +330,7 @@ def parse_addon(product: dict) -> StoreDlc | None:
         description_en=_text(local.get("ShortDescription"))
         or _text(local.get("ProductDescription")),
         image_url=str(images.get("cover")) if images.get("cover") else None,
-        on_sale=sold(product),
+        on_sale=sold(product, now),
     )
 
 
