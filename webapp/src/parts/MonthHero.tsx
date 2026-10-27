@@ -1,12 +1,11 @@
 import { useState } from "react";
-import type { FeedItem, PersonPayload } from "../api";
+import { clubApi, type FeedItem, type PersonPayload } from "../api";
+import { useLoad } from "../app/useLoad";
 import { useApp } from "../app/context";
-import { achOfFeed, isVeiled } from "../app/views";
 import { tick } from "../core/haptic";
 import { formatMonth } from "../core/people-utils";
 import { num, plural } from "../i18n";
 import { Icon } from "../ui/Icon";
-import { AchPic } from "../ui/Pic";
 import { MonthSheet } from "./Months";
 
 /** The month as one bar a day: how much was earned, today marked, the days
@@ -36,14 +35,16 @@ function MonthBars({ feed, month }: { feed: FeedItem[]; month: string }) {
   );
 }
 
-/** A person's month as one card: how many achievements, the points and the
- * games, the latest three as a fan of pictures, and the month by day. Home
+/** A person's month as one card, by what matters: how many achievements
+ * (the points and the games small beside), the place among the people
+ * followed and the race with the one just above or below, the month by day. Home
  * shows the viewer's, a person's page that person's. */
 export function MonthHero({
   payload,
   month,
   months,
   onMonth,
+  personId,
 }: {
   payload: PersonPayload | null | undefined;
   month: string;
@@ -51,10 +52,19 @@ export function MonthHero({
    * turns from one to the next. */
   months?: string[];
   onMonth?: (month: string) => void;
+  /** Whose month it is: their place among the people the viewer follows. */
+  personId?: number;
 }) {
-  const { tr, locale, open, me } = useApp();
+  const { data, tr, locale } = useApp();
+  const summary = useLoad(personId ? `summary:${month}:hero` : null, () => clubApi.fetchSummary(data, "following", { month }));
+  const leaders = [...(summary.data?.month ?? [])].filter((r) => r.count > 0).sort((a, b) => b.count - a.count || b.score - a.score);
+  const place = personId ? leaders.findIndex((r) => r.person_id === personId) + 1 : 0;
+  // The race: who is just above (and how many it takes to pass them), or —
+  // for the first — who is just below and how far behind.
+  const rival = place > 1 ? leaders[place - 2] : place === 1 ? leaders[1] : undefined;
+  const mine = place > 0 ? leaders[place - 1].count : 0;
+  const gap = rival ? (place > 1 ? rival.count - mine + 1 : mine - rival.count) : 0;
   const [pick, setPick] = useState(false);
-  const recent = (payload?.feed ?? []).slice(0, 3);
   const list = months?.length ? months : [month];
   const at = list.indexOf(month);
   const older = at >= 0 ? list[at + 1] : undefined;
@@ -67,6 +77,7 @@ export function MonthHero({
   };
   return (
     <section className="home-hero">
+      <span className="home-hero-deco shape-clover4" aria-hidden="true" />
       {onMonth ? (
         <div className="home-hero-nav">
           <button type="button" className="home-hero-month home-hero-pick" onClick={() => setPick(true)}>
@@ -86,48 +97,45 @@ export function MonthHero({
         <p className="home-hero-month">{label.split(" ")[0].toUpperCase()}</p>
       )}
       {pick && onMonth && <MonthSheet months={list} value={month} onChange={onMonth} onClose={() => setPick(false)} />}
-      <div className="home-hero-top">
+      <div className="home-hero-main">
         <div className="home-hero-text">
           {payload ? (
             <>
               <p className="t-display home-hero-num">{num(payload.month.count, locale)}</p>
               <p className="home-hero-line">
                 {plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}
-                <br />
-                {payload.month.score > 0 && <b>+{num(payload.month.score, locale)} G · </b>}
-                {payload.games.length} {plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}
+                {payload.month.score > 0 && ` · +${num(payload.month.score, locale)} G`}
+                {` · ${payload.games.length} ${plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}`}
               </p>
             </>
           ) : (
             <>
               <span className="home-hero-ghost home-hero-ghost-num" />
               <span className="home-hero-ghost home-hero-ghost-line" />
-              <span className="home-hero-ghost home-hero-ghost-line short" />
             </>
           )}
         </div>
-        <div className="home-hero-stack">
-          {!payload &&
-            [0, 1, 2].map((i) => <span key={i} className={`home-hero-pic home-hero-pic-${i} home-hero-ghost`} />)}
-          {recent.map((item, i) => (
-            <button
-              key={`${item.title_id}:${item.achievement_id}`}
-              type="button"
-              className={`home-hero-pic home-hero-pic-${i}`}
-              aria-label={item.name ?? tr("pageAchievement")}
-              onClick={() => {
-                tick();
-                open({ kind: "achievement", ach: achOfFeed(item) });
-              }}
-            >
-              <AchPic
-                src={item.icon_url}
-                veiled={isVeiled(item.is_secret, `${item.platform}:${item.title_id}:${item.achievement_id}:${item.person_id}`, me.settings.show_secrets)}
-              />
-            </button>
-          ))}
-        </div>
+        {place > 0 && (
+          <span key={`${month}:${place}`} className={`home-hero-medal shape-flower6${place <= 3 ? ` home-hero-medal-${place}` : ""}`}>
+            <b className="t-num">{place}</b>
+            <span>{tr("heroPlaceWord")}</span>
+          </span>
+        )}
       </div>
+      {place > 0 && (
+        <div className="home-hero-race">
+          <Icon name={place === 1 ? "trophy" : "rank"} size={16} />
+          <span className="home-hero-race-line clamp-1">
+            {!rival
+              ? tr("heroAlone")
+              : place > 1
+                ? tr("heroToNext").replace("{n}", num(gap, locale)).replace("{name}", rival.name)
+                : gap > 0
+                  ? tr("heroAhead").replace("{n}", num(gap, locale)).replace("{name}", rival.name)
+                  : tr("heroTied").replace("{name}", rival.name)}
+          </span>
+        </div>
+      )}
       <MonthBars feed={payload?.feed ?? []} month={month} />
     </section>
   );

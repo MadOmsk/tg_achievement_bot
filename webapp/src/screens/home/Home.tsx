@@ -136,6 +136,7 @@ export function Home({ refreshKey }: { refreshKey: number }) {
           month={month}
           months={mine.data?.months?.length ? mine.data.months : recentMonths(12)}
           onMonth={setMonth}
+          personId={me.person_id}
         />
       )}
 

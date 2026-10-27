@@ -463,12 +463,26 @@
 
 /* A person's month (MonthHero): Home's and a person's page's. */
 .home-hero {
+  position: relative;
+  isolation: isolate;
   margin: 16px 12px 0;
   padding: 20px 20px 18px;
   border-radius: var(--r-xl) var(--r-xl) var(--r-xl) var(--r-s);
   background: var(--primary-container);
   color: var(--on-primary-container);
   overflow: hidden;
+}
+
+/* Expressive's shape behind the place, a shade lighter than the card. */
+.home-hero-deco {
+  position: absolute;
+  z-index: -1;
+  right: -56px;
+  top: 34px;
+  width: 230px;
+  height: 230px;
+  background: var(--primary-container-2);
+  transform: rotate(18deg);
 }
 
 .home-hero-nav {
@@ -511,10 +525,83 @@
   opacity: 0.3;
 }
 
-.home-hero-top {
+.home-hero-main {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+/* The place: a flower in the tier's colour of the podium — first mythic,
+   second legendary, third rare —, quiet from the fourth down. */
+.home-hero-medal {
+  flex: 0 0 auto;
+  width: 104px;
+  height: 104px;
+  margin-right: 4px;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.28));
+  animation: medal-in var(--t-slow) var(--spring);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--on-primary-container) 16%, transparent);
+  line-height: 1;
+}
+
+.home-hero-medal b {
+  font-size: 44px;
+}
+
+.home-hero-medal span {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.home-hero-medal-1 {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.home-hero-medal-2 {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.home-hero-medal-3 {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+@keyframes medal-in {
+  from {
+    transform: scale(0.6) rotate(-30deg);
+    opacity: 0;
+  }
+}
+
+/* Who is just above or below, and how close: one pill. */
+.home-hero-race {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 36px;
+  margin-top: 14px;
+  padding: 0 14px 0 12px;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--on-primary-container) 12%, transparent);
+}
+
+.home-hero-race svg {
+  flex: 0 0 auto;
+}
+
+.home-hero-race-line {
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 650;
 }
 
 .home-hero-text {
@@ -535,13 +622,8 @@
 
 .home-hero-line {
   margin-top: 6px;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--on-primary-container-2);
-}
-
-.home-hero-line b {
-  font-weight: 700;
-  color: var(--on-primary-container);
 }
 
 .home-hero .home-hero-ghost {
@@ -564,68 +646,10 @@
   border-radius: 7px;
 }
 
-.home-hero-ghost-line.short {
-  width: 76px;
-}
-
-.home-hero-pic.home-hero-ghost {
-  box-shadow: none;
-}
-
 @keyframes ghost {
   50% {
     opacity: 0.5;
   }
-}
-
-.home-hero-stack {
-  position: relative;
-  flex: 0 0 auto;
-  width: 164px;
-  height: 184px;
-  margin-right: -4px;
-}
-
-.home-hero-pic {
-  position: absolute;
-  width: 106px;
-  height: 106px;
-  border-radius: 28px;
-  overflow: hidden;
-  box-shadow:
-    0 0 0 3px var(--primary-container),
-    0 10px 24px rgba(0, 0, 0, 0.3);
-  transition: transform var(--t-mid) var(--spring);
-}
-
-.home-hero-pic .pic {
-  width: 100%;
-  height: 100%;
-}
-
-.home-hero-pic-0 {
-  right: 0;
-  top: 6px;
-  z-index: 3;
-  transform: rotate(8deg);
-}
-
-.home-hero-pic-1 {
-  right: 50px;
-  top: 58px;
-  z-index: 2;
-  transform: rotate(-7deg);
-}
-
-.home-hero-pic-2 {
-  right: 8px;
-  top: 84px;
-  z-index: 1;
-  transform: rotate(14deg) scale(0.86);
-}
-
-.home-hero-pic:active {
-  transform: rotate(0) scale(0.95);
 }
 
 .home-bars {

@@ -233,6 +233,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
               setAllPosts(false);
               setMonth(m);
             }}
+            personId={personId}
           />
         </div>
       )}
