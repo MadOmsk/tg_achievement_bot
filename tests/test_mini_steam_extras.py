@@ -106,9 +106,11 @@ async def test_tips_and_patches_are_filled_once_and_then_read_from_the_database(
             assert body["complete"] is True
             assert body["tips"]["2"]["text"].startswith("Behind the bookcase")
 
-            resp = await client.get(f"/api/mini/games/xbox_modern/{TITLE}/patches", headers=headers)
+            resp = await client.get(
+                f"/api/mini/game?platform=xbox_modern&title_id={TITLE}", headers=headers
+            )
             body = await resp.json()
-            assert [p["title"] for p in body["patches"]] == ["Small patch"]
+            assert [p["title"] for p in body["news"]] == ["Small patch"]
         assert calls == {"appid": 1, "patches": 1, "guides": 1}
     finally:
         await client.close()

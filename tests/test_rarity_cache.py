@@ -237,7 +237,7 @@ async def test_the_walker_upserts_title_name_learned_from_contract_4(repo: Repo)
     walker = RarityBackfill(repo, client)  # type: ignore[arg-type]
 
     await walker.tick()
-    assert await repo.title_name(TITLE) == "Halo Infinite"
+    assert await repo.title_name("xbox", TITLE) == "Halo Infinite"
 
 
 async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> None:
@@ -247,7 +247,7 @@ async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> Non
 
     await repo.save_refresh_token(await repo.person_id(TG_ID), b"mock-token")
 
-    assert await repo.title_name(TITLE) is None
+    assert await repo.title_name("xbox", TITLE) is None
     missing = await repo.titles_missing_from_catalogue(10)
     assert len(missing) == 1
 
@@ -255,7 +255,7 @@ async def test_the_walker_heals_titles_missing_from_catalogue(repo: Repo) -> Non
     walker = RarityBackfill(repo, client)  # type: ignore[arg-type]
 
     await walker.tick()
-    assert await repo.title_name(TITLE) == "Healed Game Title"
+    assert await repo.title_name("xbox", TITLE) == "Healed Game Title"
     assert await repo.titles_missing_from_catalogue(10) == []
 
 

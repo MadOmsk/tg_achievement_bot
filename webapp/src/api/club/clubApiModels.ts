@@ -28,6 +28,7 @@ export type FeedItem = {
   description: string | null;
   trophy_type: string | null;
   tier_badge: string | null;
+  mythic?: boolean;
   progress?: FeedProgress | null;
 };
 
@@ -47,6 +48,7 @@ export type SummaryMember = {
   name: string;
   count: number;
   score: number;
+  points?: number;
   rare: number;
   xbox: number;
   steam: number;
@@ -88,7 +90,7 @@ export type PersonPayload = {
   }>;
   today: { count: number; score: number; xbox: number; steam: number; psn: number };
   week: { count: number; xbox: number; steam: number; psn: number };
-  month: { count: number; score: number; xbox: number; steam: number; psn: number };
+  month: { count: number; score: number; points?: number; xbox: number; steam: number; psn: number };
   month_key?: string;
   current_month?: string;
   months?: string[];
@@ -119,6 +121,11 @@ export type SummaryResponse = {
   year?: SummaryMember[];
   year_key?: number;
   games: SummaryGame[];
+  /** The month's unlocks of everybody, newest first ("hunting together" is
+   * read from them). */
+  recent?: FeedItem[];
+  /** The month's rarest finds. */
+  rares?: FeedItem[];
 };
 
 /** A post of a game's developer on Steam (owner, 2026-10-05), untranslated. */
@@ -143,4 +150,17 @@ export type NewsResponse = {
   month: string;
   current_month: string;
   months: string[];
+};
+
+/** A game's developer post, opened whole. */
+export type NewsPost = {
+  title: string;
+  /** ISO date. */
+  date: string;
+  /** The whole post: pictures and videos on lines of their own. */
+  text: string;
+  image: string | null;
+  /** The post on Steam. */
+  url: string;
+  kind?: "patch" | "news";
 };

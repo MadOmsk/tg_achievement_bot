@@ -13,6 +13,7 @@ from bot.constants import (
     TokenStatus,
 )
 from bot.db.repo import PlatformLink, Repo, User
+from bot.services import post_picture
 from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
 from bot.services.handles import CHANGE_COOLDOWN_DAYS
 from bot.services.naming import link_nickname
@@ -22,7 +23,7 @@ from bot.services.profile_links import (
     xbox_profile_url,
 )
 from bot.services.stats import counters_for, week_cutoff_utc
-from bot.util import utcnow
+from bot.util import real_game_name, utcnow
 from bot.views.parts import visibility_status_text
 
 
@@ -94,6 +95,9 @@ async def build_me_payload(
         # A picture chosen in the app replaces the Telegram photo (#157).
         "avatar_custom": bool(await repo.custom_avatar_path(person_id)),
         "notifications_unread": await repo.unread_notifications(person_id),
+        # How a small achievement picture is drawn, the admin's (owner,
+        # 2026-10-12): the Mini App follows the posts' own rule.
+        "picture": await _picture_look(repo),
         "username": username,
         "first_name": first_name,
         "last_name": last_name,
@@ -289,13 +293,23 @@ async def _psn_block(
     }
 
 
+async def _picture_look(repo: Repo) -> dict[str, Any]:
+    """The admin's post-picture style for small icons (`services/post_picture`):
+    which pictures count as small, how many times they are enlarged, and
+    whether any of it is on."""
+    look = await post_picture.look_of(repo)
+    return {"on": look.on, "scale": look.scale, "low_res": look.low_res}
+
+
 async def _xbox_presence(repo: Repo, xuid: str) -> dict[str, Any] | None:
     row = await repo.presence_of(xuid)
     if row is None:
         return None
     game = None
     if row.state == PresenceState.ONLINE and row.title_id:
-        game = row.title_name or await repo.title_name(row.title_id) or row.title_id
+        game = real_game_name(row.title_name) or real_game_name(
+            await repo.title_name("xbox", row.title_id)
+        )
     return {
         "state": row.state,
         "title_id": row.title_id,

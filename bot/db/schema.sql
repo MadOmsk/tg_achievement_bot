@@ -262,6 +262,12 @@ CREATE TABLE IF NOT EXISTS seen_achievements (
     -- trophy_type below is. The trophy itself reports it, so it costs
     -- nothing to keep and is what makes "3/7 in this DLC" answerable.
     trophy_group_id TEXT,
+    -- 122: platform (it said so) / derived (worked out by us, provisional).
+    group_source TEXT,
+    -- 123: this row brought the account's Mythic (the last of the base list) /
+    -- its completion (the last of the whole list); set once, when it happens.
+    mythic INTEGER NOT NULL DEFAULT 0,
+    completes INTEGER NOT NULL DEFAULT 0,
     trophy_type     TEXT,                -- PSN's tier (bronze/silver/gold/platinum), NULL
                                           -- elsewhere — new dimension, no analogue on any other
                                           -- platform (M-PSN-1's design notes), M-PSN-2
@@ -395,8 +401,20 @@ CREATE TABLE IF NOT EXISTS title_history (
     PRIMARY KEY (xuid, title_id)
 );
 
-CREATE TABLE IF NOT EXISTS titles (
-    title_id   TEXT PRIMARY KEY,
+-- NOT a game (117; formerly `titles`): the link between a game's versions and
+-- one achievement list on one platform, with that list's own facts (the
+-- platform's name for it, its size, when it was checked). A game, its name,
+-- cover and description are `games` and `versions`; never show a row of this
+-- as a game.
+CREATE TABLE IF NOT EXISTS achievement_list_connectors (
+    -- One row per list: one achievement list on one platform (#147),
+    -- keyed by the platform and its own id as seen_achievements and
+    -- title_achievements are — the id spaces overlap (Steam appids run to
+    -- ~3.5M, Xbox title ids start below 1M). An Xbox game found to be the
+    -- other generation moves, row and achievements together
+    -- (`update_title_platform`; migration 090).
+    platform   TEXT NOT NULL,     -- xbox_modern / xbox_360 / steam / psn
+    title_id   TEXT NOT NULL,
     name       TEXT NOT NULL,     -- whatever the platform called it first
     -- Only PlayStation localizes a game's title (#61, verified live:
     -- "Marvel's Wolverine" / "Marvel: Росомаха"), and it arrives in the same
@@ -407,7 +425,6 @@ CREATE TABLE IF NOT EXISTS titles (
     -- another platform ever changes its mind.
     name_ru    TEXT,
     name_en    TEXT,
-    platform   TEXT,               -- xbox_360 / xbox_modern
     platforms  TEXT,               -- JSON array of available platforms from API (#79)
     -- Failed titlehub lookups of `platforms` for an Xbox game, and when the
     -- last one ran (migration 060, #114). After three, `platforms` is '[]'.
@@ -434,55 +451,22 @@ CREATE TABLE IF NOT EXISTS titles (
     cover_hash TEXT,
     cover_checked_at TEXT,
     achievements_checked_at TEXT,
-    -- Which HowLongToBeat entry this game is (#131, migration 063): matched
-    -- automatically, never chosen by a person — bot/services/hltb_match.py
-    -- scores every candidate a search turns up and only keeps one it is
-    -- sure of. NULL until matched or given up on (three failed attempts,
-    -- same shape as platforms_attempts above); `hltb_match_score` is the
-    -- winning score, for telling a confident match from a Steam-appid one
-    -- (always 1.0) apart when the operator needs to check by hand.
-    hltb_id INTEGER,
-    hltb_match_score REAL,
-    hltb_attempts INTEGER NOT NULL DEFAULT 0,
-    hltb_checked_at TEXT,
-    -- The Steam app this game is (migration 069): a Steam game's own title_id,
-    -- else looked up once — HLTB's page first, then Steam's store search — and
-    -- given up on after three failed attempts, like the HLTB entry above. NULL
-    -- also means "has no Steam page" once the attempts are spent.
-    steam_appid INTEGER,
-    steam_appid_attempts INTEGER NOT NULL DEFAULT 0,
-    steam_appid_checked_at TEXT,
+    -- Which HowLongToBeat entry this list is is not here (110): it is a
+    -- link of the list's versions (`version_hltb`, `repo.list_hltb_match`),
+    -- and when it was last asked, `fetch_state` ('hltb_match').
+    -- The Steam app this list is is not here (114): a Steam list is its own
+    -- app, any other is known by a `steam_twin` id on the versions of the list
+    -- (`versions.store_ids`; `_sql.STEAM_APP_OF_TITLE`), and when it was last
+    -- looked for, `fetch_state` ('steam_app').
     -- When the achievements' tips (title_achievements.tip_*) were last worked
     -- out from the Steam app's guides.
     tips_checked_at TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (platform, title_id)
 );
 
--- HowLongToBeat lookups (SPEC 6.6), keyed by HLTB's own game id — cached
--- forever once someone actually picks a search result.
-CREATE TABLE IF NOT EXISTS hltb_cache (
-    hltb_id             INTEGER PRIMARY KEY,
-    name                TEXT NOT NULL,
-    release_year        INTEGER,
-    main_hours          REAL,
-    extra_hours         REAL,
-    completionist_hours REAL,
-    platforms           TEXT NOT NULL DEFAULT '[]',  -- JSON list, HLTB's profile_platforms
-    game_url            TEXT,  -- game_web_link — the HLTB page itself
-    image_url           TEXT,  -- game_image_url — HLTB's own cover art
-    genre               TEXT,  -- HLTB's own profile_genre, comma-separated as HLTB writes it
-    -- The game's own summary, HLTB's profile_summary (#2). English is what
-    -- HLTB actually publishes; the Russian side is a one-off LLM translation
-    -- of it, kept beside the original so a locale switch never re-pays for
-    -- the same game. Either may be NULL: HLTB has no summary for every entry,
-    -- and the translation is skipped entirely when no Anthropic key is set.
-    description_en      TEXT,
-    description_ru      TEXT,
-    -- The rest of the HLTB page (rating, studio, modes, spreads, speedruns),
-    -- one JSON object; NULL until the page has been read for it (064).
-    details             TEXT,
-    cached_at           TEXT NOT NULL
-);
+-- HowLongToBeat lookups (SPEC 6.6) are read from the mirror (`hltb_entries`,
+-- 112); the old cache table `hltb_cache` is gone (113).
 
 -- A PlayStation trophy list is split into groups: the base game plus one per
 -- DLC (#46). A trophy says which group it came from, so a notification can
@@ -684,6 +668,8 @@ CREATE TABLE IF NOT EXISTS title_achievements (
     gamerscore      INTEGER,
     trophy_type     TEXT,
     trophy_group_id TEXT,
+    -- 122: platform (it said so) / derived (worked out by us, provisional).
+    group_source TEXT,
     rarity_percent  REAL,
     updated_at      TEXT NOT NULL,
     -- How the two descriptions were obtained, once they went through
@@ -726,12 +712,13 @@ CREATE TABLE IF NOT EXISTS steam_apps (
 -- fingerprint of what it was asked and the answer, each achievement's line ranges
 -- as JSON. The model is asked again only when the fingerprint changes.
 CREATE TABLE IF NOT EXISTS title_guide_reads (
+    platform    TEXT    NOT NULL,   -- the game's, as `titles` (090)
     title_id    TEXT    NOT NULL,
     guide_id    TEXT    NOT NULL,
     fingerprint TEXT    NOT NULL,
     answer      TEXT    NOT NULL,
     checked_at  TEXT    NOT NULL,
-    PRIMARY KEY (title_id, guide_id)
+    PRIMARY KEY (platform, title_id, guide_id)
 );
 
 -- A Steam app's latest patch notes, from its developer's announcements.
@@ -867,6 +854,28 @@ CREATE TABLE IF NOT EXISTS follows (
     CHECK (follower_id != followee_id)
 );
 CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows (followee_id);
+
+-- A person's favorite games (130; owner, 2026-10-25): on their profile, their
+-- news read every hour. `anchor_key` (store:product_id:console of the game's
+-- anchor version) finds the game again when a carried-over catalog changed ids.
+CREATE TABLE IF NOT EXISTS favorite_games (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id    INTEGER NOT NULL,
+    anchor_key TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, game_id)
+);
+CREATE INDEX IF NOT EXISTS idx_favorite_games_game ON favorite_games (game_id);
+
+-- The season pass (131; owner, 2026-10-27): the themes a person claimed,
+-- checked against the month's points by the server, kept for good.
+CREATE TABLE IF NOT EXISTS pass_claims (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    palette    TEXT NOT NULL,
+    month      TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, palette)
+);
 
 CREATE TABLE IF NOT EXISTS blocks (
     person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1008,3 +1017,526 @@ CREATE TABLE IF NOT EXISTS guide_marks (
     PRIMARY KEY (video_id, label, start_seconds)
 );
 CREATE INDEX IF NOT EXISTS idx_guide_marks_label ON guide_marks (label);
+
+-- ------------------------------------------------------------------ the store side (#147)
+-- What each store says about a game: versions (a store product on one
+-- console), DLC, HLTB entries, the raw answers and when to ask again
+-- (migration 091). No foreign key points at `titles`.
+
+CREATE TABLE IF NOT EXISTS versions (
+    version_id   INTEGER PRIMARY KEY,
+    store        TEXT NOT NULL,    -- steam / xbox / psn / x360 (no store: the 360 list itself)
+                                   -- / unknown (104: a PC game from a store not named, an
+                                   -- Xbox list on Win32 alone); later egs / gog
+    product_id   TEXT NOT NULL,    -- Steam appid, Xbox bigId, PSN concept id, 360 title id
+    console      TEXT NOT NULL,    -- series / one / pc / 360 / ps5 / ps4 / ps3 / vita / steam
+    platform     TEXT,             -- its achievement list: titles(platform, title_id)
+    title_id     TEXT,
+    name         TEXT,
+    name_ru      TEXT,
+    kind         TEXT,             -- the store's own: game / demo / dlc / bundle / app
+    developer    TEXT,
+    publisher    TEXT,
+    release_date TEXT,             -- ISO day
+    genres       TEXT,             -- JSON list
+    also_on      TEXT,             -- JSON list: other platforms this product runs on (XPA's pc)
+    store_group  TEXT,             -- how the store itself groups versions: Xbox ProductGroupId,
+                                   -- PSN concept, Steam fullgame
+    description_en TEXT,
+    description_ru TEXT,
+    media        TEXT,             -- JSON: cover, screenshots, videos (links)
+    live_service INTEGER NOT NULL DEFAULT 0,
+    origin       TEXT NOT NULL DEFAULT 'played',  -- played / store (found, nobody here owns it)
+    updated_at   TEXT NOT NULL,
+    -- Made from our own list when no store described it (093): the store is
+    -- the platform's, the product id the list's own id.
+    stand_in     INTEGER NOT NULL DEFAULT 0,
+    -- Whether the store still sells it (095): 1 / 0, NULL when not known.
+    on_sale      INTEGER,
+    -- Xbox's cross-gen set (098): one set is one game; store_group keeps
+    -- only the product group, which can hold a whole series.
+    cross_gen_set TEXT,
+    -- The game this version is in (108: it was the table game_versions, a
+    -- version is in exactly one game): the matcher's output, rebuilt from the
+    -- operator's labels and the model; NULL until it is linked. `role` is
+    -- version / enhanced / demo / tool / mode / extra / pass / covered, checked in
+    -- game_link.py (a CHECK would mean rebuilding this table whenever a
+    -- role is added); a demo, a tool, a mode and an extra name the version
+    -- they are of.
+    game_id       INTEGER REFERENCES games(game_id) ON DELETE SET NULL,
+    role          TEXT,
+    of_version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
+    link_p        REAL,
+    linked_at     TEXT,
+    -- Every id that names this version (109; it was the table
+    -- version_store_ids): a JSON list of [kind, id] — psn_concept / psn_title
+    -- (several CUSAs for one PS4 version), xbox_product / xbox_title,
+    -- steam_app, and `list` for each achievement list proved to be this
+    -- version ("platform:title_id").
+    store_ids     TEXT,
+    -- How it came into the database (116): list / played / sibling / hltb /
+    -- search / earlier, what found it, and when; never rewritten.
+    found_how     TEXT,
+    found_via     TEXT,
+    found_at      TEXT,
+    UNIQUE (store, product_id, console)
+);
+CREATE INDEX IF NOT EXISTS idx_versions_title ON versions(platform, title_id);
+
+CREATE TABLE IF NOT EXISTS dlcs (
+    dlc_id       INTEGER PRIMARY KEY,
+    version_id   INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    store_id     TEXT,             -- Steam DLC appid / Xbox add-on bigId / PSN add-on product id
+    trophy_group_id TEXT,          -- PSN: title_groups(title_id, group_id)
+    name         TEXT,
+    name_ru      TEXT,
+    kind         TEXT,             -- dlc / expansion / season_pass / soundtrack / other
+    release_date TEXT,
+    description_en TEXT,
+    image_url    TEXT,
+    updated_at   TEXT NOT NULL,
+    on_sale      INTEGER,          -- 103: 1 available, 0 off sale, NULL unknown
+    CHECK (store_id IS NOT NULL OR trophy_group_id IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dlcs_store ON dlcs(version_id, store_id)
+    WHERE store_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dlcs_group ON dlcs(version_id, trophy_group_id)
+    WHERE trophy_group_id IS NOT NULL;
+
+-- The HowLongToBeat mirror (#147; owner, 2026-10-15): one row per entry — a
+-- game or its additional content (`game_type`; an additional content's
+-- `parent_hltb_id` is its main game) — with every field the page gives, named
+-- as HLTB names it where we had no name; hours are seconds, as HLTB gives
+-- them. Nothing of it is copied into our tables: a game, a version and a DLC
+-- link to an entry (`version_hltb`, `dlc_hltb`) and read it. An entry known
+-- only from another page's row (`page_read_at` NULL) has the few fields that
+-- row gives. `summary_ru` is our translation of `summary_en`, kept while the
+-- English text is the one `summary_ru_of` names (112).
+CREATE TABLE IF NOT EXISTS hltb_entries (
+    hltb_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    alias TEXT,
+    game_type TEXT,
+    parent_hltb_id INTEGER,
+    image TEXT,
+    name_year INTEGER,
+    steam_appid INTEGER,
+    steam_alt INTEGER,
+    itch_id INTEGER,
+    ign_id TEXT,
+    developer TEXT,
+    publisher TEXT,
+    genres TEXT,
+    summary_en TEXT,
+    release_world TEXT,
+    release_na TEXT,
+    release_eu TEXT,
+    release_jp TEXT,
+    rating_esrb TEXT,
+    rating_pegi TEXT,
+    rating_cero TEXT,
+    review_score INTEGER,
+    comp_main INTEGER,
+    comp_main_avg INTEGER,
+    comp_main_med INTEGER,
+    comp_main_h INTEGER,
+    comp_main_l INTEGER,
+    comp_main_count INTEGER,
+    comp_plus INTEGER,
+    comp_plus_avg INTEGER,
+    comp_plus_med INTEGER,
+    comp_plus_h INTEGER,
+    comp_plus_l INTEGER,
+    comp_plus_count INTEGER,
+    comp_100 INTEGER,
+    comp_100_avg INTEGER,
+    comp_100_med INTEGER,
+    comp_100_h INTEGER,
+    comp_100_l INTEGER,
+    comp_100_count INTEGER,
+    comp_all INTEGER,
+    comp_all_avg INTEGER,
+    comp_all_med INTEGER,
+    comp_all_h INTEGER,
+    comp_all_l INTEGER,
+    comp_all_count INTEGER,
+    comp_speed INTEGER,
+    comp_speed_avg INTEGER,
+    comp_speed_med INTEGER,
+    comp_speed_min INTEGER,
+    comp_speed_max INTEGER,
+    comp_speed_count INTEGER,
+    comp_speed100 INTEGER,
+    comp_speed100_avg INTEGER,
+    comp_speed100_med INTEGER,
+    comp_speed100_min INTEGER,
+    comp_speed100_max INTEGER,
+    comp_speed100_count INTEGER,
+    invested_co INTEGER,
+    invested_co_avg INTEGER,
+    invested_co_med INTEGER,
+    invested_co_h INTEGER,
+    invested_co_l INTEGER,
+    invested_co_count INTEGER,
+    invested_mp INTEGER,
+    invested_mp_avg INTEGER,
+    invested_mp_med INTEGER,
+    invested_mp_h INTEGER,
+    invested_mp_l INTEGER,
+    invested_mp_count INTEGER,
+    comp_lvl_sp INTEGER,
+    comp_lvl_co INTEGER,
+    comp_lvl_mp INTEGER,
+    comp_lvl_spd INTEGER,
+    comp_lvl_combine INTEGER,
+    comp_lvl_platform INTEGER,
+    count_comp INTEGER,
+    count_total INTEGER,
+    count_backlog INTEGER,
+    count_playing INTEGER,
+    count_replay INTEGER,
+    count_retired INTEGER,
+    count_custom INTEGER,
+    count_review INTEGER,
+    count_discussion INTEGER,
+    added_stats TEXT,
+    review_count INTEGER,
+    summary_ru TEXT,
+    summary_ru_of TEXT,
+    checked_at TEXT NOT NULL,
+    page_read_at TEXT,
+    -- The picture on disk (115): data/covers/<image_path>, when it was asked.
+    image_path TEXT,
+    image_hash TEXT,
+    image_checked_at TEXT,
+    release_year INTEGER GENERATED ALWAYS AS (
+        CASE WHEN substr(release_world, 1, 4) GLOB '[0-9][0-9][0-9][0-9]'
+                  AND substr(release_world, 1, 4) <> '0000'
+             THEN CAST(substr(release_world, 1, 4) AS INTEGER)
+             ELSE NULLIF(name_year, 0) END) VIRTUAL,
+    image_url TEXT GENERATED ALWAYS AS (
+        CASE WHEN image IS NOT NULL AND image <> ''
+             THEN 'https://howlongtobeat.com/games/' || image END) VIRTUAL
+);
+
+-- A platform's own row of an entry (platformData): hours HLTB gives for it.
+CREATE TABLE IF NOT EXISTS hltb_platform_times (
+    hltb_id     INTEGER NOT NULL,
+    platform    TEXT NOT NULL,
+    comp_main   INTEGER,
+    comp_plus   INTEGER,
+    comp_100    INTEGER,
+    comp_low    INTEGER,
+    comp_high   INTEGER,
+    count_comp  INTEGER,
+    count_total INTEGER,
+    PRIMARY KEY (hltb_id, platform)
+);
+
+-- A group of platforms with one set of hours (individuality), as HLTB writes
+-- the set: "PC, PlayStation Vita, Xbox 360, Xbox One".
+CREATE TABLE IF NOT EXISTS hltb_platform_groups (
+    hltb_id    INTEGER NOT NULL,
+    platforms  TEXT NOT NULL,
+    comp_main  INTEGER,
+    comp_plus  INTEGER,
+    comp_100   INTEGER,
+    comp_all   INTEGER,
+    compare    REAL,
+    count_comp INTEGER,
+    PRIMARY KEY (hltb_id, platforms)
+);
+
+-- The platforms an entry is on (profile_platform), one row each.
+CREATE TABLE IF NOT EXISTS hltb_entry_platforms (
+    hltb_id  INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    PRIMARY KEY (hltb_id, platform)
+);
+
+-- How many of HLTB's users gave an entry each score bucket (userReviews).
+CREATE TABLE IF NOT EXISTS hltb_review_scores (
+    hltb_id INTEGER NOT NULL,
+    score   INTEGER NOT NULL,
+    votes   INTEGER NOT NULL,
+    PRIMARY KEY (hltb_id, score)
+);
+
+-- Entries a page names that are not its additional content (another game, a
+-- compilation, "omit"): additional content is `parent_hltb_id`.
+CREATE TABLE IF NOT EXISTS hltb_related (
+    hltb_id    INTEGER NOT NULL,
+    related_id INTEGER NOT NULL,
+    PRIMARY KEY (hltb_id, related_id)
+);
+
+CREATE TABLE IF NOT EXISTS version_hltb (
+    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    hltb_id    INTEGER NOT NULL,
+    -- auto: matched by the model; manual: the operator's, kept through every
+    -- check; rejected (110): said not to be this version's, so it is never
+    -- linked again (the matcher, a collection, an old link all skip it).
+    source     TEXT NOT NULL,
+    score      REAL,               -- 110: the matcher's score of an auto link
+    PRIMARY KEY (version_id, hltb_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_version_hltb_hltb ON version_hltb(hltb_id);
+
+CREATE INDEX IF NOT EXISTS idx_version_hltb_hltb ON version_hltb(hltb_id);
+
+CREATE TABLE IF NOT EXISTS dlc_hltb (
+    dlc_id  INTEGER NOT NULL REFERENCES dlcs(dlc_id) ON DELETE CASCADE,
+    hltb_id INTEGER NOT NULL,
+    source  TEXT NOT NULL,         -- auto / manual / rejected (as version_hltb's)
+    PRIMARY KEY (dlc_id, hltb_id)
+);
+
+-- A source's last answer, compressed (zlib JSON), the latest only, rewritten
+-- only when its hash changes. `subject` names what was asked:
+-- `steam:292030`, `xbox:BR765873CQJD`, `psn:204794`, `hltb:10270`.
+CREATE TABLE IF NOT EXISTS source_payloads (
+    subject    TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    sha256     TEXT NOT NULL,
+    payload    BLOB NOT NULL,
+    PRIMARY KEY (subject, source)
+) WITHOUT ROWID;
+
+-- When each subject was last asked of each source, and when to ask again:
+-- the interval doubles while nothing changes (7 → 14 → 30 → 90 days) and
+-- falls back to 7 when something did (live-service games stay frequent).
+CREATE TABLE IF NOT EXISTS fetch_state (
+    subject       TEXT NOT NULL,
+    source        TEXT NOT NULL,
+    status        TEXT NOT NULL,   -- ok / not_found / error / gave_up
+    attempts      INTEGER NOT NULL DEFAULT 0,  -- failures in a row
+    interval_days INTEGER NOT NULL DEFAULT 7,
+    checked_at    TEXT NOT NULL,
+    next_check_at TEXT NOT NULL,
+    last_error    TEXT,
+    PRIMARY KEY (subject, source)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_fetch_state_due ON fetch_state(next_check_at);
+
+-- ------------------------------------------------------------------ games (#147, stage 3)
+-- A game over its versions; the link's kind, its state (linked / review /
+-- rejected) and who decided it — the matcher rewrites only its own rows
+-- (migration 092). A remake is another game, linked game -> game.
+
+CREATE TABLE IF NOT EXISTS games (
+    game_id     INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    name_ru     TEXT,
+    year        INTEGER,         -- the earliest of its versions'
+    developer   TEXT,            -- 096: the earliest version's
+    publisher   TEXT,            -- 096: the earliest version's
+    -- 097: the latest version's year; other versions by another studio,
+    -- another publisher ("Epic Games and others")
+    last_year       INTEGER,
+    more_developers INTEGER NOT NULL DEFAULT 0,
+    more_publishers INTEGER NOT NULL DEFAULT 0,
+    name_source TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
+    merged_into INTEGER REFERENCES games(game_id),  -- an old id keeps resolving
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    -- 099: the version that keeps the game's id through every rebuild (its
+    -- first linked one that is no demo); one anchor anchors one game.
+    anchor_version_id INTEGER UNIQUE REFERENCES versions(version_id) ON DELETE SET NULL,
+    -- 102: game / compilation / extra (not a game); `manual` is the operator's
+    kind        TEXT NOT NULL DEFAULT 'game',
+    kind_source TEXT NOT NULL DEFAULT 'auto'
+);
+
+-- A game's versions are columns of `versions` (108; the table game_versions
+-- of 099 is gone): see game_id, role, of_version_id.
+
+-- The operator's decisions (099): labels on pairs of versions, the input the
+-- games are rebuilt from, with the pair's signs for fitting the weights.
+-- No foreign keys (106): a label outlives its versions — a store re-parse
+-- deleting a version must not delete the operator's answers about it.
+CREATE TABLE IF NOT EXISTS match_decisions (
+    version_id INTEGER NOT NULL,
+    other_id   INTEGER NOT NULL,
+    relation   TEXT NOT NULL,   -- same / edition / demo_of / tool_of / mode_of / remaster_of /
+                                -- remake_of / contains / vr_of / other
+    features   TEXT,            -- JSON: the pair's signs when it was decided
+    model      TEXT,            -- which weights saw them
+    decided_by TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    subject_key TEXT,           -- store:product_id:console of each side when decided,
+    other_key   TEXT,           -- to find a gone version's product again
+    PRIMARY KEY (version_id, other_id),
+    CHECK (version_id <> other_id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_decisions_other ON match_decisions(other_id);
+
+-- Every answer given about the games, kept (128): match_decisions and
+-- game_series hold the one that counts now.
+CREATE TABLE IF NOT EXISTS label_log (
+    log_id     INTEGER PRIMARY KEY,
+    subject    TEXT NOT NULL,      -- pair (two versions) / series (a game in a series)
+    event      TEXT NOT NULL,      -- label / undo / skip / refused (kept under the operator's)
+    version_id INTEGER,
+    other_id   INTEGER,
+    relation   TEXT,
+    game_id    INTEGER,
+    series_id  INTEGER,
+    member     INTEGER,
+    decided_by TEXT NOT NULL,
+    decided_at TEXT NOT NULL,
+    note       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_label_log_pair ON label_log(version_id, other_id);
+CREATE INDEX IF NOT EXISTS idx_label_log_series ON label_log(game_id, series_id);
+
+-- The model's latest doubtful pairs (099): the review list.
+CREATE TABLE IF NOT EXISTS match_pairs (
+    version_id INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    other_id   INTEGER NOT NULL REFERENCES versions(version_id) ON DELETE CASCADE,
+    relation   TEXT NOT NULL,
+    p          REAL NOT NULL,
+    probs      TEXT NOT NULL,   -- JSON: every class's probability
+    features   TEXT NOT NULL,
+    model      TEXT NOT NULL,
+    scored_at  TEXT NOT NULL,
+    PRIMARY KEY (version_id, other_id)
+);
+
+CREATE TABLE IF NOT EXISTS game_relations (
+    game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    related_id INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    -- game_id is the later one: remaster_of / remake_of / vr_of the original
+    -- (always the earliest, no chains), or contains (a compilation → a part).
+    kind       TEXT NOT NULL,
+    source     TEXT NOT NULL,   -- auto / manual
+    created_at TEXT NOT NULL,
+    p          REAL,            -- 099: the model's confidence
+    PRIMARY KEY (game_id, related_id, kind),
+    CHECK (game_id <> related_id)
+);
+
+-- Game series (105): an entity of its own; a game may be in several (a
+-- crossover). `game_series.source`: auto (the linker's proposal, with p and
+-- how the game got there) / advisers / manual — the last two are never
+-- overwritten; `member = 0` says a game is not in it and keeps it out. A
+-- series keeps its id through rebuilds by its anchor game.
+CREATE TABLE IF NOT EXISTS series (
+    series_id      INTEGER PRIMARY KEY,
+    name           TEXT NOT NULL,
+    name_ru        TEXT,
+    name_source    TEXT NOT NULL DEFAULT 'auto',   -- auto / manual
+    anchor_game_id INTEGER UNIQUE REFERENCES games(game_id) ON DELETE SET NULL,
+    merged_into    INTEGER REFERENCES series(series_id),  -- an old id keeps resolving
+    merged_by      TEXT,             -- operator / auto (125): an auto merge is undone
+    -- A series a rule names, not an anchor game (111): "lego", a franchise's
+    -- sub-series ("key:star wars jedi", "sub:call of duty|modern warfare").
+    -- A game is in several series: the rule's and its franchise's.
+    rule_key       TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS game_series (
+    game_id    INTEGER NOT NULL REFERENCES games(game_id) ON DELETE CASCADE,
+    series_id  INTEGER NOT NULL REFERENCES series(series_id) ON DELETE CASCADE,
+    source     TEXT NOT NULL,              -- auto / advisers / manual
+    member     INTEGER NOT NULL DEFAULT 1, -- 0: said not to be in it
+    p          REAL,
+    reason     TEXT,                       -- how the game got there
+    decided_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (game_id, series_id)
+);
+CREATE INDEX IF NOT EXISTS idx_game_series_series ON game_series(series_id);
+
+-- A stand-in version is named by its list (117): the name follows the list's;
+-- the list's own id is no name (130).
+CREATE TRIGGER IF NOT EXISTS list_name_reaches_its_stand_ins
+AFTER UPDATE OF name, name_ru, name_en ON achievement_list_connectors
+BEGIN
+    UPDATE versions SET
+        name = CASE WHEN NEW.name IS NOT NULL AND NEW.name NOT IN ('', '?')
+                         AND NEW.name <> NEW.title_id
+                    THEN NEW.name ELSE COALESCE(NEW.name_en, name) END,
+        name_ru = NEW.name_ru
+    WHERE stand_in = 1 AND platform = NEW.platform AND title_id = NEW.title_id;
+END;
+
+-- Editions as a store sells them: a pack of a game and its add-ons, not a
+-- re-release (094).
+CREATE TABLE IF NOT EXISTS editions (
+    edition_id    INTEGER PRIMARY KEY,
+    store         TEXT NOT NULL,    -- xbox / steam / psn
+    store_id      TEXT NOT NULL,    -- Xbox bundle bigId, Steam package id, PSN product id
+    name          TEXT,
+    kind          TEXT,             -- standard / deluxe / premium / ultimate / gold / goty /
+                                    -- complete / anniversary / preorder / bundle
+    first_seen_at TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL,
+    on_sale       INTEGER,          -- 095: 1 / 0, NULL when not known
+    -- 120: its pictures (roles, and every picture with its store's tag), and
+    -- its cover on disk (data/covers/<image_path>).
+    media         TEXT,
+    image_path    TEXT,
+    image_hash    TEXT,
+    image_checked_at TEXT,
+    -- 127: edition / bundle / addon_pack, read from what it holds.
+    scope         TEXT NOT NULL DEFAULT 'edition',
+    UNIQUE (store, store_id)
+);
+
+-- What an edition holds: its game (a version of ours, when we have it) and
+-- add-ons (our DLC rows, when we have them), currency kept as such.
+CREATE TABLE IF NOT EXISTS edition_items (
+    edition_id INTEGER NOT NULL REFERENCES editions(edition_id) ON DELETE CASCADE,
+    store_id   TEXT NOT NULL,       -- the item's own id on that store
+    name       TEXT,
+    item_kind  TEXT NOT NULL,       -- game / dlc / consumable / other
+    is_primary INTEGER NOT NULL DEFAULT 0,
+    version_id INTEGER REFERENCES versions(version_id) ON DELETE SET NULL,
+    -- 127: main / bonus / part for a game the item stands for.
+    role          TEXT,
+    PRIMARY KEY (edition_id, store_id)
+);
+CREATE INDEX IF NOT EXISTS idx_edition_items_version ON edition_items(version_id);
+
+-- The advisers' answers to a run, kept as labels (124; services/advice_import).
+CREATE TABLE IF NOT EXISTS adviser_labels (
+    run        TEXT NOT NULL,
+    question   TEXT NOT NULL,
+    decision   TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    source     TEXT NOT NULL,   -- advisers:3/3 / advisers:2/3
+    said       TEXT NOT NULL,   -- JSON {adviser: value}
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (run, question, decision)
+);
+
+-- The octopus's queue (#215; owner, 2026-10-24): the games to assemble, each
+-- by an entry that leads to it — `list:psn:NPWR…`, `product:steam:620`,
+-- `achievement:…`, `dlc:…`, `hltb:…`, `name:…`, `game:12` — never only a
+-- game id, which a relink may change.
+CREATE TABLE IF NOT EXISTS octopus_queue (
+    key        TEXT PRIMARY KEY,
+    reason     TEXT,
+    due_at     TEXT NOT NULL,
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_octopus_queue_due ON octopus_queue(due_at);
+
+-- The games matcher's fitted weights (129): each fit kept, one active.
+CREATE TABLE IF NOT EXISTS match_weights (
+    weights_id   INTEGER PRIMARY KEY,
+    weights      TEXT NOT NULL,     -- JSON: class -> sign -> weight
+    gate_before  REAL,              -- the operator's labels, held out: right before the fit
+    gate_after   REAL,              -- … and after it
+    labels       INTEGER,           -- how many labels it was fitted on
+    note         TEXT,
+    created_at   TEXT NOT NULL,
+    active       INTEGER NOT NULL DEFAULT 0
+);

@@ -123,7 +123,7 @@ async def test_an_old_steam_game_falls_back_to_its_header(
     await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
 
     assert tried == list(cover_urls(STEAM_APPID))
-    assert await repo.title_icon_url(STEAM_APPID) == cover_urls(STEAM_APPID)[1]
+    assert await repo.title_icon_url("steam", STEAM_APPID) == cover_urls(STEAM_APPID)[1]
     assert await repo.titles_needing_cover(10) == []
 
 
@@ -158,7 +158,7 @@ async def test_an_xbox_cover_is_looked_up_through_an_owner(
     await CoverRefresh(repo, client).tick()  # type: ignore[arg-type]
 
     assert client.asked == [(await repo.person_id(7), XBOX_TITLE)]
-    assert await repo.title_icon_url(XBOX_TITLE) == "https://xbox.test/art.jpg"
+    assert await repo.title_icon_url("xbox", XBOX_TITLE) == "https://xbox.test/art.jpg"
 
 
 async def test_a_title_nobody_can_answer_for_goes_to_the_back_of_the_queue(
@@ -190,7 +190,7 @@ async def test_a_failed_download_still_keeps_the_url(repo: Repo, monkeypatch, tm
 
     await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
 
-    assert await repo.title_icon_url(STEAM_APPID) == cover_url(STEAM_APPID)
+    assert await repo.title_icon_url("steam", STEAM_APPID) == cover_url(STEAM_APPID)
     assert [t.title_id for t in await repo.titles_needing_cover(10)] == [STEAM_APPID]
 
 
@@ -221,7 +221,7 @@ async def _xbox_owner_with(repo: Repo, cipher, *, tg_id: int = 7) -> None:
 
 async def _checked_at(repo: Repo, title_id: str) -> str | None:
     cursor = await repo._conn.execute(
-        "SELECT cover_checked_at FROM titles WHERE title_id = ?", (title_id,)
+        "SELECT cover_checked_at FROM achievement_list_connectors WHERE title_id = ?", (title_id,)
     )
     row = await cursor.fetchone()
     return row["cover_checked_at"] if row else None
@@ -285,7 +285,7 @@ async def test_a_new_steam_game_takes_the_header_its_store_page_names(
     await CoverRefresh(repo, _FakeXbox()).tick()  # type: ignore[arg-type]
 
     assert asked == [STEAM_APPID]
-    assert await repo.title_icon_url(STEAM_APPID) == header
+    assert await repo.title_icon_url(Platform.STEAM, STEAM_APPID) == header
     assert await repo.titles_needing_cover(10) == []
 
 

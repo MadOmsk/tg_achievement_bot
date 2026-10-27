@@ -27,6 +27,7 @@ admin-setting-email-provider-daily = Лимит почтового сервис�
 admin-setting-email-sends-total = Кодов на почту всего в час
 admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
+admin-setting-octopus-per-tick = Сборка игр осьминогом (в минуту)
 
 # The settings registry (#176, services/admin_registry.py): one label per
 # setting, one title per group — the bot and the Mini App show the same ones.
@@ -35,6 +36,8 @@ admin-setting-default-rarity = Режим новичков
 admin-setting-rare-threshold-hint = Редкое — то, что есть не больше чем у этой доли игроков. Один порог на все чаты.
 admin-setting-default-rarity-hint = С этим режимом начинают новые люди.
 admin-setting-show-links = Ссылки на профили
+admin-setting-store-collection = Сбор с магазинов
+admin-setting-store-collection-hint = Бот сам спрашивает магазины и HowLongToBeat об играх: версии, DLC, время прохождения. Выключено — ничего не собирается.
 admin-setting-post-picture = Картинка поста
 admin-setting-post-picture-hint = Мелкая иконка (Steam, Xbox 360) увеличивается и встаёт на карточку с этим фоном. Большие картинки уходят как есть.
 admin-setting-post-picture-size = Карточка мелкой иконки
@@ -283,6 +286,11 @@ admin-psn-level-tag = уровень { $level }
 
 admin-nowhere = нигде
 admin-subscribed = Подписан: { $chats }
+admin-rarity-title = Публикация
+admin-rarity = Публикация: { $mode }
+admin-rarity-all = все
+admin-rarity-rare = редкие
+admin-rarity-hidden = никакие
 admin-excluded = 🚫 Исключён из системы: не опрашивается и не публикуется.
 admin-restore = ↩️ Вернуть
 admin-exclude = 🚫 Исключить из системы

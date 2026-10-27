@@ -13,6 +13,7 @@ from bot.db.repo import ChatPresenceRow
 from bot.i18n import translator
 from bot.services.naming import person_name
 from bot.services.platform_format import device_label
+from bot.util import real_game_name
 from bot.views.lists import Listing
 from bot.views.parts import PLATFORM_ICON, PLATFORM_ICON_UNKNOWN
 
@@ -24,13 +25,16 @@ def presence_text(row: ChatPresenceRow, locale: str) -> str:
     _ = translator("onlineview", locale)
     if row.state == PresenceState.ONLINE and row.title_id:
         norm_device = device_label(row.device)
+        # Never the id in place of a name: when the game is unknown, the line
+        # just says a game is on (owner, 2026-10-12).
+        where = real_game_name(row.title_name)
+        if where is None:
+            if norm_device:
+                return _("onlineview-playing-unknown-device", platform=norm_device)
+            return _("onlineview-playing-unknown")
         if norm_device:
-            return _(
-                "onlineview-playing-device",
-                where=row.title_name or row.title_id,
-                platform=norm_device,
-            )
-        return _("onlineview-playing", where=row.title_name or row.title_id)
+            return _("onlineview-playing-device", where=where, platform=norm_device)
+        return _("onlineview-playing", where=where)
     if row.state == PresenceState.ONLINE:
         return _("onlineview-online-idle")
     if row.state is not None:

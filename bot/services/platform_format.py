@@ -129,7 +129,7 @@ def parse_platforms(platforms_raw: str | Iterable[str] | None) -> set[str]:
 
 
 def game_platforms_json(devices: Iterable[str] | None, *, is_x360: bool = False) -> str | None:
-    """What to store in `titles.platforms` from titlehub's `devices`: an Xbox
+    """What to store in `achievement_list_connectors.platforms` from titlehub's `devices`: an Xbox
     360 game lists the consoles that emulate it too, and is still a 360 game."""
     listed = [str(d) for d in devices or () if d]
     if is_x360 or any(canonical(d) == X360 for d in listed):

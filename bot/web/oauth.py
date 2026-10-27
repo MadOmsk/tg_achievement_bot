@@ -71,6 +71,7 @@ class OAuthServer:
         anthropic_auth: Any = None,
         bot: Any = None,
         steam_extras: Any = None,
+        store_collector: Any = None,
         notifications: Any = None,
         merge: Any = None,
         youtube_auth: Any = None,
@@ -79,6 +80,7 @@ class OAuthServer:
         self._youtube_auth = youtube_auth
         self._admin_credentials = admin_credentials
         self._steam_extras = steam_extras
+        self._store_collector = store_collector
         self._notifications = notifications
         self._merge = merge
         self._settings = settings
@@ -118,6 +120,7 @@ class OAuthServer:
             anthropic_auth=self._anthropic_auth,
             bot=self._bot,
             steam_extras=self._steam_extras,
+            store_collector=self._store_collector,
             notifications=self._notifications,
             merge=self._merge,
             youtube_auth=self._youtube_auth,

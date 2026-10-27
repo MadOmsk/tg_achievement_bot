@@ -16,6 +16,7 @@ from bot.services.models import Progress
 from bot.services.platform_format import game_platforms_json
 from bot.services.rows import to_achievement_row
 from bot.services.steam_extras import SteamExtras
+from bot.services.store_collect import StoreCollector
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.translate.descriptions import bilingual_descriptions
 from bot.services.xbox.auth import TokenRefreshError
@@ -26,7 +27,7 @@ from bot.services.xbox.client import (
     XboxClient,
 )
 from bot.services.xbox.models import ParsedAchievement
-from bot.util import parse_iso, utcnow, utcnow_iso
+from bot.util import parse_iso, real_game_name, utcnow, utcnow_iso
 
 log = logging.getLogger(__name__)
 
@@ -49,9 +50,11 @@ class Fetcher:
         *,
         anthropic_auth: AnthropicAuth,
         steam_extras: SteamExtras | None = None,
+        store_collector: StoreCollector | None = None,
     ) -> None:
         self._repo = repo
         self._steam_extras = steam_extras
+        self._store_collector = store_collector
         self._client = client
         self._publisher = publisher
         self._anthropic_auth = anthropic_auth
@@ -104,7 +107,7 @@ class Fetcher:
             else:
                 # Presence gives no name for a PC title; the name is resolved
                 # further down, and the total must not wait for it.
-                await self._repo.set_title_total(title_id, total)
+                await self._repo.set_title_total(platform, title_id, total)
         await self._fill_x360_icon(person_id, title_id, platform, parsed)
         await self._bilingual_descriptions(person_id, title_id, platform, parsed)
         # Free: this response carried the percentages, and the shared cache is
@@ -127,7 +130,7 @@ class Fetcher:
         resolved = await self.ensure_title_name(person_id, title_id, title_name)
         await self.ensure_title_platforms(person_id, title_id)
         await self._publisher.publish(person_id, xuid, gamertag, new_rows, resolved)
-        await self._ensure_hltb_match(title_id)
+        await self._ensure_hltb_match(title_id, platform)
         return len(new_rows)
 
     async def ensure_title_name(
@@ -140,7 +143,7 @@ class Fetcher:
         """
         if from_presence:
             return from_presence
-        cached = await self._repo.title_name(title_id)
+        cached = await self._repo.title_name(AccountPlatform.XBOX, title_id)
         if cached:
             return cached
         try:
@@ -150,6 +153,7 @@ class Fetcher:
             return None
         if entry is None or not entry.name:
             return None
+        self._remember_title(entry)
         platforms_json = game_platforms_json(
             entry.devices, is_x360=entry.platform == Platform.XBOX_360
         )
@@ -182,21 +186,32 @@ class Fetcher:
             else None
         )
         await self._repo.record_platforms_lookup(title_id, found)
+        if entry is not None:
+            self._remember_title(entry)
 
-    async def _ensure_hltb_match(self, title_id: str) -> None:
+    def _remember_title(self, entry: TitleHistoryEntry) -> None:
+        """What titlehub said beside the name — the studio, the day, a 360
+        game's Store product — kept by the store side, in the background."""
+        if self._store_collector is not None:
+            self._store_collector.remember_title_soon(entry)
+
+    async def _ensure_hltb_match(self, title_id: str, platform: str) -> None:
         """Which HowLongToBeat entry this game is (#131) — after publishing,
         never before: unlike the platforms lookup above, nothing in the
         notification itself needs it, so it must not add its latency to an
         achievement going out. A no-op once the game is matched (or given up
         on); see `services.hltb.ensure_title_match`."""
         try:
-            await ensure_title_match(self._repo, title_id)
+            await ensure_title_match(self._repo, AccountPlatform.XBOX, title_id)
         except Exception:
             log.exception("HLTB match failed for title %s", title_id)
         # The game's Steam side (its app, tips, patches), filled in the
         # background: its Steam app is read from the HLTB entry just matched.
         if self._steam_extras is not None:
-            self._steam_extras.ensure_title(title_id)
+            self._steam_extras.ensure_title(AccountPlatform.XBOX, title_id)
+        # What the stores say about it (#147), in the background as well.
+        if self._store_collector is not None:
+            self._store_collector.ensure(platform, title_id)
 
     async def ensure_title_icon(self, person_id: int, title_id: str) -> str | None:
         """Box art as a stand-in for an Xbox 360 achievement icon (SPEC 7.1)
@@ -206,7 +221,7 @@ class Fetcher:
         besides that number). No `from_presence` shortcut like
         ensure_title_name has — presence never carries box art either way.
         """
-        cached = await self._repo.title_icon_url(title_id)
+        cached = await self._repo.title_icon_url(AccountPlatform.XBOX, title_id)
         if cached:
             return cached
         try:
@@ -332,6 +347,7 @@ class Fetcher:
             # every achievement; contract 1 (x360) carries none, and then
             # there is simply nothing to store.
             await self._repo.set_title_names(
+                platform,
                 title_id,
                 next((item.title_name for item in russian_parsed if item.title_name), None),
                 next((item.title_name for item in parsed if item.title_name), None),
@@ -560,7 +576,7 @@ class Fetcher:
                 if fresh:
                     await self.ensure_title_platforms(person_id, entry.title_id)
                     await self._publisher.publish(person_id, xuid, gamertag, fresh, entry.name)
-                    await self._ensure_hltb_match(entry.title_id)
+                    await self._ensure_hltb_match(entry.title_id, fresh[0].platform)
                     published += len(fresh)
 
             log.info(
@@ -601,7 +617,7 @@ class Fetcher:
             )
         await self.refresh_title_history(person_id, xuid)
 
-        where = snapshot.title_name or snapshot.title_id or _("fetcher-no-game")
+        where = real_game_name(snapshot.title_name) or _("fetcher-no-game")
         state = (
             _("fetcher-online", where=where)
             if snapshot.state == PresenceState.ONLINE

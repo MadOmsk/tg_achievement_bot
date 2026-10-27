@@ -87,11 +87,11 @@ async def test_repo_title_achievements_crud(repo: Repo) -> None:
 
     # 2. Check title checked_at timestamp
     await repo.upsert_title("12345", "Test Game", Platform.XBOX_MODERN)
-    assert await repo.title_achievements_checked_at("12345") is None
+    assert await repo.title_achievements_checked_at("xbox", "12345") is None
 
     ts = (utcnow() - timedelta(hours=2)).isoformat(timespec="seconds")
-    await repo.set_title_achievements_checked_at("12345", ts)
-    assert await repo.title_achievements_checked_at("12345") == ts
+    await repo.set_title_achievements_checked_at("xbox", "12345", ts)
+    assert await repo.title_achievements_checked_at("xbox", "12345") == ts
 
     # 3. Check title groups
     groups = [
@@ -175,7 +175,7 @@ async def test_catalog_service_24h_debounce(repo: Repo) -> None:
         complete=True,
     )
     two_hours_ago = (datetime.now(UTC) - timedelta(hours=2)).isoformat(timespec="seconds")
-    await repo.set_title_achievements_checked_at("debounced_game", two_hours_ago)
+    await repo.set_title_achievements_checked_at("xbox", "debounced_game", two_hours_ago)
 
     # Fake xbox client
     mock_xbox_client = AsyncMock()
@@ -220,7 +220,7 @@ async def test_catalog_service_count_match_skips_translation(repo: Repo) -> None
         complete=True,
     )
     old_time = (datetime.now(UTC) - timedelta(hours=30)).isoformat(timespec="seconds")
-    await repo.set_title_achievements_checked_at("xbox_game", old_time)
+    await repo.set_title_achievements_checked_at("xbox", "xbox_game", old_time)
 
     mock_xbox_client = AsyncMock()
     parsed_dummy = [
@@ -267,7 +267,7 @@ async def test_catalog_service_count_match_skips_translation(repo: Repo) -> None
     mock_auth.bilingual_descriptions.assert_not_called()
 
     # But checked_at was updated to fresh time
-    new_checked_at = await repo.title_achievements_checked_at("xbox_game")
+    new_checked_at = await repo.title_achievements_checked_at("xbox", "xbox_game")
     assert new_checked_at is not None
     assert new_checked_at > old_time
 
@@ -311,7 +311,7 @@ async def test_get_game_details_with_checklist_and_groups(repo: Repo, settings: 
         ],
         complete=True,
     )
-    await repo.set_title_achievements_checked_at("NPWR999", utcnow_iso())
+    await repo.set_title_achievements_checked_at("psn", "NPWR999", utcnow_iso())
 
     catalog_service = TitleCatalogService(repo=repo)
 
@@ -421,7 +421,7 @@ async def test_refresh_xbox_updates_platform_to_360(repo: Repo) -> None:
     )
 
     # Initial state
-    rec = await repo.title_record("t_x360_fallback")
+    rec = await repo.title_record("xbox", "t_x360_fallback")
     assert rec is not None
     assert rec["platform"] == "xbox_modern"
     assert await repo.title_seen_platform("t_x360_fallback") == "xbox_modern"
@@ -454,7 +454,7 @@ async def test_refresh_xbox_updates_platform_to_360(repo: Repo) -> None:
     assert rows[0].platform == "xbox_360"
 
     # Verify database updated
-    rec_after = await repo.title_record("t_x360_fallback")
+    rec_after = await repo.title_record("xbox", "t_x360_fallback")
     assert rec_after is not None
     assert rec_after["platform"] == "xbox_360"
     assert rec_after["platforms"] == '["Xbox360"]'

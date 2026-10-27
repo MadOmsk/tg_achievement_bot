@@ -13,6 +13,8 @@ same as /online has no auto-refreshing equivalent for /who's picker.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import TokenStatus
@@ -90,11 +92,13 @@ def usage_rows(status: AdminStatus, *, locale: str) -> list[tuple[str, str]]:
         for w in api.anthropic
     )
     mail = status.mail
+    octopus = [(_("adminview-octopus"), _octopus_value(status, _))] if status.octopus else []
     return [
         (_("adminview-api-xbox"), xbox),
         (_("adminview-api-steam"), counted(api.steam)),
         (_("adminview-api-psn"), counted(api.psn)),
         (_("adminview-api-anthropic"), anthropic),
+        *octopus,
         (
             _("adminview-mail-label", server=mail.server)
             if mail.server
@@ -108,6 +112,31 @@ def usage_rows(status: AdminStatus, *, locale: str) -> list[tuple[str, str]]:
             ),
         ),
     ]
+
+
+def _octopus_value(status: AdminStatus, _) -> str:
+    """The octopus on one line (owner, 2026-10-25): on or off, its queue,
+    how many it assembled in the last hour and day, the failures, the last."""
+    o = status.octopus
+    assert o is not None
+    parts = [
+        _("adminview-octopus-on", per_tick=o.per_tick) if o.on else _("adminview-octopus-off"),
+        _("adminview-octopus-queue", queue=o.queue, retrying=o.retrying),
+        _("adminview-octopus-done", hour=o.hour, day=o.day),
+        _("adminview-octopus-failed", failed=o.failed_hour),
+    ]
+    if o.last_name and o.last_at:
+        at = datetime.fromisoformat(o.last_at) + timedelta(minutes=_DEFAULT_TZ_OFFSET_MIN)
+        parts.append(
+            _(
+                "adminview-octopus-last",
+                name=o.last_name,
+                at=at.strftime("%H:%M"),
+                versions=o.last_versions,
+                review=o.last_review,
+            )
+        )
+    return " · ".join(parts)
 
 
 async def render_admin_home(

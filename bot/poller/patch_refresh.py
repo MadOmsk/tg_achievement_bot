@@ -3,7 +3,8 @@
 A game's patches are first read when its first new achievement is published
 (services/steam_extras.py); after that, this walker re-reads the Steam apps of
 games somebody earned something in over the last month, each once every
-`patch_refresh_hours` (6 by default, /admin). Steam's news API needs no key and
+`patch_refresh_hours` (6 by default, /admin), and the apps of somebody's
+favorite games every hour (owner, 2026-10-25). Steam's news API needs no key and
 is one request per app, so a few apps a tick is plenty and nothing bursts.
 Nothing is sent to a chat — the Mini App's "Обновления" tab shows them.
 """
@@ -22,6 +23,8 @@ log = logging.getLogger(__name__)
 REFRESH_HOURS_KEY = "patch_refresh_hours"
 DEFAULT_REFRESH_HOURS = 6
 APPS_PER_TICK = 3
+# A favorite game's news are read this often, whoever plays it.
+FAVORITE_REFRESH_HOURS = 1
 # Games somebody earned something in this recently are the ones worth watching.
 ACTIVE_DAYS = 30
 # Guides hardly change; a game's tips are re-read this rarely, one game a tick.
@@ -39,12 +42,19 @@ class PatchRefresh:
     async def tick(self) -> None:
         hours = await self._repo.get_int_setting(REFRESH_HOURS_KEY, DEFAULT_REFRESH_HOURS)
         now = utcnow()
-        apps = await self._repo.steam_apps_due_for_patches(
-            played_since=(now - timedelta(days=ACTIVE_DAYS)).isoformat(timespec="seconds"),
-            stale_before=(now - timedelta(hours=hours)).isoformat(timespec="seconds"),
+        # Favorites first: their news are what people asked to follow.
+        apps = await self._repo.favorite_apps_due(
+            stale_before=(now - timedelta(hours=FAVORITE_REFRESH_HOURS)).isoformat(
+                timespec="seconds"
+            ),
             limit=self._apps_per_tick,
         )
-        for appid in apps:
+        apps += await self._repo.steam_apps_due_for_patches(
+            played_since=(now - timedelta(days=ACTIVE_DAYS)).isoformat(timespec="seconds"),
+            stale_before=(now - timedelta(hours=hours)).isoformat(timespec="seconds"),
+            limit=max(0, self._apps_per_tick - len(apps)),
+        )
+        for appid in dict.fromkeys(apps):
             try:
                 await self._extras.refresh_patches(appid)
             except Exception:
@@ -55,8 +65,8 @@ class PatchRefresh:
             stale_before=(now - timedelta(days=TIPS_REFRESH_DAYS)).isoformat(timespec="seconds"),
             limit=1,
         )
-        for title_id in stale_tips:
+        for platform, title_id in stale_tips:
             try:
-                await self._extras.refresh_tips(title_id)
+                await self._extras.refresh_tips(platform, title_id)
             except Exception:
                 log.exception("tips refresh failed for title %s", title_id)

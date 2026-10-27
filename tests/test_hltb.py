@@ -4,18 +4,16 @@ howlongtobeatpy calls themselves are out of scope for a unit test."""
 
 from __future__ import annotations
 
-import json
 from datetime import timedelta
 
-from bot.db.repo import HltbCacheRow, Repo, TitleHistoryRow
+from bot.db.repo import Repo, TitleHistoryRow
 from bot.services.hltb import (
     HltbResult,
     _clean,
     _clean_query,
-    _extract_details,
-    _extras_of,
-    _from_cache_row,
     _pick_fallback_word,
+    details_of_entry,
+    result_from_entry,
 )
 from bot.views.hltb import (
     DESCRIPTION_LIMIT,
@@ -74,120 +72,6 @@ def test_clean_query_leaves_an_ordinary_title_untouched() -> None:
     assert _clean_query("Gears of War 3") == "Gears of War 3"
 
 
-def _next_data_page(profile_genre: str | None, profile_summary: str | None = None) -> str:
-    # A stripped-down but structurally real fragment of the game page's own
-    # __NEXT_DATA__ blob (SPEC 6.6) — verified live, same path every time:
-    # props.pageProps.game.data.game[0], both profile_genre and
-    # profile_summary.
-    game = {"game_name": "Halo Infinite"}
-    if profile_genre is not None:
-        game["profile_genre"] = profile_genre
-    if profile_summary is not None:
-        game["profile_summary"] = profile_summary
-    payload = json.dumps({"props": {"pageProps": {"game": {"data": {"game": [game]}}}}})
-    return f'<html><script id="__NEXT_DATA__" type="application/json">{payload}</script></html>'
-
-
-def test_extract_details_reads_the_next_data_blob() -> None:
-    page = _next_data_page("First-Person, Open World, Shooter", "The Master Chief returns.")
-    assert _extract_details(page) == (
-        "First-Person, Open World, Shooter",
-        "The Master Chief returns.",
-    )
-
-
-def test_extract_details_is_none_when_the_fields_are_missing() -> None:
-    assert _extract_details(_next_data_page(None)) == (None, None)
-
-
-def test_extract_details_treats_an_empty_summary_as_no_summary() -> None:
-    # HLTB returns "" rather than omitting the key for a game it has no
-    # description for — common for obscure entries (verified live).
-    assert _extract_details(_next_data_page("Action", "   "))[1] is None
-
-
-def test_extract_details_is_none_when_the_page_has_no_next_data_at_all() -> None:
-    page = "<html><body>not the page you're looking for</body></html>"
-    assert _extract_details(page) == (None, None)
-
-
-def test_extras_of_reads_the_page_and_drops_player_counts() -> None:
-    # Field names and values from a real page (Halo Infinite / It Takes Two).
-    game = {
-        "review_score": 78,
-        "profile_dev": "343 Industries",
-        "profile_pub": "Xbox Game Studios",
-        "game_alias": "",
-        "release_world": "2021-12-08",
-        "release_jp": "0000-00-00",
-        "comp_lvl_sp": 1,
-        "comp_lvl_co": 1,
-        "comp_lvl_mp": 0,
-        "comp_main": 40680,
-        "comp_main_med": 39600,
-        "comp_main_l": 18000,
-        "comp_main_h": 90000,
-        "invested_co": 65370,
-        "invested_mp": 283463,
-        "comp_speed_min": 2400,
-        "comp_speed_med": 10504,
-        "count_comp": 19951,
-        "count_backlog": 24785,
-    }
-    extras = _extras_of(game)
-    assert extras["review_score"] == 78
-    assert extras["developer"] == "343 Industries"
-    assert extras["publisher"] == "Xbox Game Studios"
-    assert "alias" not in extras  # empty on the page — not sent
-    assert extras["releases"] == {"world": "2021-12-08"}  # 0000-00-00 is "unknown"
-    assert extras["modes"] == ["single", "coop"]
-    assert extras["times"]["main"] == {
-        "average": 11.3,
-        "median": 11.0,
-        "fastest": 5.0,
-        "slowest": 25.0,
-    }
-    assert extras["times"]["coop"] == {"average": 18.2}
-    assert "multi" not in extras["times"]  # not a multiplayer game, stray hours ignored
-    assert extras["speedrun"] == {"any": {"best": 0.7, "median": 2.9}}
-    assert not any("count" in key for key in json.dumps(extras).split('"'))
-
-
-def test_extras_of_is_empty_for_a_bare_page() -> None:
-    assert _extras_of({"game_name": "Obscure"}) == {}
-
-
-async def test_cached_row_without_details_is_topped_up_once(repo: Repo, monkeypatch) -> None:
-    from bot.services import hltb
-
-    await repo.hltb_cache_result(
-        HltbCacheRow(
-            hltb_id=7,
-            name="Halo Infinite",
-            release_year=2021,
-            main_hours=11.3,
-            extra_hours=None,
-            completionist_hours=None,
-            game_url="https://howlongtobeat.com/game/7",
-            genre="Shooter",
-            description_en="The Master Chief returns.",
-        )
-    )
-    fetches: list[str] = []
-
-    async def fake_page(url: str) -> dict:
-        fetches.append(url)
-        return {"review_score": 78, "profile_dev": "343 Industries"}
-
-    monkeypatch.setattr(hltb, "_fetch_page_game", fake_page)
-    first = await hltb.resolve(repo, 7)
-    second = await hltb.resolve(repo, 7)
-    assert first.details == {"review_score": 78, "developer": "343 Industries"}
-    assert second.details == first.details
-    assert fetches == ["https://howlongtobeat.com/game/7"]  # read once, then cached
-    assert first.genre == "Shooter"  # the cached genre is kept, not replaced
-
-
 def test_pick_fallback_word_takes_the_first_real_word() -> None:
     # The actual motivating case (SPEC 6.6): HLTB finds nothing for the full
     # string but does for "Dishonored" alone.
@@ -212,31 +96,6 @@ def test_pick_fallback_word_is_none_for_a_single_word_query() -> None:
 
 def test_pick_fallback_word_is_none_when_every_word_is_a_stopword() -> None:
     assert _pick_fallback_word("of the it") is None
-
-
-def test_from_cache_row_round_trips() -> None:
-    row = HltbCacheRow(
-        hltb_id=42,
-        name="A Game",
-        release_year=2020,
-        main_hours=5.0,
-        extra_hours=None,
-        completionist_hours=15.0,
-        platforms=["PS5"],
-        game_url="https://howlongtobeat.com/game/42",
-        image_url="https://howlongtobeat.com/games/42_A_Game.jpg",
-        genre="Adventure, Puzzle",
-        description_en="A game about a game.",
-        description_ru="Игра про игру.",
-    )
-    r = _from_cache_row(row)
-    assert (r.hltb_id, r.name, r.release_year) == (42, "A Game", 2020)
-    assert (r.main_hours, r.extra_hours, r.completionist_hours) == (5.0, None, 15.0)
-    assert r.platforms == ["PS5"]
-    assert r.game_url == "https://howlongtobeat.com/game/42"
-    assert r.image_url == "https://howlongtobeat.com/games/42_A_Game.jpg"
-    assert r.genre == "Adventure, Puzzle"
-    assert (r.description_en, r.description_ru) == ("A game about a game.", "Игра про игру.")
 
 
 def test_label_includes_year_when_known() -> None:
@@ -464,26 +323,6 @@ async def test_hltb_limits_are_admin_configurable(repo: Repo) -> None:
     assert await repo.get_int_setting("hltb_page_size", 5) == 3
 
 
-async def test_hltb_cache_round_trip(repo: Repo) -> None:
-    assert await repo.hltb_get_cached(99) is None
-
-    await repo.hltb_cache_result(
-        HltbCacheRow(
-            hltb_id=99,
-            name="Cached Game",
-            release_year=2019,
-            main_hours=8.0,
-            extra_hours=12.0,
-            completionist_hours=20.0,
-        )
-    )
-    cached = await repo.hltb_get_cached(99)
-
-    assert cached is not None
-    assert cached.name == "Cached Game"
-    assert cached.completionist_hours == 20.0
-
-
 async def test_chat_recent_games_orders_by_recency_and_dedupes(repo: Repo) -> None:
     """Same membership as /online and /who: subscribers union chat_seen, not
     only publishers (SPEC 6.6)."""
@@ -532,49 +371,88 @@ async def test_chat_recent_games_orders_by_recency_and_dedupes(repo: Repo) -> No
     assert names == ["Newer Game", "Older Game"]
 
 
-async def _store_old(repo: Repo, *, main_hours: float | None, year: int, days_ago: int) -> None:
+def _page(hltb_id: int, **fields: object) -> dict:
+    game = {"game_id": hltb_id, "game_name": "Gears of War: E-Day", "game_type": "game"}
+    game.update(fields)
+    return {"game": [game]}
+
+
+async def _store(repo: Repo, *, comp_main: int, year: int, days_ago: int, **extra: object) -> None:
+    """An entry whose page was read `days_ago` days ago."""
+    from bot.services.stores import hltb_page
     from bot.util import utcnow
 
-    await repo.hltb_cache_result(
-        HltbCacheRow(
-            hltb_id=152017,
-            name="Gears of War: E-Day",
-            release_year=year,
-            main_hours=main_hours,
-            extra_hours=None,
-            completionist_hours=None,
-            description_en="The Master Chief returns.",
-            description_ru="Мастер Чиф возвращается.",
-            details={},
-        )
+    await repo.save_hltb_page(
+        hltb_page.parse_page(
+            _page(
+                152017,
+                comp_main=comp_main,
+                release_world=f"{year}-06-01",
+                profile_summary="The Master Chief returns.",
+                **extra,
+            )
+        )  # type: ignore[arg-type]
     )
     old = (utcnow() - timedelta(days=days_ago)).isoformat(timespec="seconds")
-    await repo._conn.execute("UPDATE hltb_cache SET cached_at = ?", (old,))
-    await repo._conn.commit()
+    await repo._conn.execute("UPDATE hltb_entries SET page_read_at = ?", (old,))
+    await repo.set_hltb_summary_ru(152017, "Мастер Чиф возвращается.", None)
+
+
+def _fake_pages(monkeypatch, reads: list[int], data: dict | Exception | None) -> None:
+    from bot.services.stores import hltb_page
+
+    async def fetch(hltb_id: int):
+        reads.append(hltb_id)
+        if isinstance(data, Exception):
+            raise data
+        return data
+
+    monkeypatch.setattr(hltb_page, "fetch_page", fetch)
+
+
+async def test_an_entry_never_read_is_read_and_kept(repo: Repo, monkeypatch) -> None:
+    from bot.services import hltb
+
+    reads: list[int] = []
+    _fake_pages(
+        monkeypatch,
+        reads,
+        _page(
+            7,
+            comp_main=40680,
+            release_world="2021-12-08",
+            profile_genre="Shooter",
+            profile_summary="The Master Chief returns.",
+        ),
+    )
+    first = await hltb.resolve(repo, 7)
+    second = await hltb.resolve(repo, 7)
+    assert (first.main_hours, first.genre, first.release_year) == (11.3, "Shooter", 2021)
+    assert second.main_hours == 11.3 and reads == [7]  # read once, then the mirror's
+    assert first.game_url == "https://howlongtobeat.com/game/7"
+    assert first.description_en == "The Master Chief returns."
+    assert first.description_ru is None  # no key: English, to be translated later
 
 
 async def test_a_young_games_times_are_read_again_once_stale(repo: Repo, monkeypatch) -> None:
     from bot.services import hltb
 
-    await _store_old(repo, main_hours=None, year=2026, days_ago=4)
+    await _store(repo, comp_main=0, year=2026, days_ago=4)
     reads: list[int] = []
-
-    class FakeHltb:
-        async def async_search_from_id(self, hltb_id: int):
-            reads.append(hltb_id)
-            return object()
-
-    async def no_page(url: str):
-        return None
+    _fake_pages(
+        monkeypatch,
+        reads,
+        _page(
+            152017,
+            comp_main=40680,
+            release_world="2026-06-01",
+            profile_summary="The Master Chief returns.",
+        ),
+    )
 
     async def no_translation(text, auth):
         raise AssertionError("the same summary keeps its translation")
 
-    fresh = result(152017, 2026)
-    fresh.description_ru = None
-    monkeypatch.setattr(hltb, "HowLongToBeat", FakeHltb)
-    monkeypatch.setattr(hltb, "_as_result", lambda entry: fresh)
-    monkeypatch.setattr(hltb, "_fetch_page_game", no_page)
     monkeypatch.setattr(hltb, "_translate", no_translation)
 
     got = await hltb.resolve(repo, 152017)
@@ -591,14 +469,151 @@ async def test_a_settled_game_is_trusted_and_a_failed_re_read_keeps_the_stored(
 ) -> None:
     from bot.services import hltb
 
-    class Down:
-        async def async_search_from_id(self, hltb_id: int):
-            raise RuntimeError("HLTB is down")
-
-    monkeypatch.setattr(hltb, "HowLongToBeat", Down)
-    await _store_old(repo, main_hours=12.0, year=2015, days_ago=30)
+    reads: list[int] = []
+    _fake_pages(monkeypatch, reads, RuntimeError("HLTB is down"))
+    await _store(repo, comp_main=43200, year=2015, days_ago=30)
     assert (await hltb.resolve(repo, 152017)).main_hours == 12.0  # no read at all
+    assert reads == []
 
-    await _store_old(repo, main_hours=None, year=2026, days_ago=10)
+    await _store(repo, comp_main=0, year=2026, days_ago=10)
     got = await hltb.resolve(repo, 152017)
+    assert reads == [152017]  # tried, and failed
     assert got.name == "Gears of War: E-Day" and got.main_hours is None
+    # Nothing stored and HLTB down: an expected failure.
+    import pytest
+
+    with pytest.raises(hltb.HltbError):
+        await hltb.resolve(repo, 999)
+
+
+async def test_a_summary_is_translated_once_and_again_only_when_it_changes(
+    repo: Repo, monkeypatch
+) -> None:
+    from bot.services import hltb
+    from bot.services.stores import hltb_page
+
+    await _store(repo, comp_main=43200, year=2015, days_ago=1)
+    await repo._conn.execute("UPDATE hltb_entries SET summary_ru = NULL, summary_ru_of = NULL")
+    await repo._conn.commit()
+    paid: list[str] = []
+
+    async def translate(text, auth):
+        paid.append(text)
+        return "перевод: " + text
+
+    monkeypatch.setattr(hltb, "_translate", translate)
+    auth = object()  # any: the translation is faked
+
+    first = await hltb.resolve(repo, 152017, anthropic_auth=auth)  # type: ignore[arg-type]
+    again = await hltb.resolve(repo, 152017, anthropic_auth=auth)  # type: ignore[arg-type]
+    assert first.description_ru == again.description_ru == "перевод: The Master Chief returns."
+    assert paid == ["The Master Chief returns."]  # paid for once
+
+    # HLTB changes its summary: the translation is of the old text, so it is paid again.
+    await repo.save_hltb_page(
+        hltb_page.parse_page(_page(152017, profile_summary="A new story."))  # type: ignore[arg-type]
+    )
+    changed = await hltb.resolve(repo, 152017, anthropic_auth=auth)  # type: ignore[arg-type]
+    assert changed.description_ru == "перевод: A new story."
+    assert paid == ["The Master Chief returns.", "A new story."]
+
+
+async def test_a_translation_made_before_its_text_was_known_goes_with_that_text(
+    repo: Repo,
+) -> None:
+    """The cache's translations come over with no mark of what they translate:
+    they are of the English text there then."""
+    from bot.services.stores import hltb_page
+
+    await _store(repo, comp_main=43200, year=2015, days_ago=1)  # a legacy translation, no mark
+    await repo.save_hltb_page(
+        hltb_page.parse_page(_page(152017, profile_summary="A new story."))  # type: ignore[arg-type]
+    )
+    row = await repo.hltb_entry(152017)
+    assert row is not None
+    assert result_from_entry(row).description_ru is None  # not of the new text
+
+
+def test_an_entry_is_a_result_and_its_details_come_from_its_columns() -> None:
+    row = {
+        "hltb_id": 42,
+        "name": "A Game",
+        "release_year": 2020,
+        "comp_main": 18000,
+        "comp_main_med": 17000,
+        "comp_plus": 0,
+        "comp_100": 54000,
+        "platforms": ["PS5"],
+        "genres": "Adventure, Puzzle",
+        "summary_en": "A game about a game.",
+        "summary_ru": "Игра про игру.",
+        "summary_ru_of": None,
+        "review_score": 84,
+        "developer": "Studio",
+        "alias": "AGAG",
+        "release_world": "2020-05-01",
+        "release_eu": "2020-05-02",
+        "comp_lvl_sp": 1,
+        "comp_lvl_co": 0,
+        "invested_co": 3600,
+        "comp_speed_min": 7200,
+        "count_backlog": 99,
+    }
+    r = result_from_entry(row)
+    assert (r.hltb_id, r.name, r.release_year) == (42, "A Game", 2020)
+    assert (r.main_hours, r.extra_hours, r.completionist_hours) == (5.0, None, 15.0)
+    assert r.platforms == ["PS5"] and r.genre == "Adventure, Puzzle"
+    assert r.game_url == "https://howlongtobeat.com/game/42"
+    assert (r.description_en, r.description_ru) == ("A game about a game.", "Игра про игру.")
+    assert r.details == {
+        "review_score": 84,
+        "developer": "Studio",
+        "alias": "AGAG",
+        "releases": {"world": "2020-05-01", "eu": "2020-05-02"},
+        "modes": ["single"],
+        # Co-op hours only count when the game is played that way; the users'
+        # counts (count_backlog) are not sent.
+        "times": {
+            "main": {"average": 5.0, "median": 4.7},
+            "completionist": {"average": 15.0},
+        },
+        "speedrun": {"any": {"best": 2.0}},
+    }
+    assert details_of_entry({"name": "Obscure"}) == {}
+
+
+async def test_a_cover_is_asked_for_once_found_or_not(repo: Repo) -> None:
+    from bot.services.stores import hltb_page
+
+    await repo.save_hltb_page(
+        hltb_page.parse_page(_page(7, game_image="7_Game.png"))  # type: ignore[arg-type]
+    )
+    assert await repo.hltb_covers_to_fetch() == [(7, "https://howlongtobeat.com/games/7_Game.png")]
+    await repo.set_hltb_cover(7, None, None)  # not there: stamped all the same
+    assert await repo.hltb_covers_to_fetch() == []
+
+
+async def test_a_steam_version_is_the_entry_whose_page_names_its_app(repo: Repo) -> None:
+    from bot.services.store_collect import link_steam_apps_to_hltb
+    from bot.services.stores import StoreVersion, hltb_page
+
+    await repo.save_hltb_page(
+        hltb_page.parse_page(
+            _page(77, game_name="Portal", profile_steam=400, release_world="2007-10-10")
+        )  # type: ignore[arg-type]
+    )
+    version = await repo.save_version(
+        StoreVersion(store="steam", product_id="400", console="steam", name="Portal"),
+        platform=None,
+        title_id=None,
+    )
+    other = await repo.save_version(
+        StoreVersion(store="steam", product_id="999", console="steam", name="Another"),
+        platform=None,
+        title_id=None,
+    )
+    assert (await link_steam_apps_to_hltb(repo))["linked"] == 1
+    assert (await repo.versions_of_hltb(77))[0]["version_id"] == version
+    assert not await repo.versions_of_hltb(78) and other
+    # Run again: nothing is linked twice or over a refusal.
+    assert (await link_steam_apps_to_hltb(repo))["linked"] == 0

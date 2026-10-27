@@ -1,0 +1,119 @@
+.home {
+  padding-top: calc(var(--safe-top) + 12px);
+}
+
+.home-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+}
+
+.home-me {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 4px 0;
+}
+
+.home-me-face {
+  display: block;
+  width: 52px;
+  height: 52px;
+  flex: 0 0 auto;
+}
+
+.home-me-face .face {
+  margin: 2px;
+}
+
+.home-me-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-me-name {
+  font-size: 20px;
+  font-weight: 700;
+  font-stretch: 110%;
+}
+
+/* What the person is playing, under the name: one line, a live dot. */
+.home-me-status {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--on-surface-2);
+}
+
+.home-me-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.home-welcome {
+  margin: 16px 12px 0;
+  padding: 22px 20px;
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xl) var(--r-s);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.home-welcome .t-body {
+  color: var(--on-primary-container-2);
+  margin-top: 6px;
+}
+
+.home-welcome-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.now-rail {
+  gap: 8px;
+}
+
+.now-person {
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.now-name {
+  max-width: 76px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.now-status {
+  max-width: 76px;
+  margin-top: -4px;
+  font-size: 11px;
+  color: var(--on-surface-3);
+}
+
+.now-skel {
+  width: 68px;
+  height: 68px;
+}
+
+.home-months {
+  padding: 0 var(--gutter) 12px;
+}
+

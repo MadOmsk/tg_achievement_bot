@@ -35,7 +35,7 @@ from bot.services.naming import (
     person_name,
     person_name_of,
 )
-from bot.util import parse_iso, utcnow
+from bot.util import parse_iso, real_game_name, utcnow
 from bot.version import is_test
 from bot.views.notification import format_digest, format_single
 from bot.views.parts import platform_label
@@ -306,12 +306,17 @@ class Publisher:
             # chat sees as five achievements may be one in another. The size
             # itself is one for every chat (owner, 2026-10-08).
             progress = await self._progress_for(allowed, xuid)
-            missing = [a.title_id for a in allowed if not getattr(a, "game_platforms", None)]
+            missing = [
+                (a.platform, a.title_id) for a in allowed if not getattr(a, "game_platforms", None)
+            ]
             if missing:
                 plat_map = await self._repo.title_platforms(missing)
                 for a in allowed:
-                    if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
-                        a.game_platforms = plat_map[a.title_id]
+                    if (
+                        not getattr(a, "game_platforms", None)
+                        and (a.platform, a.title_id) in plat_map
+                    ):
+                        a.game_platforms = plat_map[(a.platform, a.title_id)]
             # One `publish()` call is always one game (title_name/xuid are
             # singular above), so every item in `allowed` shares it.
             game_ref = (allowed[0].platform, allowed[0].title_id) if allowed else None
@@ -408,7 +413,7 @@ class Publisher:
         if self.on_new_post is None:
             return
         first = achievements[0]
-        game = first.title_name or title_name or first.title_id
+        game = real_game_name(first.title_name) or real_game_name(title_name) or first.title_id
         # The notice names an achievement and shows its picture — never a secret one.
         shown = next((item for item in achievements if not item.is_secret), None)
         notice = self.on_new_post
@@ -423,6 +428,8 @@ class Publisher:
                     len(achievements),
                     achievement=shown.name if shown else None,
                     icon=shown.icon_url if shown else None,
+                    # A tap opens it, a secret one veiled on its page.
+                    achievement_id=(shown or first).achievement_id,
                 )
             except Exception:
                 log.exception("post notices for person_id=%s failed", person_id)
@@ -441,7 +448,7 @@ class Publisher:
         )
         if cached is not None:
             backups.append(Picture("file", str(cached), item.is_secret))
-        cover_path, cover_url = await self._repo.title_cover(item.title_id)
+        cover_path, cover_url = await self._repo.title_cover(item.platform, item.title_id)
         if cover_path:
             backups.append(Picture("file", str(covers.cover_dir() / cover_path), cover=True))
         if cover_url:
@@ -612,12 +619,14 @@ class Publisher:
                     )
         name = await self._person_label(person_id)
 
-        missing = [a.title_id for a in achievements if not getattr(a, "game_platforms", None)]
+        missing = [
+            (a.platform, a.title_id) for a in achievements if not getattr(a, "game_platforms", None)
+        ]
         if missing:
             plat_map = await self._repo.title_platforms(missing)
             for a in achievements:
-                if not getattr(a, "game_platforms", None) and a.title_id in plat_map:
-                    a.game_platforms = plat_map[a.title_id]
+                if not getattr(a, "game_platforms", None) and (a.platform, a.title_id) in plat_map:
+                    a.game_platforms = plat_map[(a.platform, a.title_id)]
 
         progress_map = await self._progress_for(achievements)
         game_ref: tuple[str, str] | None = None

@@ -5,6 +5,8 @@
 # Presence states
 onlineview-playing = играет — { $where }
 onlineview-playing-device = играет [<i>{ $platform }</i>] — { $where }
+onlineview-playing-unknown = играет
+onlineview-playing-unknown-device = играет [<i>{ $platform }</i>]
 onlineview-online-idle = в сети, не играет
 onlineview-offline = не в сети
 onlineview-no-data = нет данных

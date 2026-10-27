@@ -5,6 +5,8 @@ as the rest of this project's poller tests fake the Xbox client."""
 
 from __future__ import annotations
 
+import pytest
+
 from bot.db.repo import AchievementRow, Repo
 from bot.poller import steam_fetcher as steam_fetcher_module
 from bot.poller.steam_fetcher import SteamFetcher
@@ -13,6 +15,16 @@ from bot.services.steam.client import OwnedGame, SteamApiError, SteamPresence
 
 TG_ID = 42
 STEAM_ID = "76561197960287930"
+
+
+@pytest.fixture(autouse=True)
+def _library(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`refresh_user` reads the library first; a test that cares sets it."""
+
+    async def library(api_key, steam_id):
+        return []
+
+    monkeypatch.setattr(steam_fetcher_module, "get_owned_games", library)
 
 
 def parsed(
@@ -203,7 +215,7 @@ async def test_backfill_caches_each_games_name(repo: Repo, steam_auth, monkeypat
 
     await fetcher.backfill(await repo.person_id(TG_ID), STEAM_ID)
 
-    assert await repo.title_name("550") == "Left 4 Dead 2"
+    assert await repo.title_name("steam", "550") == "Left 4 Dead 2"
 
 
 async def test_poll_title_caches_the_games_name(repo: Repo, steam_auth, monkeypatch) -> None:
@@ -224,7 +236,7 @@ async def test_poll_title_caches_the_games_name(repo: Repo, steam_auth, monkeypa
         await repo.person_id(TG_ID), STEAM_ID, "Mad Omsk", "550", "Left 4 Dead 2"
     )
 
-    assert await repo.title_name("550") == "Left 4 Dead 2"
+    assert await repo.title_name("steam", "550") == "Left 4 Dead 2"
 
 
 async def test_backfill_isolates_a_failing_game(repo: Repo, steam_auth, monkeypatch) -> None:

@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import json
+
 import aiosqlite
 
+from bot.constants import MAIN_GAME_GROUP, achievement_group
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
+from bot.db.repo._sql import platform_is
 from bot.util import looks_russian, utcnow_iso
+
+
+def _group_source(platform: str, group_id: str | None) -> str | None:
+    """A group a platform's answer carried is the platform's; Steam's is our
+    stand-in (`main_game`), no source."""
+    group = achievement_group(platform, group_id)
+    return "platform" if group and group != MAIN_GAME_GROUP else None
 
 
 class _CatalogRepo:
@@ -37,8 +48,8 @@ class _CatalogRepo:
                 "  platform, title_id, achievement_id, name_ru, name_en,"
                 "  description_ru, description_en, icon_url, is_secret,"
                 "  gamerscore, trophy_type, trophy_group_id, rarity_percent, updated_at,"
-                "  listed"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "  listed, group_source"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(platform, title_id, achievement_id) DO UPDATE SET "
                 "  name_ru = COALESCE(excluded.name_ru, title_achievements.name_ru),"
                 "  name_en = COALESCE(excluded.name_en, title_achievements.name_en),"
@@ -59,6 +70,9 @@ class _CatalogRepo:
                 "  trophy_type = COALESCE(excluded.trophy_type, title_achievements.trophy_type),"
                 "  trophy_group_id = COALESCE(excluded.trophy_group_id, "
                 "                             title_achievements.trophy_group_id),"
+                # The platform's own group replaces one we derived.
+                "  group_source = CASE WHEN excluded.trophy_group_id IS NOT NULL"
+                "   THEN excluded.group_source ELSE title_achievements.group_source END,"
                 "  rarity_percent = COALESCE(excluded.rarity_percent, "
                 "                            title_achievements.rarity_percent),"
                 "  updated_at = excluded.updated_at,"
@@ -75,13 +89,165 @@ class _CatalogRepo:
                     1 if r.is_secret else 0,
                     r.gamerscore,
                     r.trophy_type,
-                    r.trophy_group_id,
+                    achievement_group(r.platform, r.trophy_group_id),
                     r.rarity_percent,
                     updated_at,
                     1 if complete else 0,
+                    _group_source(r.platform, r.trophy_group_id),
                 ),
             )
+        # A 360 list read whole is grouped by its ids and gamerscore (it says
+        # nothing of its groups itself; `xbox_models.x360_groups`).
+        if complete:
+            for title_id in {r.title_id for r in rows if r.platform == "xbox_360"}:
+                await self.derive_x360_groups(title_id, commit=False)
+        # An Xbox list read whole gives each achievement its group (base or
+        # non_base, 2026-10-15); the rows people earned take it from here,
+        # and its Mythic and completion can be told (mark_xbox_completions,
+        # after the commit below).
+        for platform, title_id in {
+            (r.platform, r.title_id) for r in rows if r.platform in ("xbox_modern", "xbox_360")
+        }:
+            await self._conn.execute(
+                "UPDATE seen_achievements SET trophy_group_id = (SELECT ta.trophy_group_id"
+                "  FROM title_achievements ta WHERE ta.platform = seen_achievements.platform"
+                "  AND ta.title_id = seen_achievements.title_id"
+                "  AND ta.achievement_id = seen_achievements.achievement_id)"
+                " WHERE platform = ? AND title_id = ? AND trophy_group_id IS NULL",
+                (platform, title_id),
+            )
         await self._conn.commit()
+        if complete:
+            for platform, title_id in {
+                (r.platform, r.title_id) for r in rows if r.platform in ("xbox_modern", "xbox_360")
+            }:
+                await self.mark_xbox_completions_of_title(platform, title_id)
+
+    async def mark_xbox_completions(self, platform: str, xuid: str, title_id: str) -> None:
+        """An account's Mythic and completion of one Xbox game (owner,
+        2026-10-16): once every achievement of its base list is earned, the
+        last of them earned is marked `mythic`; once every achievement of its
+        whole list is, the last is marked `completes`. Only a list read whole
+        (`listed`) counts, the base list only where its groups are known.
+        A Mythic is kept for good; a completion is taken back when the list
+        grows past what was earned, and marked again on its new last one."""
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, trophy_group_id FROM title_achievements"
+            " WHERE platform = ? AND title_id = ? AND listed = 1",
+            (platform, title_id),
+        )
+        listed = {str(r[0]): r[1] for r in await cursor.fetchall()}
+        if not listed:
+            return
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, COALESCE(unlocked_at, created_at) AS at, mythic, completes"
+            " FROM seen_achievements WHERE platform = ? AND xuid = ? AND title_id = ?",
+            (platform, xuid, title_id),
+        )
+        earned = {
+            str(r[0]): (str(r[1] or ""), int(r[2]), int(r[3])) for r in await cursor.fetchall()
+        }
+        if not earned:
+            return
+
+        def last_of(ids: set[str]) -> str:
+            return max(ids, key=lambda a: (earned[a][0], a))
+
+        marks: list[tuple[str, str]] = []
+        base = {a for a, group in listed.items() if group == "base"}
+        if base and base <= earned.keys() and not any(v[1] for v in earned.values()):
+            marks.append(("mythic", last_of(base)))
+        complete = listed.keys() <= earned.keys()
+        if complete and not any(v[2] for v in earned.values()):
+            marks.append(("completes", last_of(set(listed))))
+        if not complete and any(v[2] for v in earned.values()):
+            # The list grew (a DLC, an update): the game is not complete any
+            # more, until its new last achievement is earned. A Mythic stays —
+            # its base list never grows (owner, 2026-10-16).
+            await self._conn.execute(
+                "UPDATE seen_achievements SET completes = 0"
+                " WHERE platform = ? AND xuid = ? AND title_id = ? AND completes = 1",
+                (platform, xuid, title_id),
+            )
+            await self._conn.commit()
+        for column, achievement_id in marks:
+            await self._conn.execute(
+                f"UPDATE seen_achievements SET {column} = 1"
+                " WHERE platform = ? AND xuid = ? AND title_id = ? AND achievement_id = ?",
+                (platform, xuid, title_id, achievement_id),
+            )
+        if marks:
+            await self._conn.commit()
+
+    async def completion_marks(self) -> dict[str, int]:
+        """How many Mythics and completions are marked, per platform."""
+        cursor = await self._conn.execute(
+            "SELECT platform, SUM(mythic), SUM(completes) FROM seen_achievements GROUP BY platform"
+        )
+        return {
+            f"{r[0]} mythic/complete": f"{int(r[1] or 0)}/{int(r[2] or 0)}"  # type: ignore[misc]
+            for r in await cursor.fetchall()
+        }
+
+    async def mark_xbox_completions_of_title(self, platform: str, title_id: str) -> None:
+        """Every account's marks in one game — when its list was read whole."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT xuid FROM seen_achievements WHERE platform = ? AND title_id = ?",
+            (platform, title_id),
+        )
+        for row in await cursor.fetchall():
+            await self.mark_xbox_completions(platform, str(row[0]), title_id)
+
+    async def derive_x360_groups(self, title_id: str, *, commit: bool = True) -> int:
+        """A 360 list's groups, derived from its listed achievements' ids and
+        gamerscore. The number of achievements grouped."""
+        from bot.services.xbox.models import x360_groups
+
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, gamerscore FROM title_achievements"
+            " WHERE platform = 'xbox_360' AND title_id = ? AND listed = 1",
+            (title_id,),
+        )
+        listed = [(str(r[0]), int(r[1] or 0)) for r in await cursor.fetchall()]
+        for achievement_id, group in x360_groups(title_id, listed).items():
+            # Derived, never over what the platform said itself.
+            await self._conn.execute(
+                "UPDATE title_achievements SET trophy_group_id = ?, group_source = 'derived'"
+                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?"
+                " AND group_source IS NOT 'platform'",
+                (group, title_id, achievement_id),
+            )
+            await self._conn.execute(
+                "UPDATE seen_achievements SET trophy_group_id = ?, group_source = 'derived'"
+                " WHERE platform = 'xbox_360' AND title_id = ? AND achievement_id = ?"
+                " AND group_source IS NOT 'platform'",
+                (group, title_id, achievement_id),
+            )
+        if commit:
+            await self._conn.commit()
+        return len(listed)
+
+    async def set_achievement_groups(
+        self, platform: str, title_id: str, groups: dict[str, str]
+    ) -> int:
+        """Each achievement's group as its platform told it (Xbox's base /
+        non_base), on the list and on the rows people earned. The number of
+        list rows that took one."""
+        changed = 0
+        async with self.transaction():
+            for achievement_id, group in groups.items():
+                cursor = await self._conn.execute(
+                    "UPDATE title_achievements SET trophy_group_id = ?, group_source = 'platform'"
+                    " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
+                    (group, platform, title_id, achievement_id),
+                )
+                changed += cursor.rowcount
+                await self._conn.execute(
+                    "UPDATE seen_achievements SET trophy_group_id = ?, group_source = 'platform'"
+                    " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
+                    (group, platform, title_id, achievement_id),
+                )
+        return changed
 
     async def get_title_achievements(
         self, platform: str, title_id: str
@@ -213,33 +379,38 @@ class _CatalogRepo:
             for row in rows
         ]
 
-    async def title_achievements_checked_at(self, title_id: str) -> str | None:
+    async def title_achievements_checked_at(self, platform: str, title_id: str) -> str | None:
         """When this title's achievement catalog was last verified against the platform API."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT achievements_checked_at FROM titles WHERE title_id = ?",
-            (title_id,),
+            f"SELECT achievements_checked_at FROM achievement_list_connectors WHERE {where} AND "
+            f"title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         return row["achievements_checked_at"] if row else None
 
     async def set_title_achievements_checked_at(
-        self, title_id: str, checked_at: str | None = None
+        self, platform: str, title_id: str, checked_at: str | None = None
     ) -> None:
         """Stamp when this title was checked against the platform API."""
         ts = checked_at or utcnow_iso()
+        where, params = platform_is(platform)
         await self._conn.execute(
-            "UPDATE titles SET achievements_checked_at = ? WHERE title_id = ?",
-            (ts, title_id),
+            f"UPDATE achievement_list_connectors SET achievements_checked_at = ? WHERE {where} "
+            f"AND title_id = ?",
+            (ts, *params, title_id),
         )
         await self._conn.commit()
 
-    async def title_record(self, title_id: str) -> dict[str, object] | None:
-        """Fetch title record if it exists."""
+    async def title_record(self, platform: str, title_id: str) -> dict[str, object] | None:
+        """Fetch title record if it exists. `platform` may be `xbox`."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
             "SELECT title_id, name, name_ru, name_en, platform, platforms, "
             "       icon_url, achievements_total, cover_path, achievements_checked_at "
-            "FROM titles WHERE title_id = ?",
-            (title_id,),
+            f"FROM achievement_list_connectors WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         if not row:
@@ -301,29 +472,109 @@ class _CatalogRepo:
         # The title, its rows and its catalog move together (#167).
         async with self.transaction():
             if new_platform in ("xbox_360", "x360"):
-                new_plat = "xbox_360"
-                old_plat = "xbox_modern"
-                await self._conn.execute(
-                    "UPDATE titles SET platform = 'xbox_360', platforms = '[\"Xbox360\"]' "
-                    "WHERE title_id = ?",
-                    (title_id,),
-                )
+                new_plat, old_plat = "xbox_360", "xbox_modern"
             elif new_platform == "xbox_modern":
-                new_plat = "xbox_modern"
-                old_plat = "xbox_360"
-                await self._conn.execute(
-                    "UPDATE titles SET platform = 'xbox_modern' "
-                    "WHERE title_id = ? AND platform = 'xbox_360'",
-                    (title_id,),
-                )
+                new_plat, old_plat = "xbox_modern", "xbox_360"
             else:
                 return
             await self._move_title_rows(title_id, old_plat, new_plat)
+            if new_plat == "xbox_360":
+                await self._conn.execute(
+                    "UPDATE achievement_list_connectors SET platforms = '[\"Xbox360\"]'"
+                    " WHERE platform = 'xbox_360' AND title_id = ?",
+                    (title_id,),
+                )
+
+    # What a game's row keeps when it moves onto a row the other generation
+    # already has: whatever the target has not learned yet.
+    _MERGED_TITLE_COLUMNS = (
+        "name_ru",
+        "name_en",
+        "platforms",
+        "icon_url",
+        "achievements_total",
+        "cover_path",
+        "cover_hash",
+        "cover_checked_at",
+        "achievements_checked_at",
+        "tips_checked_at",
+    )
 
     async def _move_title_rows(self, title_id: str, old_plat: str, new_plat: str) -> None:
-        """A game's earned rows and its catalog move to another Xbox platform
-        together (#167): moving only `seen_achievements` left the names,
-        descriptions, rarity and listed size behind. No commit — the caller's."""
+        """A game, its earned rows and its catalog move to another Xbox
+        platform together (#167): moving only `seen_achievements` left the
+        names, descriptions, rarity and listed size behind. The `titles` row
+        is keyed by its platform (090): it moves too, and onto a row the other
+        generation already has, it fills what that one lacks and goes. No
+        commit — the caller's."""
+        merged = ", ".join(
+            f"{column} = COALESCE(achievement_list_connectors.{column}, o.{column})"
+            for column in self._MERGED_TITLE_COLUMNS
+        )
+        await self._conn.execute(
+            f"UPDATE achievement_list_connectors SET {merged} FROM achievement_list_connectors o "
+            "WHERE achievement_list_connectors.platform = ? AND "
+            "achievement_list_connectors.title_id = ?"
+            "  AND o.platform = ? AND o.title_id = achievement_list_connectors.title_id",
+            (new_plat, title_id, old_plat),
+        )
+        await self._conn.execute(
+            "UPDATE OR IGNORE achievement_list_connectors SET platform = ? WHERE platform = ? AND "
+            "title_id = ?",
+            (new_plat, old_plat, title_id),
+        )
+        await self._conn.execute(
+            "DELETE FROM achievement_list_connectors WHERE platform = ? AND title_id = ?",
+            (old_plat, title_id),
+        )
+        # When its HLTB entry was last asked about is the list's too.
+        await self._conn.execute(
+            "UPDATE OR IGNORE fetch_state SET subject = ?"
+            " WHERE source = 'hltb_match' AND subject = ?",
+            (f"{new_plat}:{title_id}", f"{old_plat}:{title_id}"),
+        )
+        await self._conn.execute(
+            "DELETE FROM fetch_state WHERE source = 'hltb_match' AND subject = ?",
+            (f"{old_plat}:{title_id}",),
+        )
+        await self._conn.execute(
+            "UPDATE OR IGNORE fetch_state SET subject = ?"
+            " WHERE source = 'steam_app' AND subject = ?",
+            (f"{new_plat}:{title_id}", f"{old_plat}:{title_id}"),
+        )
+        await self._conn.execute(
+            "DELETE FROM fetch_state WHERE source = 'steam_app' AND subject = ?",
+            (f"{old_plat}:{title_id}",),
+        )
+        # The versions whose list it is follow it (2026-10-14: they used to be
+        # left on the old generation, pointing at a list that was gone).
+        await self._conn.execute(
+            "UPDATE versions SET platform = ? WHERE platform = ? AND title_id = ?",
+            (new_plat, old_plat, title_id),
+        )
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE platform = ? AND title_id = ?",
+            (new_plat, title_id),
+        )
+        for row in await cursor.fetchall():
+            ids = await self.store_ids_of(int(row[0]))
+            moved = [
+                ("list", f"{new_plat}:{title_id}") if i == ("list", f"{old_plat}:{title_id}") else i
+                for i in ids
+            ]
+            await self._conn.execute(
+                "UPDATE versions SET store_ids = ? WHERE version_id = ?",
+                (json.dumps(list(dict.fromkeys(moved))), int(row[0])),
+            )
+        await self._conn.execute(
+            "UPDATE OR IGNORE title_guide_reads SET platform = ?"
+            " WHERE platform = ? AND title_id = ?",
+            (new_plat, old_plat, title_id),
+        )
+        await self._conn.execute(
+            "DELETE FROM title_guide_reads WHERE platform = ? AND title_id = ?",
+            (old_plat, title_id),
+        )
         await self._conn.execute(
             "UPDATE OR IGNORE seen_achievements SET platform = ? "
             "WHERE title_id = ? AND platform = ?",

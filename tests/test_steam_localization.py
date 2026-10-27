@@ -33,13 +33,15 @@ async def test_a_game_nobody_plays_still_gets_its_russian_name(repo: Repo, monke
 
     await SteamLocalization(repo).tick()
 
-    assert await repo.title_names([APPID]) == {APPID: ("Г.О.П.О.Т.А", "G.O.P.O.T.A")}
+    assert await repo.title_names([("steam", APPID)]) == {
+        ("steam", APPID): ("Г.О.П.О.Т.А", "G.O.P.O.T.A")
+    }
     assert calls == [(APPID, "russian"), (APPID, "english")]
 
 
 async def test_a_game_already_localized_is_not_asked_again(repo: Repo, monkeypatch) -> None:
     await repo.upsert_title(APPID, "G.O.P.O.T.A", "steam")
-    await repo.set_title_names(APPID, "Г.О.П.О.Т.А", "G.O.P.O.T.A")
+    await repo.set_title_names("steam", APPID, "Г.О.П.О.Т.А", "G.O.P.O.T.A")
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr(module, "store_name", _store({}, calls))
 

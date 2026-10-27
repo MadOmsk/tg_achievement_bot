@@ -24,8 +24,9 @@ from dataclasses import dataclass, replace
 import httpx
 
 from bot.constants import SteamCommunityVisibility
-from bot.services import api_usage, images
+from bot.services import api_usage, images, raw_answers
 from bot.services.rate_limiter import RateLimiter
+from bot.services.stores import steam_store
 
 BASE_URL = "https://api.steampowered.com"
 # The storefront, not the Web API — a different host, no key, and the only
@@ -127,7 +128,7 @@ class RawAchievement:
 @dataclass(slots=True)
 class RawSchemaAchievement:
     """One entry from GetSchemaForGame — about the game, not the person, so
-    cached forever like hltb_cache (SPEC 9, M-Steam-2b). Steam calls the
+    cached forever like the HLTB mirror (SPEC 9, M-Steam-2b). Steam calls the
     identifier `name` here and `apiname` in GetPlayerAchievements above —
     normalized to `apiname` on this side so both endpoints stitch on the
     same field name."""
@@ -151,7 +152,9 @@ async def store_name(appid: str, language: str) -> str | None:
 
     Best-effort by design: the one call here that talks to the storefront
     rather than the Web API, it needs no key, and a failure costs nothing but
-    a name that stays in whatever language the API already gave.
+    a name that stays in whatever language the API already gave. It is the
+    stores' own `appdetails` read (2026-10-12), so it waits its turn under
+    the one storefront limiter instead of going around it.
     """
     name = (await _store_basic(appid, language) or {}).get("name")
     return str(name) if name else None
@@ -170,19 +173,10 @@ async def store_header_url(appid: str) -> str | None:
 async def _store_basic(appid: str, language: str) -> dict | None:
     """The store's `basic` block for one game, or None on any failure."""
     try:
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.get(
-                f"{STORE_URL}/api/appdetails",
-                params={"appids": appid, "l": language, "filters": "basic"},
-            )
-            response.raise_for_status()
-            body = response.json().get(appid) or {}
+        data = await steam_store.app_details(appid, language)
     except Exception:
         log.info("steam store details for appid=%s unavailable", appid, exc_info=True)
         return None
-    if not body.get("success"):
-        return None
-    data = body.get("data")
     return data if isinstance(data, dict) else None
 
 
@@ -422,6 +416,9 @@ async def get_player_achievements(
         api_key,
         {"steamid": steam_id, "appid": appid, "l": language},
     )
+    await raw_answers.keep(
+        f"player_achievements:{steam_id}:{appid}:{language}", "steam_achievements", payload
+    )
     stats = payload.get("playerstats") or {}
     if not stats.get("success"):
         return []
@@ -505,6 +502,7 @@ async def get_schema(
     payload = await _get(
         "/ISteamUserStats/GetSchemaForGame/v2/", api_key, {"appid": appid, "l": language}
     )
+    await raw_answers.keep(f"schema:{appid}:{language}", "steam_achievements", payload)
     achievements = (payload.get("game") or {}).get("availableGameStats", {}).get(
         "achievements"
     ) or []
@@ -525,9 +523,15 @@ async def get_global_percentages(appid: str) -> dict[str, float]:
     """No API key at all — this endpoint is public (SPEC 9, M-Steam-2b).
     Real percentages drift over time, unlike the schema above, so the
     caching layer (services/steam/achievements.py) expires this one."""
-    payload = await _get(
-        "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/", "", {"gameid": appid}
-    )
+    try:
+        payload = await _get(
+            "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/", "", {"gameid": appid}
+        )
+    except SteamKeyDeadError:
+        # No key is sent here, so a 403 is no verdict on the key: the app has
+        # no achievement stats (2026-10-16, Counter-Strike's app 10).
+        return {}
+    await raw_answers.keep(f"global_percentages:{appid}", "steam_achievements", payload)
     achievements = (payload.get("achievementpercentages") or {}).get("achievements") or []
     result: dict[str, float] = {}
     for item in achievements:

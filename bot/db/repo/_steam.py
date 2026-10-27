@@ -1,7 +1,7 @@
 """What Steam knows about a game beyond its achievements (migration 069): the
 Steam app it is, its community guides' tips, and its developer's patch notes.
 
-A game's Steam app is found once, like its HLTB entry (`titles.hltb_*`): three
+A game's Steam app is found once, like its HLTB entry (`achievement_list_connectors.hltb_*`): three
 failed attempts an hour apart, then it is known to have none. Guides and patches
 belong to the Steam app, not to our title — an Xbox, a PlayStation and a Steam
 version of one game share them — so their read times live on `steam_apps`.
@@ -14,7 +14,14 @@ from dataclasses import dataclass
 
 import aiosqlite
 
-from bot.db.repo._sql import earned_at, earned_date_is_real, earned_since
+from bot.db.repo._sql import (
+    STEAM_APP_OF_TITLE,
+    earned_at,
+    earned_date_is_real,
+    earned_since,
+    platform_is,
+    titles_on,
+)
 from bot.util import looks_russian, utcnow_iso
 
 
@@ -69,51 +76,44 @@ class _SteamRepo:
 
     STEAM_APPID_ATTEMPTS = 3
 
-    async def title_steam(self, title_id: str) -> TitleSteam | None:
+    async def title_steam(self, platform: str, title_id: str) -> TitleSteam | None:
+        where, params = platform_is(platform, "t.platform")
         cursor = await self._conn.execute(
-            "SELECT title_id, platform, name, name_en, hltb_id, steam_appid,"
-            "  tips_checked_at,"
-            "  (steam_appid IS NULL"
-            f"   AND steam_appid_attempts < {self.STEAM_APPID_ATTEMPTS}"
-            "   AND (steam_appid_checked_at IS NULL"
-            "        OR steam_appid_checked_at < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour'))"
-            "  ) AS appid_due "
-            "FROM titles WHERE title_id = ?",
-            (title_id,),
+            f"SELECT t.title_id, t.platform, t.name, t.name_en, t.tips_checked_at,"
+            f" {STEAM_APP_OF_TITLE} AS steam_appid FROM achievement_list_connectors t"
+            f" WHERE {where} AND t.title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         if row is None:
             return None
-        platform = row["platform"] or ""
+        platform = row["platform"]
         appid = row["steam_appid"]
-        # A Steam game is its own Steam app.
-        if platform == "steam" and str(row["title_id"]).isdigit():
-            appid = int(row["title_id"])
+        match = await self.list_hltb_match(platform, row["title_id"])
         return TitleSteam(
             platform=platform,
             title_id=row["title_id"],
             names=tuple(dict.fromkeys(str(n) for n in (row["name_en"], row["name"]) if n)),
-            hltb_id=row["hltb_id"],
+            hltb_id=match[0] if match else None,
             steam_appid=appid,
-            appid_due=appid is None and bool(row["appid_due"]),
+            appid_due=appid is None
+            and await self.fetch_due(f"{platform}:{row['title_id']}", "steam_app"),
             tips_checked_at=row["tips_checked_at"],
         )
 
-    async def record_steam_appid(self, title_id: str, appid: int | None) -> None:
-        """One lookup's answer; `None` counts as a failed attempt."""
-        if appid is not None:
-            await self._conn.execute(
-                "UPDATE titles SET steam_appid = ?, steam_appid_checked_at = ?,"
-                " steam_appid_attempts = steam_appid_attempts + 1 WHERE title_id = ?",
-                (appid, utcnow_iso(), title_id),
-            )
-        else:
-            await self._conn.execute(
-                "UPDATE titles SET steam_appid_attempts = steam_appid_attempts + 1,"
-                " steam_appid_checked_at = ? WHERE title_id = ?",
-                (utcnow_iso(), title_id),
-            )
+    async def record_steam_appid(self, platform: str, title_id: str, appid: int | None) -> None:
+        """One lookup's answer: the app found is kept as a `steam_twin` id on
+        each version of the list (`versions.store_ids`), when it was last asked
+        is `fetch_state` ('steam_app'); `None` counts as a failed attempt —
+        after the third the list leaves the queue for a month."""
+        subject = f"{platform}:{title_id}"
+        if appid is None:
+            await self.record_fetch(subject, "steam_app", status="error", error="no app")
+            return
+        for version_id in await self.ensure_list_version(platform, title_id):
+            await self.add_store_ids(version_id, [("steam_twin", str(appid))])
         await self._conn.commit()
+        await self.record_fetch(subject, "steam_app", status="ok")
 
     async def steam_app_checked(self, appid: int) -> tuple[str | None, str | None]:
         """(guides_checked_at, patches_checked_at) — both None for an app never read."""
@@ -125,14 +125,15 @@ class _SteamRepo:
         return (row["guides_checked_at"], row["patches_checked_at"]) if row else (None, None)
 
     async def guide_read(
-        self, title_id: str, guide_id: str
+        self, platform: str, title_id: str, guide_id: str
     ) -> tuple[str, dict[str, list[tuple[int, int]]]] | None:
         """(fingerprint, answer) of the last time the model was asked about this
         guide for this game — the answer as {achievement id: [(first, last), ...]}
         line ranges — or None when it never was."""
         cursor = await self._conn.execute(
-            "SELECT fingerprint, answer FROM title_guide_reads WHERE title_id = ? AND guide_id = ?",
-            (title_id, guide_id),
+            "SELECT fingerprint, answer FROM title_guide_reads"
+            " WHERE platform = ? AND title_id = ? AND guide_id = ?",
+            (platform, title_id, guide_id),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -148,18 +149,20 @@ class _SteamRepo:
 
     async def save_guide_read(
         self,
+        platform: str,
         title_id: str,
         guide_id: str,
         fingerprint: str,
         answer: dict[str, list[tuple[int, int]]],
     ) -> None:
         await self._conn.execute(
-            "INSERT INTO title_guide_reads (title_id, guide_id, fingerprint, answer, checked_at)"
-            " VALUES (?, ?, ?, ?, ?)"
-            " ON CONFLICT(title_id, guide_id) DO UPDATE SET"
+            "INSERT INTO title_guide_reads"
+            " (platform, title_id, guide_id, fingerprint, answer, checked_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(platform, title_id, guide_id) DO UPDATE SET"
             "  fingerprint = excluded.fingerprint, answer = excluded.answer,"
             "  checked_at = excluded.checked_at",
-            (title_id, guide_id, fingerprint, json.dumps(answer), utcnow_iso()),
+            (platform, title_id, guide_id, fingerprint, json.dumps(answer), utcnow_iso()),
         )
         await self._conn.commit()
 
@@ -202,8 +205,9 @@ class _SteamRepo:
             )
         if complete:
             await self._conn.execute(
-                "UPDATE titles SET tips_checked_at = ? WHERE title_id = ?",
-                (utcnow_iso(), title_id),
+                "UPDATE achievement_list_connectors SET tips_checked_at = ? WHERE platform = ? "
+                "AND title_id = ?",
+                (utcnow_iso(), platform, title_id),
             )
         await self._conn.commit()
 
@@ -273,9 +277,9 @@ class _SteamRepo:
             "  AND al.external_id = s.xuid AND al.is_active = 1"
             # An excluded person is told nothing (CLAUDE.md, Statistics rules).
             " JOIN users u ON u.id = al.person_id AND u.is_excluded = 0"
-            " JOIN titles t ON t.title_id = s.title_id"
-            " WHERE (CASE WHEN s.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-            "        ELSE t.steam_appid END) = ?"
+            " JOIN achievement_list_connectors t ON t.platform = s.platform AND t.title_id = "
+            "s.title_id"
+            f" WHERE {STEAM_APP_OF_TITLE} = ?"
             f"  AND {earned_date_is_real('s.')} AND {earned_at('s.')} >= ?"
             " GROUP BY al.person_id"
             " ORDER BY al.person_id",
@@ -309,18 +313,18 @@ class _SteamRepo:
         ids = ",".join(str(int(m)) for m in members) or "NULL"
         cursor = await self._conn.execute(
             "WITH played AS ("
-            "  SELECT s.title_id, MAX(s.platform) AS platform"
+            "  SELECT s.title_id, s.platform"
             "  FROM seen_achievements s"
             "  JOIN account_links al ON al.platform = s.account_platform"
             "   AND al.external_id = s.xuid AND al.is_active = 1"
             f"  WHERE al.person_id IN ({ids}) AND {earned_date_is_real('s.')}"
             f"    AND {earned_at('s.')} >= ?"
-            "  GROUP BY s.title_id"
+            "  GROUP BY s.platform, s.title_id"
             "), apps AS ("
             "  SELECT p.title_id, p.platform, t.name, t.name_ru, t.name_en, t.icon_url,"
-            "         CASE WHEN p.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-            "              ELSE t.steam_appid END AS appid"
-            "  FROM played p JOIN titles t ON t.title_id = p.title_id"
+            f"         {STEAM_APP_OF_TITLE} AS appid"
+            "  FROM played p JOIN achievement_list_connectors t ON t.platform = p.platform AND "
+            "t.title_id = p.title_id"
             ") "
             "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
             "       gp.text_en, gp.image_url, a.platform, a.title_id,"
@@ -350,6 +354,64 @@ class _SteamRepo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def favorite_games_news(
+        self, game_ids: list[int], *, since: str, until: str, limit: int
+    ) -> list[GameNewsRow]:
+        """The developers' posts dated in [since, until) about these games
+        (somebody's favorites, owner, 2026-10-26), newest first, one row per
+        post; each names the game by the list most people here played."""
+        if not game_ids:
+            return []
+        cursor = await self._conn.execute(
+            "WITH fav(game_id) AS (SELECT value FROM json_each(?)), apps AS ("
+            "  SELECT f.game_id, CAST(v.product_id AS INTEGER) AS appid FROM fav f"
+            "  JOIN versions v ON v.game_id = f.game_id WHERE v.store = 'steam'"
+            "  UNION"
+            "  SELECT f.game_id, CAST(json_extract(j.value, '$[1]') AS INTEGER) FROM fav f"
+            "  JOIN versions v ON v.game_id = f.game_id, json_each(v.store_ids) j"
+            "  WHERE json_extract(j.value, '$[0]') = 'steam_twin'"
+            ") "
+            "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
+            "       gp.text_en, gp.image_url, MIN(a.game_id) AS game_id,"
+            "       g.name AS game_name, g.name_ru AS game_name_ru "
+            "FROM game_patches gp JOIN apps a ON a.appid = gp.steam_appid "
+            "JOIN games g ON g.game_id = a.game_id "
+            "WHERE gp.published_at >= ? AND gp.published_at < ? "
+            "GROUP BY gp.steam_appid, gp.gid "
+            "ORDER BY gp.published_at DESC, gp.steam_appid, gp.gid "
+            "LIMIT ?",
+            (f"[{','.join(str(int(g)) for g in game_ids)}]", since, until, limit),
+        )
+        rows = await cursor.fetchall()
+        lists: dict[int, tuple[str, str] | None] = {}
+        for row in rows:
+            game_id = int(row["game_id"])
+            if game_id not in lists:
+                lists[game_id] = await self.game_list_of(game_id)
+        out: list[GameNewsRow] = []
+        for row in rows:
+            key = lists[int(row["game_id"])]
+            if key is None:
+                continue
+            out.append(
+                GameNewsRow(
+                    steam_appid=int(row["steam_appid"]),
+                    gid=row["gid"],
+                    kind=row["kind"],
+                    title=row["title"],
+                    published_at=row["published_at"],
+                    text_en=row["text_en"],
+                    image_url=row["image_url"],
+                    platform=key[0],
+                    title_id=str(key[1]),
+                    game=row["game_name"],
+                    game_ru=row["game_name_ru"],
+                    game_en=row["game_name"],
+                    game_icon_url=await self.title_icon_url(key[0], key[1]),
+                )
+            )
+        return out
 
     async def game_patch(self, appid: int, gid: str) -> StoredPatch | None:
         """One post of a game's developer, as a notice about it opens it."""
@@ -397,21 +459,21 @@ class _SteamRepo:
 
     async def titles_due_for_tips(
         self, *, played_since: str, stale_before: str, limit: int
-    ) -> list[str]:
+    ) -> list[tuple[str, str]]:
         """Games with a Steam app that somebody earned something in since
         `played_since` and whose tips were last worked out before `stale_before`,
         the longest-waiting first. A game never worked out is a visit's or a
         first achievement's job, not the schedule's."""
         cursor = await self._conn.execute(
-            "SELECT t.title_id FROM titles t"
-            " WHERE (t.steam_appid IS NOT NULL OR t.platform = 'steam')"
+            "SELECT t.platform, t.title_id FROM achievement_list_connectors t"
+            f" WHERE {STEAM_APP_OF_TITLE} IS NOT NULL"
             "   AND t.tips_checked_at IS NOT NULL AND t.tips_checked_at < ?"
             "   AND EXISTS (SELECT 1 FROM seen_achievements s"
-            f"               WHERE s.title_id = t.title_id AND {earned_since('s.')})"
+            f"               WHERE {titles_on()} AND {earned_since('s.')})"
             " ORDER BY t.tips_checked_at LIMIT ?",
             (stale_before, played_since, limit),
         )
-        return [str(row["title_id"]) for row in await cursor.fetchall()]
+        return [(row["platform"], str(row["title_id"])) for row in await cursor.fetchall()]
 
     async def steam_apps_due_for_patches(
         self, *, played_since: str, stale_before: str, limit: int
@@ -421,11 +483,10 @@ class _SteamRepo:
         longest-waiting first."""
         cursor = await self._conn.execute(
             "WITH active AS ("
-            "  SELECT DISTINCT CASE WHEN t.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-            "                       ELSE t.steam_appid END AS appid"
-            "  FROM titles t"
+            f"  SELECT DISTINCT {STEAM_APP_OF_TITLE} AS appid"
+            "  FROM achievement_list_connectors t"
             "  WHERE EXISTS (SELECT 1 FROM seen_achievements s"
-            f"               WHERE s.title_id = t.title_id AND {earned_since('s.')})"
+            f"               WHERE {titles_on()} AND {earned_since('s.')})"
             ") "
             "SELECT a.appid FROM active a"
             " LEFT JOIN steam_apps sa ON sa.appid = a.appid"

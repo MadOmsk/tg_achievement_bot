@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from collections.abc import AsyncIterator
+import socket
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import aiosqlite
@@ -15,10 +16,63 @@ from cryptography.fernet import Fernet
 from bot.config import Settings
 from bot.db.repo import Database, Repo
 from bot.i18n import DEFAULT_LOCALE, LOCALES_DIR
+from bot.poller import fetcher, psn_fetcher, steam_fetcher, steam_localization
+from bot.services import title_catalog
 from bot.services.crypto import TokenCipher
+from bot.services.steam import achievements as steam_achievements
 from bot.services.steam.auth import SteamAuth
+from bot.services.stores import xbox_catalog
 
 FERNET_KEY = Fernet.generate_key().decode()
+
+# Tests never reach a real platform (CLAUDE.md, Tests): a name that is not
+# this machine's is refused at once, and a test that reached for one fails at
+# its end with the hosts — code that swallows a failed request (a store name
+# is best-effort) would otherwise hide the call it should never have made.
+_LOCAL = {"localhost", "127.0.0.1", "::1", "", None}
+_getaddrinfo = socket.getaddrinfo
+
+
+async def _no_store_name(appid: str, language: str) -> None:
+    return None
+
+
+async def _nothing(*args, **kwargs) -> None:
+    return None
+
+
+async def _no_addons(name: str) -> list[str]:
+    return []
+
+
+@pytest.fixture(autouse=True)
+def _offline(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    reached: list[str] = []
+
+    def no_network(host, *args, **kwargs):
+        name = host.decode() if isinstance(host, bytes) else host
+        if name not in _LOCAL:
+            reached.append(str(name))
+            raise ConnectionRefusedError(f"a test reached for the network: {name}")
+        return _getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", no_network)
+    # A game's name as the Steam store spells it is a best-effort side
+    # lookup no test is about but those that say so (they stub it again).
+    for module in (steam_achievements, steam_localization, title_catalog):
+        monkeypatch.setattr(module, "store_name", _no_store_name)
+    # After publishing, a fetcher matches the game on HowLongToBeat and caches
+    # its icons: errands of their own tests (`test_hltb_match`,
+    # `test_achievement_icons`), which call them directly.
+    for module in (fetcher, steam_fetcher, psn_fetcher):
+        monkeypatch.setattr(module, "ensure_title_match", _nothing)
+    monkeypatch.setattr(fetcher.achievement_icons, "pre_cache_icon", _nothing)
+    # An Xbox collection also searches the add-ons sold alone: the errand of
+    # `test_xbox_addons_alone`, which stubs it again.
+    monkeypatch.setattr(xbox_catalog, "search_addons", _no_addons)
+    yield
+    if reached:
+        pytest.fail(f"reached for the network: {sorted(set(reached))}", pytrace=False)
 
 
 @pytest.fixture(scope="session")

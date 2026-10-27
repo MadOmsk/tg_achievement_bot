@@ -192,7 +192,10 @@ async def sync_account(
                     ],
                 )
             await repo.set_title_names(
-                title.np_communication_id, structure.title_name_ru, structure.title_name_en
+                Platform.PSN,
+                title.np_communication_id,
+                structure.title_name_ru,
+                structure.title_name_en,
             )
 
         progress = title.progress or 0

@@ -51,6 +51,7 @@ from bot.poller.fetcher import Fetcher, catch_up_since
 from bot.poller.flood_flush import FloodFlush
 from bot.poller.guide_videos import GuideVideos
 from bot.poller.message_cleanup import MessageCleanup
+from bot.poller.octopus import OctopusWorker
 from bot.poller.online_refresh import OnlineAutoRefresh
 from bot.poller.patch_refresh import PatchRefresh
 from bot.poller.presence import PresencePoller
@@ -67,7 +68,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
-from bot.services import achievement_icons
+from bot.services import achievement_icons, raw_answers
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -76,11 +77,13 @@ from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
 from bot.services.notifier import Notifier
 from bot.services.notify import SuperadminNotifier
+from bot.services.octopus import OctopusCollector
 from bot.services.psn.auth import PsnAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam_extras import SteamExtras
+from bot.services.store_collect import StoreCollector
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
@@ -134,6 +137,8 @@ def setup_logging(level: str) -> None:
 async def run(settings: Settings) -> None:
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
+    # The platforms' answers about achievements are kept whole (raw_answers).
+    raw_answers.set_sink(repo.save_payload)
     given = await repo.give_everyone_a_handle()
     if given:
         log.info("gave %d people a first nickname (#157)", given)
@@ -209,6 +214,7 @@ async def run(settings: Settings) -> None:
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
     steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
+    store_collector = StoreCollector(repo, psn_auth, steam_auth)
     fetcher = Fetcher(
         repo,
         client,
@@ -216,6 +222,7 @@ async def run(settings: Settings) -> None:
         settings.backfill_concurrency,
         anthropic_auth=anthropic_auth,
         steam_extras=steam_extras,
+        store_collector=store_collector,
     )
     poller = PresencePoller(settings, repo, client, fetcher)
 
@@ -226,6 +233,7 @@ async def run(settings: Settings) -> None:
         settings.backfill_concurrency,
         anthropic_auth=anthropic_auth,
         steam_extras=steam_extras,
+        store_collector=store_collector,
     )
     steam_poller = SteamPresencePoller(settings, repo, steam_fetcher, steam_auth)
     steam_catch_up = SteamCatchUpPoller(settings, repo, steam_fetcher, steam_auth)
@@ -241,6 +249,7 @@ async def run(settings: Settings) -> None:
         publisher,
         anthropic_auth=anthropic_auth,
         steam_extras=steam_extras,
+        store_collector=store_collector,
     )
     psn_presence = PsnPresencePoller(settings, repo, psn_auth, psn_fetcher=psn_fetcher)
 
@@ -271,6 +280,7 @@ async def run(settings: Settings) -> None:
         PsnTrophyGroups(repo, psn_auth),
         PatchRefresh(repo, steam_extras),
         GuideVideos(repo, youtube_auth),
+        OctopusWorker(repo, OctopusCollector(repo, store_collector)),
     )
 
     async def on_linked(
@@ -370,6 +380,7 @@ async def run(settings: Settings) -> None:
         anthropic_auth=anthropic_auth,
         bot=bot,
         steam_extras=steam_extras,
+        store_collector=store_collector,
         notifications=notifications,
         merge=merge,
         youtube_auth=youtube_auth,

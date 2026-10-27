@@ -122,6 +122,43 @@ class MailUsage:
 
 
 @dataclass(frozen=True, slots=True)
+class OctopusStatus:
+    """The octopus's queue and how it is getting on (owner, 2026-10-25)."""
+
+    on: bool
+    per_tick: int
+    queue: int
+    retrying: int
+    hour: int
+    day: int
+    failed_hour: int
+    last_name: str | None = None
+    last_versions: int = 0
+    last_review: int = 0
+    last_at: str | None = None
+
+
+async def octopus_status(repo: Repo) -> OctopusStatus:
+    from bot.poller import octopus
+    from bot.services.store_collect import collection_on
+
+    last = octopus.last_game
+    return OctopusStatus(
+        on=await collection_on(repo),
+        per_tick=await repo.get_int_setting(octopus.PER_TICK_KEY, octopus.DEFAULT_PER_TICK),
+        queue=await repo.octopus_waiting(),
+        retrying=await repo.octopus_retrying(),
+        hour=api_usage.count(api_usage.OCTOPUS, api_usage.HOUR),
+        day=api_usage.count(api_usage.OCTOPUS, api_usage.DAY),
+        failed_hour=api_usage.count(api_usage.OCTOPUS_FAILED, api_usage.HOUR),
+        last_name=last.name if last else None,
+        last_versions=last.versions if last else 0,
+        last_review=last.review if last else 0,
+        last_at=last.at if last else None,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class AdminStatus:
     users: int
     excluded: int
@@ -134,6 +171,7 @@ class AdminStatus:
     api: ApiUsage
     mail: MailUsage
     credentials: list[CredentialState]
+    octopus: OctopusStatus | None = None
 
     def credential(self, name: str) -> CredentialState | None:
         return next((item for item in self.credentials if item.name == name), None)
@@ -181,4 +219,5 @@ async def admin_status(
         api=api_load(xbox_active),
         mail=await mail_usage(repo, credentials.smtp.host if credentials.smtp else None),
         credentials=await credentials.states(),
+        octopus=await octopus_status(repo),
     )

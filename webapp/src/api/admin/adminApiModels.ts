@@ -62,6 +62,8 @@ export type AdminUserCard = {
   last_name: string | null;
   is_excluded: boolean;
   chats: string[];
+  /** The rarity mode, worded by the server as the bot's card words it. */
+  rarity: { title: string; value: string };
   xbox: Record<string, unknown> | null;
   steam: Record<string, unknown> | null;
   psn: Record<string, unknown> | null;

@@ -175,6 +175,18 @@ class _MergeRepo:
                     f" WHERE {column} = :absorb AND {other} != :keep",
                     a,
                 )
+            await conn.execute(
+                "INSERT OR IGNORE INTO favorite_games (person_id, game_id, anchor_key, created_at)"
+                " SELECT :keep, game_id, anchor_key, created_at FROM favorite_games"
+                " WHERE person_id = :absorb",
+                a,
+            )
+            await conn.execute(
+                "INSERT OR IGNORE INTO pass_claims (person_id, palette, month, claimed_at)"
+                " SELECT :keep, palette, month, claimed_at FROM pass_claims"
+                " WHERE person_id = :absorb",
+                a,
+            )
             for table in ("web_sessions", "notifications", "push_subscriptions", "passkeys"):
                 await conn.execute(
                     f"UPDATE {table} SET person_id = :keep WHERE person_id = :absorb", a

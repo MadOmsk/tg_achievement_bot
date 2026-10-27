@@ -1,7 +1,6 @@
-import type { NewsPost } from "../../components/game/news-page/NewsPage";
 import { BaseApi } from "../base/baseApi";
-import { API_BASE_ROUTES, CLUB_ROUTES } from "../../components/shared/constants/routes";
-import type { FeedResponse, NewsResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
+import { API_BASE_ROUTES, CLUB_ROUTES } from "../../core/constants/routes";
+import type { FeedResponse, NewsPost, NewsResponse, OnlineMember, PersonPayload, SummaryResponse } from "./clubApiModels";
 
 /** One chat, or the people you follow (#157). */
 function scopeQuery(scope: number | "following"): Record<string, string | number> {
@@ -31,13 +30,22 @@ export class ClubApi extends BaseApi {
     initData: string,
     appid: number,
     gid: string,
-    titleId?: string,
+    game?: { platform: string; title_id: string },
   ): Promise<NewsPost & { game: { name: string; icon_url: string | null } | null }> {
-    return this.get(initData, CLUB_ROUTES.NEWS_POST, { appid, gid, title_id: titleId });
+    return this.get(initData, CLUB_ROUTES.NEWS_POST, {
+      appid,
+      gid,
+      platform: game?.platform,
+      title_id: game?.title_id,
+    });
   }
 
-  fetchNews(initData: string, opts?: { month?: string }): Promise<NewsResponse> {
-    return this.get<NewsResponse>(initData, CLUB_ROUTES.NEWS, { scope: "following", month: opts?.month });
+  fetchNews(initData: string, opts?: { month?: string; favorites?: boolean }): Promise<NewsResponse> {
+    return this.get<NewsResponse>(initData, CLUB_ROUTES.NEWS, {
+      scope: "following",
+      month: opts?.month,
+      favorites: opts?.favorites ? "1" : undefined,
+    });
   }
 
   fetchOnline(

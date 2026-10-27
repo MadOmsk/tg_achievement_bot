@@ -30,8 +30,6 @@ from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
 from bot.services.email_login import EmailLogin
-from bot.services.hltb import HltbError, ensure_title_match
-from bot.services.hltb import resolve as hltb_resolve
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of
 from bot.services.notifier import Notifier, channel_token_valid
@@ -53,6 +51,7 @@ from bot.services.steam.client import (
 )
 from bot.services.steam_extras import SteamExtras
 from bot.services.steam_guides import has_prose
+from bot.services.store_collect import StoreCollector
 from bot.services.title_catalog import TitleCatalogService
 from bot.services.youtube.guides import video_url
 from bot.services.youtube.videos import achievement_videos, game_guide
@@ -77,8 +76,9 @@ from bot.web.mini_chat import (
     build_summary_payload,
     chat_of_user,
 )
-from bot.web.mini_hltb import hltb_payload, setup_hltb_routes
+from bot.web.mini_game import setup_game_routes
 from bot.web.mini_me import build_me_payload
+from bot.web.mini_pass import setup_pass_routes
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +105,7 @@ def setup_mini_api(
     bot: Any = None,
     title_catalog: TitleCatalogService | None = None,
     steam_extras: SteamExtras | None = None,
+    store_collector: StoreCollector | None = None,
     email_login: EmailLogin | None = None,
     notifications: Notifier | None = None,
     merge: PeopleMerge | None = None,
@@ -125,6 +126,7 @@ def setup_mini_api(
     app["mini_youtube_auth"] = youtube_auth
     app["mini_bot"] = bot
     app["mini_steam_extras"] = steam_extras or SteamExtras(repo, steam_auth, anthropic_auth)
+    app["mini_store_collector"] = store_collector
 
     if title_catalog is None:
         title_catalog = TitleCatalogService(
@@ -198,11 +200,10 @@ def setup_mini_api(
     )
     app.router.add_get("/api/mini/games/{platform}/{title_id}", handle_game_details)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/achievements", handle_game_details)
-    app.router.add_get("/api/mini/games/{platform}/{title_id}/hltb", handle_game_hltb)
-    app.router.add_get("/api/mini/games/{platform}/{title_id}/patches", handle_game_patches)
     app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
-    setup_hltb_routes(app)
+    setup_game_routes(app)
+    setup_pass_routes(app)
 
 
 def _default_notifier(settings: Settings, repo: Repo, bot: Any) -> Notifier:
@@ -699,7 +700,8 @@ async def handle_chat_feed(request: web.Request) -> web.Response:
 async def handle_club_news(request: web.Request) -> web.Response:
     """Game news (owner, 2026-10-05): what the developers of the games the
     viewer and the people they follow play posted on Steam that month. Only the
-    viewer's own circle — no chat has news of its own."""
+    viewer's own circle — no chat has news of its own. `?favorites=1`: only the
+    viewer's favorite games', as the feed shows them (owner, 2026-10-26)."""
     scoped = await _following_scope(request)
     if scoped is None:
         raise web.HTTPBadRequest(text="news is scope=following only")
@@ -711,6 +713,7 @@ async def handle_club_news(request: web.Request) -> web.Response:
             month=request.query.get("month") or None,
             tz_of=tz,
             locale=await _user_locale(repo, user.person_id),
+            favorites_of=user.person_id if request.query.get("favorites") == "1" else None,
         )
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad month") from exc
@@ -731,16 +734,26 @@ async def handle_news_post(request: web.Request) -> web.Response:
     post = await repo.game_patch(appid, gid) if gid else None
     if post is None:
         raise web.HTTPNotFound(text="no such post")
-    # The game it is about, when the link names one (`?title_id=`): its name
-    # in the reader's language and its picture, for the post's head.
+    # The game it is about, when the link names one (`?platform=&title_id=`):
+    # its name in the reader's language and its picture, for the post's head.
+    # A game is its platform and its id (#147); a link from before names only
+    # the id, and then the first platform that has it answers.
     game = None
     title_id = request.query.get("title_id")
     if title_id:
-        names = (await repo.title_names([title_id])).get(title_id, (None, None))
-        locale = await _user_locale(repo, user.person_id)
-        name = pick_name(locale, names[0], names[1], await repo.title_name(title_id))
-        if name:
-            game = {"name": name, "icon_url": _https_url(await repo.title_icon_url(title_id))}
+        asked = request.query.get("platform")
+        for platform in [asked] if asked else ["steam", "xbox", "psn"]:
+            name_en = await repo.title_name(platform, title_id)
+            if name_en is None:
+                continue
+            key = (platform, title_id)
+            names = (await repo.title_names([key])).get(key, (None, None))
+            locale = await _user_locale(repo, user.person_id)
+            name = pick_name(locale, names[0], names[1], name_en)
+            if name:
+                icon = await repo.title_icon_url(platform, title_id)
+                game = {"name": name, "icon_url": _https_url(icon)}
+            break
     return web.json_response(
         {
             "game": game,
@@ -862,23 +875,36 @@ async def handle_person_avatar(request: web.Request) -> web.Response:
     return await _avatar_of(request, target, target.tg_id)
 
 
-async def _avatar_of(request: web.Request, target: User | None, tg_id: int | None) -> web.Response:
-    """The picture the person chose (#157), else their Telegram photo."""
-    repo: Repo = request.app["mini_repo"]
-    custom = await repo.custom_avatar_path(target.id) if target and target.id else None
-    if custom:
-        file = avatars.avatar_dir() / custom
+def _file_picture(request: web.Request, paths: list[str]) -> web.Response | None:
+    for path in paths:
+        file = avatars.avatar_dir() / path
         if file.is_file():
             body = file.read_bytes()
             return _picture(request, body, image_mime(body))
+    return None
+
+
+async def _avatar_of(request: web.Request, target: User | None, tg_id: int | None) -> web.Response:
+    """The picture the person chose (#157), else their Telegram photo, else
+    their game account's. What is on disk comes first: a Telegram `file_id`
+    opens only for the bot that saw it, so the test server, on a copy of
+    production's database, could fetch nobody's face by it."""
+    repo: Repo = request.app["mini_repo"]
+    own, accounts = await repo.face_paths(target.id) if target and target.id else ([], [])
+    found = _file_picture(request, own)
+    if found is not None:
+        return found
     bot = request.app.get("mini_bot")
-    if bot is None or tg_id is None:
-        raise web.HTTPNotFound(text="no photo")
-    result = await load_avatar_bytes(bot, tg_id, file_id=target.photo_file_id if target else None)
-    if result is None:
-        raise web.HTTPNotFound(text="no photo")
-    body, mime = result
-    return _picture(request, body, mime)
+    if bot is not None and tg_id is not None:
+        file_id = target.photo_file_id if target else None
+        result = await load_avatar_bytes(bot, tg_id, file_id=file_id)
+        if result is not None:
+            body, mime = result
+            return _picture(request, body, mime)
+    found = _file_picture(request, accounts)
+    if found is not None:
+        return found
+    raise web.HTTPNotFound(text="no photo")
 
 
 def _picture(request: web.Request, body: bytes, mime: str) -> web.Response:
@@ -1083,7 +1109,11 @@ async def handle_game_details(request: web.Request) -> web.Response:
     checklist = await catalog_service.get_title_checklist_for_user(
         platform, title_id, person_id=viewed, force=force
     )
-    title_info = await repo.title_record(title_id) or {}
+    title_info = await repo.title_record(platform, title_id) or {}
+    # What the stores say about the game (#147), when it is due.
+    collector: StoreCollector | None = request.app.get("mini_store_collector")
+    if collector is not None and title_info:
+        collector.ensure(str(title_info["platform"]), title_id, reason="page")
 
     listed = len(checklist)
     unlocked = sum(1 for item in checklist if item.is_unlocked)
@@ -1143,36 +1173,6 @@ async def handle_game_details(request: web.Request) -> web.Response:
     )
 
 
-async def handle_game_hltb(request: web.Request) -> web.Response:
-    """A game's HLTB hours/description, split off from `handle_game_details`
-    (#131) so the achievements a person actually opened the page for are
-    never held up behind it — an unmatched game's first visit costs a few
-    HLTB requests (`ensure_title_match`), which used to delay the whole
-    page. The Mini App calls this once the page itself has already
-    rendered, and fills the "Об игре" tab in when it answers."""
-    user = await _require_user(request)
-    title_id = request.match_info.get("title_id", "")
-    repo: Repo = request.app["mini_repo"]
-
-    hltb_block: dict[str, Any] | None = None
-    try:
-        await ensure_title_match(repo, title_id)
-        match = await repo.title_hltb_match(title_id)
-        if match:
-            hltb_id, _score = match
-            anthropic = request.app.get("mini_anthropic_auth")
-            result = await hltb_resolve(repo, hltb_id, anthropic_auth=anthropic)
-            hltb_block = hltb_payload(result, locale=await _user_locale(repo, user.person_id))
-    except HltbError as exc:
-        log.info("could not resolve HLTB for title %s: %s", title_id, exc)
-    except Exception:
-        # Best-effort: a bad moment here must never surface as an error the
-        # Mini App has to show — the tab just stays without an answer.
-        log.exception("HLTB match/resolve failed for title %s", title_id)
-
-    return web.json_response({"ok": True, "hltb": hltb_block})
-
-
 def _extract_init_data(request: web.Request) -> str:
     dedicated = request.headers.get(INIT_DATA_HEADER, "").strip()
     if dedicated:
@@ -1181,10 +1181,6 @@ def _extract_init_data(request: web.Request) -> str:
     if header.startswith(AUTH_HEADER_PREFIX):
         return header[len(AUTH_HEADER_PREFIX) :].strip()
     raise web.HTTPUnauthorized(text="missing initData")
-
-
-# How many of a game's patches its "Обновления" tab lists.
-PATCHES_SHOWN = 30
 
 
 def _extras(request: web.Request) -> SteamExtras:
@@ -1205,8 +1201,8 @@ async def handle_game_guides(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
     complete = True
     extras = _extras(request)
-    if await extras.tips_due(title_id):
-        extras.ensure_title(title_id)
+    if await extras.tips_due(platform, title_id):
+        extras.ensure_title(platform, title_id)
         complete = False
     locale = await _user_locale(repo, user.person_id)
     tips: dict[str, dict[str, str]] = {}
@@ -1234,7 +1230,7 @@ async def handle_game_guides(request: web.Request) -> web.Response:
         log.exception("guide videos failed for %s/%s", platform, title_id)
     guide: dict[str, Any] | None = None
     try:
-        found_guide = await game_guide(repo, title_id)
+        found_guide = await game_guide(repo, platform, title_id)
         if found_guide is not None:
             guide = {
                 "url": found_guide.url,
@@ -1247,44 +1243,6 @@ async def handle_game_guides(request: web.Request) -> web.Response:
         log.exception("game guide failed for %s/%s", platform, title_id)
     return web.json_response(
         {"ok": True, "tips": tips, "videos": videos, "guide": guide, "complete": complete}
-    )
-
-
-async def handle_game_patches(request: web.Request) -> web.Response:
-    """A game's latest patches, from what is stored — poller/patch_refresh.py
-    keeps them fresh. A Steam app never read yet is read now; one with no Steam
-    page at all answers an empty list."""
-    user = await _require_user(request)
-    title_id = request.match_info.get("title_id", "")
-    repo: Repo = request.app["mini_repo"]
-    extras = _extras(request)
-    patches = []
-    try:
-        appid = await extras.appid(title_id)
-        if appid is not None:
-            _guides_at, patches_at = await repo.steam_app_checked(appid)
-            if patches_at is None:
-                await extras.refresh_patches(appid)
-            patches = await repo.game_patches(appid, PATCHES_SHOWN)
-    except Exception:
-        log.exception("steam patches failed for title %s", title_id)
-    ru = await _user_locale(repo, user.person_id) == "ru"
-    return web.json_response(
-        {
-            "ok": True,
-            "patches": [
-                {
-                    "title": (p.title_ru if ru and p.title_ru else p.title),
-                    "date": p.published_at,
-                    "text": (p.text_ru if ru and p.text_ru else p.text_en) or "",
-                    "image": p.image_url,
-                    "kind": p.kind,
-                    # The post on Steam, for its own page's last button.
-                    "url": f"https://store.steampowered.com/news/app/{appid}/view/{p.gid}",
-                }
-                for p in patches
-            ],
-        }
     )
 
 

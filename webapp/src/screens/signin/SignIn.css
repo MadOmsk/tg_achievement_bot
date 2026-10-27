@@ -1,0 +1,127 @@
+.signin {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(var(--safe-top) + 48px) 20px calc(var(--safe-bottom) + 32px);
+}
+
+.signin > :first-child {
+  margin-top: auto;
+}
+
+.signin > :last-child {
+  margin-bottom: auto;
+}
+
+.signin-center {
+  justify-content: center;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0;
+  color: var(--on-surface);
+}
+
+.wordmark-u {
+  width: 0.6em;
+  height: 0.72em;
+  margin-right: 0.03em;
+  color: var(--primary);
+}
+
+.wordmark-rest {
+  font-family: "Unlocked Wordmark", var(--font);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.signin-word {
+  margin-top: 22px;
+  font-size: 44px;
+}
+
+.signin-tag {
+  margin-top: 10px;
+  max-width: 300px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--on-surface-2);
+}
+
+.signin-card {
+  width: 100%;
+  max-width: 400px;
+  margin-top: 32px;
+  padding: 20px;
+  border-radius: var(--r-xl);
+  background: var(--surface-1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.signin-card .t-body {
+  margin-top: -4px;
+}
+
+.signin-or {
+  text-align: center;
+  font-size: 13px;
+  color: var(--on-surface-3);
+}
+
+.signin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.signin-error {
+  max-width: 400px;
+  margin-top: 14px;
+  text-align: center;
+}
+
+.telegram-login {
+  display: flex;
+  justify-content: center;
+  min-height: 48px;
+}
+
+.firstrun {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  padding: calc(var(--safe-top) + 40px) 20px calc(var(--safe-bottom) + 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.firstrun-face {
+  align-self: center;
+  margin-bottom: 8px;
+}
+
+.firstrun h1 {
+  text-align: center;
+}
+
+.firstrun > .t-body {
+  text-align: center;
+}
+
+.firstrun-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}

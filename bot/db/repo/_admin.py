@@ -14,7 +14,6 @@ from bot.db.repo._models import (
     AdminPanelRefreshRow,
     AdminUserRow,
     ChatTarget,
-    HltbCacheRow,
     TitleCoverRow,
     TitleHltbRow,
 )
@@ -28,8 +27,15 @@ from bot.db.repo._sql import (
     active_account,
     earned_at,
     earned_date_is_real,
+    platform_is,
+    titles_on,
 )
 from bot.util import utcnow_iso
+
+
+def _family(platform: str) -> str:
+    """Both Xbox generations name one game per id (`platform_is`)."""
+    return "xbox" if platform in ("xbox", "xbox_modern", "xbox_360") else platform
 
 
 class _AdminRepo:
@@ -202,7 +208,7 @@ class _AdminRepo:
         await self._conn.commit()
 
     async def set_title_names(
-        self, title_id: str, name_ru: str | None, name_en: str | None
+        self, platform: str, title_id: str, name_ru: str | None, name_en: str | None
     ) -> None:
         """A game's own name in both languages, where a platform has two (#61
         — PlayStation does, verified on "Marvel's Wolverine" / "Marvel:
@@ -214,21 +220,27 @@ class _AdminRepo:
         if name_ru is None and name_en is None:
             return
         now = utcnow_iso()
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "UPDATE titles SET name_ru = COALESCE(?, name_ru), name_en = COALESCE(?, name_en),"
-            "  updated_at = ? WHERE title_id = ?",
-            (name_ru, name_en, now, title_id),
+            "UPDATE achievement_list_connectors SET name_ru = COALESCE(?, name_ru), name_en = "
+            "COALESCE(?, name_en),"
+            # A list named by nothing but its id (130) takes the name now learned.
+            " name = CASE WHEN name IS NULL OR name IN ('', '?') OR name = title_id"
+            " THEN COALESCE(?, ?, name) ELSE name END,"
+            f"  updated_at = ? WHERE {where} AND title_id = ?",
+            (name_ru, name_en, name_en, name_ru, now, *params, title_id),
         )
-        if not cursor.rowcount:
+        if not cursor.rowcount and platform != "xbox":
             # The game is not in `titles` yet — the first poll of it learns
             # the localized names before anything stores the achievements that
             # would create the row. One of the two names it just fetched is a
             # perfectly good `name`, and waiting for the next poll would mean
             # asking the platform for the same thing twice.
             await self._conn.execute(
-                "INSERT INTO titles (title_id, name, name_ru, name_en, updated_at) "
-                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(title_id) DO NOTHING",
-                (title_id, name_en or name_ru, name_ru, name_en, now),
+                "INSERT INTO achievement_list_connectors (platform, title_id, name, name_ru, "
+                "name_en, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(platform, title_id) DO NOTHING",
+                (platform, title_id, name_en or name_ru, name_ru, name_en, now),
             )
         await self._conn.commit()
 
@@ -237,47 +249,64 @@ class _AdminRepo:
         (#61) — poller/steam_localization.py's own small bite. Oldest first,
         so a backlog drains in order rather than by chance."""
         cursor = await self._conn.execute(
-            "SELECT title_id FROM titles WHERE platform = ? AND name_ru IS NULL "
+            "SELECT title_id FROM achievement_list_connectors WHERE platform = ? AND name_ru IS "
+            "NULL "
             "ORDER BY updated_at LIMIT ?",
             (platform, limit),
         )
         return [row["title_id"] for row in await cursor.fetchall()]
 
-    async def has_localized_title(self, title_id: str) -> bool:
+    async def has_localized_title(self, platform: str, title_id: str) -> bool:
         """Whether this game's name is already stored in both languages —
         what keeps the one storefront request per game (#61) from becoming one
         per poll."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT 1 FROM titles WHERE title_id = ? AND name_ru IS NOT NULL LIMIT 1",
-            (title_id,),
+            f"SELECT 1 FROM achievement_list_connectors WHERE {where} AND title_id = ? AND "
+            f"name_ru IS NOT NULL LIMIT 1",
+            (*params, title_id),
         )
         return await cursor.fetchone() is not None
 
-    async def title_names(self, title_ids: list[str]) -> dict[str, tuple[str | None, str | None]]:
-        """`{title_id: (name_ru, name_en)}` for the render path — one query
-        for a whole digest, same reasoning as `cached_descriptions`."""
-        if not title_ids:
-            return {}
-        placeholders = ", ".join("?" * len(title_ids))
-        cursor = await self._conn.execute(
-            f"SELECT title_id, name_ru, name_en FROM titles WHERE title_id IN ({placeholders})",
-            title_ids,
-        )
-        return {
-            row["title_id"]: (row["name_ru"], row["name_en"]) for row in await cursor.fetchall()
-        }
+    async def title_names(
+        self, games: list[tuple[str, str]]
+    ) -> dict[tuple[str, str], tuple[str | None, str | None]]:
+        """`{(platform, title_id): (name_ru, name_en)}` for the render path —
+        one query for a whole digest, same reasoning as `cached_descriptions`."""
+        rows = await self._titles_of(games, "name_ru, name_en")
+        return {key: (row["name_ru"], row["name_en"]) for key, row in rows.items()}
 
-    async def title_platforms(self, title_ids: list[str]) -> dict[str, str]:
-        """`{title_id: platforms}` for notifications (#79) — one query for a batch."""
-        if not title_ids:
+    async def title_platforms(self, games: list[tuple[str, str]]) -> dict[tuple[str, str], str]:
+        """`{(platform, title_id): platforms}` for notifications (#79) — one
+        query for a batch; a game with none stored is left out."""
+        rows = await self._titles_of(games, "platforms")
+        return {key: row["platforms"] for key, row in rows.items() if row["platforms"] is not None}
+
+    async def _titles_of(
+        self, games: list[tuple[str, str]], columns: str
+    ) -> dict[tuple[str, str], Any]:
+        """The `titles` rows of `(platform, title_id)` pairs, keyed by the pair
+        as asked. An Xbox pair finds its game under either generation, as
+        `platform_is` does."""
+        wanted = list(dict.fromkeys(games))
+        if not wanted:
             return {}
-        placeholders = ", ".join("?" * len(title_ids))
+        ids = list(dict.fromkeys(title_id for _platform, title_id in wanted))
+        placeholders = ", ".join("?" * len(ids))
         cursor = await self._conn.execute(
-            f"SELECT title_id, platforms FROM titles "
-            f"WHERE title_id IN ({placeholders}) AND platforms IS NOT NULL",
-            title_ids,
+            f"SELECT platform, title_id, {columns} FROM achievement_list_connectors WHERE "
+            f"title_id IN ({placeholders})",
+            ids,
         )
-        return {row["title_id"]: row["platforms"] for row in await cursor.fetchall()}
+        stored = {
+            (_family(row["platform"]), row["title_id"]): row for row in await cursor.fetchall()
+        }
+        found: dict[tuple[str, str], Any] = {}
+        for platform, title_id in wanted:
+            row = stored.get((_family(platform), title_id))
+            if row is not None:
+                found[(platform, title_id)] = row
+        return found
 
     # An Xbox game's platforms, looked up in titlehub until found or given up
     # on (#114, migration 060): the lookup is retried an hour apart at most,
@@ -294,7 +323,9 @@ class _AdminRepo:
     async def platforms_lookup_due(self, title_id: str) -> bool:
         """Whether publishing this game should ask titlehub for its platforms first."""
         cursor = await self._conn.execute(
-            f"SELECT 1 FROM titles t WHERE t.title_id = ? AND {self._PLATFORMS_DUE}",
+            "SELECT 1 FROM achievement_list_connectors t WHERE t.platform = 'xbox_modern' AND "
+            "t.title_id = ?"
+            f" AND {self._PLATFORMS_DUE}",
             (title_id,),
         )
         return await cursor.fetchone() is not None
@@ -310,8 +341,8 @@ class _AdminRepo:
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
-            "        WHERE s.title_id = t.title_id) AS owner "
-            f"FROM titles t WHERE {self._PLATFORMS_DUE} "
+            f"        WHERE {titles_on()}) AS owner "
+            f"FROM achievement_list_connectors t WHERE {self._PLATFORMS_DUE} "
             # Filtered before the LIMIT: a game nobody here can be asked about
             # must not take a place in the batch, or a head of such games
             # would stall the queue for good.
@@ -327,15 +358,17 @@ class _AdminRepo:
         third one stores '[]' — "known to be unknown" — and leaves the queue."""
         if platforms_json:
             await self._conn.execute(
-                "UPDATE titles SET platforms = ?, platforms_checked_at = ? WHERE title_id = ?",
+                "UPDATE achievement_list_connectors SET platforms = ?, platforms_checked_at = ?"
+                " WHERE platform = 'xbox_modern' AND title_id = ?",
                 (platforms_json, utcnow_iso(), title_id),
             )
         else:
             await self._conn.execute(
-                "UPDATE titles SET platforms_attempts = platforms_attempts + 1,"
+                "UPDATE achievement_list_connectors SET platforms_attempts = platforms_attempts + "
+                "1,"
                 " platforms_checked_at = ?,"
                 " platforms = CASE WHEN platforms_attempts + 1 >= ? THEN '[]' ELSE platforms END "
-                "WHERE title_id = ?",
+                "WHERE platform = 'xbox_modern' AND title_id = ?",
                 (utcnow_iso(), self.PLATFORMS_LOOKUP_ATTEMPTS, title_id),
             )
         await self._conn.commit()
@@ -348,33 +381,30 @@ class _AdminRepo:
     # gets its match the first time anybody actually looks at it. Either way
     # the result is one row on `titles`, so it costs nothing the second time,
     # whoever asks. No owner token needed either: HLTB's search is public.
-    HLTB_MATCH_ATTEMPTS = 3
-
-    _HLTB_MATCH_DUE = (
-        "t.hltb_id IS NULL"
-        f" AND t.hltb_attempts < {HLTB_MATCH_ATTEMPTS}"
-        " AND (t.hltb_checked_at IS NULL"
-        "      OR t.hltb_checked_at < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour'))"
-    )
-
-    async def title_hltb_match_row(self, title_id: str) -> TitleHltbRow | None:
+    async def title_hltb_match_row(self, platform: str, title_id: str) -> TitleHltbRow | None:
         """This game as the matcher needs it — its names, its platforms, and
         the year anybody here first earned something in it — or `None` when
         it is already matched, or was asked (and failed) too recently to ask
-        again. The caller (an achievement publish, or a game page with no
-        match yet) skips the attempt entirely on `None`."""
+        again (`fetch_state`, 'hltb_match'). The caller (an achievement
+        publish, or a game page with no match yet) skips the attempt
+        entirely on `None`."""
+        where, params = platform_is(platform, "t.platform")
         cursor = await self._conn.execute(
             "SELECT t.title_id, t.platform, t.name, t.name_en, t.name_ru, t.platforms,"
             # Only dates worth believing (#69): an undated import's created_at
             # is the day it was imported, not a year anybody played it.
             f"  (SELECT MIN(CAST(substr({earned_at()}, 1, 4) AS INTEGER))"
-            "   FROM seen_achievements s WHERE s.title_id = t.title_id"
+            f"   FROM seen_achievements s WHERE {titles_on()}"
             f"   AND {earned_date_is_real()}) AS first_played_year "
-            f"FROM titles t WHERE t.title_id = ? AND {self._HLTB_MATCH_DUE}",
-            (title_id,),
+            f"FROM achievement_list_connectors t WHERE {where} AND t.title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         if row is None:
+            return None
+        if await self.list_hltb_match(row["platform"], title_id) is not None:
+            return None
+        if not await self.fetch_due(f"{row['platform']}:{title_id}", "hltb_match"):
             return None
         return TitleHltbRow(
             title_id=row["title_id"],
@@ -386,48 +416,7 @@ class _AdminRepo:
             first_played_year=row["first_played_year"],
         )
 
-    async def record_hltb_match(
-        self, title_id: str, hltb_id: int | None, score: float | None
-    ) -> None:
-        """What one match attempt found. `hltb_id=None` counts as a failed
-        attempt, same as `record_platforms_lookup` — after the third, the
-        game leaves the queue for good rather than being asked forever."""
-        if hltb_id is not None:
-            await self._conn.execute(
-                "UPDATE titles SET hltb_id = ?, hltb_match_score = ?, hltb_checked_at = ?,"
-                " hltb_attempts = hltb_attempts + 1 WHERE title_id = ?",
-                (hltb_id, score, utcnow_iso(), title_id),
-            )
-        else:
-            await self._conn.execute(
-                "UPDATE titles SET hltb_attempts = hltb_attempts + 1, hltb_checked_at = ?"
-                " WHERE title_id = ?",
-                (utcnow_iso(), title_id),
-            )
-        await self._conn.commit()
-
-    async def give_up_hltb_match(self, title_id: str) -> None:
-        """A name not worth even searching (a platform's own placeholder, or
-        nothing Latin in it) — skips straight past the three retries instead
-        of spending three ticks finding the same thing out each time."""
-        await self._conn.execute(
-            "UPDATE titles SET hltb_attempts = ?, hltb_checked_at = ? WHERE title_id = ?",
-            (self.HLTB_MATCH_ATTEMPTS, utcnow_iso(), title_id),
-        )
-        await self._conn.commit()
-
-    async def title_hltb_match(self, title_id: str) -> tuple[int, float | None] | None:
-        """The game's own matched entry, for the Mini App's game page —
-        `None` when it has none (not matched yet, or none found)."""
-        cursor = await self._conn.execute(
-            "SELECT hltb_id, hltb_match_score FROM titles "
-            "WHERE title_id = ? AND hltb_id IS NOT NULL",
-            (title_id,),
-        )
-        row = await cursor.fetchone()
-        return (row["hltb_id"], row["hltb_match_score"]) if row else None
-
-    async def set_title_total(self, title_id: str, total: int) -> None:
+    async def set_title_total(self, platform: str, title_id: str, total: int) -> None:
         """How many achievements a game has, without touching anything else
         about it (#46).
 
@@ -438,9 +427,11 @@ class _AdminRepo:
         moments later through `ensure_title_name`, and the next poll stores
         the total against it.
         """
+        where, params = platform_is(platform)
         await self._conn.execute(
-            "UPDATE titles SET achievements_total = ?, updated_at = ? WHERE title_id = ?",
-            (total, utcnow_iso(), title_id),
+            "UPDATE achievement_list_connectors SET achievements_total = ?, updated_at = ?"
+            f" WHERE {where} AND title_id = ?",
+            (total, utcnow_iso(), *params, title_id),
         )
         await self._conn.commit()
 
@@ -448,56 +439,90 @@ class _AdminRepo:
         self,
         title_id: str,
         name: str,
-        platform: str | None,
+        platform: str,
         icon_url: str | None = None,
         achievements_total: int | None = None,
         platforms: str | None = None,
     ) -> None:
+        platform = await self.stored_xbox_generation(platform, title_id)
         # icon_url only overwrites when this call actually has one —
         # ensure_title_name() (fetcher.py) upserts just the name/platform on
         # every new title it resolves, and must not blank out an icon_url a
         # separate ensure_title_icon() call already cached here.
         await self._conn.execute(
-            "INSERT INTO titles"
-            " (title_id, name, platform, icon_url, achievements_total, platforms, updated_at) "
+            "INSERT INTO achievement_list_connectors"
+            " (platform, title_id, name, icon_url, achievements_total, platforms, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-            " platform = COALESCE(excluded.platform, titles.platform),"
+            # A caller that knows no name passes the id: it never replaces one.
+            "ON CONFLICT(platform, title_id) DO UPDATE SET name = CASE"
+            " WHEN excluded.name = excluded.title_id THEN achievement_list_connectors.name"
+            " ELSE excluded.name END,"
             " updated_at = excluded.updated_at,"
-            " icon_url = COALESCE(excluded.icon_url, titles.icon_url),"
+            " icon_url = COALESCE(excluded.icon_url, achievement_list_connectors.icon_url),"
             # Same "only overwrite when this call actually has one" rule as
             # icon_url above (#46): most upserts here know the name and
             # nothing else, and must not blank a total somebody else cached.
             " achievements_total = COALESCE(excluded.achievements_total,"
-            "                               titles.achievements_total),"
-            " platforms = COALESCE(excluded.platforms, titles.platforms)",
-            (title_id, name, platform, icon_url, achievements_total, platforms, utcnow_iso()),
+            "                               achievement_list_connectors.achievements_total),"
+            " platforms = COALESCE(excluded.platforms, achievement_list_connectors.platforms)",
+            (platform, title_id, name, icon_url, achievements_total, platforms, utcnow_iso()),
         )
         await self._conn.commit()
 
-    async def title_name(self, title_id: str) -> str | None:
-        cursor = await self._conn.execute("SELECT name FROM titles WHERE title_id = ?", (title_id,))
+    async def stored_xbox_generation(self, platform: str, title_id: str) -> str:
+        """The platform an Xbox game is stored under, when a caller names the
+        other generation: an Xbox title id is one game, and a 360 one stays
+        360 (`stats.py`'s history import keeps it so) — a modern contract
+        answering for a backward-compatible 360 game does not make it modern.
+        A game first stored as modern and now known to be 360 moves with
+        `update_title_platform`. Any other platform comes back as it is."""
+        if platform not in ("xbox_modern", "xbox_360"):
+            return platform
+        cursor = await self._conn.execute(
+            "SELECT platform FROM achievement_list_connectors WHERE platform IN ('xbox_modern', "
+            "'xbox_360')"
+            " AND title_id = ?",
+            (title_id,),
+        )
+        stored = [row["platform"] for row in await cursor.fetchall()]
+        if platform in stored or not stored:
+            return platform
+        return "xbox_360" if "xbox_360" in stored else platform
+
+    async def title_name(self, platform: str, title_id: str) -> str | None:
+        """`platform` may be `xbox`: presence names an Xbox game by id only."""
+        where, params = platform_is(platform)
+        cursor = await self._conn.execute(
+            f"SELECT name FROM achievement_list_connectors WHERE {where} AND title_id = ?",
+            (*params, title_id),
+        )
         row = await cursor.fetchone()
         return row["name"] if row else None
 
-    async def title_cover(self, title_id: str) -> tuple[str | None, str | None]:
+    async def title_cover(self, platform: str, title_id: str) -> tuple[str | None, str | None]:
         """`(cover_path, icon_url)` — a game's cover on disk and its URL."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT cover_path, icon_url FROM titles WHERE title_id = ?", (title_id,)
+            f"SELECT cover_path, icon_url FROM achievement_list_connectors WHERE {where} AND "
+            f"title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         return (row["cover_path"], row["icon_url"]) if row else (None, None)
 
-    async def title_icon_url(self, title_id: str) -> str | None:
+    async def title_icon_url(self, platform: str, title_id: str) -> str | None:
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
-            "SELECT icon_url FROM titles WHERE title_id = ?", (title_id,)
+            f"SELECT icon_url FROM achievement_list_connectors WHERE {where} AND title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         return row["icon_url"] if row else None
 
-    async def titles_missing_from_catalogue(self, limit: int) -> list[tuple[str, int]]:
-        """Games somebody has achievements in that have no `titles` row at
-        all — `(title_id, tg_id)`, paired with an owner who can be asked.
+    async def titles_missing_from_catalogue(self, limit: int) -> list[tuple[str, str, int]]:
+        """Xbox games somebody has achievements in that have no `titles` row
+        at all — `(title_id, platform, person_id)`, paired with an owner who
+        can be asked.
 
         These render as "без названия" everywhere and nothing fills them in:
         a name is learned when a game is *polled*, and a game nobody plays
@@ -510,45 +535,21 @@ class _AdminRepo:
         the same condition `pollable_users` applies.
         """
         cursor = await self._conn.execute(
-            "SELECT s.title_id, MIN(al.person_id) AS person_id "
+            "SELECT s.title_id, MIN(s.platform) AS platform, MIN(al.person_id) AS person_id "
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             "   AND al.external_id = s.xuid AND al.is_active = 1 "
             "JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
-            "WHERE t.title_id IS NULL "
+            f"LEFT JOIN achievement_list_connectors t ON {titles_on()} "
+            "WHERE t.title_id IS NULL AND s.account_platform = 'xbox' "
             "GROUP BY s.title_id LIMIT ?",
             (limit,),
         )
-        return [(row["title_id"], int(row["person_id"])) for row in await cursor.fetchall()]
-
-    async def titles_without_platform(self) -> list[tuple[str, str]]:
-        """`(title_id, platform)` for rows whose own platform is NULL while
-        their achievements know perfectly well what it is.
-
-        125 of them on production. Nothing reads `titles.platform` on a hot
-        path today, which is why this went unnoticed — but anything that
-        routes by platform (the cover walker does) has to guess for them.
-        Free to fix: the answer is already in the rows next door.
-        """
-        cursor = await self._conn.execute(
-            "SELECT t.title_id, MIN(s.platform) AS platform "
-            "FROM titles t JOIN seen_achievements s ON s.title_id = t.title_id "
-            "WHERE t.platform IS NULL AND s.platform IS NOT NULL "
-            "GROUP BY t.title_id"
-        )
-        return [(row["title_id"], row["platform"]) for row in await cursor.fetchall()]
-
-    async def set_title_platform(self, title_id: str, platform: str) -> None:
-        """Only where it is still unknown: a platform already recorded is
-        the one the game was actually seen on, and must not be overwritten
-        by a guess from a stray row."""
-        await self._conn.execute(
-            "UPDATE titles SET platform = ? WHERE title_id = ? AND platform IS NULL",
-            (platform, title_id),
-        )
-        await self._conn.commit()
+        return [
+            (row["title_id"], row["platform"], int(row["person_id"]))
+            for row in await cursor.fetchall()
+        ]
 
     async def titles_needing_cover(self, limit: int) -> list[TitleCoverRow]:
         """Games whose art is missing or has never been looked at, oldest
@@ -581,8 +582,8 @@ class _AdminRepo:
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
-            "        WHERE s.title_id = t.title_id) AS owner "
-            "FROM titles t "
+            f"        WHERE {titles_on()}) AS owner "
+            "FROM achievement_list_connectors t "
             "WHERE t.cover_path IS NULL "
             "ORDER BY t.cover_checked_at IS NOT NULL, t.cover_checked_at, t.updated_at DESC "
             "LIMIT ?",
@@ -603,6 +604,7 @@ class _AdminRepo:
 
     async def set_title_cover(
         self,
+        platform: str,
         title_id: str,
         *,
         icon_url: str | None = None,
@@ -617,76 +619,12 @@ class _AdminRepo:
         somebody else already fetched.
         """
         await self._conn.execute(
-            "UPDATE titles SET"
+            "UPDATE achievement_list_connectors SET"
             "  icon_url = COALESCE(?, icon_url),"
             "  cover_path = COALESCE(?, cover_path),"
             "  cover_hash = COALESCE(?, cover_hash),"
             "  cover_checked_at = ? "
-            "WHERE title_id = ?",
-            (icon_url, cover_path, cover_hash, utcnow_iso(), title_id),
-        )
-        await self._conn.commit()
-
-    async def hltb_all_ids(self) -> list[int]:
-        """For the one-off platforms backfill (scripts/backfill_hltb_platforms.py)
-        — every id already cached, so it can be re-resolved with the field
-        that didn't exist when it was first cached."""
-        cursor = await self._conn.execute("SELECT hltb_id FROM hltb_cache")
-        return [row[0] for row in await cursor.fetchall()]
-
-    async def hltb_get_cached(self, hltb_id: int) -> HltbCacheRow | None:
-        cursor = await self._conn.execute(
-            "SELECT hltb_id, name, release_year, main_hours, extra_hours,"
-            " completionist_hours, platforms, game_url, image_url, genre,"
-            " description_en, description_ru, details, cached_at "
-            "FROM hltb_cache WHERE hltb_id = ?",
-            (hltb_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return HltbCacheRow(
-            hltb_id=row["hltb_id"],
-            name=row["name"],
-            release_year=row["release_year"],
-            main_hours=row["main_hours"],
-            extra_hours=row["extra_hours"],
-            completionist_hours=row["completionist_hours"],
-            platforms=json.loads(row["platforms"] or "[]"),
-            game_url=row["game_url"],
-            image_url=row["image_url"],
-            genre=row["genre"],
-            description_en=row["description_en"],
-            description_ru=row["description_ru"],
-            details=json.loads(row["details"]) if row["details"] else None,
-            cached_at=row["cached_at"],
-        )
-
-    async def hltb_cache_result(self, entry: HltbCacheRow) -> None:
-        """Stored once someone picks a search result (or a game is matched),
-        never for the rest of the candidate list; read again when it goes stale
-        (services/hltb.py::is_stale)."""
-        await self._conn.execute(
-            "INSERT OR REPLACE INTO hltb_cache "
-            "(hltb_id, name, release_year, main_hours, extra_hours, completionist_hours,"
-            " platforms, game_url, image_url, genre, description_en, description_ru,"
-            " details, cached_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                entry.hltb_id,
-                entry.name,
-                entry.release_year,
-                entry.main_hours,
-                entry.extra_hours,
-                entry.completionist_hours,
-                json.dumps(entry.platforms),
-                entry.game_url,
-                entry.image_url,
-                entry.genre,
-                entry.description_en,
-                entry.description_ru,
-                json.dumps(entry.details) if entry.details is not None else None,
-                utcnow_iso(),
-            ),
+            "WHERE platform = ? AND title_id = ?",
+            (icon_url, cover_path, cover_hash, utcnow_iso(), platform, title_id),
         )
         await self._conn.commit()

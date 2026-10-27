@@ -74,6 +74,7 @@ async def fill_xbox_title(
         },
     )
     await repo.set_title_names(
+        platform,
         title_id,
         next((item.title_name for item in russian if item.title_name), None),
         next((item.title_name for item in english if item.title_name), None),

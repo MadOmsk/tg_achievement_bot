@@ -45,7 +45,8 @@ POST_NOTICE_CHOICES = ("friends", "following")
 # One game's evening is one post: a person hears of it once in this long,
 # however many polls bring its achievements in.
 POST_NOTICE_INTERVAL = timedelta(hours=3)
-GAME_NEWS_CHOICES = ("all", "patch", "news")
+# `favorites`: every post, but only of the games one keeps as favorites.
+GAME_NEWS_CHOICES = ("all", "patch", "news", "favorites")
 QUALIFIERS = {"new_post": POST_NOTICE_CHOICES, "game_news": GAME_NEWS_CHOICES}
 
 
@@ -67,6 +68,8 @@ def carries(tokens: frozenset[str], kind: str, data: dict[str, Any], *, friend: 
         if kind == "new_post":
             return qualifier != "friends" or friend
         if kind == "game_news":
+            if qualifier == "favorites":
+                return bool(data.get("favorite"))
             return qualifier in ("", "all") or qualifier == data.get("post")
         return True
     return False
@@ -238,6 +241,7 @@ class Notifier:
         count: int,
         achievement: str | None = None,
         icon: str | None = None,
+        achievement_id: str | None = None,
     ) -> None:
         """Tell the people following `author` about new achievements in one game,
         if they may see the author's activity: kept in each one's list, sent on
@@ -273,6 +277,8 @@ class Notifier:
                     # For the list: what was earned, and its picture.
                     **({"achievement": achievement} if achievement else {}),
                     **({"icon": icon} if icon else {}),
+                    # What a tap opens: that achievement (owner, 2026-10-26).
+                    **({"achievement_id": achievement_id} if achievement_id else {}),
                 )
             except Exception:
                 log.exception("post notice to person_id=%s failed", recipient)
@@ -294,6 +300,9 @@ class Notifier:
         if not recent:
             return
         since = (now - GAME_NEWS_PLAYED).isoformat(timespec="seconds")
+        # Who plays it, and who keeps it as a favorite (owner, 2026-10-25) —
+        # each once; a favorite's notice says so, for `game_news:favorites`.
+        readers: dict[int, dict[str, Any]] = {}
         for (
             person,
             platform,
@@ -302,6 +311,26 @@ class Notifier:
             name_en,
             name,
         ) in await self._repo.game_news_readers(appid, played_since=since):
+            readers[person] = {
+                "platform": platform,
+                "title_id": title_id,
+                "names": (name_ru, name_en, name),
+                "favorite": False,
+            }
+        for person, game_id, name in await self._repo.favoriters_of_app(appid):
+            if person in readers:
+                readers[person]["favorite"] = True
+                continue
+            listed_as = await self._repo.game_list_of(game_id)
+            readers[person] = {
+                "platform": listed_as[0] if listed_as else None,
+                "title_id": listed_as[1] if listed_as else None,
+                "names": (None, name, name),
+                "favorite": True,
+            }
+        for person, reader in readers.items():
+            platform, title_id = reader["platform"], reader["title_id"]
+            name_ru, name_en, name = reader["names"]
             settings = await self._repo.get_user_settings(person)
             locale = settings.locale if settings else "ru"
             game = (name_ru if locale == "ru" else name_en) or name_en or name_ru or name
@@ -310,11 +339,12 @@ class Notifier:
                     await self.notify(
                         person,
                         "game_news",
-                        platform=platform,
-                        title_id=title_id,
+                        # A favorite nobody here played may have no list.
+                        **({"platform": platform, "title_id": title_id} if platform else {}),
                         game=game,
                         title=post.title,
                         post=post.kind,
+                        favorite=reader["favorite"],
                         # Which post: a tap opens it, not only its game.
                         appid=appid,
                         gid=post.gid,
@@ -373,14 +403,18 @@ class Notifier:
             log.info("notification DM to person_id=%s not sent: %r", person_id, exc)
 
     def _url_for(self, kind: str, data: dict[str, Any]) -> str:
-        """Where a tap opens: a game's post, over its game; the game the notice
-        is about, on that person's progress; else the person; else the app."""
+        """Where a tap opens: a game's post, over its game; the achievement a
+        new post names; the game the notice is about, on that person's progress;
+        else the person; else the app."""
         spec = KINDS.get(kind, UNKNOWN)
         query: dict[str, str] = {}
         if spec.person_field and data.get(spec.person_field) is not None:
             query["p"] = str(data[spec.person_field])
         if spec.game and data.get("platform") and data.get("title_id"):
             query["g"] = f"{data['platform']}:{data['title_id']}"
+            if data.get("achievement_id"):
+                # The achievement the notice names opens, over its game.
+                query["a"] = str(data["achievement_id"])
         if kind == "game_news" and data.get("appid") and data.get("gid"):
             # The post itself opens, over its game (owner, 2026-10-08).
             query["n"] = f"{data['appid']}:{data['gid']}"

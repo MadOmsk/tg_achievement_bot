@@ -49,6 +49,77 @@ _FRACTION = re.compile(r"\.(\d{1,6})\d*")
 _EARLIEST_REAL_UNLOCK = datetime(2005, 1, 1, tzinfo=UTC)
 
 
+# An Xbox achievement's group (owner, 2026-10-15): the base list it shipped
+# with, or one added later — Xbox has no other groups (no group per DLC).
+BASE_GROUP = "base"
+NON_BASE_GROUP = "non_base"
+
+
+def xbox_group(group_ids: list[str] | None) -> str | None:
+    """`groupIds` as our group: None when the answer did not say (an older
+    contract), never a guess."""
+    if group_ids is None:
+        return None
+    return BASE_GROUP if "0" in [str(g) for g in group_ids] else NON_BASE_GROUP
+
+
+# An Xbox 360 game says nothing of its groups (no `groupIds`, `sequence` 0,
+# `flags` mixed on both sides; checked 2026-10-15). They are derived, as the
+# owner decided: in the order of their ids, the achievements up to the
+# game's gamerscore at release are its base list, the rest came later. That
+# is 200 G for an Arcade game (its title id is 0x5841…, "XA"), 1000 G for a
+# retail one; a game worth no more than that is all base.
+X360_RETAIL_GAMERSCORE = 1000
+X360_ARCADE_GAMERSCORE = 200
+# Later Arcade games shipped with 400 G (owner, 2026-10-15: 200 or 400).
+X360_ARCADE_LATER_GAMERSCORE = 400
+
+
+def arcade_release_gamerscore(gamerscores: list[int]) -> int:
+    """An Arcade game's gamerscore at release, from its achievements' G in id
+    order: 400 when the running sum stops at 400 (a stop at 200 on the way is
+    a coincidence, owner, 2026-10-16), or never stops at 200 in a list worth
+    400 or more; else 200 — the base stopped there, what came after was added."""
+    running, stops = 0, set()
+    for gamerscore in gamerscores:
+        running += gamerscore
+        stops.add(running)
+    if X360_ARCADE_LATER_GAMERSCORE in stops:
+        return X360_ARCADE_LATER_GAMERSCORE
+    if X360_ARCADE_GAMERSCORE in stops or running < X360_ARCADE_LATER_GAMERSCORE:
+        return X360_ARCADE_GAMERSCORE
+    return X360_ARCADE_LATER_GAMERSCORE
+
+
+def is_x360_arcade(title_id: str) -> bool:
+    try:
+        return (int(title_id) >> 16) == 0x5841
+    except ValueError:
+        return False
+
+
+def x360_groups(title_id: str, achievements: list[tuple[str, int]]) -> dict[str, str]:
+    """`{achievement id: base | non_base}` for a 360 list read whole
+    (`(id, gamerscore)` pairs): the ids in order, base while the running
+    gamerscore stays within the release's."""
+
+    def order(item: tuple[str, int]) -> tuple[int, str]:
+        return (int(item[0]) if str(item[0]).isdigit() else 1 << 62, str(item[0]))
+
+    ordered = sorted(achievements, key=order)
+    limit = (
+        arcade_release_gamerscore([int(g or 0) for _id, g in ordered])
+        if is_x360_arcade(title_id)
+        else X360_RETAIL_GAMERSCORE
+    )
+    groups: dict[str, str] = {}
+    running = 0
+    for achievement_id, gamerscore in ordered:
+        running += int(gamerscore or 0)
+        groups[str(achievement_id)] = BASE_GROUP if running <= limit else NON_BASE_GROUP
+    return groups
+
+
 class _Rarity(BaseModel):
     model_config = ConfigDict(extra="ignore")
     current_percentage: float | None = Field(default=None, alias="currentPercentage")
@@ -94,6 +165,9 @@ class ModernAchievement(BaseModel):
         default_factory=list, alias="titleAssociations"
     )
     is_secret: bool = Field(default=False, alias="isSecret")
+    # Contract 6 only (2026-10-15): ["0"] for the base list, [] for one
+    # added later; absent (None) on the older contracts.
+    group_ids: list[str] | None = Field(default=None, alias="groupIds")
 
     @property
     def is_achieved(self) -> bool:
@@ -121,6 +195,7 @@ class ModernAchievement(BaseModel):
             rarity_percent=self.rarity.current_percentage if self.rarity else None,
             platform=Platform.XBOX_MODERN,
             is_secret=self.is_secret,
+            trophy_group_id=xbox_group(self.group_ids),
         )
 
     def _icon_url(self) -> str | None:

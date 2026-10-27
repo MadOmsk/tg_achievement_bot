@@ -38,7 +38,7 @@ from bot.services.admin_status import admin_status
 from bot.services.logins import logins_of
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.views.admin import login_value
+from bot.views.admin import login_value, rarity_label
 from bot.views.admin_home import usage_rows
 
 log = logging.getLogger(__name__)
@@ -236,6 +236,11 @@ async def build_admin_user(repo: Repo, person: int, *, locale: str = "ru") -> di
         "last_name": user.last_name,
         "is_excluded": user.is_excluded,
         "chats": list(chats),
+        # The rarity mode, worded as the bot's card words it.
+        "rarity": {
+            "title": translator("admin", locale)("admin-rarity-title"),
+            "value": await rarity_label(repo, person, locale=locale),
+        },
         "xbox": xbox_block,
         "steam": steam_block,
         "psn": psn_block,

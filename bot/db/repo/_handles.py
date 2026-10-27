@@ -178,6 +178,25 @@ class _HandlesRepo:
         row = await cursor.fetchone()
         return row["custom_avatar_path"] if row else None
 
+    async def face_paths(self, person_id: int) -> tuple[list[str], list[str]]:
+        """A person's pictures already on disk: their own (the one they chose,
+        then their Telegram photo) and their game accounts' in the platforms'
+        order (Xbox, PlayStation, Steam)."""
+        cursor = await self._conn.execute(
+            "SELECT custom_avatar_path, photo_path FROM users WHERE id = ?", (person_id,)
+        )
+        row = await cursor.fetchone()
+        own = [p for p in ((row[0], row[1]) if row else ()) if p]
+        cursor = await self._conn.execute(
+            "SELECT a.avatar_path FROM account_links al"
+            " JOIN accounts a ON a.platform = al.platform AND a.external_id = al.external_id"
+            " WHERE al.person_id = ? AND al.is_active = 1 AND a.avatar_path IS NOT NULL"
+            " ORDER BY CASE al.platform WHEN 'xbox' THEN 0 WHEN 'psn' THEN 1 ELSE 2 END,"
+            " al.linked_at",
+            (person_id,),
+        )
+        return own, [r[0] for r in await cursor.fetchall()]
+
     async def set_custom_avatar_path(self, person_id: int, path: str | None) -> None:
         await self._conn.execute(
             "UPDATE users SET custom_avatar_path = ? WHERE id = ?", (path, person_id)

@@ -196,6 +196,47 @@ def earned_since(prefix: str = "s.") -> str:
     return f"{earned_date_is_real(prefix)} AND {earned_at(prefix)} >= ?"
 
 
+# --------------------------------------------------------------- games (#147)
+
+
+def titles_on(rows: str = "s", titles: str = "t") -> str:
+    """The join from rows carrying `platform` and `title_id` (a
+    `seen_achievements`, by default) to their game's `titles` row. A game is
+    its platform and its id (migration 090): the id spaces of Steam and Xbox
+    overlap, so the id alone can name two games."""
+    return f"{titles}.platform = {rows}.platform AND {titles}.title_id = {rows}.title_id"
+
+
+# Both Xbox generations, for the places that know a game is Xbox but not
+# which one (presence names only an id): an Xbox title id is one game, never
+# both a 360 and a modern one.
+XBOX_PLATFORMS = "('xbox_modern', 'xbox_360')"
+
+
+def platform_is(platform: str, column: str = "platform") -> tuple[str, list[str]]:
+    """`(sql, params)` matching one game's platform. Any Xbox value (`xbox`,
+    or either generation) matches both generations: an Xbox title id is one
+    game, stored under whichever generation it turned out to be, and a caller
+    often knows only that it is Xbox (presence names an id) or names the
+    contract it polled through."""
+    if platform in ("xbox", "xbox_modern", "xbox_360"):
+        return f"{column} IN {XBOX_PLATFORMS}", []
+    return f"{column} = ?", [platform]
+
+
+# The Steam app an achievement list is (`titles` aliased `t`; owner, 2026-10-15):
+# a Steam list is its own app; any other list is known by the app found for it —
+# HLTB's page, or Steam's store search — kept as a `steam_twin` id on the
+# versions of the list (`versions.store_ids`), not as a column of the list.
+STEAM_APP_OF_TITLE = (
+    "(CASE WHEN t.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
+    " ELSE (SELECT CAST(json_extract(j.value, '$[1]') AS INTEGER)"
+    "  FROM versions v, json_each(v.store_ids) j"
+    "  WHERE v.platform = t.platform AND v.title_id = t.title_id"
+    "   AND json_extract(j.value, '$[0]') = 'steam_twin' LIMIT 1) END)"
+)
+
+
 # --------------------------------------------------------------- names (#61)
 
 # The catalog row holding an achievement's name in both languages (#61, #119),
@@ -260,9 +301,40 @@ def rarity(prefix: str = "s.") -> str:
     return f"COALESCE(rc.rarity_percent, {prefix}rarity_percent)"
 
 
+# The app's own points (owner, 2026-10-27), one scale for every platform in
+# place of Xbox's gamerscore: a common achievement 10, a rare one (10 % and
+# under) 20, a legendary one (1 % and under) 30, a mythic one (Xbox's Mythic,
+# PSN's platinum) 50 — the Mini App's tiers (`views.rareLevel`). Tens, so a
+# step between can come later.
+POINTS_COMMON, POINTS_RARE, POINTS_LEGENDARY, POINTS_MYTHIC = 10, 20, 30, 50
+
+
+def points(prefix: str = "s.") -> str:
+    """One row's points; 0 for the empty side of a LEFT JOIN. Needs
+    `rarity_cache_join(prefix)` in the query."""
+    r = rarity(prefix)
+    return (
+        f"CASE WHEN {prefix}achievement_id IS NULL THEN 0"
+        f" WHEN {prefix}mythic = 1 OR {prefix}trophy_type = 'platinum' THEN {POINTS_MYTHIC}"
+        f" WHEN {r} IS NOT NULL AND {r} <= 1 THEN {POINTS_LEGENDARY}"
+        f" WHEN {r} IS NOT NULL AND {r} <= 10 THEN {POINTS_RARE}"
+        f" ELSE {POINTS_COMMON} END"
+    )
+
+
 # The rarity threshold, one for every chat (owner, 2026-10-01): read where a
 # chat's settings are read, so every caller that took the chat's own value
 # gets the global one. chat_settings.rare_threshold_percent is left unread.
+# A store's edition `e` is a game's own when the edition's item `i` on one
+# of the game's versions is its main game (owner, 2026-10-24;
+# `stores.classify_bundle`): a bundle of several games, a game thrown in as
+# a bonus, a pack of add-ons are none of its editions. Every reader of "a
+# game's editions" uses this (the viewer, the advisers' export and cards).
+OWN_EDITION = "e.scope = 'edition' AND COALESCE(i.role, 'main') = 'main'"
+# … and the store products it is one game of, or thrown into.
+PART_OF_BUNDLE = "i.role = 'part'"
+BONUS_IN = "i.role = 'bonus'"
+
 GLOBAL_RARE_THRESHOLD = (
     "COALESCE((SELECT CAST(value AS REAL) FROM app_settings"
     " WHERE key = 'rare_threshold_percent'), 10.0)"
@@ -273,3 +345,10 @@ GLOBAL_RARE_THRESHOLD = (
 GLOBAL_DIGEST_THRESHOLD = (
     "COALESCE((SELECT CAST(value AS INTEGER) FROM app_settings WHERE key = 'digest_threshold'), 3)"
 )
+
+# An HLTB link spread from a game's other release (`game_link.spread_hltb`)
+# carries this score. The matcher never reads one (the training audit,
+# 2026-10-24): it was made because the versions are in one game, and as
+# "one HLTB entry" it told the model they are — the answer as a sign.
+SPREAD_HLTB_SCORE = 0.9
+NOT_SPREAD = f"NOT (vh.source = 'auto' AND vh.score = {SPREAD_HLTB_SCORE})"

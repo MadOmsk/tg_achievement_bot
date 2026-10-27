@@ -27,6 +27,7 @@ admin-setting-email-provider-daily = The mail service's daily limit
 admin-setting-email-sends-total = Email codes in total an hour
 admin-setting-email-checks-client = Code checks per IP in 10 minutes
 admin-setting-patch-refresh = Game patch refresh (hours)
+admin-setting-octopus-per-tick = Games the octopus assembles (a minute)
 
 # The settings registry (#176, services/admin_registry.py): one label per
 # setting, one title per group — the bot and the Mini App show the same ones.
@@ -35,6 +36,8 @@ admin-setting-default-rarity = Newcomers' mode
 admin-setting-rare-threshold-hint = Rare is what at most this share of players have. One threshold for every chat.
 admin-setting-default-rarity-hint = The mode new people start with.
 admin-setting-show-links = Profile links
+admin-setting-store-collection = Store collection
+admin-setting-store-collection-hint = The bot asks the stores and HowLongToBeat about games on its own: versions, DLC, playing times. Off — nothing is collected.
 admin-setting-post-picture = Post picture
 admin-setting-post-picture-hint = A small icon (Steam, Xbox 360) is enlarged and set on a card with this ground. Large pictures go as they are.
 admin-setting-post-picture-size = Small icon's card
@@ -283,6 +286,11 @@ admin-psn-level-tag = level { $level }
 
 admin-nowhere = nowhere
 admin-subscribed = Subscribed: { $chats }
+admin-rarity-title = Posting
+admin-rarity = Posting: { $mode }
+admin-rarity-all = all
+admin-rarity-rare = rare
+admin-rarity-hidden = none
 admin-excluded = 🚫 Excluded from the system: not polled, not published.
 admin-restore = ↩️ Restore
 admin-exclude = 🚫 Exclude from the system

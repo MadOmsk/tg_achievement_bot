@@ -17,6 +17,7 @@ from collections.abc import Collection
 
 from bot.constants import AccountPlatform
 from bot.db.repo._models import PlatformLink, SteamSchemaAchievement, TitleProgress
+from bot.db.repo._sql import platform_is
 from bot.util import utcnow_iso
 
 
@@ -416,6 +417,9 @@ class _PlatformLinksRepo:
                 (title_id, group_id, name, total, name_ru, name_en, now),
             )
         await self._conn.commit()
+        # A group past the base game is a DLC of every version of this list.
+        for version_id in await self.versions_of_list("psn", title_id):
+            await self.save_trophy_group_dlcs(version_id, title_id)
 
     async def has_title_groups(self, title_id: str) -> bool:
         """Whether this game's trophy structure is stored **in both
@@ -456,7 +460,8 @@ class _PlatformLinksRepo:
             "FROM seen_achievements s "
             "JOIN account_links al ON al.platform = s.account_platform"
             " AND al.external_id = s.xuid AND al.is_active = 1 "
-            "LEFT JOIN titles t ON t.title_id = s.title_id "
+            "LEFT JOIN achievement_list_connectors t ON t.platform = s.platform AND t.title_id = "
+            "s.title_id "
             "WHERE s.account_platform = ? AND s.trophy_group_id IS NULL "
             "GROUP BY s.xuid, s.title_id "
             "UNION ALL "
@@ -464,7 +469,8 @@ class _PlatformLinksRepo:
             "FROM psn_title_progress p "
             "JOIN account_links al ON al.platform = ? AND al.external_id = p.account_id"
             " AND al.is_active = 1 "
-            "LEFT JOIN titles t ON t.title_id = p.np_communication_id "
+            "LEFT JOIN achievement_list_connectors t ON t.platform = 'psn' AND t.title_id = "
+            "p.np_communication_id "
             "WHERE p.progress > 0 AND NOT EXISTS ("
             "  SELECT 1 FROM seen_achievements s WHERE s.account_platform = ?"
             "   AND s.xuid = p.account_id AND s.title_id = p.np_communication_id) "
@@ -547,7 +553,7 @@ class _PlatformLinksRepo:
           game's whole achievement list, so its length is the total;
         - PSN reports progress as a percentage and never a count, but the
           trophy-title list it already fetches carries `defined_trophies`;
-          that sum is kept on `titles.achievements_total`, so the counter
+          that sum is kept on `achievement_list_connectors.achievements_total`, so the counter
           reads the same on all three platforms (#46, owner decision:
           a count everywhere rather than a percentage on one).
 
@@ -569,8 +575,11 @@ class _PlatformLinksRepo:
                 # counter off nearly every Xbox One/Series card. The per-title
                 # achievements response says how many the game has, and
                 # poller/fetcher.py stores that in `titles` as it polls (#46).
+                where, params = platform_is(account_platform)
                 cursor = await self._conn.execute(
-                    "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
+                    f"SELECT achievements_total FROM achievement_list_connectors WHERE {where} "
+                    f"AND title_id = ?",
+                    (*params, title_id),
                 )
                 fallback = await cursor.fetchone()
                 total = int(fallback["achievements_total"] or 0) if fallback else 0
@@ -611,8 +620,11 @@ class _PlatformLinksRepo:
             unlocked = min(int(row[0]) if row else 0, total)
             return TitleProgress(unlocked=unlocked, total=total)
 
+        where, params = platform_is(account_platform)
         cursor = await self._conn.execute(
-            "SELECT achievements_total FROM titles WHERE title_id = ?", (title_id,)
+            f"SELECT achievements_total FROM achievement_list_connectors WHERE {where} AND "
+            f"title_id = ?",
+            (*params, title_id),
         )
         row = await cursor.fetchone()
         if row is None or not row["achievements_total"]:

@@ -24,10 +24,13 @@ import asyncio
 import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from datetime import date, datetime
+from enum import Enum
 
 from psnawp_api import PSNAWP
 from psnawp_api.core.psnawp_exceptions import (
     PSNAWPAuthenticationError,
+    PSNAWPError,
     PSNAWPForbiddenError,
     PSNAWPNotFoundError,
 )
@@ -36,7 +39,7 @@ from psnawp_api.models.trophies.trophy_constants import PlatformType, TrophyRari
 from pyrate_limiter import Duration, Rate
 
 from bot.constants import PresenceState
-from bot.services import api_usage
+from bot.services import api_usage, raw_answers
 from bot.services.rate_limiter import RateLimiter
 
 log = logging.getLogger(__name__)
@@ -128,7 +131,7 @@ def title_ref(
     title_name: str | None = None,
     title_icon_url: str | None = None,
 ) -> TitleRef:
-    """A game by id and its stored `titles.platforms`. The platform picks
+    """A game by id and its stored `achievement_list_connectors.platforms`. The platform picks
     Sony's trophy service (PS5 lives on a different one than PS3/PS4/Vita),
     so it is the game's own newest console, not a default."""
     known = {item.value: item for item in PlatformType}
@@ -499,7 +502,7 @@ async def trophies_for_title(
                     # per DLC, and 'default' is *only the base game* — so
                     # every DLC trophy anyone ever earned was invisible to
                     # this bot: never published, never counted in /stats,
-                    # while the game's own total (titles.achievements_total)
+                    # while the game's own total (achievement_list_connectors.achievements_total)
                     # has always included them. One request either way.
                     trophy_group_id="all",
                     include_progress=True,
@@ -517,6 +520,13 @@ async def trophies_for_title(
     except PSNAWPAuthenticationError as exc:
         raise PsnTokenDeadError(str(exc)) from None
 
+    # Kept whole (raw_answers): every field psnawp read of every trophy —
+    # progress targets, rewards, rarity tiers — not only what is parsed here.
+    await raw_answers.keep(
+        f"trophies:{account_id}:{title.np_communication_id}",
+        "psn_trophies",
+        [as_json(trophy) for trophy in trophies],
+    )
     return [
         EarnedTrophy(
             trophy_id=trophy.trophy_id,
@@ -594,11 +604,11 @@ async def trophy_groups_for_title(
     is cosmetic, and a missing one must never be the reason a title's
     trophies go unstored.
     """
-    english = await _groups_from(client, account_id, title)
+    english = await _groups_from(client, account_id, title, "en")
     if english is None:
         return TrophyGroups(None, None, None, [])
     russian = (
-        await _groups_from(translation_client, account_id, title)
+        await _groups_from(translation_client, account_id, title, "ru")
         if translation_client is not None
         else None
     )
@@ -628,6 +638,29 @@ async def trophy_groups_for_title(
     )
 
 
+def as_json(value: object, depth: int = 0) -> object:
+    """A psnawp object as plain JSON — every attribute it holds, dates as
+    ISO text, enums by value — for keeping it whole (raw_answers)."""
+    if depth > 6:
+        return None
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(k): as_json(v, depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [as_json(v, depth + 1) for v in value]
+    fields = getattr(value, "__dict__", None)
+    if fields is None and hasattr(value, "__slots__"):
+        fields = {k: getattr(value, k, None) for k in value.__slots__}
+    if fields is None:
+        return str(value)
+    return {str(k): as_json(v, depth + 1) for k, v in fields.items() if not str(k).startswith("_")}
+
+
 @dataclass(slots=True)
 class _Summary:
     title_name: str | None
@@ -635,7 +668,7 @@ class _Summary:
 
 
 async def _groups_from(
-    client: PSNAWP, account_id: str, title: TrophyTitle | TitleRef
+    client: PSNAWP, account_id: str, title: TrophyTitle | TitleRef, language: str
 ) -> _Summary | None:
     """One client's answer, or None when it could not give one."""
     try:
@@ -653,6 +686,11 @@ async def _groups_from(
             "psn trophy groups for title %s unavailable", title.np_communication_id, exc_info=True
         )
         return None
+    await raw_answers.keep(
+        f"groups:{title.np_communication_id}:{language}",
+        "psn_trophies",
+        as_json(summary),
+    )
 
     result: dict[str, tuple[str | None, int]] = {}
     for group in summary.trophy_groups:
@@ -797,3 +835,94 @@ async def profile_avatar_url(client: PSNAWP, account_id: str) -> str | None:
         if by_size.get(size):
             return str(by_size[size])
     return next((str(entry["url"]) for entry in avatars if entry.get("url")), None)
+
+
+# ---------------------------------------------------------------- the store (#147)
+
+TROPHY_TITLES_URL = "https://m.np.playstation.com/api/trophy/v1/users/{account}/titles/trophyTitles"
+# How many store title ids one trophy-list lookup asks about.
+TITLE_IDS_PER_LOOKUP = 5
+
+
+async def store_search(client: PSNAWP, name: str, limit: int = 5) -> list[dict]:
+    """The store's full games for a name: each a concept with its default
+    product (whose id carries a CUSA/PPSA title id)."""
+    from psnawp_api.models.search.games_search_datatypes import SearchDomain
+
+    def run() -> list[dict]:
+        return [dict(item) for item in client.search(name, SearchDomain.FULL_GAMES, limit=limit)]
+
+    try:
+        return await _call(run)
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+    except PSNAWPError as exc:
+        raise PsnApiError(f"PSN store search failed: {exc!r}") from None
+
+
+async def store_concept(client: PSNAWP, title_id: str) -> dict | None:
+    """The store's concept (the game, every edition and console) for one
+    CUSA/PPSA title id, or None when the store has none."""
+    platform = PlatformType.PS5 if title_id.startswith("PPSA") else PlatformType.PS4
+
+    def run() -> dict | None:
+        details = client.game_title(title_id, platform).get_details()
+        return details[0] if isinstance(details, list) and details else None
+
+    try:
+        return await _call(run)
+    except PSNAWPNotFoundError:
+        return None
+    except PSNAWPAuthenticationError as exc:
+        raise PsnTokenDeadError(str(exc)) from None
+    except PSNAWPError as exc:
+        raise PsnApiError(f"PSN concept for {title_id} failed: {exc!r}") from None
+
+
+async def trophy_lists_of(
+    client: PSNAWP, account_id: str, title_ids: list[str]
+) -> dict[str, set[str]]:
+    """`{CUSA/PPSA title id: {NPWR…}}` — which trophy lists Sony says these
+    store titles have, asked as an account that played them (Sony answers
+    only about titles that account has). The only proof that a store title is
+    one of our trophy lists: a name match is never taken for one."""
+    found: dict[str, set[str]] = {}
+
+    async def ask(batch: list[str]) -> dict:
+        def run() -> dict:
+            return client.authenticator.get(
+                url=TROPHY_TITLES_URL.format(account=account_id),
+                params={"npTitleIds": ",".join(batch)},
+            ).json()
+
+        try:
+            return await _call(run)
+        except PSNAWPAuthenticationError as exc:
+            raise PsnTokenDeadError(str(exc)) from None
+
+    for start in range(0, len(title_ids), TITLE_IDS_PER_LOOKUP):
+        batch = title_ids[start : start + TITLE_IDS_PER_LOOKUP]
+        try:
+            answers = [await ask(batch)]
+        except PSNAWPNotFoundError:
+            # One id Sony does not know (a store page names a CUSA it never
+            # shipped) fails the whole batch: ask one by one, skip the unknown.
+            answers = []
+            for title_id in batch:
+                try:
+                    answers.append(await ask([title_id]))
+                except PSNAWPNotFoundError:
+                    continue
+                except PSNAWPError as exc:
+                    raise PsnApiError(f"PSN trophy lists of {title_id} failed: {exc!r}") from None
+        except PSNAWPError as exc:
+            raise PsnApiError(f"PSN trophy lists of {batch} failed: {exc!r}") from None
+        for title in (t for data in answers for t in data.get("titles") or []):
+            lists = {
+                str(entry["npCommunicationId"])
+                for entry in title.get("trophyTitles") or []
+                if entry.get("npCommunicationId")
+            }
+            if lists and title.get("npTitleId"):
+                found.setdefault(str(title["npTitleId"]), set()).update(lists)
+    return found

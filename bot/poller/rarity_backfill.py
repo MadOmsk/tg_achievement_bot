@@ -126,13 +126,12 @@ class RarityBackfill:
             )
             fresh = [m for m in missing if m[0] not in self._unanswerable]
             self._catalogue_clear_at = None if fresh else time.monotonic()
-            for title_id, person_id in missing:
+            for title_id, seen_plat, person_id in missing:
                 if remaining <= 0:
                     break
                 if title_id in self._unanswerable:
                     continue
                 remaining -= 1
-                seen_plat = await self._repo.title_seen_platform(title_id)
                 platform = Platform(seen_plat) if seen_plat else Platform.XBOX_MODERN
 
                 title_name = None

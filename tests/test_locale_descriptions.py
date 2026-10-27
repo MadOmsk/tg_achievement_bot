@@ -197,7 +197,7 @@ async def test_a_psn_game_title_follows_the_chats_language(repo: Repo) -> None:
     English and "Marvel: Росомаха" in Russian (#61). Xbox and Steam return
     one title for both locales, which is why only this one is localized."""
     await repo.upsert_title("NPWR57054_00", "Marvel's Wolverine", "psn")
-    await repo.set_title_names("NPWR57054_00", "Marvel: Росомаха", "Marvel's Wolverine")
+    await repo.set_title_names("psn", "NPWR57054_00", "Marvel: Росомаха", "Marvel's Wolverine")
     row = _row()
     row.title_id = "NPWR57054_00"
     row.platform = "psn"
@@ -230,7 +230,7 @@ async def test_recent_and_the_game_lists_follow_the_chats_language(repo: Repo) -
     await repo.subscribe(-100500, await repo.person_id(1))
     await repo.upsert_title("t-halo", "Halo: The Master Chief Collection", "xbox_modern")
     await repo.set_title_names(
-        "t-halo", "Halo: Коллекция Мастер Чифа", "Halo: The Master Chief Collection"
+        PLATFORM, "t-halo", "Halo: Коллекция Мастер Чифа", "Halo: The Master Chief Collection"
     )
     await repo.cache_names(
         "xbox_modern", "t-halo", {"a1": ("Да мы только начали", "Just Getting Started")}

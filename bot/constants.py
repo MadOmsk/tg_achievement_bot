@@ -43,6 +43,22 @@ def account_platform_of(platform: str) -> str:
     return platform
 
 
+# The group an achievement belongs to (owner, 2026-10-15). PSN: Sony's own
+# (`default`, `001`, ...). Xbox: `base` (the list it shipped with) or
+# `non_base` (added later), from contract 6's `groupIds` — what a Mythic
+# achievement counts. Steam has no groups: all are the main game's.
+MAIN_GAME_GROUP = "main_game"
+
+
+def achievement_group(platform: str, group_id: str | None) -> str | None:
+    """The group to store for an achievement: the platform's own on PSN and
+    Xbox (`None` there means "not known yet", never a guess), the main
+    game's on Steam."""
+    if platform in (Platform.PSN, Platform.XBOX_MODERN, Platform.XBOX_360):
+        return group_id
+    return group_id or MAIN_GAME_GROUP
+
+
 # One display order for every screen that lists platforms: Xbox, then
 # PlayStation, then Steam (owner decision, 2026-09-13). It had drifted —
 # /panel listed Xbox → Steam → PSN while /stats, ordering by the column name

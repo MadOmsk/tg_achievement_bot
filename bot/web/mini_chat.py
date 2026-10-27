@@ -271,6 +271,7 @@ async def build_person_payload(
     month_count, month_score = await repo.achievement_counts_for_person(
         target.id, month_since, month_until
     )
+    month_points = await repo.points_for_person(target.id, month_since, month_until)
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
         target.id, month_since, until=month_until
     )
@@ -401,6 +402,7 @@ async def build_person_payload(
         "month": {
             "count": month_count,
             "score": month_score,
+            "points": month_points,
             "xbox": month_xbox,
             "steam": month_steam,
             "psn": month_psn,
@@ -448,6 +450,7 @@ def _feed_item_json(
         ),
         "trophy_type": row.trophy_type,
         "tier_badge": trophy_tier_badge(row.trophy_type) or None,
+        "mythic": row.mythic,
         "progress": _progress_json(prog, row.game, locale),
     }
 
@@ -544,6 +547,7 @@ def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
         "name": person_label(person_id=row.person_id, handle=row.handle),
         "count": row.count,
         "score": row.score,
+        "points": row.points,
         "rare": row.rare,
         "xbox": row.xbox_count,
         "steam": row.steam_count,
@@ -579,21 +583,35 @@ def _news_excerpt(text: str | None) -> str:
 
 
 async def build_news_payload(
-    repo: Repo, *, members: list[int], month: str | None, tz_of: int | None, locale: str
+    repo: Repo,
+    *,
+    members: list[int],
+    month: str | None,
+    tz_of: int | None,
+    locale: str,
+    favorites_of: int | None = None,
 ) -> dict[str, Any]:
+    """The month's developer posts: of the games the viewer's circle played, or,
+    with `favorites_of`, of that person's favorite games only — what the feed
+    mixes in (owner, 2026-10-26)."""
     key, _since, until, current, _month_num = await _club_month(
         repo, MEMBERS_CHAT, month, tz_of=tz_of, scoped=True
     )
     year, month_num = (int(part) for part in key.split("-"))
     first = f"{key}-01"
     after = f"{year + month_num // 12:04d}-{month_num % 12 + 1:02d}-01"
-    rows = await repo.games_news(
-        members,
-        played_since=(until - timedelta(days=NEWS_PLAYED_DAYS)).isoformat(timespec="seconds"),
-        since=first,
-        until=after,
-        limit=NEWS_MAX,
-    )
+    if favorites_of is not None:
+        rows = await repo.favorite_games_news(
+            await repo.favorite_game_ids(favorites_of), since=first, until=after, limit=NEWS_MAX
+        )
+    else:
+        rows = await repo.games_news(
+            members,
+            played_since=(until - timedelta(days=NEWS_PLAYED_DAYS)).isoformat(timespec="seconds"),
+            since=first,
+            until=after,
+            limit=NEWS_MAX,
+        )
     return {
         "items": [
             {

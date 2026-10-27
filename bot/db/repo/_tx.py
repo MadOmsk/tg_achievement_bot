@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import itertools
+import sqlite3
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -133,7 +134,16 @@ async def transaction(conn: GatedConnection) -> AsyncIterator[None]:
         # than into this block.
         if raw.in_transaction:
             await raw.commit()
-        await raw.execute("BEGIN")
+        try:
+            await raw.execute("BEGIN")
+        except sqlite3.OperationalError as exc:
+            # A statement already queued on the connection before this block
+            # took its turn ran between the commit above and BEGIN, and opened
+            # an implicit transaction of its own: that write too is whole.
+            if "within a transaction" not in str(exc):
+                raise
+            await raw.commit()
+            await raw.execute("BEGIN")
         try:
             yield
         except BaseException:

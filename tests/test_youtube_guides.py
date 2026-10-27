@@ -22,7 +22,7 @@ from bot.poller import guide_videos as poller
 from bot.services.crypto import TokenCipher
 from bot.services.youtube import client as youtube
 from bot.services.youtube.auth import YouTubeAuth
-from bot.services.youtube.guides import Mark, game_keys, marks_of, title_key
+from bot.services.youtube.guides import CHANNELS, Mark, game_keys, marks_of, title_key
 from bot.services.youtube.videos import achievement_videos
 from bot.util import utcnow
 from bot.web.mini_api import cors_middleware, setup_mini_api
@@ -39,6 +39,63 @@ def test_a_title_for_one_achievement_names_it() -> None:
         "House Flipper Remastered - Alpha Male 🏆 Trophy/Achievement Guide - Sell a house", ""
     )
     assert marks == [Mark("alpha male", 0)]
+
+
+@pytest.mark.parametrize(
+    ("title", "label"),
+    [
+        # The guide phrase after the name, in its several spellings.
+        ("Mortal Shell 2 - Bag Holder Trophy / Achievement Guide", "bag holder"),
+        (
+            "Gears of War: E-Day - Days Since Last Accident: 0 Achievement Guide",
+            "days since last accident 0",
+        ),
+        (
+            "Silent Hill Townfall - Long-Range Masonry Trophy Guide / Achievement Guide",
+            "long range masonry",
+        ),
+        ("Resonance - Baitfish Trophy Guide / Achievement Guide", "baitfish"),
+        ("Game - Beach Please Achievement/Trophy Guide *EASY*", "beach please"),
+        # In parentheses after what the video shows.
+        (
+            "The Blood of Dawnwalker - All Tower Locations (Bird’s-Eye View Trophy Guide)",
+            "birds eye view",
+        ),
+        (
+            "Forza Horizon 6 - All Treasure Car Locations (Treasure Hunter Achievement Guide)",
+            "treasure hunter",
+        ),
+        # A bare phrase at the end: the part before it.
+        ("Silent Hill F — Go Away! - Trophy Guide", "go away"),
+    ],
+)
+def test_other_channels_name_an_achievement_in_the_title(title: str, label: str) -> None:
+    assert marks_of(title, "") == [Mark(label, 0)]
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        # A whole game, however it says so.
+        "Acre Crisis - Achievement / Trophy Guide *1000G IN 1.5 HOURS*",
+        "Marvel's Wolverine - Trophy Guide & Roadmap",
+        "TOEM 2 - Full Game Walkthrough (No Commentary) - 100% Achievements",
+        "Gears of War: E-Day - Act 3-3 - All Collectibles & Achievements",
+    ],
+)
+def test_a_whole_game_title_names_no_achievement(title: str) -> None:
+    assert marks_of(title, "") == []
+
+
+def test_a_title_without_separators_is_joined_or_loose() -> None:
+    # The game and the name are one run of words: told apart only by the game.
+    assert marks_of("Mortal Shell 2 Heavy Metal Trophy Guide", "") == [
+        Mark("= mortal shell 2 heavy metal", 0)
+    ]
+    # The name in parentheses; the game is the words it starts with.
+    assert marks_of(
+        "Control Resonant All Dog & Toy Locations (Dog's Best Friend Trophy Guide)", ""
+    ) == [Mark("~dogs best friend", 0)]
 
 
 def test_a_timeline_marks_achievements_parts_and_bare_names() -> None:
@@ -259,7 +316,7 @@ def _init_data(bot_token: str, user_id: int) -> str:
 
 
 class _Extras:
-    async def tips_due(self, title_id: str) -> bool:
+    async def tips_due(self, platform: str, title_id: str) -> bool:
         return False
 
 
@@ -301,7 +358,7 @@ async def test_a_game_with_guide_videos_gets_its_whole_guide(repo: Repo) -> None
     from bot.services.youtube.videos import game_guide
 
     await _game(repo)
-    assert await game_guide(repo, TITLE) is None
+    assert await game_guide(repo, "xbox_modern", TITLE) is None
 
     await repo.save_guide_videos(
         [
@@ -309,7 +366,7 @@ async def test_a_game_with_guide_videos_gets_its_whole_guide(repo: Repo) -> None
             _video("v2", "Gears of War: E-Day - Okay 🏆 Trophy Guide", ""),
         ]
     )
-    guide = await game_guide(repo, TITLE)
+    guide = await game_guide(repo, "xbox_modern", TITLE)
     # No whole-game video: the channel's videos of the game.
     assert guide is not None and guide.video_id is None
     assert guide.url.endswith("/search?query=Gears+of+War%3A+E-Day")
@@ -318,5 +375,108 @@ async def test_a_game_with_guide_videos_gets_its_whole_guide(repo: Repo) -> None
     await repo.save_guide_videos(
         [_video("v3", "Gears of War: E-Day - All Achievements - Full Game Walkthrough", "")]
     )
-    guide = await game_guide(repo, TITLE)
+    guide = await game_guide(repo, "xbox_modern", TITLE)
     assert guide is not None and guide.video_id == "v3"
+
+
+# ------------------------------------------------------------ several channels
+
+
+OTHER = "UCWBA1-H9A5IldSb3tNwQmtQ"
+
+
+def _from(channel: str, video_id: str, title: str, published: str) -> GuideVideoRow:
+    return GuideVideoRow(
+        video_id=video_id,
+        channel_id=channel,
+        title=title,
+        title_key=title_key(title),
+        published_at=published,
+        marks=tuple((m.label, m.start_seconds, m.part) for m in marks_of(title, "")),
+    )
+
+
+def test_the_biggest_guide_channels_are_read() -> None:
+    assert len(CHANNELS) >= 5
+    assert CHANNELS[CHANNEL] == "TrophyTom"
+    assert "PowerPyx" in CHANNELS.values()
+
+
+async def test_an_achievement_is_found_by_its_title_on_other_channels(repo: Repo) -> None:
+    await _game(repo)
+    await repo.save_guide_videos(
+        [
+            _from(
+                OTHER,
+                "p1",
+                "Gears of War: E-Day - Okay, Boomer Trophy Guide / Achievement Guide",
+                "2026-10-02",
+            ),
+            # Another game, named the same up to a point: never this one's.
+            _from(OTHER, "p2", "Gears of War: E-Day 2 - Okay, Boomer Trophy Guide", "2026-10-03"),
+        ]
+    )
+    found = await achievement_videos(repo, "xbox_modern", TITLE)
+    assert [v.video_id for v in found["1"]] == ["p1"]
+    assert found["1"][0].channel == "PowerPyx"
+
+
+async def test_a_title_with_the_game_in_front_of_the_name_is_found(repo: Repo) -> None:
+    await _game(repo)
+    await repo.save_guide_videos(
+        [
+            _from(
+                OTHER, "j1", "Gears of War: E-Day Chainsaw Go Brrrrrrrrr Trophy Guide", "2026-10-02"
+            ),
+            _from(
+                OTHER,
+                "l1",
+                "Gears of War: E-Day All Locations (Okay, Boomer Trophy Guide)",
+                "2026-10-02",
+            ),
+            # Not this game: its name only begins the same.
+            _from(
+                OTHER,
+                "j2",
+                "Gears of War: E-Day 2 Chainsaw Go Brrrrrrrrr Trophy Guide",
+                "2026-10-03",
+            ),
+        ]
+    )
+    found = await achievement_videos(repo, "xbox_modern", TITLE)
+    assert [v.video_id for v in found["2"]] == ["j1"]
+    assert [v.video_id for v in found["1"]] == ["l1"]
+
+
+async def test_each_channel_is_shown_before_one_is_shown_twice(repo: Repo) -> None:
+    await _game(repo)
+    await repo.save_guide_videos(
+        [
+            _from(
+                CHANNEL, "t1", "Gears of War: E-Day - Okay, Boomer 🏆 Trophy Guide", "2026-10-05"
+            ),
+            _from(
+                CHANNEL, "t2", "Gears of War: E-Day - Okay, Boomer 🏆 Trophy Guide 2", "2026-10-04"
+            ),
+            _from(OTHER, "p1", "Gears of War: E-Day - Okay, Boomer Trophy Guide", "2026-10-01"),
+        ]
+    )
+    found = await achievement_videos(repo, "xbox_modern", TITLE)
+    # The older video of another channel comes before the second of the first.
+    assert [v.video_id for v in found["1"]] == ["t1", "p1", "t2"]
+
+
+async def test_a_one_achievement_video_is_not_the_games_guide(repo: Repo) -> None:
+    from bot.services.youtube.videos import game_guide
+
+    await _game(repo)
+    await repo.save_guide_videos(
+        [
+            _from(OTHER, "a1", "Gears of War: E-Day - Okay, Boomer Trophy Guide", "2026-10-02"),
+            _from(CHANNEL, "w1", "Gears of War: E-Day - Trophy Guide & Roadmap", "2026-09-01"),
+        ]
+    )
+    guide = await game_guide(repo, "xbox_modern", TITLE)
+    assert guide is not None
+    assert guide.video_id == "w1"
+    assert guide.channel == "TrophyTom"

@@ -22,6 +22,7 @@ from bot.constants import (
     AccountPlatform,
     Platform,
     PresenceState,
+    RarityMode,
     TokenStatus,
 )
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
@@ -45,7 +46,7 @@ from bot.services.naming import (
     xbox_nickname,
 )
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.util import humanize_ago
+from bot.util import humanize_ago, real_game_name
 from bot.views import Screen
 from bot.views.admin_settings import action_rows, setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
@@ -254,9 +255,9 @@ async def _xbox_admin_block(repo: Repo, user: User, today_count: int, *, locale:
     if presence is not None:
         # Presence gives no name for PC titles, so fall back to the cache
         # the poller fills — an id in the card tells the admin nothing.
-        game = presence.title_name or ""
+        game = real_game_name(presence.title_name) or ""
         if not game and presence.title_id:
-            game = await repo.title_name(presence.title_id) or presence.title_id
+            game = real_game_name(await repo.title_name("xbox", presence.title_id)) or ""
         game = game or _("admin-no-game")
         online = (
             _(
@@ -440,6 +441,7 @@ async def render_user_card(
             "admin-subscribed",
             chats=", ".join(f"«{c}»" for c in chats) if chats else _("admin-nowhere"),
         ),
+        _("admin-rarity", mode=await rarity_label(repo, person, locale=locale)),
     ]
     text = "\n".join(lines)
     if user.is_excluded:
@@ -452,6 +454,15 @@ async def render_user_card(
         builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
+
+
+async def rarity_label(repo: Repo, person: int, *, locale: str) -> str:
+    """The person's rarity mode (all / rare / none) as both cards word it."""
+    settings = await repo.get_user_settings(person)
+    mode = settings.rarity_mode if settings is not None else RarityMode.ALL
+    if mode not in (RarityMode.ALL, RarityMode.RARE, RarityMode.HIDDEN):
+        mode = RarityMode.ALL
+    return translator("admin", locale)(f"admin-rarity-{mode}")
 
 
 async def _actions(

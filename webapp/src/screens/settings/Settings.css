@@ -1,0 +1,358 @@
+.settings .group {
+  margin-top: 20px;
+}
+
+.set-me {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: calc(100% - 24px);
+  margin: 4px 12px 0;
+  padding: 16px;
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xl) var(--r-s);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  text-align: left;
+}
+
+.set-me .row-sub {
+  color: var(--on-primary-container-2);
+}
+
+.set-me-name {
+  font-size: 22px;
+  font-weight: 750;
+  font-stretch: 110%;
+}
+
+.set-lead {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.set-lead-secondary {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.set-lead-primary,
+.set-lead-tertiary {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.set-pad {
+  padding: 16px;
+  border-radius: var(--r-l);
+  background: var(--surface-1);
+}
+
+.group .set-pad {
+  border-radius: var(--r-l);
+}
+
+.set-intro {
+  padding: 4px 20px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--on-surface-2);
+}
+
+.settings > .page-scroll > .set-pad {
+  margin: 16px 12px 0;
+}
+
+.set-hint {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--on-surface-3);
+}
+
+.set-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.set-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.set-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.set-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 12px;
+}
+
+.set-pick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: var(--surface-3);
+  font-weight: 600;
+  text-align: left;
+}
+
+.set-pick:first-child {
+  border-radius: var(--r-l) var(--r-l) 8px 8px;
+}
+
+.set-pick:last-child {
+  border-radius: 8px 8px var(--r-l) var(--r-l);
+}
+
+.set-pick-on {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+.set-choices {
+  margin: 12px 12px 0;
+}
+
+.set-choices .group {
+  margin: 12px 0 0;
+}
+
+.set-label {
+  padding: 8px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--on-surface-2);
+}
+
+.set-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.set-chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--outline);
+  color: var(--on-surface-2);
+  font-weight: 650;
+  font-size: 13.5px;
+  transition: border-radius var(--t-mid) var(--spring);
+}
+
+.set-chip.on {
+  border-color: var(--secondary-container);
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  border-radius: 20px;
+}
+
+.pf-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0 4px;
+}
+
+.pf-face-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.crop {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 20px 8px;
+}
+
+.crop-box {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: var(--r-l);
+  background: #000;
+  touch-action: none;
+}
+
+.crop-box img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: none;
+  user-select: none;
+}
+
+.crop-mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.5);
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  -webkit-mask: none;
+  mask: none;
+  border-radius: 50%;
+}
+
+.crop-zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--on-surface-2);
+}
+
+.crop-zoom input {
+  flex: 1;
+  accent-color: var(--primary);
+}
+
+.crop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.acc-big {
+  width: 88px;
+  height: 88px;
+  font-size: 26px;
+  align-self: center;
+}
+
+.acc-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.connect {
+  margin: 8px 12px 0;
+}
+
+.invite-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+.merge {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 12px;
+}
+
+.merge-side {
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  background: var(--surface-3);
+}
+
+.merge-side .set-label {
+  padding: 0 0 4px;
+}
+
+.set-look {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.swatch {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 6px;
+  border-radius: var(--r-m);
+  background: var(--surface-2);
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--on-surface-2);
+  transition: background var(--t-fast);
+}
+
+.swatch-on {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.swatch-dot {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.swatch-violet .swatch-dot {
+  background: linear-gradient(135deg, #d0bcff 0 50%, #efb8dc 50%);
+}
+
+.swatch-mint .swatch-dot {
+  background: linear-gradient(135deg, #80d5c8 0 50%, #ffb4a6 50%);
+}
+
+.swatch-ember .swatch-dot {
+  background: linear-gradient(135deg, #ffb871 0 50%, #ffb3ae 50%);
+}
+
+.swatch-ocean .swatch-dot {
+  background: linear-gradient(135deg, #9ecaff 0 50%, #ffc65c 50%);
+}
+
+.swatch-rose .swatch-dot {
+  background: linear-gradient(135deg, #ffb1c2 0 50%, #b8d0ff 50%);
+}
+
+.swatch-graphite .swatch-dot {
+  background: linear-gradient(135deg, #c3c9d0 0 50%, #a6ecf2 50%);
+}
+
+.swatch-dot svg {
+  color: #1d1b20;
+}
+
+.swatch-shut {
+  color: var(--on-surface-3);
+}
+
+.swatch-shut .swatch-dot {
+  filter: grayscale(0.6) brightness(0.6);
+}
+
+.swatch-level {
+  margin-top: -4px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--on-surface-3);
+}

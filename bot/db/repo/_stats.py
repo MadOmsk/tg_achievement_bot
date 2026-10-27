@@ -18,6 +18,7 @@ from bot.db.repo._sql import (
     earned_at,
     earned_date_is_real,
     earned_since,
+    points,
     rarity,
     rarity_cache_join,
 )
@@ -74,25 +75,27 @@ class _StatsRepo:
                     platforms_json = None
                     effective_entry_plat = plat_val or None
 
-                await self._conn.execute(
-                    "INSERT INTO titles (title_id, name, platform, platforms, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?) "
-                    "ON CONFLICT(title_id) DO UPDATE SET name = excluded.name,"
-                    " platform = CASE "
-                    "   WHEN titles.platform = 'xbox_360' THEN 'xbox_360' "
-                    "   WHEN excluded.platform = 'xbox_360' THEN 'xbox_360' "
-                    "   ELSE COALESCE(excluded.platform, titles.platform) "
-                    " END,"
-                    " platforms = CASE "
-                    "   WHEN titles.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
-                    "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
-                    "   ELSE COALESCE(excluded.platforms, titles.platforms) "
-                    " END,"
-                    " updated_at = excluded.updated_at",
-                    (entry.title_id, entry.name, effective_entry_plat, platforms_json, now),
-                )
+                # A 360 game stays 360, and one now known to be 360 moves
+                # there with its rows (089: the platform is the row's key).
                 if effective_entry_plat == "xbox_360":
                     await self._move_title_rows(entry.title_id, "xbox_modern", "xbox_360")
+                stored_plat = await self.stored_xbox_generation(
+                    effective_entry_plat or "xbox_modern", entry.title_id
+                )
+                await self._conn.execute(
+                    "INSERT INTO achievement_list_connectors (platform, title_id, name, "
+                    "platforms, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(platform, title_id) DO UPDATE SET name = excluded.name,"
+                    " platforms = CASE "
+                    "   WHEN achievement_list_connectors.platforms = '[\"Xbox360\"]' "
+                    "THEN '[\"Xbox360\"]' "
+                    "   WHEN excluded.platforms = '[\"Xbox360\"]' THEN '[\"Xbox360\"]' "
+                    "   ELSE COALESCE(excluded.platforms, achievement_list_connectors.platforms) "
+                    " END,"
+                    " updated_at = excluded.updated_at",
+                    (stored_plat, entry.title_id, entry.name, platforms_json, now),
+                )
 
     async def update_gamerscore(self, person_id: int, gamerscore: int) -> None:
         """On the account, not the person (#52) — a gamerscore is a fact
@@ -193,6 +196,28 @@ class _StatsRepo:
         so it never contributes to the sum, by construction, not by a check
         here."""
         return await self._counts(OWNED_BY_PERSON_EXISTS, [person_id], since, until)
+
+    async def points_for_person(
+        self, person_id: int, since: datetime | None, until: datetime | None = None
+    ) -> int:
+        """The app's own points (`_sql.points`) of what a person earned in a
+        window, every platform on one scale."""
+        query = (
+            f"SELECT COALESCE(SUM({points('seen_achievements.')}), 0) FROM seen_achievements "
+            + rarity_cache_join("seen_achievements.")
+            + "WHERE "
+            + OWNED_BY_PERSON_EXISTS
+        )
+        params: list[object] = [person_id]
+        if since is not None:
+            query += f" AND {earned_since('seen_achievements.')}"
+            params.append(_iso(since))
+        if until is not None:
+            query += f" AND {earned_at('seen_achievements.')} < ?"
+            params.append(_iso(until))
+        cursor = await self._conn.execute(query, params)
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
 
     async def achievement_platform_breakdown(
         self, person_id: int, since: datetime | None, until: datetime | None = None
@@ -368,7 +393,7 @@ class _StatsRepo:
         achievements_total, but Microsoft's titlehub API returns total=0 for
         nearly all Xbox One / Series games (#77). We now check against the
         global title_achievements catalog, falling back to title_history or
-        titles.achievements_total for games not yet in the catalog.
+        achievement_list_connectors.achievements_total for games not yet in the catalog.
         """
         cursor = await self._conn.execute(
             """
@@ -388,7 +413,8 @@ class _StatsRepo:
             completed_from_titles AS (
                 SELECT s.title_id
                 FROM seen_achievements s
-                JOIN titles t ON s.title_id = t.title_id
+                JOIN achievement_list_connectors t ON t.platform = s.platform
+                 AND t.title_id = s.title_id
                 WHERE s.xuid = ? AND s.platform IN ('xbox_modern', 'xbox_360')
                   AND t.achievements_total > 0
                 GROUP BY s.title_id, t.achievements_total

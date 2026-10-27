@@ -16,6 +16,8 @@ from bot.constants import RarityMode, SettingKey, TokenStatus
 from bot.i18n import gettext
 from bot.poller.message_cleanup import DEFAULT_TTL_MINUTES as DEFAULT_SYSTEM_MESSAGE_TTL_MIN
 from bot.poller.message_cleanup import TTL_SETTING_KEY as SYSTEM_MESSAGE_TTL_KEY
+from bot.poller.octopus import DEFAULT_PER_TICK as DEFAULT_OCTOPUS_PER_TICK
+from bot.poller.octopus import PER_TICK_KEY as OCTOPUS_PER_TICK_KEY
 from bot.poller.online_refresh import DEFAULT_REFRESH_INTERVAL_MIN as DEFAULT_ONLINE_REFRESH_MIN
 from bot.poller.online_refresh import DEFAULT_TTL_HOURS as DEFAULT_ONLINE_REFRESH_TTL_HOURS
 from bot.poller.online_refresh import REFRESH_INTERVAL_KEY as ONLINE_REFRESH_INTERVAL_KEY
@@ -114,6 +116,12 @@ DEFAULT_RARITY_MODE_DEFAULT = RarityMode.ALL
 # admin's (owner, 2026-09-29); it used to be each person's own, off by default.
 SHOW_LINKS_KEY = "show_profile_links"
 SHOW_LINKS_DEFAULT = "1"
+
+# Whether the bot asks the stores and HLTB about games on its own (#147:
+# `StoreCollector`, the octopus) — off until a super-admin switches it on,
+# so a release that carries the games catalog changes no traffic by itself.
+STORE_COLLECTION_KEY = "store_collection"
+STORE_COLLECTION_DEFAULT = "0"
 
 
 _DEFAULT_STATS_GAMES_LIMIT = 15
@@ -237,6 +245,14 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     ),
     PATCH_REFRESH_HOURS_KEY: NumericSetting(
         "admin-setting-patch-refresh", DEFAULT_PATCH_REFRESH_HOURS, min=1, max=168
+    ),
+    # How many queued games the octopus assembles a minute (poller/octopus.py).
+    OCTOPUS_PER_TICK_KEY: NumericSetting(
+        "admin-setting-octopus-per-tick",
+        DEFAULT_OCTOPUS_PER_TICK,
+        min=0,
+        max=10,
+        zero_label="admin-disabled",
     ),
 }
 

@@ -235,7 +235,7 @@ async def translate_game_description(
     mis-parse for no benefit.
 
     Called lazily, once per game, the first time somebody looks it up (user
-    decision, 2026-09-12: no prewarm) — the result is cached in `hltb_cache`
+    decision, 2026-09-12: no prewarm) — the result is kept in `hltb_entries.summary_ru`
     forever, beside the English original.
 
     Returns None on any failure, never raises: the card then simply shows

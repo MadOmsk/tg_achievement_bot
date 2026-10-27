@@ -49,7 +49,7 @@ async def bilingual_descriptions(
     Already-cached achievements are returned straight from the cache
     without ever touching the platform text passed in for them — cache
     forever, translate once, exactly like every other cache in this
-    project (steam_schema_cache, hltb_cache, ...).
+    project (steam_schema_cache, hltb_entries, ...).
     """
     result: dict[str, tuple[str | None, str | None]] = {}
     needs_translation: dict[str, str] = {}

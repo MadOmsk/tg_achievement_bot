@@ -34,6 +34,8 @@ from bot.services.admin_settings import (
     RARE_THRESHOLD_MIN,
     SHOW_LINKS_DEFAULT,
     SHOW_LINKS_KEY,
+    STORE_COLLECTION_DEFAULT,
+    STORE_COLLECTION_KEY,
     SettingValueError,
 )
 from bot.util import utc_offset_label
@@ -116,6 +118,7 @@ _NUMERIC_GROUPS = {
     "service_health_interval_min": "timers",
     "monthly_summary_delay_minutes": "timers",
     "patch_refresh_hours": "timers",
+    "octopus_entries_per_tick": "timers",
     "email_codes_per_client_hour": "mail",
     "email_codes_total_hour": "mail",
     "email_checks_per_client_10min": "mail",
@@ -208,6 +211,15 @@ SETTINGS: tuple[Setting, ...] = (
         hint="admin-setting-post-picture-low-res-hint",
         default=post_picture.LOW_RES_DEFAULT,
         choices=post_picture.LOW_RES_CHOICES,
+    ),
+    Setting(
+        STORE_COLLECTION_KEY,
+        "global",
+        "other",
+        Kind.BOOL,
+        "admin-setting-store-collection",
+        hint="admin-setting-store-collection-hint",
+        default=STORE_COLLECTION_DEFAULT == "1",
     ),
     # ---- global: the numbers
     *(
