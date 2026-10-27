@@ -71,5 +71,5 @@ def test_an_adviser_is_scored_on_the_pairs_of_known_answer() -> None:
         {"a": 5, "b": 6, "relation": "same", "confidence": "high"},
     ]
     report, kept = score(questions, answers)
-    assert report[0] == "known pairs: 1/2 right"
+    assert report[0] == "known pairs: 1/2 answered right (0 not answered)"
     assert kept == [answers[2]]

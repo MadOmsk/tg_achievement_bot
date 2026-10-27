@@ -356,7 +356,10 @@ def score(questions: list[dict], answers: list[dict]) -> tuple[list[str], list[d
             report.append(
                 f"  {pair}: said {relation} ({ans.get('confidence')}), known {known[pair]}"
             )
-    report.insert(0, f"known pairs: {right}/{len(known)} right")
+    answered = len({(int(a["a"]), int(a["b"])) for a in answers} & set(known))
+    report.insert(
+        0, f"known pairs: {right}/{answered} answered right ({len(known) - answered} not answered)"
+    )
     return report, kept
 
 
