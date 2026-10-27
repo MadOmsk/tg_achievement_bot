@@ -62,11 +62,12 @@ LOCAL_P = 0.7  # a franchise's own series: a longer name, or a subtitle, two gam
 
 _RELATION_WORDS = {
     "remaster_of": ("a remaster of", "remastered as"),
+    "enhanced_of": ("an enhanced edition of", "has an enhanced edition"),
     "remake_of": ("a remake of", "remade as"),
     "vr_of": ("the VR version of", "has a VR version"),
     "contains": ("a compilation holding", "held by the compilation"),
 }
-FAMILY = frozenset({"remaster_of", "remake_of", "vr_of"})
+FAMILY = frozenset({"remaster_of", "remake_of", "vr_of", "enhanced_of"})
 # A franchise name ends before a subtitle or a number.
 _SUBTITLE = re.compile(r"\s*(?::\s|\s[-–—]\s|:(?=\s*$))")
 _MARKS = re.compile(r"[™®©℠]")

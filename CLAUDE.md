@@ -952,8 +952,13 @@ What the stores and HLTB say about a game, collected but not shown yet
     from the plain game's) is **a game of its own**, related to the original
     as `enhanced_of`, like a remaster; one that is the same product upgraded
     (a free update, the same id) stays inside the game with the role
-    `enhanced`. **Not built yet**: the linker still keeps every enhanced
-    edition inside its game.
+    `enhanced`. Built as a split after joining (`game_link._split_enhanced`;
+    #218): the model joins an enhanced edition to its game as before (its
+    labels teach "same"); then, where one store sells both the plain game
+    and the enhanced one, every enhanced version of the group leaves it for
+    a game of its own, related `enhanced_of` (a family relation for series
+    too). Where no store sells both — Steam sells only the Complete Edition
+    — it is the game there and stays, role `enhanced`.
   - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;
     `game_match.game_name`): the full release name, platform tails cut ("-
     Xbox Series X|S", "(PC)", "for Windows 10", "Windows 10 Edition"), when

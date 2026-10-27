@@ -1520,3 +1520,38 @@ def test_a_friends_pass_is_a_part_of_its_game() -> None:
     assert _roles([game, pass_], [])[2] == ("pass", 1)
     told = _roles([game, pass_], [{"version_id": 2, "other_id": 1, "relation": "pass_of"}])
     assert told[2] == ("pass", 1)
+
+
+async def test_an_enhanced_edition_sold_beside_the_plain_game_is_a_game_of_its_own(
+    repo: Repo,
+) -> None:
+    """Owner, 2026-10-25: where a store sells both the plain game and its
+    enhanced edition, the edition is a game of its own, related to it."""
+    plain = await _version(repo, "XBPLAIN", "The Witcher 3: Wild Hunt", "2015")
+    goty = await _version(
+        repo, "XBGOTY", "The Witcher 3: Wild Hunt - Game of the Year Edition", "2016"
+    )
+    await repo.save_decision(goty, plain, "enhanced_of", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([plain, goty])
+    g_plain, g_goty = await repo.linked_game_of(plain), await repo.linked_game_of(goty)
+    assert g_plain != g_goty
+    cur = await repo._conn.execute("SELECT game_id, related_id, kind FROM game_relations")
+    assert [tuple(r) for r in await cur.fetchall()] == [(g_goty, g_plain, "enhanced_of")]
+
+
+async def test_an_enhanced_edition_no_store_sells_beside_the_plain_game_stays(
+    repo: Repo,
+) -> None:
+    """Steam sells only the Complete Edition: there it is the game."""
+    ps4 = await _version(repo, "PSPLAIN", "Horizon Zero Dawn", "2017", store="psn", console="ps4")
+    steam = await _version(
+        repo,
+        "1151640",
+        "Horizon Zero Dawn Complete Edition",
+        "2020",
+        store="steam",
+        console="steam",
+    )
+    await repo.save_decision(steam, ps4, "enhanced_of", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([ps4, steam])
+    assert await repo.linked_game_of(ps4) == await repo.linked_game_of(steam)

@@ -53,6 +53,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Labels that put two versions in one game; every other label keeps them apart.
+# (An enhanced edition joins its game here, and may leave it after for a
+# game of its own: `_split_enhanced`.)
 JOINING = {
     "same",
     "edition",
@@ -71,6 +73,8 @@ PARTS = ("demo", "tool", "mode", "extra", "pass")
 # series" (owner, 2026-10-11) — the same for building games, kept apart for
 # what it tells about the model's mistakes.
 NOT_RELATED = {"other", "series"}
+# An enhanced edition split into a game of its own (`_split_enhanced`).
+ENHANCED = "enhanced_of"
 # A word in more versions' names than this tells nothing ("war", "star").
 COMMON_WORD = 60
 # One linker at a time in a process: two collections of one game's lists at
@@ -138,6 +142,7 @@ class GameLinker:
             lambda: {(a, b): compare(candidates[a], candidates[b]) for a, b in pairs}
         )
         groups = _cluster(members, verdicts, labels)
+        groups, enhanced = _split_enhanced(groups, candidates, labels)
         group_of = {v: i for i, g in enumerate(groups) for v in g}
         surest: dict[int, float] = {}
         for (a, b), v in verdicts.items():
@@ -169,9 +174,13 @@ class GameLinker:
             await self._repo.write_members(assignment)
 
             relations = _relations(groups, game_of, verdicts, labels, candidates)
+            for e, base in enhanced:
+                g, r = game_of[next(iter(groups[e]))], game_of[next(iter(groups[base]))]
+                relations[(g, r, ENHANCED)] = ("auto", None)
             # Named once the relations are known: a remaster, a remake, a VR
-            # version or a compilation is called by its own release.
-            subjects = {g for g, _r, kind in relations if kind in RELATIONS}
+            # version, an enhanced edition or a compilation is called by its
+            # own release.
+            subjects = {g for g, _r, kind in relations if kind in (*RELATIONS, ENHANCED)}
             for group in groups:
                 target = game_of[next(iter(group))]
                 cluster = [candidates[v] for v in group]
@@ -351,6 +360,46 @@ def _cluster(
     for g in group.values():
         unique[id(g)] = g
     return list(unique.values())
+
+
+def _split_enhanced(
+    groups: list[set[int]], candidates: dict[int, Candidate], labels: list[dict]
+) -> tuple[list[set[int]], list[tuple[int, int]]]:
+    """An enhanced edition sold under a product of its own beside the plain
+    game is a game of its own (owner, 2026-10-25): where one store sells
+    both — the plain game and the GOTY, the Definitive, the Director's Cut —
+    the group's enhanced versions leave it for a game of their own, related
+    `enhanced_of` to it. Where no store sells both (Steam sells only the
+    Complete Edition), the enhanced edition is the game there, and stays.
+    Returns the groups and `(enhanced group, its game's group)` pairs."""
+    said = {lab["version_id"] for lab in labels if lab["relation"] == "enhanced_of"}
+    # A version labelled a part (an add-on named "Special Edition Upgrade")
+    # is no edition, whatever its name says.
+    parts = {
+        lab["version_id"]
+        for lab in labels
+        if lab["relation"] in ("demo_of", "tool_of", "mode_of", "extra_of", "pass_of")
+    }
+    out: list[set[int]] = []
+    pairs: list[tuple[int, int]] = []
+    for group in groups:
+        cluster = [candidates[v] for v in group]
+        enhanced = {
+            c.version_id
+            for c in cluster
+            if c.version_id in said or (kind_of(c) == "edition" and c.version_id not in parts)
+        }
+        plain = [
+            c for c in cluster if c.version_id not in enhanced | parts and kind_of(c) not in PARTS
+        ]
+        both = {c.store for c in plain} & {candidates[v].store for v in enhanced}
+        if not enhanced or not plain or not (both - {"unknown"}):
+            out.append(group)
+            continue
+        out.append(group - enhanced)
+        out.append(set(enhanced))
+        pairs.append((len(out) - 1, len(out) - 2))
+    return out, pairs
 
 
 def _differ(v: Verdict) -> bool:
