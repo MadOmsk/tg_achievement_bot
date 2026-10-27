@@ -9,22 +9,26 @@ export function WaveRing({
   value,
   total,
   size = 168,
+  waves = WAVES,
+  amp = 2.5,
   children,
 }: {
   value: number;
   total: number | null | undefined;
   size?: number;
+  /** A small ring takes fewer, lower waves, or it reads as a flower. */
+  waves?: number;
+  amp?: number;
   children?: ReactNode;
 }) {
   const share = total ? Math.max(0, Math.min(1, value / total)) : 0;
   const c = size / 2;
   const r = c - 8;
-  const amp = 2.5;
   const points: string[] = [];
   const steps = Math.max(2, Math.round(STEPS * share));
   for (let i = 0; i <= steps; i++) {
     const t = (i / STEPS) * Math.PI * 2;
-    const rr = r + amp * Math.sin(t * WAVES);
+    const rr = r + amp * Math.sin(t * waves);
     const x = c + rr * Math.sin(t);
     const y = c - rr * Math.cos(t);
     points.push(`${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`);

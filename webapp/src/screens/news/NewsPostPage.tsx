@@ -1,5 +1,6 @@
 import { clubApi, type NewsItem } from "../../api";
 import { useApp } from "../../app/context";
+import { KindChip } from "../../parts/KindChip";
 import { openExternal } from "../../app/env";
 import { useLoad } from "../../app/useLoad";
 import { GameLink } from "../../parts/GameLink";
@@ -11,7 +12,6 @@ import { Cover } from "../../ui/Pic";
 import { Hero } from "../../ui/Hero";
 import { RichText } from "../../ui/RichText";
 import { openImage } from "../../ui/Viewer";
-import { KindChip } from "../../parts/KindChip";
 import "./News.css";
 
 /** A picture's address without its query, so a resized copy still counts as the same one. */

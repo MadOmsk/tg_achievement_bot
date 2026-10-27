@@ -325,9 +325,14 @@ button.chip {
   color: var(--tier-epic);
 }
 
-.chip-tier-ultra {
+.chip-tier-legendary {
   background: color-mix(in srgb, var(--tier-legendary) 22%, var(--surface-1));
   color: var(--tier-legendary);
+}
+
+.chip-tier-mythic {
+  background: color-mix(in srgb, var(--tier-mythic) 22%, var(--surface-1));
+  color: var(--tier-mythic);
 }
 
 .chip-danger {
@@ -642,7 +647,7 @@ button.chip {
   inset: 0;
   z-index: 20;
   background: var(--surface);
-  animation: slide-in var(--t-slow) var(--spring-soft);
+  animation: slide-in var(--t-mid) var(--spring-soft);
 }
 
 .page-scroll {
@@ -1266,30 +1271,6 @@ button.chip {
 
 
 
-
-/* Rarity tiers, the app's Fortnite note: a rare picture glows from below in
-   its tier's colour, as an item card does. */
-.pic-tier {
-  position: relative;
-}
-
-.pic-tier::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: inset 0 -3px 0 var(--tier);
-  background: linear-gradient(transparent 55%, color-mix(in srgb, var(--tier) 38%, transparent));
-}
-
-.pic-tier-rare {
-  --tier: var(--tier-epic);
-}
-
-.pic-tier-ultra {
-  --tier: var(--tier-legendary);
-}
 
 /* LinkCard: a way to somewhere else (a game, a guide video). */
 .link-card {

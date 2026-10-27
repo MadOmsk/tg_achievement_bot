@@ -130,129 +130,8 @@
   color: var(--on-primary-container);
 }
 
-.post {
-  margin: 0 12px;
-  padding: 14px 16px 10px;
-  border-radius: var(--r-l);
-  background: var(--surface-1);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 260px;
-}
-
-.post-by {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 /* Posts in a row are one segmented group: 3 px apart, the group's outer
    corners large, the corners between them small. */
-.post + .post {
-  margin-top: 3px;
-  border-top-left-radius: var(--r-xs);
-  border-top-right-radius: var(--r-xs);
-}
-
-.post:has(+ .post) {
-  border-bottom-left-radius: var(--r-xs);
-  border-bottom-right-radius: var(--r-xs);
-}
-
-.post-duo {
-  position: relative;
-  width: 48px;
-  height: 40px;
-  flex: 0 0 auto;
-}
-
-.post-duo button {
-  position: absolute;
-  padding: 2px;
-  background: var(--surface-1);
-  -webkit-mask: url("../styles/shapes/cookie12.svg") center / contain no-repeat;
-  mask: url("../styles/shapes/cookie12.svg") center / contain no-repeat;
-}
-
-.post-who {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.post-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.post-top .chip {
-  height: 22px;
-  flex: 0 0 auto;
-}
-
-.post-name {
-  min-width: 0;
-  text-align: left;
-  font-size: 16px;
-  font-weight: 750;
-}
-
-.post-time {
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-size: 13px;
-  color: var(--on-surface-3);
-}
-
-.post-game {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  text-align: left;
-  font-size: 13px;
-  color: var(--on-surface-2);
-}
-
-.post-game-cover {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-}
-
-.post-game-name {
-  min-width: 0;
-  font-weight: 600;
-}
-
-.post-game-num {
-  flex: 0 0 auto;
-  color: var(--on-surface-3);
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 18px;
-}
-
-.post-items {
-  margin-top: 8px;
-}
-
-.post-items > .ach-row + .ach-row {
-  border-radius: 0;
-}
-
-.post-more {
-  width: 100%;
-  height: 44px;
-  margin-top: 4px;
-  border-radius: 22px;
-  background: var(--surface-3);
-  color: var(--primary);
-  font-weight: 700;
-  font-size: 14px;
-}
 
 .ach-row-plain {
   padding: 12px 0;
@@ -269,10 +148,6 @@
   width: 50px;
   height: 50px;
   border-radius: 14px;
-}
-
-.post .ach-row-plain {
-  padding: 8px 0;
 }
 
 .ach-row-plain .ach-name {
@@ -321,8 +196,12 @@
   color: var(--tier-epic);
 }
 
-.mark-ultra {
+.mark-legendary {
   color: var(--tier-legendary);
+}
+
+.mark-mythic {
+  color: var(--tier-mythic);
 }
 
 .marks-plain .rare-mark {
@@ -456,7 +335,6 @@
   color: var(--on-surface);
 }
 
-
 .done-mark {
   display: inline-flex;
   align-items: center;
@@ -465,13 +343,6 @@
   background: var(--tertiary);
   color: var(--on-tertiary);
 }
-
-.post-news-cover {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-}
-
 
 .skel-face {
   width: 40px;
@@ -484,14 +355,6 @@
   display: block;
   height: 12px;
   border-radius: 6px;
-}
-
-.post-skel .post-who {
-  gap: 8px;
-}
-
-.post-skel .ach-text {
-  gap: 8px;
 }
 
 .kind {
@@ -518,28 +381,10 @@
 
 .favs {
   align-items: flex-start;
-}
-
-.fav-card {
-  width: 124px;
-  text-align: left;
-}
-
-.fav-art {
-  position: relative;
-  display: block;
-}
-
-.fav-cover {
-  width: 124px;
-  height: 166px;
-  border-radius: var(--r-l) var(--r-l) var(--r-l) var(--r-xs);
+  gap: 14px;
 }
 
 .fav-heart {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
   width: 36px;
   height: 36px;
   display: flex;
@@ -549,22 +394,15 @@
   color: var(--on-tertiary);
 }
 
-.fav-name {
-  display: block;
-  margin-top: 8px;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.3;
-}
-
 .fav-hint {
-  width: 124px;
-  height: 166px;
+  width: 138px;
+  height: 184px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   padding: 12px;
   border: 2px dashed var(--outline);
-  border-radius: var(--r-l) var(--r-l) var(--r-l) var(--r-xs);
+  border-radius: var(--r-l);
   text-align: center;
   font-size: 12.5px;
   line-height: 1.4;
@@ -623,15 +461,6 @@
   color: var(--error);
 }
 
-
-
-
-
-
-.post-duo .face-initials {
-  font-size: 10px !important;
-}
-
 /* A person's month (MonthHero): Home's and a person's page's. */
 .home-hero {
   margin: 16px 12px 0;
@@ -640,6 +469,46 @@
   background: var(--primary-container);
   color: var(--on-primary-container);
   overflow: hidden;
+}
+
+.home-hero-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -6px -8px 6px 0;
+}
+
+.home-hero-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  color: inherit;
+}
+
+.home-hero-arrows {
+  display: flex;
+  gap: 4px;
+}
+
+.home-hero-arrow {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--on-primary-container) 12%, transparent);
+  color: inherit;
+  transition: transform var(--t-fast) var(--spring), opacity var(--t-fast);
+}
+
+.home-hero-arrow:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.home-hero-arrow:disabled {
+  opacity: 0.3;
 }
 
 .home-hero-top {
@@ -786,10 +655,6 @@
   background: color-mix(in srgb, var(--on-primary-container) 8%, transparent);
 }
 
-.post-game-together {
-  color: var(--tertiary);
-}
-
 .row-sub.acc-facts {
   display: flex;
   flex-wrap: wrap;
@@ -861,9 +726,19 @@
   color: var(--on-tier-epic);
 }
 
-.tile-badge-ultra {
+.tile-badge-legendary {
   background: var(--tier-legendary);
   color: var(--on-tier-legendary);
+}
+
+.tile-badge-plain {
+  background: var(--surface-4);
+  color: var(--on-surface);
+}
+
+.tile-badge-mythic {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
 }
 
 .tile-name {
@@ -916,66 +791,69 @@
   font-size: 9px !important;
 }
 
-/* The month's games (MonthGames): a rail of game cards. */
+/* A game in a rail (GameTile), as a magazine sets it: a tall cover on its
+   own, the name and what the rail says under it, no card around. */
 .month-games {
-  align-items: stretch;
+  align-items: flex-start;
+  gap: 14px;
 }
 
 .game-tile {
-  width: 148px;
+  width: 138px;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 8px 12px;
-  border-radius: var(--r-l);
-  background: var(--surface-1);
+  gap: 6px;
   text-align: left;
 }
 
 .game-tile-skel {
-  height: 244px;
-}
-
-.game-tile-done {
-  background: color-mix(in srgb, var(--tertiary-container) 55%, var(--surface-1));
+  height: 250px;
+  border-radius: var(--r-l);
 }
 
 .game-tile-art {
   position: relative;
   display: block;
+  margin-bottom: 4px;
+  border-radius: var(--r-l);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--t-fast) var(--spring);
+}
+
+.game-tile:active .game-tile-art {
+  transform: scale(0.97);
 }
 
 .game-tile-cover {
-  width: 132px;
-  height: 132px;
-  border-radius: 20px;
+  width: 138px;
+  height: 184px;
+  border-radius: var(--r-l);
+}
+
+.game-tile-art .fav-heart {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
 }
 
 .game-tile-art .done-mark {
   position: absolute;
-  right: -4px;
-  bottom: -6px;
-  box-shadow: 0 0 0 3px var(--surface-1);
+  right: -6px;
+  bottom: -8px;
+  box-shadow: 0 0 0 4px var(--surface);
 }
 
 .game-tile-name {
-  min-height: 2.6em;
-  padding: 0 4px;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.3;
-}
-
-.game-tile .wave {
-  padding: 0 4px;
 }
 
 .game-tile-foot {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 0 4px;
 }
 
 .game-tile-gain {

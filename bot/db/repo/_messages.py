@@ -563,7 +563,7 @@ _RECENT_COLUMNS = (
     "       s.title_id, s.achievement_id, s.icon_url,"
     "       t.icon_url AS game_icon_url, s.description,"
     "       s.xuid AS achievement_xuid, s.trophy_group_id,"
-    "       s.device, t.platforms AS game_platforms "
+    "       s.device, t.platforms AS game_platforms, s.mythic "
 )
 
 # From the person `u` to their achievements, through the accounts they hold
@@ -621,4 +621,5 @@ def _recent(row, locale: str) -> RecentAchievement:
         trophy_group_id=row["trophy_group_id"],
         device=row["device"],
         game_platforms=row["game_platforms"],
+        mythic=bool(row["mythic"]),
     )

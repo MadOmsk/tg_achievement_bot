@@ -568,6 +568,8 @@ class RecentAchievement:
     device: str | None = None
     # Available platforms for the game (JSON / comma list)
     game_platforms: str | None = None
+    #: Xbox's Mythic: the last of a game's base list to be earned (migration 123).
+    mythic: bool = False
     # The person's own id (#156): what the Mini App names people by.
     person_id: int | None = None
 

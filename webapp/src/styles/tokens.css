@@ -42,12 +42,12 @@
   --silver: #c9ccd6;
   --gold: #f0c46a;
   --platinum: #c7d7ff;
-  --tier-rare: #3fa9ff;
-  --on-tier-rare: #00203a;
   --tier-epic: #b65cff;
   --on-tier-epic: #ffffff;
   --tier-legendary: #ffa53a;
   --on-tier-legendary: #2b1600;
+  --tier-mythic: #3ddc84;
+  --on-tier-mythic: #00210e;
 
   --xbox: #2e5e2e;
   --on-xbox: #c6f5c6;

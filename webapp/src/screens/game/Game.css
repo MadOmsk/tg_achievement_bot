@@ -25,7 +25,7 @@
 .gp-head {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 14px;
   padding: 0 var(--gutter);
   margin-top: -40px;
@@ -42,10 +42,85 @@
 .gp-titles {
   flex: 1;
   min-width: 0;
-  padding-top: 48px;
+  padding-top: 52px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.gp-skel .gp-titles {
+  gap: 10px;
+}
+
+.gp-skel-pill {
+  display: block;
+  width: 150px;
+  height: 40px;
+  border-radius: 20px;
+}
+
+.gp-skel-chip {
+  display: block;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.gp-progress.gp-skel-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 18px 22px;
+}
+
+.gp-skel-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.gp-skel-num {
+  display: block;
+  width: 96px;
+  height: 64px;
+  border-radius: 14px;
+}
+
+.gp-skel-pct {
+  display: block;
+  width: 64px;
+  height: 28px;
+  border-radius: 10px;
+}
+
+.gp-skel-wave {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.gp-skel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 28px 12px 0;
+}
+
+.gp-skel-list > .skel-line {
+  margin: 0 4px 12px;
+}
+
+.gp-skel-item {
+  display: block;
+  height: 64px;
+  border-radius: 6px;
+}
+
+.gp-skel-item:nth-child(2) {
+  border-radius: var(--r-l) var(--r-l) 6px 6px;
+}
+
+.gp-skel-item:last-child {
+  border-radius: 6px 6px var(--r-l) var(--r-l);
 }
 
 .gp-title {
@@ -88,31 +163,72 @@
   font-size: 14px;
 }
 
+/* The heart at the end of the title's row, how many keep the game under it;
+   once the page scrolls, it moves up into the bar. */
 .gp-fav {
-  align-self: flex-start;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  height: 36px;
-  margin-top: 4px;
-  padding: 0 14px 0 12px;
-  border-radius: 18px;
+  justify-content: center;
   background: var(--surface-3);
   color: var(--on-surface);
-  font-size: 13px;
-  font-weight: 700;
+  box-shadow: var(--shadow-1);
   transition:
     background var(--t-fast),
-    border-radius var(--t-mid) var(--spring);
+    opacity var(--t-fast),
+    transform var(--t-mid) var(--spring);
+}
+
+.gp-fav-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 50px;
+}
+
+.gp-fav-head {
+  width: 48px;
+  height: 48px;
+}
+
+.gp-fav-count {
+  transition: opacity var(--t-fast);
+}
+
+/* Once the page scrolls, the heart moves up into the bar. */
+.page:has(.appbar-solid) .gp-fav-head {
+  opacity: 0;
+  transform: translateY(-24px) scale(0.6);
+  pointer-events: none;
+}
+
+.page:has(.appbar-solid) .gp-fav-count {
+  opacity: 0;
+}
+
+.gp-fav-bar {
+  width: 44px;
+  height: 44px;
+  box-shadow: none;
+  opacity: 0;
+  transform: translateY(24px) scale(0.6);
+  pointer-events: none;
+}
+
+.appbar-solid .gp-fav-bar {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
 }
 
 .gp-fav:active {
-  border-radius: 10px;
+  transform: scale(0.9) rotate(-12deg);
 }
 
 .gp-fav-on {
-  background: var(--primary-container);
-  color: var(--on-primary-container);
+  background: var(--primary);
+  color: var(--on-primary);
 }
 
 .gp-fav-on svg {
@@ -120,10 +236,17 @@
 }
 
 .gp-fav-count {
-  padding-left: 6px;
-  margin-left: 2px;
-  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  font-size: 15px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.gp-head .gp-titles {
+  padding-right: 0;
+}
+
+.gp-title {
+  padding-right: 0;
 }
 
 @keyframes heart-pop {
@@ -477,9 +600,14 @@
   color: var(--on-tier-epic);
 }
 
-.ap-badge-ultra {
+.ap-badge-legendary {
   background: var(--tier-legendary);
   color: var(--on-tier-legendary);
+}
+
+.ap-badge-mythic {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
 }
 
 .ap-desc {
@@ -894,7 +1022,6 @@
    day; the others who play it below, inside the same card. */
 .gp-progress {
   padding: 0;
-  overflow: hidden;
   cursor: auto;
 }
 
@@ -904,7 +1031,12 @@
   gap: 10px;
   width: 100%;
   padding: 16px 18px 18px;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
   text-align: left;
+}
+
+.gp-progress-main:only-child {
+  border-radius: var(--r-xl);
 }
 
 .gp-progress-main:active {
@@ -924,7 +1056,30 @@
 }
 
 .gp-progress .gp-done-mark {
-  position: static;
+  position: absolute;
+  top: -18px;
+  right: 18px;
+  width: 56px !important;
+  height: 56px !important;
+}
+
+.gp-done-row {
+  align-items: flex-end;
+  padding-top: 8px;
+}
+
+.gp-done-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  padding-bottom: 6px;
+  text-align: right;
+}
+
+.gp-done-text b {
+  font-size: 15px;
+  color: var(--on-tertiary-container);
 }
 
 .gp-progress-row {

@@ -11,6 +11,8 @@ export type AchView = {
   rarity: number | null;
   gamerscore: number | null;
   trophy: string | null;
+  /** Xbox's Mythic (the last of a base list); PSN's platinum is the same tier. */
+  mythic?: boolean;
   secret: boolean;
   unlockedAt: string | null;
   platform: string;

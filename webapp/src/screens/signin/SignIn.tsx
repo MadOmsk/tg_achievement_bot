@@ -181,14 +181,6 @@ export function SignIn({ locale, onSignedIn }: { locale: Locale; onSignedIn: () 
 
       {step.name === "start" && (
         <div className="signin-card">
-          {config?.botId ? (
-            <Button wide variant="filled" onClick={() => (window.location.href = telegramSignInUrl(config.botId!))}>
-              {tr("loginWithTelegram")}
-            </Button>
-          ) : config?.bot ? (
-            <TelegramLogin bot={config.bot} onAuth={onTelegram} />
-          ) : null}
-          {config?.email && (config.botId || config.bot) && <p className="signin-or">{tr("loginOr")}</p>}
           {config?.email && (
             <form
               className="signin-form"
@@ -206,11 +198,19 @@ export function SignIn({ locale, onSignedIn }: { locale: Locale; onSignedIn: () 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <Button wide variant="tonal" type="submit" busy={busy}>
+              <Button wide variant="filled" type="submit" busy={busy}>
                 {tr("emailGetCode")}
               </Button>
             </form>
           )}
+          {config?.email && (config.botId || config.bot) && <p className="signin-or">{tr("loginOr")}</p>}
+          {config?.botId ? (
+            <Button wide variant={config.email ? "tonal" : "filled"} onClick={() => (window.location.href = telegramSignInUrl(config.botId!))}>
+              {tr("loginWithTelegram")}
+            </Button>
+          ) : config?.bot ? (
+            <TelegramLogin bot={config.bot} onAuth={onTelegram} />
+          ) : null}
           {!config?.email && !config?.bot && <p className="t-body">{tr("loginUnavailable")}</p>}
         </div>
       )}

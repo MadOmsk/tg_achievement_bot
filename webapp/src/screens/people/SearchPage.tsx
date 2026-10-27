@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { gameApi } from "../../api";
+import { clubApi, gameApi } from "../../api";
+import { currentMonth } from "../../core/people-utils";
+import { num, plural } from "../../i18n";
 import { peopleApi } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
 import { useLoad } from "../../app/useLoad";
@@ -33,6 +35,8 @@ export function SearchPage({ onClose, layer }: { onClose: () => void; layer: str
   const people = useLoad(query.length >= 3 ? `ps:${query}` : null, () => peopleApi.search(data, query));
   const mayKnow = useLoad("mayknow", () => peopleApi.mayKnow(data));
   const suggested = useLoad("suggested", () => peopleApi.suggestions(data));
+  const summary = useLoad(`summary:${currentMonth()}:search`, () => clubApi.fetchSummary(data, "following", { month: currentMonth() }));
+  const trending = (summary.data?.games ?? []).slice(0, 6);
 
   const searching = query.length >= 2;
   const gameHits = searching ? (games.data?.games ?? []) : [];
@@ -65,6 +69,33 @@ export function SearchPage({ onClose, layer }: { onClose: () => void; layer: str
             <Row lead={<Icon name="people" />} title={tr("peopleFollowing")} chevron onClick={() => open({ kind: "follows", personId: null, which: "following" })} />
             <Row lead={<Icon name="user" />} title={tr("peopleFollowers")} chevron onClick={() => open({ kind: "follows", personId: null, which: "followers" })} />
           </Group>
+          {trending.length > 0 && (
+            <Section title={tr("trending")}>
+              <div className="group">
+                <div className="group-items">
+                  {trending.map((g) => (
+                    <button
+                      key={`${g.platform}:${g.title_id}`}
+                      type="button"
+                      className="row row-tap"
+                      onClick={() => {
+                        tick();
+                        open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } });
+                      }}
+                    >
+                      <Cover src={g.icon_url} className="gp-rel-cover" />
+                      <span className="row-text">
+                        <span className="row-title clamp-2">{g.name}</span>
+                        <span className="row-sub">
+                          {num(g.count, locale)} {plural(locale, g.count, ["achOne", "achFew", "achMany"])}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Section>
+          )}
           {(mayKnow.data?.people.length ?? 0) > 0 && (
             <Section title={tr("peopleMayKnow")}>
               <div className="group">

@@ -28,10 +28,10 @@ for.
 | `--primary` / `--on-primary` | the one action that matters on a screen, a selected state, a link, a mark of rarity |
 | `--primary-container` / `--on-primary-container` | a hero block, a selected tab, a selected segment |
 | `--secondary-container` / `--on-secondary-container` | a tonal button, a selected list choice, the «Патч» mark |
-| `--tertiary` / `--on-tertiary` | the accent: the search button, what is complete (100 %, a done mark), the ultra-rare |
+| `--tertiary` / `--on-tertiary` | the accent: the search button, what is complete (100 %, a done mark) |
 | `--tertiary-container` / `--on-tertiary-container` | a completed card's ground, the «Новость» mark, «вместе» |
 | `--error` / `--on-error` | a danger action, an error |
-| `--bronze`, `--silver`, `--gold`, `--platinum` | PlayStation's trophy tiers only |
+| `--bronze`, `--silver`, `--gold`, `--platinum` | a PSN game's trophy counts by metal on its list page, nowhere else |
 
 **Where each role goes — and nowhere else** (owner, 2026-10-27: no colour
 of its own on a button or a line):
@@ -52,7 +52,7 @@ of its own on a button or a line):
 
 Chips are four kinds: `chip-outline` (a fact: a genre, points),
 `chip-tonal` (a link out: a store page, with ↗), `chip-secondary` (a state),
-`chip-tier-rare|ultra` (rarity). A mark in a card's corner (go, done) is
+`chip-tier-rare|legendary|mythic` (rarity). A mark in a card's corner (go, done) is
 40 px, 16 px in from the corner. Buttons:
 `filled` (one per screen), `tonal`, `text`, `danger`; icon buttons `tonal`,
 `plain`, `glass`. Nothing else exists; a screen needing another asks first.
@@ -83,6 +83,7 @@ Roboto Flex, variable. **Width is a voice**: numbers are narrow and heavy
 | `.t-headline` | 40 / 800, wide | a tab's title (Лента, Рейтинг) |
 | `.t-title` | 22 / 700, wide | a section's title, a page's name |
 | `.detail-title` | 28 / 800, wide | the title of a post, a news post, an achievement |
+| `.t-card` | 20 / 800, wide | the title of a feed card |
 | `.t-label` | 16 / 650 | a row's title, a card's name |
 | `.t-body` | 15 / 400 | running text |
 | `.t-meta` | 13 / 400, `--on-surface-3` | dates, counts, sources |
@@ -103,8 +104,7 @@ filters and states, not for every value.
 - **Connected groups**: items of one group sit 3 apart, their inner corners
   small (6–8) and the group's outer corners large (`--r-l`) — rows of settings
   (`Group` + `Row`), the counts on a profile, the achievements of a list, the
-  game and the person under an achievement, and the posts of one day in the feed
-  (any `.post` that follows another joins it). No hairlines between items: the
+  game and the person under an achievement. No hairlines between items: the
   gap and the ground part them. A segmented choice (`Segmented`)
   and a split button (the follow button and its menu) join the same way.
 - **Shapes carry meaning** (`styles/shapes/`, masks): a scalloped cookie
@@ -117,11 +117,36 @@ filters and states, not for every value.
 
 ## The rarity tiers — our Fortnite note
 
-What is rare is drawn as a tier, as a game's item card is (owner, 2026-10-27):
-`--tier-rare` blue, `--tier-epic` purple, `--tier-legendary` orange, fixed in
-every palette. An achievement picture of a rare one (≤ 10 %) glows epic from
-below, an ultra-rare one (≤ 1 %) legendary (`AchPic tier`); the podium's
-steps are legendary, epic and rare. Use the tiers for rank and rarity only.
+What is rare is drawn as a tier, as a game's item card is (owner, 2026-10-27),
+one scale for the whole app, fixed in every palette: **mythic** green
+(`--tier-mythic`), **legendary** orange (`--tier-legendary`), **rare** purple
+(`--tier-epic`). An achievement takes it the same way on every platform
+(`views.rareLevel`): mythic — Xbox's Mythic and PSN's platinum —, legendary at
+1 % and under, rare at 10 % and under, else none. A PSN trophy's metal
+(bronze, silver, gold) is not shown in the app: its tier says how rare it is.
+A picture is never framed or tinted by its tier: rarity shows on its badge;
+a feed card takes a bare wash of it. Places take the same colours: first
+mythic, second legendary, third rare (the podium, the leaders' marks). Use
+the tiers for rank and rarity only.
+
+## The feed's card
+
+The feed — and a person's recent achievements — is a magazine (owner,
+2026-10-27; `parts/MagazinePost.tsx`):
+one card per post, apart from the next (14 below it), on `--surface-2` (a
+shade above other cards, so each post stands on its own),
+`--r-l`, its picture `--r-m` inside it. Its order is what the reader looks
+for: who (a face, two side by side for «вместе»; the name `.t-label`, the
+game under it `t-meta`) and when (`t-meta`, right); the achievement's picture
+with its rarity flower on the corner — and the handshake (`tertiary-container`)
+beside it for an unlock got together —; a meta line (the tier's word in its
+colour, then the points), the name (`.t-card`), what it asks (two lines); the
+post's other achievements as a rail of pictures with their names and
+rarities. A rare, legendary or mythic card takes the barest wash (6 %) of its
+tier's colour; no frame, no gradient. A favorite game's news
+is the same card: the game in the person's place, «от разработчиков», the
+kind (a wrench, a newspaper) in the flower's place, «Патч» / «Новость» on the
+meta line; with no picture of its own, the game's cover on its blurred self.
 
 ## Motion
 
@@ -151,13 +176,14 @@ done mark and a heart pop (`heart-pop`). Reduced motion keeps only fades.
 | `Wave`, `WaveRing` | progress |
 | `LinkCard` | a way to somewhere else — the game of a post or an achievement, a guide video: picture, title, a line, a round mark of where it goes |
 | `AchTile` (parts) | one achievement as a card of a rail — Home's latest, the hunts, the rare finds; people under it or what it is worth; a rarity flower when asked |
-| `Empty`, skeletons (`.skel`, `PostSkel`) | nothing yet; on its way — a skeleton has the shape of what will come, never a spinner in the middle of a screen |
+| `Empty`, skeletons (`.skel`, `MagazineSkel`) | nothing yet; on its way — a skeleton has the shape of what will come, never a spinner in the middle of a screen |
 | `Viewer` (`openImage`) | a picture or a trailer full screen; a list of them — a game's gallery, trailers and pictures together — slides |
 | `RichText` | a post's or a guide's text: paragraphs, lists, links (bare addresses too), pictures, videos |
 | `BottomBar`, `Toast` | the tabs and the search; a short notice |
 
-Shared parts of several screens are `webapp/src/parts/` (a post and its
-skeleton, a news post laid out as a post, an achievement row, the month's
+Shared parts of several screens are `webapp/src/parts/` (the feed's card —
+a post or a news post, `MagazinePost` — and its skeleton, also a person's
+recent achievements, an achievement row, the month's
 games, months, favorite games, the follow button, the kind mark — «Патч» /
 «Новость», one look everywhere —, the game link, the account row).
 
@@ -179,7 +205,8 @@ section that shows a part of a long list gives its whole as such a page
 - **A card that is itself the way in** (the progress card of a game) carries
   the same round mark in its corner, never a second button saying the same.
 - **One main action per screen** is a filled `Button`; a toggle of state
-  (favourite) is a tonal pill that turns `tertiary` when on.
+  (the game's heart) is a round mark that turns its page's `primary` when on
+  — the game's own colour —, and rides up into the bar once the page scrolls.
 - **Who has it** in a list row is a pair of small faces at the end of the
   meta line, the one who lacks it faded — never a column beside the row.
 

@@ -5,12 +5,11 @@ import { useLoad } from "../../app/useLoad";
 import { currentMonth } from "../../core/people-utils";
 import { dayKey, dayLabel } from "../../i18n";
 import { MonthButton } from "../../parts/Months";
-import { Post, PostSkel } from "../../parts/Post";
-import { NewsPost } from "../../parts/NewsPost";
 import { toPosts, type Post as PostData } from "../../parts/posts";
 import { Pull } from "../../parts/Pull";
 import { Button, Empty } from "../../ui/Controls";
 import { tick } from "../../core/haptic";
+import { MagazineNews, MagazinePost, MagazineSkel } from "../../parts/MagazinePost";
 import "./Feed.css";
 
 const STEP = 16;
@@ -118,9 +117,8 @@ export function Feed({ refreshKey }: { refreshKey: number }) {
       {!feed.data && feed.loading && (
         <div className="feed-skel">
           <span className="skel skel-line feed-skel-day" />
-          <PostSkel rows={3} />
-          <PostSkel />
-          <PostSkel />
+          <MagazineSkel />
+          <MagazineSkel />
         </div>
       )}
 
@@ -161,7 +159,7 @@ export function Feed({ refreshKey }: { refreshKey: number }) {
               <span>{d.label}</span>
               {d.count > 0 && <span className="feed-day-count">{d.count}</span>}
             </h2>
-            {shown.map((e) => (e.post ? <Post key={e.key} post={e.post} /> : <NewsPost key={e.key} item={e.news!} />))}
+            {shown.map((e) => (e.post ? <MagazinePost key={e.key} post={e.post} /> : <MagazineNews key={e.key} item={e.news!} />))}
           </section>
         );
       })}

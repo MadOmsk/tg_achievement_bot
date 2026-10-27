@@ -13,6 +13,7 @@ export function achOfFeed(item: FeedItem): AchView {
     rarity: item.rarity_percent,
     gamerscore: item.gamerscore || null,
     trophy: item.trophy_type,
+    mythic: Boolean(item.mythic),
     secret: item.is_secret,
     unlockedAt: item.unlocked_at,
     platform: item.platform,
@@ -66,10 +67,23 @@ export function isVeiled(secret: boolean, key: string, showSecrets: boolean): bo
   return secret && !showSecrets && !revealed.has(key);
 }
 
-/** Whether the rarity is worth a mark: 10 % and under, as the posts' threshold. */
-export function rareLevel(rarity: number | null): "ultra" | "rare" | null {
+export type Tier = "mythic" | "legendary" | "rare";
+
+/** How a tier is named. */
+export const TIER_NAME = {
+  mythic: "rarityMythic",
+  legendary: "rarityLegendary",
+  rare: "rarityRareWord",
+  common: "rarityCommon",
+} as const;
+
+/** One rarity scale for every platform, a game's item tiers: mythic — Xbox's
+ * Mythic and PSN's platinum —, legendary at 1 % and under, rare at 10 % and
+ * under (the posts' threshold); the rest none. */
+export function rareLevel(rarity: number | null, special?: { trophy?: string | null; mythic?: boolean }): Tier | null {
+  if (special?.mythic || special?.trophy?.toLowerCase() === "platinum") return "mythic";
   if (rarity == null) return null;
-  if (rarity <= 1) return "ultra";
+  if (rarity <= 1) return "legendary";
   if (rarity <= 10) return "rare";
   return null;
 }

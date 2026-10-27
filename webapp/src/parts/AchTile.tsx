@@ -17,27 +17,31 @@ export function AchTile({
 }: {
   ach: AchView;
   /** Who got it, when the card is about people. */
-  people?: Array<{ id: number; name: string }>;
+  people?: Array<{ id: number; name: string; at?: string | null }>;
   /** The rarity as a flower on the picture's corner. */
   badge?: boolean;
 }) {
   const { tr, locale, open, me } = useApp();
   const veiled = isVeiled(ach.secret, ach.key, me.settings.show_secrets);
-  const level = rareLevel(ach.rarity);
+  const level = rareLevel(ach.rarity, ach);
   return (
     <button
       type="button"
       className="tile"
       onClick={() => {
         tick();
-        open({ kind: "achievement", ach: people ? { ...ach, person: null } : ach });
+        open({
+          kind: "achievement",
+          ach: people
+            ? { ...ach, person: null, together: people.map((p) => ({ id: p.id, name: p.name, at: p.at ?? null })) }
+            : ach,
+        });
       }}
     >
       <span className="tile-art">
         <AchPic
           src={ach.icon}
           veiled={veiled}
-          tier={level}
           className={isWideArt(ach.platform) ? "tile-pic" : "tile-pic tile-pic-sq"}
         />
         {badge && ach.rarity != null && (

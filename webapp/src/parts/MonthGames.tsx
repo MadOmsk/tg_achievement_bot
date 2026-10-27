@@ -1,9 +1,8 @@
 import type { FeedItem, PersonPayload } from "../api";
 import { useApp } from "../app/context";
-import { tick } from "../core/haptic";
-import { Cover } from "../ui/Pic";
 import { Wave } from "../ui/Wave";
 import { DoneMark } from "./DoneMark";
+import { GameTile } from "./GameTile";
 
 export type GameLine = {
   platform: string;
@@ -59,12 +58,13 @@ export function MonthGames({
         : games.map((g) => {
             const done = Boolean(g.total && g.unlocked === g.total);
             return (
-              <button
+              <GameTile
                 key={`${g.platform}:${g.titleId}`}
-                type="button"
-                className={`game-tile${done ? " game-tile-done" : ""}`}
-                onClick={() => {
-                  tick();
+                cover={g.cover}
+                name={g.name}
+                done={done}
+                mark={done ? <DoneMark size={34} /> : null}
+                onOpen={() =>
                   open({
                     kind: "game",
                     ref: {
@@ -74,14 +74,9 @@ export function MonthGames({
                       icon_url: g.cover,
                       person: person ? { person_id: person.id, name: person.name } : null,
                     },
-                  });
-                }}
+                  })
+                }
               >
-                <span className="game-tile-art">
-                  <Cover src={g.cover} className="game-tile-cover" />
-                  {done && <DoneMark size={34} />}
-                </span>
-                <span className="game-tile-name clamp-2">{g.name}</span>
                 {g.total ? <Wave value={g.unlocked ?? 0} total={g.total} /> : null}
                 <span className="game-tile-foot">
                   <span className="game-tile-gain">+{g.month}</span>
@@ -89,7 +84,7 @@ export function MonthGames({
                     <span className="game-tile-num t-num">{`${g.unlocked}/${g.total}`}</span>
                   ) : null}
                 </span>
-              </button>
+              </GameTile>
             );
           })}
     </div>

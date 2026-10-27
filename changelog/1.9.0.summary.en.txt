@@ -1,0 +1,5 @@
+• A new Mini App design: five colour themes, light and dark
+• The feed in cards: the achievement's picture large, with its rarity
+• One rarity scale: rare, legendary, mythic
+• The month on Home and on a profile can be turned
+• Your favorite games' news in the feed

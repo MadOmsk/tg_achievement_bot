@@ -448,6 +448,7 @@ def _feed_item_json(
         ),
         "trophy_type": row.trophy_type,
         "tier_badge": trophy_tier_badge(row.trophy_type) or None,
+        "mythic": row.mythic,
         "progress": _progress_json(prog, row.game, locale),
     }
 

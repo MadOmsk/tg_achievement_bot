@@ -147,7 +147,7 @@ export function LayerView({
   })();
   return (
     <div className={`layer${covered ? " layer-covered" : ""}${seen ? " layer-seen" : ""}${leaving ? " layer-leaving" : ""}`}>
-      <Suspense fallback={null}>{body}</Suspense>
+      <Suspense fallback={<div className="page" />}>{body}</Suspense>
     </div>
   );
 }

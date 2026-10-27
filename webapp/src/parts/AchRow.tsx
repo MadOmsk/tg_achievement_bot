@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useApp } from "../app/context";
 import type { AchView } from "../app/layers";
 import { isVeiled, rareLevel, revealed } from "../app/views";
-import { num, pct, type TranslationKey } from "../i18n";
+import { num, pct } from "../i18n";
 import { tick } from "../core/haptic";
 import { AchPic } from "../ui/Pic";
 import "./parts.css";
@@ -12,14 +12,9 @@ export function isWideArt(platform: string): boolean {
   return platform === "xbox_modern";
 }
 
-const TIERS: Record<string, TranslationKey> = {
-  bronze: "tierBronze",
-  silver: "tierSilver",
-  gold: "tierGold",
-  platinum: "tierPlatinum",
-};
-
-/** What an achievement is worth: its tier or points, and how rare. */
+/** What an achievement is worth and how rare, on one scale for every
+ * platform: its points (Xbox), then its tier — rare, legendary, mythic — or
+ * its share. A PSN trophy's metal is not shown: its tier says it. */
 export function AchMarks({
   ach,
   size = "s",
@@ -27,7 +22,7 @@ export function AchMarks({
   date,
   extra,
 }: {
-  ach: Pick<AchView, "trophy" | "gamerscore" | "rarity">;
+  ach: Pick<AchView, "trophy" | "gamerscore" | "rarity" | "mythic">;
   size?: "s" | "m";
   /** A line of text instead of chips, where many rows sit together. */
   plain?: boolean;
@@ -36,23 +31,15 @@ export function AchMarks({
   /** Marks of the row's own (who has it, its guides), last on that line. */
   extra?: ReactNode;
 }) {
-  const { tr, locale } = useApp();
-  const tier = ach.trophy ? TIERS[ach.trophy.toLowerCase()] : undefined;
-  const rare = rareLevel(ach.rarity);
+  const { locale } = useApp();
+  const tier = rareLevel(ach.rarity, ach);
   if (plain) {
-    const worth = tier ? (
-      <span className="mark-worth">
-        <span className={`tier tier-${ach.trophy?.toLowerCase()}`} />
-        {tr(tier)}
-      </span>
-    ) : ach.gamerscore ? (
-      <span className="mark-worth">{num(ach.gamerscore, locale)} G</span>
-    ) : null;
+    const worth = ach.gamerscore ? <span className="mark-worth">{num(ach.gamerscore, locale)} G</span> : null;
     const rarity =
-      ach.rarity != null ? (
-        <span className={`mark-rarity${rare ? ` mark-${rare}` : ""}`}>
-          {rare && <span className="rare-mark shape-flower6" />}
-          {pct(ach.rarity, locale)}
+      ach.rarity != null || tier === "mythic" ? (
+        <span className={`mark-rarity${tier ? ` mark-${tier}` : ""}`}>
+          {tier && <span className="rare-mark shape-flower6" />}
+          {ach.rarity != null ? pct(ach.rarity, locale) : null}
         </span>
       ) : null;
     const parts = [worth, rarity, date ? <span className="mark-date">{date}</span> : null, extra ?? null].filter(Boolean);
@@ -70,17 +57,11 @@ export function AchMarks({
   }
   return (
     <span className={`marks marks-${size}`}>
-      {tier && (
-        <span className="chip chip-outline">
-          <span className={`tier tier-${ach.trophy?.toLowerCase()}`} />
-          {tr(tier)}
-        </span>
-      )}
-      {!tier && ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
-      {ach.rarity != null && (
-        <span className={`chip ${rare ? `chip-tier chip-tier-${rare}` : "chip-outline"}`}>
-          {rare && <span className="rare-mark shape-flower6" />}
-          {pct(ach.rarity, locale)}
+      {ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
+      {(ach.rarity != null || tier === "mythic") && (
+        <span className={`chip ${tier ? `chip-tier chip-tier-${tier}` : "chip-outline"}`}>
+          {tier && <span className="rare-mark shape-flower6" />}
+          {ach.rarity != null ? pct(ach.rarity, locale) : null}
         </span>
       )}
     </span>
@@ -124,7 +105,7 @@ export function AchRow({
         open({ kind: "achievement", ach });
       }}
     >
-      <AchPic src={ach.icon} className={wide ? "ach-pic-wide" : "ach-pic-square"} veiled={veiled} tier={rareLevel(ach.rarity)} />
+      <AchPic src={ach.icon} className={wide ? "ach-pic-wide" : "ach-pic-square"} veiled={veiled} />
       <span className="ach-text">
         <span className="ach-name clamp-2">{veiled ? tr("secretAchievement") : ach.name}</span>
         {showDescription && (veiled || ach.description) && (

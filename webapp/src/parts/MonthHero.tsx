@@ -1,10 +1,13 @@
+import { useState } from "react";
 import type { FeedItem, PersonPayload } from "../api";
 import { useApp } from "../app/context";
 import { achOfFeed, isVeiled } from "../app/views";
 import { tick } from "../core/haptic";
 import { formatMonth } from "../core/people-utils";
 import { num, plural } from "../i18n";
+import { Icon } from "../ui/Icon";
 import { AchPic } from "../ui/Pic";
+import { MonthSheet } from "./Months";
 
 /** The month as one bar a day: how much was earned, today marked, the days
  * still to come left faint. */
@@ -36,14 +39,55 @@ function MonthBars({ feed, month }: { feed: FeedItem[]; month: string }) {
 /** A person's month as one card: how many achievements, the points and the
  * games, the latest three as a fan of pictures, and the month by day. Home
  * shows the viewer's, a person's page that person's. */
-export function MonthHero({ payload, month }: { payload: PersonPayload | null | undefined; month: string }) {
+export function MonthHero({
+  payload,
+  month,
+  months,
+  onMonth,
+}: {
+  payload: PersonPayload | null | undefined;
+  month: string;
+  /** The months there are to see, newest first; with `onMonth` the card
+   * turns from one to the next. */
+  months?: string[];
+  onMonth?: (month: string) => void;
+}) {
   const { tr, locale, open, me } = useApp();
+  const [pick, setPick] = useState(false);
   const recent = (payload?.feed ?? []).slice(0, 3);
+  const list = months?.length ? months : [month];
+  const at = list.indexOf(month);
+  const older = at >= 0 ? list[at + 1] : undefined;
+  const newer = at > 0 ? list[at - 1] : undefined;
+  const label = formatMonth(month, locale, "sheet");
+  const go = (m: string | undefined) => {
+    if (!m || !onMonth) return;
+    tick();
+    onMonth(m);
+  };
   return (
     <section className="home-hero">
+      {onMonth ? (
+        <div className="home-hero-nav">
+          <button type="button" className="home-hero-month home-hero-pick" onClick={() => setPick(true)}>
+            {label.toUpperCase()}
+            <Icon name="down" size={18} />
+          </button>
+          <span className="home-hero-arrows">
+            <button type="button" className="home-hero-arrow" aria-label={tr("pickMonth")} disabled={!older} onClick={() => go(older)}>
+              <Icon name="back" size={20} />
+            </button>
+            <button type="button" className="home-hero-arrow" aria-label={tr("pickMonth")} disabled={!newer} onClick={() => go(newer)}>
+              <Icon name="forward" size={20} />
+            </button>
+          </span>
+        </div>
+      ) : (
+        <p className="home-hero-month">{label.split(" ")[0].toUpperCase()}</p>
+      )}
+      {pick && onMonth && <MonthSheet months={list} value={month} onChange={onMonth} onClose={() => setPick(false)} />}
       <div className="home-hero-top">
         <div className="home-hero-text">
-          <p className="home-hero-month">{formatMonth(month, locale, "sheet").split(" ")[0].toUpperCase()}</p>
           {payload ? (
             <>
               <p className="t-display home-hero-num">{num(payload.month.count, locale)}</p>

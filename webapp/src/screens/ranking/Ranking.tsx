@@ -6,19 +6,19 @@ import { achOfFeed } from "../../app/views";
 import { currentMonth, formatMonth } from "../../core/people-utils";
 import { tick } from "../../core/haptic";
 import { num, plural } from "../../i18n";
-import { capital } from "../../parts/Months";
+import { capital, MonthSheet } from "../../parts/Months";
+import { Sheet } from "../../ui/Page";
 import { Pull } from "../../parts/Pull";
 import { Button, Empty, Section, Segmented } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
-import { Sheet } from "../../ui/Page";
 import { WaveRing } from "../../ui/WaveRing";
-import { Cover } from "../../ui/Pic";
+import { GameTile } from "../../parts/GameTile";
 import { AchTile } from "../../parts/AchTile";
 import "./Ranking.css";
 
 type Board = "day" | "month" | "year";
 
-type Hunt = { key: string; item: FeedItem; people: Array<{ id: number; name: string }> };
+type Hunt = { key: string; item: FeedItem; people: Array<{ id: number; name: string; at: string | null }> };
 
 /** Achievements several people got this month, each once with everybody who
  * got it, the most shared first. */
@@ -27,7 +27,7 @@ function hunts(items: FeedItem[], min = 2): Hunt[] {
   for (const item of items) {
     const key = `${item.platform}:${item.title_id}:${item.achievement_id}`;
     const hunt = map.get(key) ?? { key, item, people: [] };
-    if (!hunt.people.some((p) => p.id === item.person_id)) hunt.people.push({ id: item.person_id, name: item.person });
+    if (!hunt.people.some((p) => p.id === item.person_id)) hunt.people.push({ id: item.person_id, name: item.person, at: item.unlocked_at ?? null });
     map.set(key, hunt);
   }
   return [...map.values()].filter((h) => h.people.length >= min).sort((a, b) => b.people.length - a.people.length);
@@ -35,10 +35,14 @@ function hunts(items: FeedItem[], min = 2): Hunt[] {
 
 const sum = (rows: SummaryMember[] | undefined) => (rows ?? []).reduce((n, r) => n + r.count, 0);
 
-/** The months of a year up to this one, newest first. */
-function monthsOf(year: string, now: string): string[] {
-  const last = year === now.slice(0, 4) ? Number(now.slice(5, 7)) : 12;
-  return Array.from({ length: last }, (_, i) => `${year}-${String(last - i).padStart(2, "0")}`);
+/** The months of the last three years up to this one, newest first. */
+function lastMonths(now: string): string[] {
+  const out: string[] = [];
+  const year = Number(now.slice(0, 4));
+  for (let y = year; y > year - 3; y -= 1) {
+    for (let m = y === year ? Number(now.slice(5, 7)) : 12; m >= 1; m -= 1) out.push(`${y}-${String(m).padStart(2, "0")}`);
+  }
+  return out;
 }
 
 export function Ranking({ refreshKey }: { refreshKey: number }) {
@@ -48,7 +52,6 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
   const [board, setBoard] = useState<Board>("month");
   const [pick, setPick] = useState<"month" | "year" | null>(null);
   const thisMonth = currentMonth();
-  const years = [0, 1, 2].map((i) => String(Number(thisMonth.slice(0, 4)) - i));
   const summary = useLoad(`summary:${month}:${refreshKey}:${round}`, () =>
     clubApi.fetchSummary(data, "following", { month }),
   );
@@ -85,22 +88,25 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
           onRepeat={(b) => setPick(b === "year" ? "year" : "month")}
         />
       </div>
-      {pick && (
-        <Sheet title={pick === "year" ? tr("pickYear") : tr("pickMonth")} onClose={() => setPick(null)} layer="rank-pick">
+      {pick === "month" && (
+        <MonthSheet months={lastMonths(thisMonth)} value={month} onChange={setMonth} onClose={() => setPick(null)} />
+      )}
+      {pick === "year" && (
+        <Sheet title={tr("pickYear")} onClose={() => setPick(null)} layer="rank-year">
           <div className="months-grid">
-            {(pick === "year" ? years : monthsOf(month.slice(0, 4), thisMonth)).map((m) => {
-              const on = pick === "year" ? month.startsWith(m) : m === month;
+            {[0, 1, 2].map((i) => {
+              const y = String(Number(thisMonth.slice(0, 4)) - i);
               return (
                 <button
-                  key={m}
+                  key={y}
                   type="button"
-                  className={on ? "months-on" : ""}
+                  className={month.startsWith(y) ? "months-on" : ""}
                   onClick={() => {
                     setPick(null);
-                    setMonth(pick === "year" ? (m === thisMonth.slice(0, 4) ? thisMonth : `${m}-12`) : m);
+                    setMonth(i === 0 ? thisMonth : `${y}-12`);
                   }}
                 >
-                  {pick === "year" ? m : capital(formatMonth(m, locale, "sheet"))}
+                  {y}
                 </button>
               );
             })}
@@ -193,26 +199,20 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
 
       {(s?.games.length ?? 0) > 0 && (
         <Section title={tr("trending")}>
-          <div className="rail trend">
+          <div className="rail month-games">
             {s!.games.map((g) => (
-              <button
+              <GameTile
                 key={`${g.platform}:${g.title_id}`}
-                type="button"
-                className="trend-card"
-                onClick={() => {
-                  tick();
-                  open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } });
-                }}
-              >
-                <span className="trend-art">
-                  <Cover src={g.icon_url} className="trend-cover" />
+                cover={g.icon_url}
+                name={g.name ?? ""}
+                mark={
                   <span className="trend-count">
                     <b className="t-num">{num(g.count, locale)}</b>
                     <span>{plural(locale, g.count, ["achOne", "achFew", "achMany"])}</span>
                   </span>
-                </span>
-                <span className="trend-name clamp-2">{g.name}</span>
-              </button>
+                }
+                onOpen={() => open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
+              />
             ))}
           </div>
         </Section>

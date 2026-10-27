@@ -140,7 +140,7 @@ export function useArtTheme(url: string | null | undefined): { style: CSSPropert
       return;
     }
     let live = true;
-    const giveUp = window.setTimeout(() => live && setSettled(true), 600);
+    const giveUp = window.setTimeout(() => live && setSettled(true), 250);
     void readHue(url).then((h) => {
       cache.set(url, h);
       saveHues();

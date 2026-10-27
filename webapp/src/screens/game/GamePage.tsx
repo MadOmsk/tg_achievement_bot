@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { gameApi, type GameCard, type GamePage as GamePageData, type GameRef } from "../../api";
 import { useApp } from "../../app/context";
 import { useArtTheme } from "../../app/artTheme";
@@ -63,9 +64,9 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
   return (
     <Page title={name} onBack={onClose} hero layer={layer} className="game-page" style={ready ? theme.style : undefined}>
       <div className="gp-hero">
-        {hero ? <img src={hero} alt="" /> : <span className="gp-hero-empty" />}
+        {hero ? <img src={hero} alt="" /> : <span className={`gp-hero-empty${g ? "" : " skel"}`} />}
       </div>
-      {!ready && !page.error && <GameSkeleton name={name} />}
+      {!ready && !page.error && <GameSkeleton name={name} cover={gameRef.icon_url ?? null} />}
       {!g && page.error ? (
         <Empty icon="refresh" title={tr("loadFailed")} action={<Button variant="tonal" onClick={page.reload}>{tr("retry")}</Button>} />
       ) : null}
@@ -78,17 +79,40 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
   );
 }
 
-function GameSkeleton({ name }: { name: string }) {
+/** The page's own shape while it loads: the head with what the tap already
+ * knew (the name, the cover), then the chips, the progress card and a list. */
+function GameSkeleton({ name, cover }: { name: string; cover: string | null }) {
   return (
-    <>
+    <div className="gp-skel" aria-hidden="true">
       <div className="gp-head">
-        <span className="gp-poster skel" />
+        {cover ? <Cover src={cover} className="gp-poster" /> : <span className="gp-poster skel" />}
         <div className="gp-titles">
-          <h1 className="gp-title clamp-3">{name}</h1>
-          <span className="skel" style={{ display: "block", width: 140, height: 12, borderRadius: 6, marginTop: 8 }} />
+          {name ? <h1 className="gp-title clamp-3">{name}</h1> : <span className="skel skel-line" style={{ width: "80%", height: 22 }} />}
+          <span className="skel skel-line" style={{ width: "60%" }} />
+          <span className="skel gp-skel-pill" />
         </div>
       </div>
-    </>
+      <div className="gp-chips">
+        {[86, 64, 74, 96].map((w) => (
+          <span key={w} className="skel gp-skel-chip" style={{ width: w }} />
+        ))}
+      </div>
+      <div className="gp-progress gp-skel-card">
+        <span className="skel skel-line" style={{ width: 110 }} />
+        <span className="gp-skel-row">
+          <span className="skel gp-skel-num" />
+          <span className="skel gp-skel-pct" />
+        </span>
+        <span className="skel gp-skel-wave" />
+        <span className="skel skel-line" style={{ width: 140 }} />
+      </div>
+      <div className="gp-skel-list">
+        <span className="skel skel-line" style={{ width: 120, height: 18 }} />
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="skel gp-skel-item" />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -112,6 +136,8 @@ function GameBody({
   const [allDlc, setAllDlc] = useState(false);
   const [fav, setFav] = useState({ on: g.favorite, count: g.favorites });
   const [busy, setBusy] = useState(false);
+  // Where the heart goes once the head scrolls away: the page's bar.
+  const [bar, setBar] = useState<HTMLElement | null>(null);
   const gallery: Media[] = [...(g.videos ?? []), ...g.screenshots];
 
   const studio = [
@@ -162,26 +188,37 @@ function GameBody({
   };
 
   const others = g.players.filter((p) => p.person_id !== (progress?.person_id ?? me.person_id));
+  const heart = (where: "head" | "bar") => (
+    <button
+      type="button"
+      className={`gp-fav gp-fav-${where} shape-cookie9${fav.on ? " gp-fav-on" : ""}`}
+      aria-label={fav.on ? tr("gpFavorited") : tr("gpFavorite")}
+      aria-pressed={fav.on}
+      disabled={busy}
+      onClick={() => void toggleFav()}
+    >
+      <Icon name="heart" size={where === "bar" ? 20 : 22} filled={fav.on} />
+    </button>
+  );
   return (
     <>
-      <div className="gp-head">
+      {bar && createPortal(heart("bar"), bar)}
+      <div
+        className="gp-head"
+        ref={(node) => {
+          const found = node?.closest(".page")?.querySelector<HTMLElement>(".appbar-actions") ?? null;
+          if (found !== bar) setBar(found);
+        }}
+      >
         <Cover src={g.art.poster} className="gp-poster" />
         <div className="gp-titles">
           <h1 className="gp-title clamp-3">{locale === "ru" && g.game.name_ru ? g.game.name_ru : g.game.name}</h1>
           <p className="gp-sub clamp-2">{[years(g.game), studio].filter(Boolean).join(" · ")}</p>
-          <button
-            type="button"
-            className={`gp-fav${fav.on ? " gp-fav-on" : ""}`}
-            aria-label={fav.on ? tr("gpFavorited") : tr("gpFavorite")}
-            aria-pressed={fav.on}
-            disabled={busy}
-            onClick={() => void toggleFav()}
-          >
-            <Icon name="heart" size={18} filled={fav.on} />
-            {fav.on ? tr("gpFavorited") : tr("gpFavorite")}
-            {fav.count > 0 && <span className="gp-fav-count t-num">{fav.count}</span>}
-          </button>
         </div>
+        <span className="gp-fav-wrap">
+          {heart("head")}
+          {fav.count > 0 && <span className="gp-fav-count t-num">{fav.count}</span>}
+        </span>
       </div>
 
       <div className="gp-chips">
@@ -214,16 +251,32 @@ function GameBody({
 
       {progress && (
         <section className={`gp-progress${done ? " gp-progress-done" : ""}`}>
+          {done ? (
+            <button type="button" className="gp-progress-main" onClick={() => openList()}>
+              <DoneMark size={56} className="gp-done-mark" />
+              <span className="gp-progress-row gp-done-row">
+                <span className="gp-progress-num">
+                  {progress.count}
+                  <small>/{progress.total}</small>
+                </span>
+                <span className="gp-done-text">
+                  <b>{tr("gameCompleted")}</b>
+                  {progress.last && (
+                    <span className="gp-progress-last">
+                      {tr("gpLast")} {dayLabel(progress.last, locale).toLowerCase()}
+                    </span>
+                  )}
+                </span>
+              </span>
+              <Wave value={progress.count} total={progress.total || progress.count} />
+            </button>
+          ) : (
           <button type="button" className="gp-progress-main" onClick={() => openList()}>
             <span className="gp-progress-top">
               <span className="gp-progress-label">
-                {done ? tr("gpDone") : whose ? whose.name : tr("gpProgressMine")}
+                {whose ? whose.name : tr("gpProgressMine")}
               </span>
-              {done ? (
-                <DoneMark size={40} className="gp-done-mark" />
-              ) : (
-                <GoMark />
-              )}
+              <GoMark />
             </span>
             <span className="gp-progress-row">
               <span className="gp-progress-num">
@@ -241,6 +294,7 @@ function GameBody({
               </span>
             )}
           </button>
+          )}
           {others.length > 0 && (
             <div className="gp-progress-others">
               <span className="gp-progress-others-label">{tr("gpAlsoPlaying")}</span>

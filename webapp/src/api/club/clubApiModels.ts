@@ -28,6 +28,7 @@ export type FeedItem = {
   description: string | null;
   trophy_type: string | null;
   tier_badge: string | null;
+  mythic?: boolean;
   progress?: FeedProgress | null;
 };
 

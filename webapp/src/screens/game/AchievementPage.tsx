@@ -4,12 +4,13 @@ import { useApp } from "../../app/context";
 import { openExternal } from "../../app/env";
 import type { AchView } from "../../app/layers";
 import { useLoad } from "../../app/useLoad";
-import { isVeiled, rareLevel, revealed } from "../../app/views";
+import { isVeiled, rareLevel, revealed, TIER_NAME } from "../../app/views";
 import { clockOf } from "../../core/post-text";
 import { tick } from "../../core/haptic";
-import { dayLabel, num, pct, type TranslationKey } from "../../i18n";
+import { dayLabel, num, pct } from "../../i18n";
 import { isWideArt } from "../../parts/AchRow";
 import { GameLink } from "../../parts/GameLink";
+import { capital } from "../../parts/Months";
 import { Button } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
@@ -22,12 +23,6 @@ import { GuideVideo } from "../../parts/GuideVideo";
 import { LinkCard } from "../../ui/LinkCard";
 import "./Game.css";
 
-const TIERS: Record<string, TranslationKey> = {
-  bronze: "tierBronze",
-  silver: "tierSilver",
-  gold: "tierGold",
-  platinum: "tierPlatinum",
-};
 
 function at(url: string, start: number): string {
   if (!start) return url;
@@ -48,7 +43,7 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
     return () => window.clearTimeout(id);
   }, [guides.data, ask]);
   const earners: Array<{ id: number | null; name: string; at: string | null }> =
-    ach.together && ach.together.length > 1
+    ach.together && ach.together.length > 0
       ? ach.together
       : ach.unlockedAt
         ? [{ id: ach.person?.id ?? null, name: ach.person?.name ?? "", at: ach.unlockedAt }]
@@ -56,8 +51,7 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
   const veiled = isVeiled(ach.secret, ach.key, me.settings.show_secrets);
   const tip = guides.data?.tips[ach.achievementId]?.text;
   const videos = guides.data?.videos?.[ach.achievementId] ?? [];
-  const rare = rareLevel(ach.rarity);
-  const tier = ach.trophy ? TIERS[ach.trophy.toLowerCase()] : undefined;
+  const rare = rareLevel(ach.rarity, ach);
 
   return (
     <Page title={ach.game ?? tr("pageAchievement")} onBack={onClose} hero layer={layer} className="ach-page">
@@ -65,21 +59,20 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
         <Hero full={isWideArt(ach.platform)} ground={veiled ? null : ach.icon} onOpen={!veiled && ach.icon ? () => openImage(ach.icon!) : undefined}>
           <AchPic src={ach.icon} veiled={veiled} className={isWideArt(ach.platform) ? "hero-ach" : "hero-ach hero-ach-sq"} />
         </Hero>
-        {ach.rarity != null && (
+        {(ach.rarity != null || rare) && (
           <span className={`ap-badge shape-flower6 ap-badge-${rare ?? "plain"}`}>
-            <b>{pct(ach.rarity, locale)}</b>
-            {rare && <span>{rare === "ultra" ? tr("rarityUltra") : tr("rarityRareWord")}</span>}
+            {ach.rarity != null ? <b>{pct(ach.rarity, locale)}</b> : <Icon name="trophy" size={24} />}
           </span>
         )}
       </div>
 
       <div className="detail">
         <div className="detail-meta">
-          <span className="chip chip-secondary">
-            {tier ? <span className={`tier tier-${ach.trophy?.toLowerCase()}`} /> : <Icon name="trophy" size={14} />}
-            {tier ? tr(tier) : tr("pageAchievement")}
+          <span className={`chip ${rare ? `chip-tier chip-tier-${rare}` : "chip-secondary"}`}>
+            {rare ? <span className="rare-mark shape-flower6" /> : <Icon name="trophy" size={14} />}
+            {capital(tr(TIER_NAME[rare ?? "common"]))}
           </span>
-          {!tier && ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
+          {ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
           {!ach.unlockedAt && <span>{tr("achNotEarned")}</span>}
         </div>
 

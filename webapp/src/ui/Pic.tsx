@@ -11,22 +11,18 @@ export function AchPic({
   className = "",
   style,
   veiled = false,
-  tier = null,
 }: {
   src: string | null | undefined;
   className?: string;
   style?: CSSProperties;
   veiled?: boolean;
-  /** Rare or ultra-rare: the picture glows in its tier's colour from below. */
-  tier?: "rare" | "ultra" | null;
 }) {
   const { picture } = useApp();
-  const tierClass = tier ? ` pic-tier pic-tier-${tier}` : "";
   const [natural, setNatural] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
   if (!src || failed) {
     return (
-      <span className={`pic pic-empty${tierClass} ${className}`} style={style}>
+      <span className={`pic pic-empty ${className}`} style={style}>
         <Icon name="trophy" size={22} />
       </span>
     );
@@ -34,7 +30,7 @@ export function AchPic({
   const small = picture.on && natural !== null && natural < picture.lowRes;
   const share = small ? Math.min(0.9, (natural * picture.scale) / 1024) : 1;
   return (
-    <span className={`pic ${small ? "pic-small" : ""}${tierClass} ${className}`} style={style}>
+    <span className={`pic ${small ? "pic-small" : ""} ${className}`} style={style}>
       {small && <img className="pic-ground" src={src} alt="" aria-hidden="true" />}
       <img
         className="pic-img"

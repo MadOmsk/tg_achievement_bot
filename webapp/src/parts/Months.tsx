@@ -80,26 +80,42 @@ export function MonthButton({
           <Icon name="down" size={18} />
         </button>
       </div>
-      {all && (
-        <Sheet title={tr("pickMonth")} onClose={() => setAll(false)} layer="months">
-          <div className="months-grid">
-            {list.map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={m === value ? "months-on" : ""}
-                onClick={() => {
-                  setAll(false);
-                  onChange(m);
-                }}
-              >
-                {capital(formatMonth(m, locale, "sheet"))}
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
+      {all && <MonthSheet months={list} value={value} onChange={onChange} onClose={() => setAll(false)} />}
     </>
+  );
+}
+
+/** Every month a list has, in a sheet: what the month button opens. */
+export function MonthSheet({
+  months,
+  value,
+  onChange,
+  onClose,
+}: {
+  months: string[];
+  value: string;
+  onChange: (month: string) => void;
+  onClose: () => void;
+}) {
+  const { locale, tr } = useApp();
+  return (
+    <Sheet title={tr("pickMonth")} onClose={onClose} layer="months">
+      <div className="months-grid">
+        {months.map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={m === value ? "months-on" : ""}
+            onClick={() => {
+              onClose();
+              onChange(m);
+            }}
+          >
+            {capital(formatMonth(m, locale, "sheet"))}
+          </button>
+        ))}
+      </div>
+    </Sheet>
   );
 }
 

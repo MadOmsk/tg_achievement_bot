@@ -93,19 +93,19 @@
 }
 
 .leader-top {
-  color: var(--on-tier-legendary);
-  background: var(--tier-legendary);
+  color: var(--on-tier-mythic);
+  background: var(--tier-mythic);
   font-size: 15px;
 }
 
 .leader-top-1 {
-  background: var(--tier-epic);
-  color: var(--on-tier-epic);
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
 }
 
 .leader-top-2 {
-  background: var(--tier-rare);
-  color: var(--on-tier-rare);
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
 }
 
 .leader-count {
@@ -212,18 +212,18 @@
 }
 
 .podium-1 .podium-medal {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.podium-2 .podium-medal {
   background: var(--tier-legendary);
   color: var(--on-tier-legendary);
 }
 
-.podium-2 .podium-medal {
+.podium-3 .podium-medal {
   background: var(--tier-epic);
   color: var(--on-tier-epic);
-}
-
-.podium-3 .podium-medal {
-  background: var(--tier-rare);
-  color: var(--on-tier-rare);
 }
 
 .podium-name {
@@ -246,49 +246,24 @@
 
 .podium-1 .podium-block {
   height: 132px;
-  background: linear-gradient(color-mix(in srgb, var(--tier-legendary) 46%, var(--surface-2)), var(--surface-1));
-  box-shadow: inset 0 3px 0 var(--tier-legendary);
+  background: linear-gradient(color-mix(in srgb, var(--tier-mythic) 46%, var(--surface-2)), var(--surface-1));
 }
 
 .podium-2 .podium-block {
   height: 100px;
-  background: linear-gradient(color-mix(in srgb, var(--tier-epic) 40%, var(--surface-2)), var(--surface-1));
-  box-shadow: inset 0 3px 0 var(--tier-epic);
+  background: linear-gradient(color-mix(in srgb, var(--tier-legendary) 40%, var(--surface-2)), var(--surface-1));
 }
 
 .podium-3 .podium-block {
   height: 80px;
-  background: linear-gradient(color-mix(in srgb, var(--tier-rare) 38%, var(--surface-2)), var(--surface-1));
-  box-shadow: inset 0 3px 0 var(--tier-rare);
+  background: linear-gradient(color-mix(in srgb, var(--tier-epic) 38%, var(--surface-2)), var(--surface-1));
 }
-
 
 .podium-block b {
   position: relative;
   font-size: 26px;
 }
 
-
-.trend {
-  gap: 12px;
-  align-items: flex-start;
-}
-
-.trend-card {
-  width: 150px;
-  text-align: left;
-}
-
-.trend-art {
-  position: relative;
-  display: block;
-}
-
-.trend-cover {
-  width: 150px;
-  height: 200px;
-  border-radius: var(--r-l);
-}
 
 .trend-count {
   position: absolute;
@@ -297,7 +272,7 @@
   bottom: 0;
   display: flex;
   flex-direction: column;
-  padding: 40px 14px 12px;
+  padding: 40px 12px 10px;
   border-radius: 0 0 var(--r-l) var(--r-l);
   background: var(--img-scrim);
   color: #fff;
@@ -306,16 +281,8 @@
 }
 
 .trend-count b {
-  font-size: 40px;
+  font-size: 34px;
   line-height: 1;
-}
-
-.trend-name {
-  display: block;
-  margin-top: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.3;
 }
 
 .hunts.rail {

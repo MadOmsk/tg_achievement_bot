@@ -91,6 +91,13 @@ h3 {
   font-stretch: 115%;
 }
 
+.t-card {
+  font-size: 20px;
+  line-height: 1.2;
+  font-weight: 800;
+  font-stretch: 110%;
+}
+
 .t-label {
   font-size: 16px;
   font-weight: 650;

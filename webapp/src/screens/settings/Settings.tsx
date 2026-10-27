@@ -92,13 +92,13 @@ function Root() {
       <Group>
         <Row lead={<Lead icon="shield" />} title={tr("privacy")} sub={tr("privacySub")} chevron onClick={() => open({ kind: "settings", pane: "privacy" })} />
         <Row lead={<Lead icon="key" />} title={tr("logins")} sub={tr("loginsSub")} chevron onClick={() => open({ kind: "settings", pane: "logins" })} />
-        <Row lead={<Lead icon="sparkle" />} title={tr("appearance")} sub={tr("appearanceSub")} chevron onClick={() => open({ kind: "settings", pane: "appearance" })} />
+        <Row lead={<Lead icon="palette" />} title={tr("appearance")} sub={tr("appearanceSub")} chevron onClick={() => open({ kind: "settings", pane: "appearance" })} />
         <Row lead={<Lead icon="globe" />} title={tr("general")} sub={tr("generalSub")} chevron onClick={() => open({ kind: "settings", pane: "general" })} />
       </Group>
       <Group>
         <Row lead={<Lead icon="gift" tone="tertiary" />} title={tr("invites")} sub={tr("invitesSub")} chevron onClick={() => open({ kind: "settings", pane: "invites" })} />
         {me.is_superadmin && (
-          <Row lead={<Lead icon="sparkle" tone="tertiary" />} title={tr("admin")} chevron onClick={() => open({ kind: "admin", screen: null })} />
+          <Row lead={<Lead icon="settings" tone="tertiary" />} title={tr("admin")} chevron onClick={() => open({ kind: "admin", screen: null })} />
         )}
       </Group>
       <Group>

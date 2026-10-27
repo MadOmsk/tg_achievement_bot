@@ -7,9 +7,9 @@ import { currentMonth } from "../../core/people-utils";
 import { tick } from "../../core/haptic";
 import { num } from "../../i18n";
 import { FAVORITES_CHANGED, FOLLOWS_CHANGED } from "../../parts/FollowButton";
-import { MonthButton, monthName } from "../../parts/Months";
+import { monthName, recentMonths } from "../../parts/Months";
 import { gameLines, MonthGames } from "../../parts/MonthGames";
-import { Post, PostSkel } from "../../parts/Post";
+import { MagazinePost, MagazineSkel } from "../../parts/MagazinePost";
 import { toPosts } from "../../parts/posts";
 import { AccountCard } from "../../parts/AccountCard";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
@@ -225,7 +225,15 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
 
       {!hidden && (a || activity.loading) && (
         <div className="pp-hero">
-          <MonthHero payload={a} month={a?.month_key ?? month} />
+          <MonthHero
+            payload={a}
+            month={month}
+            months={a?.months?.length ? a.months : recentMonths(12)}
+            onMonth={(m) => {
+              setAllPosts(false);
+              setMonth(m);
+            }}
+          />
         </div>
       )}
 
@@ -244,19 +252,16 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       )}
 
       {!hidden && (
-        <Section
-          title={tr("recentUnlocks")}
-          action={a ? <MonthButton months={a.months ?? [month]} value={month} onChange={setMonth} /> : null}
-        >
+        <Section title={tr("recentUnlocks")}>
           {!a && activity.loading && (
             <>
-              <PostSkel />
-              <PostSkel rows={1} />
+              <MagazineSkel />
+              <MagazineSkel />
             </>
           )}
           {a && posts.length === 0 && <Empty icon="trophy" title={tr("emptyPersonTitle")} />}
           {(allPosts ? posts : posts.slice(0, POSTS_SHOWN)).map((p) => (
-            <Post key={p.key} post={p} />
+            <MagazinePost key={p.key} post={p} />
           ))}
           {posts.length > POSTS_SHOWN && !allPosts && (
             <div className="pp-more">
@@ -276,7 +281,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       )}
 
       {!hidden && a && a.games.length > 0 && (
-        <Section title={tr("homeGamesOf").replace("{month}", monthName(a.month_key ?? month, locale))}>
+        <Section title={tr("homeGamesOf").replace("{month}", monthName(month, locale))}>
           <MonthGames games={gameLines(a)} person={{ id: personId, name }} loading={false} />
         </Section>
       )}
