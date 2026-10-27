@@ -265,24 +265,9 @@
 }
 
 
-.trend-count {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 40px 12px 10px;
-  border-radius: 0 0 var(--r-l) var(--r-l);
-  background: var(--img-scrim);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.trend-count b {
-  font-size: 34px;
-  line-height: 1;
+.trend-meta {
+  font-size: 13px;
+  color: var(--on-surface-3);
 }
 
 .hunts.rail {

@@ -205,14 +205,12 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
                 key={`${g.platform}:${g.title_id}`}
                 cover={g.icon_url}
                 name={g.name ?? ""}
-                mark={
-                  <span className="trend-count">
-                    <b className="t-num">{num(g.count, locale)}</b>
-                    <span>{plural(locale, g.count, ["achOne", "achFew", "achMany"])}</span>
-                  </span>
-                }
                 onOpen={() => open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
-              />
+              >
+                <span className="trend-meta">
+                  {num(g.count, locale)} {plural(locale, g.count, ["achOne", "achFew", "achMany"])}
+                </span>
+              </GameTile>
             ))}
           </div>
         </Section>
