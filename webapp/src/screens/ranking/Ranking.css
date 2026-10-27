@@ -93,19 +93,19 @@
 }
 
 .leader-top {
-  color: var(--on-primary);
-  background: var(--primary);
+  color: var(--on-tier-legendary);
+  background: var(--tier-legendary);
   font-size: 15px;
 }
 
 .leader-top-1 {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
 }
 
 .leader-top-2 {
-  background: var(--secondary-container);
-  color: var(--on-secondary-container);
+  background: var(--tier-rare);
+  color: var(--on-tier-rare);
 }
 
 .leader-count {
@@ -164,8 +164,8 @@
   height: 32px;
   padding: 0 14px;
   border-radius: 16px;
-  background: var(--tertiary);
-  color: var(--on-tertiary);
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
   font-size: 13px;
   font-weight: 750;
   line-height: 32px;
@@ -213,17 +213,17 @@
 
 .podium-1 .podium-medal {
   background: var(--tier-legendary);
-  color: #2b1600;
+  color: var(--on-tier-legendary);
 }
 
 .podium-2 .podium-medal {
   background: var(--tier-epic);
-  color: #fff;
+  color: var(--on-tier-epic);
 }
 
 .podium-3 .podium-medal {
   background: var(--tier-rare);
-  color: #00203a;
+  color: var(--on-tier-rare);
 }
 
 .podium-name {
@@ -299,7 +299,7 @@
   flex-direction: column;
   padding: 40px 14px 12px;
   border-radius: 0 0 var(--r-l) var(--r-l);
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  background: var(--img-scrim);
   color: #fff;
   font-size: 12px;
   font-weight: 650;

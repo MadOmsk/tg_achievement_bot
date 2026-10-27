@@ -7,7 +7,7 @@ import { currentMonth } from "../../core/people-utils";
 import { tick } from "../../core/haptic";
 import { num } from "../../i18n";
 import { FAVORITES_CHANGED, FOLLOWS_CHANGED } from "../../parts/FollowButton";
-import { MonthSwitch } from "../../parts/Months";
+import { MonthButton, monthName } from "../../parts/Months";
 import { gameLines, MonthGames } from "../../parts/MonthGames";
 import { Post, PostSkel } from "../../parts/Post";
 import { toPosts } from "../../parts/posts";
@@ -97,9 +97,9 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
         </button>
         <h1 className="pp-name">{name}</h1>
         <div className="pp-tags">
-          {rel?.friends && <span className="chip chip-primary">{tr("friendsBtn")}</span>}
-          {!rel?.friends && rel?.followed_by && <span className="chip chip-secondary">{tr("followsYou")}</span>}
-          {rel?.blocked && <span className="chip chip-tertiary">{tr("stateBlocked")}</span>}
+          {rel?.friends && <span className="chip chip-secondary">{tr("friendsBtn")}</span>}
+          {!rel?.friends && rel?.followed_by && <span className="chip chip-outline">{tr("followsYou")}</span>}
+          {rel?.blocked && <span className="chip chip-outline chip-danger">{tr("stateBlocked")}</span>}
           {presence?.playing && presence.title_name && (
             <span className="chip chip-outline">
               {tr("playing")} · {presence.title_name}
@@ -244,12 +244,10 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       )}
 
       {!hidden && (
-        <Section title={tr("recentUnlocks")}>
-          {a && (
-            <div className="home-months pp-months">
-              <MonthSwitch months={a.months ?? [month]} value={month} onChange={setMonth} />
-            </div>
-          )}
+        <Section
+          title={tr("recentUnlocks")}
+          action={a ? <MonthButton months={a.months ?? [month]} value={month} onChange={setMonth} /> : null}
+        >
           {!a && activity.loading && (
             <>
               <PostSkel />
@@ -278,7 +276,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       )}
 
       {!hidden && a && a.games.length > 0 && (
-        <Section title={tr("personMonthGames")}>
+        <Section title={tr("homeGamesOf").replace("{month}", monthName(a.month_key ?? month, locale))}>
           <MonthGames games={gameLines(a)} person={{ id: personId, name }} loading={false} />
         </Section>
       )}

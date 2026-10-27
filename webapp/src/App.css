@@ -53,19 +53,17 @@
 }
 
 .layer > .page {
-  transition:
-    transform var(--t-slow) var(--spring-soft),
-    filter var(--t-slow);
+  transition: transform var(--t-mid) var(--spring-soft);
 }
 
-/* The page under the top one steps back and dims, as in a stack. */
+/* The page under the top one steps back a little, as in a stack — a
+   transform only, so coming back to it costs nothing. */
 .layer-covered > .page {
-  transform: translateX(-8%);
-  filter: brightness(0.7);
+  transform: translateX(-6%);
 }
 
 .layer-leaving > .page {
-  animation: slide-out var(--t-mid) var(--spring-soft) forwards;
+  animation: slide-out 180ms ease-in forwards;
 }
 
 .screen-head {

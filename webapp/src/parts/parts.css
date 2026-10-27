@@ -318,11 +318,11 @@
 }
 
 .mark-rare {
-  color: var(--primary);
+  color: var(--tier-epic);
 }
 
 .mark-ultra {
-  color: var(--tertiary);
+  color: var(--tier-legendary);
 }
 
 .marks-plain .rare-mark {
@@ -371,55 +371,6 @@
   margin-top: 10px;
 }
 
-.game-row {
-  min-height: 92px;
-  align-items: center;
-}
-
-.game-row .row-text {
-  gap: 8px;
-}
-
-.game-row-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.game-row-top .row-title {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.25;
-}
-
-.game-row-cover {
-  width: 52px;
-  height: 70px;
-  border-radius: 14px;
-}
-
-.game-row-num {
-  flex: 0 0 auto;
-  font-size: 20px;
-  line-height: 1.1;
-  color: var(--on-surface);
-}
-
-.game-row-num small {
-  font-size: 14px;
-  color: var(--on-surface-3);
-}
-
-.game-row-gain {
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--primary);
-}
-
-.game-row-skel {
-  height: 92px;
-}
-
 .rail {
   display: flex;
   gap: 12px;
@@ -443,7 +394,7 @@
   margin: 16px 12px 0;
   padding: 12px 8px 12px 12px;
   border-radius: var(--r-l);
-  background: var(--surface-2);
+  background: var(--surface-1);
 }
 
 .install-logo {
@@ -470,18 +421,18 @@
 }
 
 .acc-xbox {
-  background: #2e5e2e;
-  color: #c6f5c6;
+  background: var(--xbox);
+  color: var(--on-xbox);
 }
 
 .acc-psn {
-  background: #24396e;
-  color: #cddcff;
+  background: var(--psn);
+  color: var(--on-psn);
 }
 
 .acc-steam {
-  background: #2b3542;
-  color: #d4e2f2;
+  background: var(--steam);
+  color: var(--on-steam);
 }
 
 .row.acc-card {
@@ -513,45 +464,6 @@
   flex: 0 0 auto;
   background: var(--tertiary);
   color: var(--on-tertiary);
-}
-
-.row.game-row-done {
-  background: color-mix(in srgb, var(--tertiary-container) 55%, var(--surface-1));
-}
-
-.row.game-row-done .done-mark {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tertiary-container) 55%, var(--surface-1));
-}
-
-.game-row-cover-wrap {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.game-row-cover-wrap .done-mark {
-  position: absolute;
-  right: -8px;
-  bottom: -6px;
-  box-shadow: 0 0 0 3px var(--surface-1);
-}
-
-.row.game-row-done .game-row-num,
-.row.game-row-done .game-row-gain {
-  color: var(--tertiary);
-}
-
-.ptag {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
-  background: var(--surface-3);
-  color: var(--on-surface-2);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  flex: 0 0 auto;
 }
 
 .post-news-cover {
@@ -763,14 +675,38 @@
   color: var(--on-primary-container);
 }
 
-.home-hero-skel {
+.home-hero .home-hero-ghost {
   display: block;
   background: color-mix(in srgb, var(--on-primary-container) 14%, transparent);
-  animation: none;
+  animation: ghost 1.4s ease-in-out infinite;
+}
+
+.home-hero-ghost-num {
   width: 120px;
-  height: 110px;
+  height: 96px;
   margin-top: 8px;
   border-radius: var(--r-m);
+}
+
+.home-hero-ghost-line {
+  width: 110px;
+  height: 14px;
+  margin-top: 10px;
+  border-radius: 7px;
+}
+
+.home-hero-ghost-line.short {
+  width: 76px;
+}
+
+.home-hero-pic.home-hero-ghost {
+  box-shadow: none;
+}
+
+@keyframes ghost {
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .home-hero-stack {
@@ -913,7 +849,7 @@
   justify-content: center;
   background: var(--surface-4);
   color: var(--on-surface);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-1);
 }
 
 .tile-badge b {
@@ -921,18 +857,17 @@
 }
 
 .tile-badge-rare {
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
 }
 
 .tile-badge-ultra {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
 }
 
 .tile-name {
   padding: 0 4px;
-  min-height: 2.6em;
   font-size: 14.5px;
   font-weight: 650;
   line-height: 1.3;
@@ -979,4 +914,93 @@
 
 .tile-faces .face-initials {
   font-size: 9px !important;
+}
+
+/* The month's games (MonthGames): a rail of game cards. */
+.month-games {
+  align-items: stretch;
+}
+
+.game-tile {
+  width: 148px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 8px 12px;
+  border-radius: var(--r-l);
+  background: var(--surface-1);
+  text-align: left;
+}
+
+.game-tile-skel {
+  height: 244px;
+}
+
+.game-tile-done {
+  background: color-mix(in srgb, var(--tertiary-container) 55%, var(--surface-1));
+}
+
+.game-tile-art {
+  position: relative;
+  display: block;
+}
+
+.game-tile-cover {
+  width: 132px;
+  height: 132px;
+  border-radius: 20px;
+}
+
+.game-tile-art .done-mark {
+  position: absolute;
+  right: -4px;
+  bottom: -6px;
+  box-shadow: 0 0 0 3px var(--surface-1);
+}
+
+.game-tile-name {
+  min-height: 2.6em;
+  padding: 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.game-tile .wave {
+  padding: 0 4px;
+}
+
+.game-tile-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.game-tile-gain {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.game-tile-num {
+  font-size: 16px;
+}
+
+.game-tile-done .game-tile-gain,
+.game-tile-done .game-tile-num {
+  color: var(--tertiary);
+}
+
+.sec-head .split button {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px 6px 6px 20px;
+}
+
+.sec-head .split button:last-child {
+  width: 40px;
+  padding: 0;
+  border-radius: 6px 20px 20px 6px;
 }

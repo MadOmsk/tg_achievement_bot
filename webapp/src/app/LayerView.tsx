@@ -104,14 +104,14 @@ export function LayerView({
     if (done.current) return;
     done.current = true;
     setLeaving(true);
-    window.setTimeout(onClose, 220);
+    window.setTimeout(onClose, 180);
   }, [onClose]);
   const body = (() => {
     switch (layer.kind) {
       case "game":
         return <GamePage gameRef={layer.ref} onClose={close} layer={key} />;
       case "achievements":
-        return <Achievements platform={layer.platform} titleId={layer.titleId} name={layer.name} person={layer.person} onClose={close} layer={key} />;
+        return <Achievements platform={layer.platform} titleId={layer.titleId} name={layer.name} cover={layer.cover ?? null} person={layer.person} onClose={close} layer={key} />;
       case "achievement":
         return <AchievementPage ach={layer.ach} onClose={close} layer={key} />;
       case "gallery":

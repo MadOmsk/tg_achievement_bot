@@ -32,6 +32,7 @@ export type SettingsPaneName =
   | "logins"
   | "notifications"
   | "general"
+  | "appearance"
   | "invites";
 
 /** Everything that opens over the tabs, topmost last. */
@@ -42,6 +43,8 @@ export type Layer =
       platform: string;
       titleId: string;
       name: string | null;
+      /** The game's cover the page opening it already shows. */
+      cover?: string | null;
       person: { id: number; name: string } | null;
     }
   | { kind: "achievement"; ach: AchView }

@@ -39,8 +39,9 @@ export function gameLines(payload: PersonPayload): GameLine[] {
     });
 }
 
-/** The month's games as one connected group; a tap opens the game on this
- * person's progress. */
+/** The month's games as a rail of cards: the cover (a check on it when the
+ * list is earned whole), the name, the progress wave, what the month added.
+ * A tap opens the game on this person's progress. */
 export function MonthGames({
   games,
   person,
@@ -50,62 +51,47 @@ export function MonthGames({
   person: { id: number; name: string } | null;
   loading: boolean;
 }) {
-  const { tr, open } = useApp();
+  const { open } = useApp();
   return (
-    <div className="group">
-      <div className="group-items">
-        {loading
-          ? Array.from({ length: 3 }, (_, i) => <span key={i} className="row game-row-skel skel" />)
-          : games.map((g) => {
-              const done = Boolean(g.total && g.unlocked === g.total);
-              return (
-                <button
-                  key={`${g.platform}:${g.titleId}`}
-                  type="button"
-                  className={`row row-tap game-row${done ? " game-row-done" : ""}`}
-                  onClick={() => {
-                    tick();
-                    open({
-                      kind: "game",
-                      ref: {
-                        platform: g.platform,
-                        title_id: g.titleId,
-                        name: g.name,
-                        icon_url: g.cover,
-                        person: person ? { person_id: person.id, name: person.name } : null,
-                      },
-                    });
-                  }}
-                >
-                  <span className="game-row-cover-wrap">
-                    <Cover src={g.cover} className="game-row-cover" />
-                    {done && <DoneMark size={26} />}
-                  </span>
-                  <span className="row-text">
-                    <span className="game-row-top">
-                      <span className="row-title clamp-2">{g.name}</span>
-                      {g.total ? (
-                        <span className="game-row-num t-num">
-                          {done ? (
-                            "100 %"
-                          ) : (
-                            <>
-                              {g.unlocked}
-                              <small>/{g.total}</small>
-                            </>
-                          )}
-                        </span>
-                      ) : null}
-                    </span>
-                    {g.total ? <Wave value={g.unlocked ?? 0} total={g.total} /> : null}
-                    <span className="game-row-gain">
-                      +{g.month} {tr("gainThisMonth")}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-      </div>
+    <div className="rail month-games">
+      {loading
+        ? Array.from({ length: 3 }, (_, i) => <span key={i} className="game-tile game-tile-skel skel" />)
+        : games.map((g) => {
+            const done = Boolean(g.total && g.unlocked === g.total);
+            return (
+              <button
+                key={`${g.platform}:${g.titleId}`}
+                type="button"
+                className={`game-tile${done ? " game-tile-done" : ""}`}
+                onClick={() => {
+                  tick();
+                  open({
+                    kind: "game",
+                    ref: {
+                      platform: g.platform,
+                      title_id: g.titleId,
+                      name: g.name,
+                      icon_url: g.cover,
+                      person: person ? { person_id: person.id, name: person.name } : null,
+                    },
+                  });
+                }}
+              >
+                <span className="game-tile-art">
+                  <Cover src={g.cover} className="game-tile-cover" />
+                  {done && <DoneMark size={34} />}
+                </span>
+                <span className="game-tile-name clamp-2">{g.name}</span>
+                {g.total ? <Wave value={g.unlocked ?? 0} total={g.total} /> : null}
+                <span className="game-tile-foot">
+                  <span className="game-tile-gain">+{g.month}</span>
+                  {g.total ? (
+                    <span className="game-tile-num t-num">{`${g.unlocked}/${g.total}`}</span>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
     </div>
   );
 }

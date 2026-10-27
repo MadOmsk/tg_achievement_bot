@@ -24,6 +24,7 @@ export function Achievements({
   platform,
   titleId,
   name,
+  cover,
   person,
   onClose,
   layer,
@@ -31,6 +32,7 @@ export function Achievements({
   platform: string;
   titleId: string;
   name: string | null;
+  cover?: string | null;
   person: { id: number; name: string } | null;
   onClose: () => void;
   layer: string;
@@ -139,10 +141,10 @@ export function Achievements({
 
   return (
     <Page title={gameName} onBack={onClose} hero layer={layer} className="list-page">
-      <Hero ground={d?.icon_url}>
+      <Hero ground={d?.icon_url ?? cover}>
         <span className="list-ring">
           <WaveRing value={d?.achievements_unlocked ?? 0} total={d?.achievements_total ?? 0} size={184}>
-            <Cover src={d?.icon_url} className="list-cover" />
+            <Cover src={d?.icon_url ?? cover} className="list-cover" />
           </WaveRing>
           {done && <DoneMark size={52} className="list-done" />}
         </span>
@@ -153,13 +155,20 @@ export function Achievements({
             {theirs.name}
           </span>
         )}
+        {!d && (
+          <span className="list-stats" aria-hidden="true">
+            <span className="list-ghost list-ghost-num" />
+            <span className="list-ghost" />
+            <span className="list-ghost" />
+          </span>
+        )}
         {d && (
           <span className={`list-stats${done ? " list-stats-done" : ""}`}>
             <b className="t-num">
               {d.achievements_unlocked}
               <small>/{d.achievements_total}</small>
             </b>
-            {share != null && <span className="list-pct">{done ? tr("gameCompleted") : `${share} %`}</span>}
+            {share != null && !done && <span className="list-pct">{`${share} %`}</span>}
             {score && score.allGs > 0 && (
               <span className="list-gs">
                 {num(score.gs, locale)} / {num(score.allGs, locale)} G

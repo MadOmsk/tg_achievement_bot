@@ -10,6 +10,7 @@ import { Face } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
 import { Page } from "../../ui/Page";
 import { Cover } from "../../ui/Pic";
+import { GoMark } from "../../ui/GoMark";
 import "./Notifications.css";
 
 export function NotificationsPage({ onClose, layer }: { onClose: () => void; layer: string }) {
@@ -113,34 +114,47 @@ export function NotificationsPage({ onClose, layer }: { onClose: () => void; lay
           <div className="group">
             <div className="group-items">
               {d.items.map((item) => (
-                <button key={item.id} type="button" className={`row row-tap nt-row${item.read ? "" : " nt-unread"}`} onClick={() => go(item)}>
-                  <span className="nt-lead">
-                    {item.person_id ? (
-                      <Face personId={item.person_id} name={item.name ?? "?"} size={44} />
-                    ) : item.cover ? (
-                      <Cover src={item.cover} className="nt-cover" />
-                    ) : (
-                      <span className="nt-icon shape-cookie9">
-                        <Icon name={item.kind === "xbox_login_dead" ? "key" : "bell"} size={20} />
-                      </span>
-                    )}
-                  </span>
-                  <span className="row-text">
-                    <span className="nt-text">
-                      {item.bold && <b>{item.bold} </b>}
-                      {item.lead}
-                    </span>
-                    {item.detail && <span className="row-sub clamp-1">{item.detail}</span>}
-                    <span className="nt-time">{clockOf(item.created_at, locale)}</span>
-                  </span>
-                  {item.image && <Cover src={item.image} className="nt-image" />}
-                  {!item.read && <span className="nt-dot" aria-label={tr("patchesNew")} />}
-                </button>
+                <Moment key={item.id} item={item} onOpen={() => go(item)} />
               ))}
             </div>
           </div>
         </section>
       ))}
     </Page>
+  );
+}
+
+/** One notice, one compact row, as a messenger's: who (a face, a game's
+ * cover), what happened in one sentence, the game under it, the time in the
+ * corner and the achievement's or the post's picture at the end. */
+function Moment({ item, onOpen }: { item: NotificationItem; onOpen: () => void }) {
+  const { locale } = useApp();
+  const alert = item.kind === "xbox_login_dead";
+  const lead = item.person_id ? (
+    <Face personId={item.person_id} name={item.name ?? "?"} size={44} />
+  ) : item.cover ? (
+    <Cover src={item.cover} className="nt-cover" />
+  ) : (
+    <span className="nt-icon shape-cookie9">
+      <Icon name={alert ? "key" : "bell"} size={20} />
+    </span>
+  );
+  const what = item.lead.replace(/^—\s*/, "");
+  const pic = item.image && item.image !== item.cover ? item.image : null;
+  return (
+    <button type="button" className={`row row-tap nt-row${item.read ? "" : " nt-unread"}${alert ? " nt-alert" : ""}`} onClick={onOpen}>
+      {lead}
+      <span className="row-text">
+        <span className="nt-text clamp-2">
+          {item.bold && <b>{item.bold} </b>}
+          {what}
+        </span>
+        {item.detail && <span className="row-sub clamp-1">{item.detail}</span>}
+      </span>
+      <span className="nt-end">
+        <span className="nt-time">{clockOf(item.created_at, locale)}</span>
+        {pic ? <Cover src={pic} className="nt-pic" /> : alert ? <GoMark /> : null}
+      </span>
+    </button>
   );
 }

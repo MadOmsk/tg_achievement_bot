@@ -72,7 +72,7 @@
   object-fit: contain;
   transform: translate(-50%, -50%);
   border-radius: 18%;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-1);
 }
 
 .pic-ground {
@@ -214,20 +214,12 @@
   color: var(--on-secondary-container);
 }
 
-.btn-outline {
-  border: 1px solid var(--outline);
-  color: var(--primary);
-}
 
 .btn-text {
   color: var(--primary);
   padding: 0 14px;
 }
 
-.btn-accent {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
-}
 
 .btn-danger {
   background: var(--error);
@@ -262,15 +254,7 @@
   background: var(--surface-3);
 }
 
-.ibtn-primary {
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-}
 
-.ibtn-accent {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
-}
 
 .ibtn-glass {
   background: color-mix(in srgb, var(--surface) 50%, transparent);
@@ -319,9 +303,10 @@ button.chip {
   color: var(--on-surface-2);
 }
 
+
 .chip-tonal {
   background: var(--surface-3);
-  color: var(--on-surface-2);
+  color: var(--on-surface);
 }
 
 .chip-secondary {
@@ -330,10 +315,24 @@ button.chip {
   border-radius: 14px;
 }
 
-.chip-primary {
-  background: var(--primary-container);
-  color: var(--on-primary-container);
+
+.chip-tier {
   border-radius: 14px;
+}
+
+.chip-tier-rare {
+  background: color-mix(in srgb, var(--tier-epic) 22%, var(--surface-1));
+  color: var(--tier-epic);
+}
+
+.chip-tier-ultra {
+  background: color-mix(in srgb, var(--tier-legendary) 22%, var(--surface-1));
+  color: var(--tier-legendary);
+}
+
+.chip-danger {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 .chip-tertiary {
@@ -577,10 +576,6 @@ button.chip {
   font-size: 14px;
 }
 
-.row-chev {
-  color: var(--on-surface-3);
-  flex: 0 0 auto;
-}
 
 .sec {
   margin-top: 20px;
@@ -1103,7 +1098,7 @@ button.chip {
   max-height: 320px;
   object-fit: contain;
   border-radius: var(--r-l);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-2);
 }
 
 .hero-full {
@@ -1135,7 +1130,7 @@ button.chip {
   height: 168px;
   margin: 0 auto;
   border-radius: 48px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-2);
 }
 
 .detail {
@@ -1304,7 +1299,7 @@ button.chip {
   width: 100%;
   padding: 10px 10px 10px 10px;
   border-radius: var(--r-l);
-  background: var(--surface-2);
+  background: var(--surface-1);
   text-align: left;
   transition:
     border-radius var(--t-mid) var(--spring),
@@ -1370,16 +1365,6 @@ button.chip {
   color: var(--on-surface-3);
 }
 
-.link-card-go {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-}
 
 /* Link cards in a row are one connected group, as every list is. */
 .link-cards {
@@ -1397,4 +1382,16 @@ button.chip {
 .link-cards > .link-card:has(+ .link-card) {
   border-bottom-left-radius: var(--r-xs);
   border-bottom-right-radius: var(--r-xs);
+}
+
+/* GoMark: where a tap goes, one mark for every row, card and link. */
+.go-mark {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  color: var(--primary);
 }

@@ -38,14 +38,10 @@
   color: var(--on-secondary-container);
 }
 
-.set-lead-primary {
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-}
-
+.set-lead-primary,
 .set-lead-tertiary {
-  background: var(--tertiary-container);
-  color: var(--on-tertiary-container);
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
 }
 
 .set-pad {
@@ -284,8 +280,9 @@
 }
 
 .swatches {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .swatch {
@@ -327,6 +324,14 @@
 
 .swatch-ember .swatch-dot {
   background: linear-gradient(135deg, #ffb871 0 50%, #ffb3ae 50%);
+}
+
+.swatch-ocean .swatch-dot {
+  background: linear-gradient(135deg, #9ecaff 0 50%, #ffc65c 50%);
+}
+
+.swatch-rose .swatch-dot {
+  background: linear-gradient(135deg, #ffb1c2 0 50%, #b8d0ff 50%);
 }
 
 .swatch-dot svg {

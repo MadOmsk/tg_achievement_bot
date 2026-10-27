@@ -78,7 +78,7 @@ export function AchMarks({
       )}
       {!tier && ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
       {ach.rarity != null && (
-        <span className={`chip ${rare === "ultra" ? "chip-tertiary" : rare === "rare" ? "chip-primary" : "chip-outline"}`}>
+        <span className={`chip ${rare ? `chip-tier chip-tier-${rare}` : "chip-outline"}`}>
           {rare && <span className="rare-mark shape-flower6" />}
           {pct(ach.rarity, locale)}
         </span>

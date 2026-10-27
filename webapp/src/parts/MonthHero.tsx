@@ -55,10 +55,16 @@ export function MonthHero({ payload, month }: { payload: PersonPayload | null | 
               </p>
             </>
           ) : (
-            <span className="home-hero-skel skel" />
+            <>
+              <span className="home-hero-ghost home-hero-ghost-num" />
+              <span className="home-hero-ghost home-hero-ghost-line" />
+              <span className="home-hero-ghost home-hero-ghost-line short" />
+            </>
           )}
         </div>
         <div className="home-hero-stack">
+          {!payload &&
+            [0, 1, 2].map((i) => <span key={i} className={`home-hero-pic home-hero-pic-${i} home-hero-ghost`} />)}
           {recent.map((item, i) => (
             <button
               key={`${item.title_id}:${item.achievement_id}`}
@@ -78,7 +84,7 @@ export function MonthHero({ payload, month }: { payload: PersonPayload | null | 
           ))}
         </div>
       </div>
-      {payload && <MonthBars feed={payload.feed} month={month} />}
+      <MonthBars feed={payload?.feed ?? []} month={month} />
     </section>
   );
 }

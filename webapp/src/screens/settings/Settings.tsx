@@ -27,6 +27,7 @@ const TITLES: Record<SettingsPaneName, TranslationKey> = {
   logins: "logins",
   notifications: "notifications",
   general: "general",
+  appearance: "appearance",
   invites: "invites",
 };
 
@@ -42,6 +43,7 @@ export function SettingsPage({ pane, onClose, layer }: { pane: SettingsPaneName;
       {pane === "logins" && <LoginsPane />}
       {pane === "notifications" && <NotificationsPane />}
       {pane === "general" && <GeneralPane />}
+      {pane === "appearance" && <AppearancePane />}
       {pane === "invites" && <InvitesPane />}
     </Page>
   );
@@ -90,6 +92,7 @@ function Root() {
       <Group>
         <Row lead={<Lead icon="shield" />} title={tr("privacy")} sub={tr("privacySub")} chevron onClick={() => open({ kind: "settings", pane: "privacy" })} />
         <Row lead={<Lead icon="key" />} title={tr("logins")} sub={tr("loginsSub")} chevron onClick={() => open({ kind: "settings", pane: "logins" })} />
+        <Row lead={<Lead icon="sparkle" />} title={tr("appearance")} sub={tr("appearanceSub")} chevron onClick={() => open({ kind: "settings", pane: "appearance" })} />
         <Row lead={<Lead icon="globe" />} title={tr("general")} sub={tr("generalSub")} chevron onClick={() => open({ kind: "settings", pane: "general" })} />
       </Group>
       <Group>
@@ -137,14 +140,16 @@ function Root() {
   );
 }
 
-const PALETTE_NAMES = { violet: "paletteViolet", mint: "paletteMint", ember: "paletteEmber" } as const;
+const PALETTE_NAMES = {
+  violet: "paletteViolet",
+  mint: "paletteMint",
+  ember: "paletteEmber",
+  ocean: "paletteOcean",
+  rose: "paletteRose",
+} as const;
 
-function GeneralPane() {
-  const { me, tr, locale } = useApp();
-  const save = useSettings();
-  const [tz, setTz] = useState(false);
-  const offset = me.settings.tz_offset_min;
-  const known = TIMEZONES.find((z) => z.min === offset);
+function AppearancePane() {
+  const { tr } = useApp();
   const [view, setView] = useState(look);
   const pick = (next: Partial<ReturnType<typeof look>>) => {
     setLook(next);
@@ -152,7 +157,7 @@ function GeneralPane() {
   };
   return (
     <>
-      <Group title={tr("appearance")}>
+      <Group>
         <div className="set-pad set-look">
           <div className="swatches" role="radiogroup" aria-label={tr("appearance")}>
             {PALETTES.map((p) => (
@@ -180,6 +185,18 @@ function GeneralPane() {
           />
         </div>
       </Group>
+    </>
+  );
+}
+
+function GeneralPane() {
+  const { me, tr, locale } = useApp();
+  const save = useSettings();
+  const [tz, setTz] = useState(false);
+  const offset = me.settings.tz_offset_min;
+  const known = TIMEZONES.find((z) => z.min === offset);
+  return (
+    <>
       <Group title={tr("language")}>
         <div className="set-pad">
           <Segmented

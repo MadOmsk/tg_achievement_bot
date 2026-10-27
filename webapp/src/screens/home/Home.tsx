@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { clubApi, gameApi, type OnlineMember } from "../../api";
 import { gameLines, MonthGames } from "../../parts/MonthGames";
 import { InstallCard } from "../../parts/InstallCard";
@@ -9,7 +9,7 @@ import { useLoad } from "../../app/useLoad";
 import { achOfFeed } from "../../app/views";
 import { cachedHome, rememberHome } from "../../core/home-cache";
 import { currentMonth, formatMonth } from "../../core/people-utils";
-import { capital, MonthSwitch } from "../../parts/Months";
+import { capital, monthName } from "../../parts/Months";
 import { Button, Empty, IconButton } from "../../ui/Controls";
 import { Face, type Presence } from "../../ui/Face";
 import { tick } from "../../core/haptic";
@@ -33,7 +33,7 @@ export function Home({ refreshKey }: { refreshKey: number }) {
     () => clubApi.fetchPerson(data, null, me.person_id),
     cache?.mine,
   );
-  const [month, setMonth] = useState(thisMonth);
+  const month = thisMonth;
   const shownKey = mine.data?.month_key ?? thisMonth;
   const other = useLoad(month === shownKey ? null : `m:${month}:${refreshKey}`, () =>
     clubApi.fetchPerson(data, null, me.person_id, { month }),
@@ -190,7 +190,7 @@ export function Home({ refreshKey }: { refreshKey: number }) {
                     open({ kind: "person", personId: m.person_id });
                   }}
                 >
-                  <Face personId={m.person_id} name={m.name} size={68} presence={p} dim={!p} />
+                  <Face personId={m.person_id} name={m.name} size={68} presence={p} />
                   <span className="now-name clamp-1">{m.name}</span>
                   <span className="now-status clamp-1">
                     {m.playing ? m.title_name || tr("playing") : p === "online" ? tr("idle") : " "}
@@ -206,10 +206,7 @@ export function Home({ refreshKey }: { refreshKey: number }) {
       {hasAccount && (
         <section className="sec">
           <div className="sec-head">
-            <h2 className="t-title">{tr("homeGames")}</h2>
-          </div>
-          <div className="home-months">
-            <MonthSwitch months={payload?.months ?? [thisMonth]} value={month} onChange={setMonth} />
+            <h2 className="t-title">{tr("homeGamesOf").replace("{month}", monthName(thisMonth, locale))}</h2>
           </div>
           {monthPayload && games.length === 0 ? (
             <Empty icon="gamepad" title={capital(formatMonth(month, locale, "sheet"))} text={tr("emptyTitlePast")} />

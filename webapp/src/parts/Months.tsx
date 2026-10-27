@@ -116,3 +116,12 @@ export function recentMonths(n: number, from = new Date()): string[] {
 export function capital(text: string): string {
   return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
+
+/** The month's name as a title takes it: «октября» in Russian, «October» in English. */
+export function monthName(month: string, locale: string): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
+  if (locale === "en") return d.toLocaleDateString("en-GB", { month: "long" });
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }).replace(/^\d+\s*/, "");
+}
+

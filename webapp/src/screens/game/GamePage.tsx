@@ -19,6 +19,7 @@ import { MediaTile } from "./MediaTile";
 import { Cover } from "../../ui/Pic";
 import type { Media } from "../../ui/Viewer";
 import { Wave } from "../../ui/Wave";
+import { GoMark } from "../../ui/GoMark";
 import "./Game.css";
 
 const RELATION: Record<string, [TranslationKey, TranslationKey]> = {
@@ -136,6 +137,7 @@ function GameBody({
       platform: list.platform,
       titleId: list.title_id,
       name: g.game.name,
+      cover: g.art.poster,
       person: personId ? { id: personId, name: personName ?? "" } : whose,
     });
   };
@@ -159,6 +161,7 @@ function GameBody({
     open({ kind: "game", ref: { game_id: card.game_id, platform: "", title_id: "", name: card.name } });
   };
 
+  const others = g.players.filter((p) => p.person_id !== (progress?.person_id ?? me.person_id));
   return (
     <>
       <div className="gp-head">
@@ -210,64 +213,59 @@ function GameBody({
       )}
 
       {progress && (
-        <section
-          className={`gp-progress${done ? " gp-progress-done" : ""}`}
-          role="button"
-          tabIndex={0}
-          onClick={() => openList()}
-          onKeyDown={(e) => e.key === "Enter" && openList()}
-        >
-          {done && <DoneMark size={64} className="gp-done-mark" />}
-          <div className="gp-progress-row">
-            <p className="gp-progress-num">
-              {progress.count}
-              {progress.total ? <small>/{progress.total}</small> : null}
-            </p>
-            <p className="gp-progress-side">
-              <b>{done ? tr("gameCompleted") : whose ? whose.name : tr("gpProgressMine")}</b>
-              {done && whose && (
-                <>
-                  <br />
-                  {whose.name}
-                </>
+        <section className={`gp-progress${done ? " gp-progress-done" : ""}`}>
+          <button type="button" className="gp-progress-main" onClick={() => openList()}>
+            <span className="gp-progress-top">
+              <span className="gp-progress-label">
+                {done ? tr("gpDone") : whose ? whose.name : tr("gpProgressMine")}
+              </span>
+              {done ? (
+                <DoneMark size={40} className="gp-done-mark" />
+              ) : (
+                <GoMark />
               )}
-              {progress.last && (
-                <>
-                  <br />
-                  {tr("gpLast")} {dayLabel(progress.last, locale).toLowerCase()}
-                </>
-              )}
-            </p>
-          </div>
-          {progress.total ? <Wave value={progress.count} total={progress.total} /> : null}
-          <span className="gp-progress-go shape-cookie9" aria-hidden="true">
-            <Icon name="forward" size={20} />
-          </span>
+            </span>
+            <span className="gp-progress-row">
+              <span className="gp-progress-num">
+                {progress.count}
+                {progress.total ? <small>/{progress.total}</small> : null}
+              </span>
+              {progress.total ? (
+                <span className="gp-progress-pct t-num">{Math.round((progress.count / progress.total) * 100)} %</span>
+              ) : null}
+            </span>
+            {progress.total ? <Wave value={progress.count} total={progress.total} /> : null}
+            {progress.last && (
+              <span className="gp-progress-last">
+                {tr("gpLast")} {dayLabel(progress.last, locale).toLowerCase()}
+              </span>
+            )}
+          </button>
+          {others.length > 0 && (
+            <div className="gp-progress-others">
+              <span className="gp-progress-others-label">{tr("gpAlsoPlaying")}</span>
+              <div className="gp-others rail">
+                {others.map((p) => (
+                  <button
+                    key={p.person_id}
+                    type="button"
+                    className="gp-other"
+                    onClick={() => {
+                      tick();
+                      open({ kind: "achievements", platform: p.platform, titleId: p.title_id, name: g.game.name, cover: g.art.poster, person: { id: p.person_id, name: p.name } });
+                    }}
+                  >
+                    <Face personId={p.person_id} name={p.name} size={32} />
+                    <span className="gp-other-text">
+                      <span className="clamp-1">{p.name}</span>
+                      <b className="t-num">{p.count}</b>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
-      )}
-
-      {g.players.length > 0 && (
-        <div className="gp-players rail">
-          {g.players
-            .filter((p) => p.person_id !== (progress?.person_id ?? me.person_id))
-            .map((p) => (
-              <button
-                key={p.person_id}
-                type="button"
-                className="gp-player"
-                onClick={() => {
-                  tick();
-                  open({ kind: "achievements", platform: p.platform, titleId: p.title_id, name: g.game.name, person: { id: p.person_id, name: p.name } });
-                }}
-              >
-                <span className="gp-player-face">
-                  <Face personId={p.person_id} name={p.name} size={52} />
-                  <b>{p.count}</b>
-                </span>
-                <span className="clamp-1">{p.name}</span>
-              </button>
-            ))}
-        </div>
       )}
 
       {g.hltb && (

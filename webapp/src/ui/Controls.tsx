@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, Ref } from "react";
 import { tick } from "../core/haptic";
+import { GoMark } from "./GoMark";
 import { Icon, type IconName } from "./Icon";
 
-type Variant = "filled" | "tonal" | "outline" | "text" | "accent" | "danger";
+type Variant = "filled" | "tonal" | "text" | "danger";
 
 export function Button({
   variant = "filled",
@@ -50,7 +51,7 @@ export function IconButton({
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   icon: IconName;
   label: string;
-  variant?: "tonal" | "plain" | "glass" | "accent" | "primary";
+  variant?: "tonal" | "plain" | "glass";
   square?: boolean;
   badge?: number | null;
   filled?: boolean;
@@ -246,7 +247,7 @@ export function Row({
         {sub && <span className="row-sub">{sub}</span>}
       </span>
       {trail && <span className="row-trail">{trail}</span>}
-      {chevron && <Icon name="forward" size={20} className="row-chev" />}
+      {chevron && <GoMark />}
     </>
   );
   return onClick ? (

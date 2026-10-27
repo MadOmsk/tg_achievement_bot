@@ -33,10 +33,36 @@ for.
 | `--error` / `--on-error` | a danger action, an error |
 | `--bronze`, `--silver`, `--gold`, `--platinum` | PlayStation's trophy tiers only |
 
-**Palettes.** Three, picked in Settings → General → Appearance and kept on the
+**Where each role goes — and nowhere else** (owner, 2026-10-27: no colour
+of its own on a button or a line):
+
+| what | colour |
+|---|---|
+| the page; a card, a row, a tile, a link card | `surface`; `surface-1` |
+| a field, a quiet chip or button, a pressed state | `surface-3` |
+| a track, an empty face | `surface-4` |
+| the one main action; progress; a link; "playing" | `primary` |
+| what is selected (a segment, the bar's pill, today); a hero card; the round "go" mark; a toggle that is on (favourite) | `primary-container` |
+| a tonal button; a state (following, friends, unread); the «Патч» mark | `secondary-container` |
+| done — 100 %, a done mark, a list earned whole; the search button | `tertiary` / `tertiary-container` (and «Новость») |
+| danger, an error | `error` |
+| rarity and rank | the tiers, below — never `primary` or `tertiary` |
+| a platform's mark | `--xbox`, `--psn`, `--steam` |
+| a shadow; text over a picture | `--shadow-1`, `--shadow-2`; `--img-scrim` with white text |
+
+Chips are four kinds: `chip-outline` (a fact: a genre, points),
+`chip-tonal` (a link out: a store page, with ↗), `chip-secondary` (a state),
+`chip-tier-rare|ultra` (rarity). A mark in a card's corner (go, done) is
+40 px, 16 px in from the corner. Buttons:
+`filled` (one per screen), `tonal`, `text`, `danger`; icon buttons `tonal`,
+`plain`, `glass`. Nothing else exists; a screen needing another asks first.
+A game's page takes its scheme from its art, so on it a toggle or a mark
+uses the scheme's roles (`primary-container`), never the shared pink.
+
+**Palettes.** Five, picked in Settings → Appearance and kept on the
 device (`app/env.ts::look`, `localStorage`): **Violet** (the default, the
 logo's lilac with a pink accent), **Mint** (teal with coral), **Amber** (warm
-orange with coral). Each has a dark and a light form; the mode is Auto
+orange with coral), **Ocean** (blue with gold), **Rose** (pink with blue). Each has a dark and a light form; the mode is Auto
 (Telegram's own scheme inside it, the system's elsewhere), Light or Dark. A
 palette is one block of tokens in `tokens.css` under
 `:root[data-palette="…"]` and its `[data-theme="light"]` twin — a new palette
@@ -100,7 +126,8 @@ steps are legendary, epic and rare. Use the tiers for rank and rarity only.
 ## Motion
 
 Every page enters the same way — from the right, a short way, out of a fade —
-and leaves back the same way; the page under it steps back and dims. A tab
+and leaves back the same way, quicker; the page under it steps back a little
+(a transform only — no filter on a whole page, it stutters). A tab
 rises in. The bar's pill slides from tab to tab. Springs, not eases: `--spring` for a press or a pop, `--spring-soft` for a
 layer arriving; `--t-fast` 160, `--t-mid` 280, `--t-slow` 420 ms. A pressed
 button squares its corners (`border-radius` to `--r-m`) and shrinks 3 %. A

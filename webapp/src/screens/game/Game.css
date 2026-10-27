@@ -25,6 +25,7 @@
 .gp-head {
   position: relative;
   display: flex;
+  align-items: flex-end;
   gap: 14px;
   padding: 0 var(--gutter);
   margin-top: -40px;
@@ -41,7 +42,7 @@
 .gp-titles {
   flex: 1;
   min-width: 0;
-  padding-top: 52px;
+  padding-top: 48px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -110,8 +111,8 @@
 }
 
 .gp-fav-on {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
 }
 
 .gp-fav-on svg {
@@ -164,14 +165,12 @@
 .gp-done-mark {
   position: absolute;
   right: 16px;
-  top: -18px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  top: 16px;
+  width: 40px !important;
+  height: 40px !important;
   animation: heart-pop var(--t-slow) var(--spring);
 }
 
-.gp-progress.gp-progress-done {
-  margin-top: 34px;
-}
 
 .gp-progress-row {
   padding-right: 4px;
@@ -209,45 +208,6 @@
 .gp-progress-side b {
   font-size: 15px;
   color: var(--on-surface);
-}
-
-.gp-players {
-  padding-top: 14px;
-  gap: 8px;
-}
-
-.gp-player {
-  width: 76px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  color: var(--on-surface-3);
-}
-
-.gp-player .clamp-1 {
-  max-width: 76px;
-}
-
-.gp-player-face {
-  position: relative;
-}
-
-.gp-player-face b {
-  position: absolute;
-  right: -10px;
-  bottom: -4px;
-  min-width: 28px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 11px;
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 22px;
-  box-shadow: 0 0 0 3px var(--surface);
 }
 
 .gp-hltb {
@@ -470,7 +430,7 @@
   aspect-ratio: 16 / 9;
   border-radius: var(--r-l);
   overflow: hidden;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-2);
 }
 
 .hero-ach-sq {
@@ -513,13 +473,13 @@
 }
 
 .ap-badge-rare {
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
 }
 
 .ap-badge-ultra {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
 }
 
 .ap-desc {
@@ -610,7 +570,7 @@
   width: 148px;
   height: 148px;
   border-radius: 50%;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
 }
 
 .list-done {
@@ -840,7 +800,7 @@
   justify-content: center;
   background: var(--primary);
   color: var(--on-primary);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-1);
 }
 
 .gp-video-name {
@@ -849,7 +809,7 @@
   right: 0;
   bottom: 0;
   padding: 18px 12px 8px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  background: var(--img-scrim);
   color: #fff;
   font-size: 12px;
   font-weight: 650;
@@ -888,7 +848,7 @@
   width: 112px;
   height: 150px;
   border-radius: var(--r-l);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
 }
 
 .gallery-sub {
@@ -920,27 +880,148 @@
 
 
 
-.gp-progress-go {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-}
 
-.gp-progress-done .gp-progress-go {
-  display: none;
-}
 
 .gp-progress-row {
-  padding-right: 44px;
+  padding-right: 48px;
 }
 
 .gp-progress:active {
   background: var(--surface-2);
+}
+
+/* The progress card: whose, the count and its share, the wave, the last
+   day; the others who play it below, inside the same card. */
+.gp-progress {
+  padding: 0;
+  overflow: hidden;
+  cursor: auto;
+}
+
+.gp-progress-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  padding: 16px 18px 18px;
+  text-align: left;
+}
+
+.gp-progress-main:active {
+  background: color-mix(in srgb, var(--on-surface) 4%, transparent);
+}
+
+.gp-progress-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+}
+
+.gp-progress-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gp-progress .gp-done-mark {
+  position: static;
+}
+
+.gp-progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0;
+}
+
+.gp-progress-pct {
+  font-size: 28px;
+  color: var(--primary);
+}
+
+.gp-progress-done .gp-progress-pct {
+  color: var(--on-tertiary-container);
+}
+
+.gp-progress-last {
+  font-size: 13px;
+  color: var(--on-surface-3);
+}
+
+.gp-progress-done .gp-progress-last,
+.gp-progress-done .gp-progress-label {
+  color: var(--on-tertiary-container);
+}
+
+.gp-progress-others {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0 16px;
+  border-top: 1px solid color-mix(in srgb, var(--on-surface) 8%, transparent);
+}
+
+.gp-progress-others-label {
+  padding: 0 18px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.gp-others {
+  gap: 8px;
+  padding: 0 18px;
+}
+
+.gp-other {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px 0 6px;
+  border-radius: 22px;
+  background: var(--surface-3);
+}
+
+.gp-other-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 650;
+  max-width: 150px;
+}
+
+.gp-other-text b {
+  font-size: 15px;
+  color: var(--primary);
+}
+
+.gp-progress-done .gp-progress-others-label {
+  color: color-mix(in srgb, var(--on-tertiary-container) 75%, transparent);
+}
+
+.gp-progress-done .gp-other {
+  background: color-mix(in srgb, var(--on-tertiary-container) 14%, transparent);
+}
+
+.list-ghost {
+  display: inline-block;
+  width: 64px;
+  height: 18px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+  animation: ghost 1.4s ease-in-out infinite;
+}
+
+.list-ghost-num {
+  width: 84px;
+  height: 34px;
+  border-radius: 12px;
+}
+
+.gp-progress-done .go-mark {
+  background: color-mix(in srgb, var(--on-tertiary-container) 14%, transparent);
+  color: var(--on-tertiary-container);
 }

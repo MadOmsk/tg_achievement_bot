@@ -197,7 +197,7 @@ h3 {
 @keyframes slide-out {
   to {
     opacity: 0;
-    transform: translateX(28%) scale(0.98);
+    transform: translateX(28%);
   }
 }
 

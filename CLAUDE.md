@@ -1590,9 +1590,9 @@ elsewhere in this file still describe the bot.
   the logo's lilac (a pink accent on the search button), shapes that morph
   (faces cut as scalloped "cookies", a flower for rarity), progress as a running
   wave, connected button groups, Roboto Flex whose width is a voice (narrow
-  numbers, wide headlines); dark first, the same scheme light. **Three
-  palettes** — Violet (the default), Mint, Amber — and a mode (auto, light,
-  dark), picked in Settings → General and kept on the device. How to make
+  numbers, wide headlines); dark first, the same scheme light. **Five
+  palettes** — Violet (the default), Mint, Amber, Ocean, Rose — and a mode (auto, light,
+  dark), picked in Settings → Appearance and kept on the device. How to make
   anything new look like the rest is `docs/design-system.md` (its rarity tiers —
   blue, purple, orange — are the app's Fortnite note). A game's page
   takes a muted tonal scheme from its own art (`app/artTheme.ts`; stores whose

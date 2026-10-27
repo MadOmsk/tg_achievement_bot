@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Icon, type IconName } from "./Icon";
+import { GoMark } from "./GoMark";
+import type { IconName } from "./Icon";
 
 /** A way to somewhere else — a game a post belongs to, a guide video: its
  * picture, what it is and a line under it, and a round mark of where it goes
@@ -28,9 +29,7 @@ export function LinkCard({
         {sub && <span className="link-card-sub clamp-1">{sub}</span>}
       </span>
       {onOpen && (
-        <span className="link-card-go shape-cookie9">
-          <Icon name={go} size={20} />
-        </span>
+        <GoMark icon={go} />
       )}
     </button>
   );
