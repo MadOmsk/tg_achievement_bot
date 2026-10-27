@@ -104,6 +104,7 @@ name, or when the tree goes stale.
 │                              (`mini-app-spec.md`: what the Mini App does, for its design;
 │                              `mini-app-design-brief.md`: the task for that design;
 │                              `design-system.md`: the look, its tokens, components, rules)
+├── catalog/                   the games catalog's labels and fitted weights, by key (`scripts/catalog_files.py`)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -191,6 +192,7 @@ name, or when the tree goes stale.
 │   │   ├── advice.py             the advisers' review of the games matcher: questions, answers,
 │   │   │                         the agreement rule, `data/advice/` (#147, no DB access)
 │   │   ├── game_series.py        game series proposed from relations, labels, franchise names
+│   │   ├── label_conflicts.py    labels that contradict each other (#218), no DB access
 │   │   ├── game_page.py          the Mini App's game page put together from the catalog (no network)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
@@ -558,7 +560,7 @@ every column. History: #106.
   list on one platform and keeps that list's own facts — the platform's name
   for it, its size, platforms, when it was checked. A game's name, cover and
   description are `games` and `versions`; a screen never presents a row of it
-  as a game. A stand-in version's name follows its list's (a trigger).
+  as a game. A stand-in version's name follows its list's (a trigger); a list's own id is never a name (migration 132: an adviser cannot look a number up), the English name stands in, and `scripts/restore_list_names.py` takes names another copy learned.
   The code says `titles` in places (variables, `title_id`, `titles_on`): the
   name of the thing before it was renamed, not another table.
 - One row per list (one achievement list on one platform),
@@ -754,8 +756,12 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     (`part`s); no game → `addon_pack` (shown with the game's DLC). Every game
     item keeps its version link; `reparse_stored` re-reads kept ones last
     (`classify_editions`, a kind set by hand kept); a save that gives no scope
-    keeps it. An add-on sold only on its own is
-    not found this way. `9998-12-30` is "not on sale", no date. Each price period is an
+    keeps it. **An add-on sold only on its own** is in no edition: the
+    catalog's add-on search (`search_addons`: autosuggest's `Durable` products) by the
+    game's names finds it, kept when it names the game's product as its
+    parent (owner, 2026-10-27; `_xbox_addons_alone`, when due) — the only
+    way to a **360 game's** add-ons (Gears of War 3's Season Pass), for its
+    list, a modern list and the octopus's store-only Xbox products alike. `9998-12-30` is "not on sale", no date. Each price period is an
     availability with its own end, so an answer is judged on sale **as of when
     it was given** — a stored one re-read later keeps its time
     (`sold(product, now)`; 2026-10-26: a re-parse read 548 games as off sale,
@@ -946,7 +952,13 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   has no foreign keys, so a store re-parse deleting a version keeps every
   answer about it, with which product each side was (`subject_key`,
   `other_key`: store:product_id:console); the linker reads only labels between
-  versions that exist, the fit reads a gone pair from its feature snapshot. A game keeps
+  versions that exist, the fit reads a gone pair from its feature snapshot.
+  **Contradictions are shown, never settled by code** (#218 step 5,
+  `services/label_conflicts.py`): a label keeping two versions apart that
+  joining labels link anyway, or two labels between the same two groups
+  saying different things. Each new label is checked (the viewer's message,
+  `web_labels`' output); the viewer's «Contradictions» lists them as cards,
+  and taking one answer back settles it. A game keeps
   its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
   first plain version); a list's stand-in that becomes a store product keeps
   its row and id.
@@ -962,19 +974,31 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     `game_match.is_enhanced`, or an `enhanced_of` label — one game to a fit).
     A pack a store sells around one version is an edition (`editions`), not a
     version. Such a game is named by its own release.
-  - **Enhanced or remaster** (owner, 2026-10-25): an enhanced edition is the
-    same game with minimal changes but added content (its DLC, a Director's
-    Cut's chapter, modest resolution or frame-rate work); a remaster means
-    larger graphical changes. Which one a given game is, is the labels'
-    answer (the operator's, the web-checked ones), never a rule written here:
-    this file keeps principles, not per-game decisions.
+  - **Enhanced, remaster, remake** (owner, 2026-10-27):
+    - an **enhanced edition** is an edition under an id of its own in a
+      store, mostly the game with added content, with no focus on better
+      graphics (GOTY, Complete, Definitive, Director's Cut);
+    - a **remaster** is a release with improved graphics that keeps the
+      original's main assets, not rebuilt;
+    - a **remake** is a game made on the basis of an old one.
+
+    **Every instruction to a model that labels pairs gives these
+    definitions as they stand** — the advisers' prompt (`advice.DEFINITIONS`
+    inside `advice.RULES`), the web-searching agents', Gemini's. Which one a
+    given game is, is the labels' answer, never a rule written here: this
+    file keeps principles, not per-game decisions.
   - **Where an enhanced edition goes** (owner, 2026-10-25): one sold under
     its own product id on a platform (a store page and id of its own, apart
     from the plain game's) is **a game of its own**, related to the original
     as `enhanced_of`, like a remaster; one that is the same product upgraded
     (a free update, the same id) stays inside the game with the role
-    `enhanced`. **Not built yet**: the linker still keeps every enhanced
-    edition inside its game.
+    `enhanced`. Built as a split after joining (`game_link._split_enhanced`;
+    #218): the model joins an enhanced edition to its game (its own class,
+    `enhanced_of`, joins like "same"); then, where one store sells both the plain game
+    and the enhanced one, every enhanced version of the group leaves it for
+    a game of its own, related `enhanced_of` (a family relation for series
+    too). Where no store sells both — Steam sells only the Complete Edition
+    — it is the game there and stays, role `enhanced`.
   - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;
     `game_match.game_name`): the full release name, platform tails cut ("-
     Xbox Series X|S", "(PC)", "for Windows 10", "Windows 10 Edition"), when
@@ -1006,9 +1030,14 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     could be one game (a telling word of the name — none in more than
     `COMMON_WORD` versions —, a store's group or cross-gen set, an HLTB entry,
     one list) is read from its subject's side (the VR one, the compilation, the
-    later one); each class sums its `WEIGHTS` over the pair's signs and a
+    later one) — and each directed class from whichever side makes it likelier,
+    the relation pointing from there (#218: `subject_of` is a guess); its
+    classes are one game, an **enhanced edition** (one game too, a class of
+    its own — owner, 2026-10-27), a remaster, a remake, a compilation, a VR
+    version, or "other"; each class sums its `WEIGHTS` over the pair's signs and a
     softmax against "other" gives probabilities (owner, 2026-10-10: every rule a
-    weight, nothing certain). The likeliest at `LINK_P` (0.85) and `CLOSE_CALL`
+    weight, nothing certain). The likeliest at `LINK_P` (0.95 while the fit runs
+    overconfident, #218) and `CLOSE_CALL`
     ahead is taken; from `REVIEW_P` (0.15) the pair goes to the **review list**
     (`match_pairs`, one per pair of games). Versions join a game from the surest
     pair down, **never across a veto** (a pair under `VETO_P` "same" that
@@ -1018,6 +1047,15 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
+  - **The model's relation is a first guess, rechecked** (owner,
+    2026-10-27): whatever the linker sets by itself that is neither one game
+    nor nothing — a relation between games, or a role in a game (enhanced,
+    demo, tool, mode, extra, pass) — is written so the catalog has one, and
+    stays on the viewer's «To recheck» (`review_questions.to_recheck`) until
+    a label settles it; `review_questions --recheck` asks them all of the
+    web-searching advisers (a VR version: this game in VR, or another game of
+    its series made for VR). The model only has to tell one game, related
+    and other apart well; which relation it is is the advisers'.
   - **A name never learned is no name** (the training audit, 2026-10-24): a
     stand-in named by its own id («1881441063») has no names for the model;
     its pairs show `name_unknown` instead of any name sign, and veto nothing
@@ -1046,14 +1084,24 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
 
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own
-    version as the subject), and the weights are fitted by gradient descent
-    **pulled towards the current ones** (a proximal step, `strength` 0.001,
-    step 0.5, 800 passes); **the bias is never fitted** (labels come from the
+    version as the subject; scored from both sides as the linker reads it),
+    and the weights are fitted by gradient descent **pulled towards the
+    current ones** (a proximal step, `strength` 0.0001, step 0.5, until no
+    weight moves by `tol`); then **one temperature** fitted on the held-out
+    answers scales every weight, so a probability means what it says (#218); **the bias is never fitted** (labels come from the
     review list), and a class with fewer than `FEW_LABELS` labels is pulled
     harder. A label weighs by who gave it (`label_weight`). **A fit is judged
     held out by game** (labels joined by a game sit in one fold — a random
     split flattered it by ~4 points) **and on the operator's labels alone**
-    (`gate`; the advisers' scores are printed beside, never decide). The
+    (`gate`; the advisers' scores are printed beside, never decide) — or,
+    once frozen, **on a fixed set of pairs** (`--freeze-eval`,
+    `data/advice/eval_set.json`; #218: the operator's set grew harder with
+    every batch, so fits could not be compared), their labels as they stand.
+    It prints each class's recall, their average and the viewer's labels
+    alone, and judges by **one game / related / other** (`match_fit.coarse`,
+    owner, 2026-10-27: every relation is rechecked): a fit must lower that
+    log-loss, answer no fewer right, and **lose none of the three** (recall
+    down more than 2 points on 10+ labels). The
     script also scores every pair the linker compares with both weights and
     counts what would move. **A fit lives in the database** (`match_weights`,
     migration 129): `--save` keeps it and makes it the active set only when
@@ -1156,6 +1204,15 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   catalog points outside itself only by a list's (platform, title_id), so
   nothing else moves; a list the file lacks keeps its own stand-in, linked
   into a game after. `--tables match_weights` carries a new fit alone.
+- **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
+  `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
+  production, the test server and the dev server. A label names its versions by
+  key (`store:product id:console`), never by id — each copy numbers its own; the
+  weights are the active fitted set. Trained in one place (a fresh anonymized
+  copy of production); after a labelling session or a fit that passed
+  (`fit_match_weights --save` writes them), `export` and commit; another copy
+  `import`s them — a label set as the file has it, a key it has not collected
+  counted and left, the weights made active — and its catalog is linked there.
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,

@@ -21,6 +21,7 @@ from bot.services import title_catalog
 from bot.services.crypto import TokenCipher
 from bot.services.steam import achievements as steam_achievements
 from bot.services.steam.auth import SteamAuth
+from bot.services.stores import xbox_catalog
 
 FERNET_KEY = Fernet.generate_key().decode()
 
@@ -38,6 +39,10 @@ async def _no_store_name(appid: str, language: str) -> None:
 
 async def _nothing(*args, **kwargs) -> None:
     return None
+
+
+async def _no_addons(name: str) -> list[str]:
+    return []
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +67,9 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for module in (fetcher, steam_fetcher, psn_fetcher):
         monkeypatch.setattr(module, "ensure_title_match", _nothing)
     monkeypatch.setattr(fetcher.achievement_icons, "pre_cache_icon", _nothing)
+    # An Xbox collection also searches the add-ons sold alone: the errand of
+    # `test_xbox_addons_alone`, which stubs it again.
+    monkeypatch.setattr(xbox_catalog, "search_addons", _no_addons)
     yield
     if reached:
         pytest.fail(f"reached for the network: {sorted(set(reached))}", pytrace=False)
