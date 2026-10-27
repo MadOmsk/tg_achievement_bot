@@ -135,6 +135,34 @@ class _GamesRepo:
 
     # ---------------------------------------------------------------- labels
 
+    async def labels_by_key(self) -> list[dict[str, Any]]:
+        """Every label with its two versions named by a key that holds in any
+        copy of the catalog (`store:product id:console`), not by an id."""
+        cursor = await self._conn.execute(
+            "SELECT COALESCE(va.store || ':' || va.product_id || ':' || va.console,"
+            " d.subject_key) AS a,"
+            " COALESCE(vb.store || ':' || vb.product_id || ':' || vb.console, d.other_key) AS b,"
+            " d.relation, d.decided_by, d.decided_at FROM match_decisions d"
+            " LEFT JOIN versions va ON va.version_id = d.version_id"
+            " LEFT JOIN versions vb ON vb.version_id = d.other_id"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def version_by_key(self, key: str) -> int | None:
+        """The version a label's key names: its product on its console, or —
+        a stand-in that became a store product since — the achievement list
+        it stood in for."""
+        store, _, rest = key.partition(":")
+        product_id, _, console = rest.rpartition(":")
+        cursor = await self._conn.execute(
+            "SELECT version_id FROM versions WHERE store = ? AND product_id = ? AND console = ?"
+            " UNION ALL SELECT version_id FROM versions WHERE title_id = ? AND console = ?"
+            " LIMIT 1",
+            (store, product_id, console, product_id, console),
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row else None
+
     async def decisions_among(self, version_ids: list[int]) -> list[dict[str, Any]]:
         """The operator's labels with either side among these versions."""
         rows: list[dict[str, Any]] = []
@@ -160,6 +188,7 @@ class _GamesRepo:
         model: str | None,
         decided_by: str,
         overrule: bool = False,
+        decided_at: str | None = None,
     ) -> None:
         """A label on a pair; a pair has one label that counts, whichever way
         round it was given, and every one is kept in `label_log`. The
@@ -210,7 +239,7 @@ class _GamesRepo:
                     json.dumps(features) if features is not None else None,
                     model,
                     decided_by,
-                    utcnow_iso(),
+                    decided_at or utcnow_iso(),
                     version_id,
                     other_id,
                 ),

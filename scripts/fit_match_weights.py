@@ -240,6 +240,12 @@ async def run(args: argparse.Namespace) -> Weights | None:
                     activate=True,
                 )
                 print(f"kept as set {weights_id} and made active; relink to apply")
+                # The weights and the labels they were fitted on, as files
+                # for git (`scripts/catalog_files.py`): every copy takes them.
+                from scripts.catalog_files import export
+
+                labels, _ = await export(repo)
+                print(f"written to catalog/ with its {labels} labels: commit them")
             else:
                 print("the gate did not pass: nothing kept")
         return rounded

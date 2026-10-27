@@ -96,6 +96,7 @@ name, or when the tree goes stale.
 ├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot
 ├── docs/                      guides for whoever runs a server, English and Russian
 │                              (`mail-setup.md` / `.ru.md`: the mail server for email sign-in)
+├── catalog/                   the games catalog's labels and fitted weights, by key (`scripts/catalog_files.py`)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -1182,6 +1183,15 @@ What the stores and HLTB say about a game, collected but not shown yet
   catalog points outside itself only by a list's (platform, title_id), so
   nothing else moves; a list the file lacks keeps its own stand-in, linked
   into a game after. `--tables match_weights` carries a new fit alone.
+- **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
+  `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
+  production, the test server and the dev server. A label names its versions by
+  key (`store:product id:console`), never by id — each copy numbers its own; the
+  weights are the active fitted set. Trained in one place (a fresh anonymized
+  copy of production); after a labelling session or a fit that passed
+  (`fit_match_weights --save` writes them), `export` and commit; another copy
+  `import`s them — a label set as the file has it, a key it has not collected
+  counted and left, the weights made active — and its catalog is linked there.
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,
