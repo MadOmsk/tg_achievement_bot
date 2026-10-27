@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bot.services.advice import ADVISER_SOURCES, ALL_THREE, BOTH
-from bot.services.game_match import CLASSES, DIFFER_SIGNS, probabilities
+from bot.services.game_match import CLASSES, DIFFER_SIGNS, both_ways, probabilities
 
 # What a label teaches, by who gave it (owner, 2026-10-17).
 OPERATOR_WEIGHT = 0.9
@@ -119,6 +119,11 @@ class Example:
     groups: tuple[object, ...] = field(default_factory=tuple)
     # The labelled pair `(version_id, other_id)`, for the frozen set.
     pair: tuple[int, int] | None = None
+    # The pair read from the other side, and whether `features` is not the
+    # side `subject_of` picks (a directed label read from its own): answers
+    # are scored as the linker reads a pair (`predict`, #218).
+    reverse: dict[str, float] | None = None
+    turned: bool = False
 
     @property
     def operator(self) -> bool:
@@ -126,6 +131,14 @@ class Example:
             self.source not in (UNANIMOUS, MAJORITY, GEMINI_WEB)
             and self.source not in ADVISER_SOURCES
         )
+
+
+def predict(e: Example, weights: Weights) -> dict[str, float]:
+    """The example's class probabilities as the linker would see them: from
+    both sides (`game_match.both_ways`), "same" from `subject_of`'s."""
+    if e.turned and e.reverse is not None:
+        return both_ways(e.reverse, e.features, weights)[0]
+    return both_ways(e.features, e.reverse, weights)[0]
 
 
 @dataclass(slots=True)
@@ -142,7 +155,7 @@ def score(examples: list[Example], weights: Weights) -> Score:
         return Score(0.0, 0.0, 0)
     right, loss = 0, 0.0
     for e in examples:
-        probs = probabilities(e.features, weights)
+        probs = predict(e, weights)
         if max(probs, key=probs.__getitem__) == e.label:
             right += 1
         loss -= math.log(max(probs.get(e.label, 0.0), 1e-12))
@@ -216,12 +229,8 @@ def cross_validate(
         fitted = fit(train, start, **kw)  # type: ignore[arg-type]
         held += [(e, fitted) for e in test]
     before = score(order, start)
-    right = sum(
-        1 for e, w in held if max((p := probabilities(e.features, w)), key=p.__getitem__) == e.label
-    )
-    loss = -sum(
-        math.log(max(probabilities(e.features, w).get(e.label, 0.0), 1e-12)) for e, w in held
-    )
+    right = sum(1 for e, w in held if max((p := predict(e, w)), key=p.__getitem__) == e.label)
+    loss = -sum(math.log(max(predict(e, w).get(e.label, 0.0), 1e-12)) for e, w in held)
     after = Score(right / len(held), loss / len(held), len(held)) if held else Score(0, 0, 0)
     return before, after
 
@@ -305,7 +314,7 @@ def held_out(
         ]
         fitted = fit(learn, start, **kw)
         out += [
-            HeldOut(e, probabilities(e.features, start), probabilities(e.features, fitted))
+            HeldOut(e, predict(e, start), predict(e, fitted))
             for e, f in zip(examples, fold, strict=True)
             if f == i
         ]

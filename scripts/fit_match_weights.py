@@ -44,7 +44,7 @@ from pathlib import Path
 from bot.config import get_settings
 from bot.db.repo import Database, Repo
 from bot.services.game_link import GameLinker, _candidate, _Index, load_candidates
-from bot.services.game_match import WEIGHTS, Candidate, compare, features
+from bot.services.game_match import WEIGHTS, Candidate, compare, features, subject_of
 from bot.services.match_fit import (
     LABEL_CLASS,
     Example,
@@ -74,8 +74,15 @@ async def examples_from(repo: Repo, sources: dict[str, int] | None = None) -> li
         if label is None:
             continue
         a, b = candidates.get(lab["version_id"]), candidates.get(lab["other_id"])
+        reverse, turned = None, False
         if a is not None and b is not None:
-            f = features(a, b, ordered=label != "same" and label != "other")
+            # A directed label is learnt from its own side, the rest from
+            # the side the linker picks; both are read when scoring.
+            if label in ("same", "other"):
+                a, b = subject_of(a, b)
+            else:
+                turned = subject_of(a, b)[0] is not a
+            f, reverse = features(a, b, ordered=True), features(b, a, ordered=True)
         elif lab["features"]:
             f = json.loads(lab["features"])  # the versions are gone: what was seen then
         else:
@@ -86,7 +93,16 @@ async def examples_from(repo: Repo, sources: dict[str, int] | None = None) -> li
         )
         by = str(lab["decided_by"] or "?")
         found.append(
-            Example(f, label, label_weight(by), by, groups, (lab["version_id"], lab["other_id"]))
+            Example(
+                f,
+                label,
+                label_weight(by),
+                by,
+                groups,
+                (lab["version_id"], lab["other_id"]),
+                reverse,
+                turned,
+            )
         )
         if sources is not None:
             sources[by] = sources.get(by, 0) + 1

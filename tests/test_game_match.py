@@ -1555,3 +1555,22 @@ async def test_an_enhanced_edition_no_store_sells_beside_the_plain_game_stays(
     await repo.save_decision(steam, ps4, "enhanced_of", features=None, model=None, decided_by="t")
     await GameLinker(repo).link_versions([ps4, steam])
     assert await repo.linked_game_of(ps4) == await repo.linked_game_of(steam)
+
+
+def test_a_relation_is_read_from_both_sides() -> None:
+    """`subject_of` guesses which side a relation points from; a remaster it
+    guessed the wrong way round was read without its word (#218 step 2)."""
+    from bot.services.game_match import both_ways, subject_of
+
+    remaster = _c(1, "Foo Remastered", console="ps4", store="psn", year=2018)
+    port = _c(2, "Foo", console="ps5", store="psn", year=2021)
+    assert subject_of(remaster, port)[0] is port
+    weights = {"remaster_of": {"remaster_word": 6.0, "bias": -2.0}, "same": {"bias": -2.0}}
+    f = features(port, remaster, ordered=True)
+    r = features(remaster, port, ordered=True)
+    assert "remaster_word" not in f and "remaster_word" in r
+    probs, turned = both_ways(f, r, weights)
+    assert turned and max(probs, key=probs.__getitem__) == "remaster_of"
+    assert abs(sum(probs.values()) - 1.0) < 1e-9
+    verdict = compare(port, remaster, weights)
+    assert (verdict.relation, verdict.subject) == ("remaster_of", 1)

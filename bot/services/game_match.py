@@ -771,17 +771,46 @@ def probabilities(
     return {c: v / total for c, v in exp.items()}
 
 
+DIRECTED = tuple(c for c in CLASSES if c != "same")
+
+
+def both_ways(
+    f: dict[str, float],
+    r: dict[str, float] | None,
+    weights: dict[str, dict[str, float]] | None = None,
+) -> tuple[dict[str, float], bool]:
+    """Each class's probability with the pair read from both sides (#218):
+    `f` from the subject's side (`subject_of`), `r` from the other's. A
+    relation points one way and `subject_of` is a guess; the fit learns a
+    labelled remaster from its own side, so a guess the wrong way round
+    lost every such label. "same" and "other" are read from `f`, each
+    directed class from the side that makes it likelier; and whether the
+    likeliest directed class reads from `r`."""
+    p = probabilities(f, weights)
+    if r is None or r == f:
+        return p, False
+    q = probabilities(r, weights)
+    merged = {c: max(p[c], q[c]) if c in DIRECTED else v for c, v in p.items()}
+    total = sum(merged.values())
+    best = max(DIRECTED, key=merged.__getitem__)
+    return {c: v / total for c, v in merged.items()}, q[best] > p[best]
+
+
 def compare(
     a: Candidate, b: Candidate, weights: dict[str, dict[str, float]] | None = None
 ) -> Verdict:
     """How two versions relate, and how sure the model is (`weights`: other
     weights than those in use, a fit's, to see what it would change)."""
     s, o = subject_of(a, b)
-    f = features(a, b)
-    probs = probabilities(f, weights)
+    f = features(s, o, ordered=True)
+    probs, turned = both_ways(f, features(o, s, ordered=True), weights)
     ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
     (relation, p), (_second, p2) = ranked[0], ranked[1]
     best_link = max(((c, probs[c]) for c in CLASSES), key=lambda kv: kv[1])
+    if turned and best_link[0] != "same":
+        # The relation reads from the other side: it points from there.
+        s, o = o, s
+        f = features(s, o, ordered=True)
     # The same name years apart or by another studio is the operator's —
     # unless one is the PC game the Xbox app saw (its year is a guess).
     namesake = (
