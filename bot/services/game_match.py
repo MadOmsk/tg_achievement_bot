@@ -260,7 +260,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "full_name": 4.4,  # the very same full name, a few years apart at most
         "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
         "subtitle": -1.5,  # one name opens the other, which goes on
-        "numbers_differ": -9.0,  # Halo and Halo 2
+        "numbers_differ": -9.0,  # Halo 2 and Halo 3
+        "number_missing": -4.5,  # Halo and Halo 2 — or Skyrim and its edition
         "remaster_word": -1.0,
         "enhanced_word": -1.0,  # as remaster_word until a fit splits them
         "remake_word": -2.0,
@@ -305,6 +306,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "franchise": 1.0,
         "subtitle": -1.0,
         "numbers_differ": -9.0,
+        "number_missing": -4.5,
         "remaster_word": 3.0,
         "enhanced_word": 3.0,
         "remake_word": 0.5,
@@ -342,6 +344,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "full_name": 2.0,
         "subtitle": 0.5,
         "numbers_differ": -6.0,
+        "number_missing": -3.0,
         "remaster_word": -1.0,
         "enhanced_word": -1.0,
         "remake_word": 4.0,
@@ -398,6 +401,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "vr_word": 8.0,
         "name": 8.0,
         "numbers_differ": -9.0,
+        "number_missing": -4.5,
         "overlap_high": 1.0,
         "overlap_partial": 1.0,
         "developer_same": 0.5,
@@ -466,6 +470,7 @@ VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
 DIFFER_SIGNS = frozenset(
     {
         "numbers_differ",
+        "number_missing",
         "subtitles_differ",
         "same_name_far",
         "same_name_other_studio",
@@ -668,7 +673,10 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["tool_of"] = 1.0
         f.pop("subtitle", None)
     elif name < 1.0 and _numbers(s) != _numbers(o):
-        f["numbers_differ"] = 1.0
+        # Two numbers that disagree are two games (Halo 2, Halo 3); a
+        # number on one side only is weaker (#218): Halo and Halo 2, but
+        # Skyrim and "The Elder Scrolls V: Skyrim" too.
+        f["numbers_differ" if _numbers(s) and _numbers(o) else "number_missing"] = 1.0
 
     def says(pattern: re.Pattern[str], c: Candidate) -> bool:
         return any(pattern.search(n) for n in c.names)
@@ -725,6 +733,7 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["years_near"] = 1.0
     else:
         f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
+    f.update(shape_features(s, o, gap))
     f.update(text_features(s, o))
     if not s.names or not o.names:
         for sign in _NAME_SIGNS:
@@ -744,6 +753,68 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     return f
 
 
+# Kinds of edition word (#218): a Game of the Year is the game with its
+# DLC, a Definitive one is often more, HD is a remaster's.
+_EDITION_KINDS = (
+    ("word_goty", re.compile(r"\b(game of the year|goty|complete)\b", re.IGNORECASE)),
+    (
+        "word_definitive",
+        re.compile(r"\b(definitive|ultimate|enhanced|director'?s cut)\b", re.IGNORECASE),
+    ),
+    ("word_hd", re.compile(r"\b(hd|4k|remaster(?:ed)?)\b", re.IGNORECASE)),
+)
+# Words a name may add that say nothing of which game it is.
+_FILLER = frozenset({"the", "a", "an", "of", "and", "edition", "game"})
+
+
+def _content_words(name: str) -> set[str]:
+    return {w for w in name.split() if w not in _FILLER and w not in _EDITION_TAIL_WORDS}
+
+
+def shape_features(s: Candidate, o: Candidate, gap: int | None) -> dict[str, float]:
+    """What the shape of a pair says (#218): whose achievement list is
+    known and how much they share, the words each name adds, the kind of
+    edition word, and what the stores tell apart."""
+    f: dict[str, float] = {}
+    sa, oa = len(s.achievements), len(o.achievements)
+    known = (sa >= ACHIEVEMENTS_MIN) + (oa >= ACHIEVEMENTS_MIN)
+    if known == 2:
+        overlap = len(s.achievements & o.achievements) / min(sa, oa)
+        f["overlap"] = overlap
+        f["count_ratio"] = min(sa, oa) / max(sa, oa)
+        if gap is not None and gap >= FAR_YEARS:
+            f["overlap_far"] = overlap
+    else:
+        f["list_one" if known == 1 else "list_none"] = 1.0
+
+    pairs = [(_content_words(x), _content_words(y)) for x in s.fulls for y in o.fulls]
+    if pairs:
+        x, y = max(pairs, key=lambda p: (len(p[0] & p[1]), -len(p[0] ^ p[1])))
+        if not x & y:
+            f["no_shared_word"] = 1.0
+        elif x - y and y - x:
+            f["words_both_added"] = 1.0
+        elif x - y:
+            f["words_added"] = 1.0
+        elif not y - x:
+            f["words_none_added"] = 1.0
+
+    def says(pattern: re.Pattern[str], c: Candidate) -> bool:
+        return any(pattern.search(n) for n in c.names)
+
+    for sign, pattern in _EDITION_KINDS:
+        if says(pattern, s) and not says(pattern, o):
+            f[sign] = 1.0
+
+    if s.store == o.store and s.list_key and o.list_key and s.list_key != o.list_key:
+        f["two_lists_one_store"] = 1.0
+    if s.hltb_ids and o.hltb_ids and not s.hltb_ids & o.hltb_ids:
+        f["hltb_differs"] = 1.0
+    if s.publisher and o.publisher and not _same(s.publisher, o.publisher):
+        f["publisher_differs"] = 1.0
+    return f
+
+
 # What a pair's names say — nothing when one side has none.
 _NAME_SIGNS = (
     "name",
@@ -752,7 +823,12 @@ _NAME_SIGNS = (
     "subtitle",
     "subtitles_differ",
     "numbers_differ",
+    "number_missing",
     "same_name",
+    "no_shared_word",
+    "words_both_added",
+    "words_added",
+    "words_none_added",
     "same_name_far",
     "same_name_other_studio",
 )
@@ -763,7 +839,15 @@ def probabilities(
 ) -> dict[str, float]:
     """Each class's probability (and "other"'s): a softmax over the log-odds."""
     w = weights or _active
-    logits = {c: sum(w.get(c, {}).get(k, 0.0) * v for k, v in f.items()) for c in CLASSES}
+
+    def weight(c: str, k: str) -> float:
+        # A sign newer than the weights in use (a fit names every sign it
+        # saw, zeros included) speaks with its hand weight until a fit
+        # learns it.
+        known = w.get(c, {})
+        return known[k] if k in known else WEIGHTS[c].get(k, 0.0)
+
+    logits = {c: sum(weight(c, k) * v for k, v in f.items()) for c in CLASSES}
     logits["other"] = 0.0
     top = max(logits.values())
     exp = {c: math.exp(max(-40.0, x - top)) for c, x in logits.items()}
@@ -1409,8 +1493,21 @@ def _numbers(candidate: Candidate) -> set[str]:
     for name in candidate.cores:
         # Four digits too: Battlefield 1942 is not 2042. A year a store adds
         # in parentheses ("(2005)") is gone with the parenthesis already.
-        found |= {tok for tok in name.split() if tok.isdigit() and len(tok) <= 4}
+        # A platform's number is not the game's ("PlayStation 4 Edition",
+        # "for Xbox 360", #218).
+        words = name.split()
+        found |= {
+            tok
+            for i, tok in enumerate(words)
+            if tok.isdigit()
+            and len(tok) <= 4
+            and (i == 0 or words[i - 1] not in _PLATFORM_NUMBERED)
+        }
     return found
+
+
+# Words a platform's own number follows.
+_PLATFORM_NUMBERED = frozenset({"playstation", "ps", "xbox", "windows", "win", "nintendo", "wii"})
 
 
 def _same(a: str | None, b: str | None) -> bool:

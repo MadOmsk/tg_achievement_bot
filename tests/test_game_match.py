@@ -1574,3 +1574,35 @@ def test_a_relation_is_read_from_both_sides() -> None:
     assert abs(sum(probs.values()) - 1.0) < 1e-9
     verdict = compare(port, remaster, weights)
     assert (verdict.relation, verdict.subject) == ("remaster_of", 1)
+
+
+def test_numbers_conflict_or_go_missing() -> None:
+    """Two numbers that disagree are two games; one on one side only is a
+    weaker sign; a platform's number is no number of the game's (#218)."""
+    two, three = _c(1, "Halo 2"), _c(2, "Halo 3")
+    assert "numbers_differ" in features(two, three)
+    assert "number_missing" in features(_c(3, "Halo"), two)
+    ps4 = _c(4, "Foo Bar PlayStation 4 Edition", store="psn", console="ps4")
+    f = features(ps4, _c(5, "Foo Bar"))
+    assert not {"numbers_differ", "number_missing"} & set(f)
+
+
+def test_the_shape_of_a_pair() -> None:
+    """Whose list is known, the words a name adds, the edition's kind and
+    what the stores tell apart (#218)."""
+    base = _c(1, "Foo Bar", achievements=_list("a", 20), hltb_ids=frozenset({1}))
+    goty = _c(
+        2,
+        "Foo Bar Game of the Year Edition",
+        achievements=_list("a", 10),
+        hltb_ids=frozenset({2}),
+        list_key=("xbox_modern", "2"),
+    )
+    f = features(goty, base, ordered=True)
+    assert f["overlap"] == 1.0 and f["count_ratio"] == 0.5
+    assert "word_goty" in f and "hltb_differs" in f
+    assert "words_none_added" in f
+    heist = _c(3, "Foo Bar: The Heist")
+    assert "list_none" in features(heist, _c(4, "Foo Bar"))
+    assert "words_added" in features(heist, _c(4, "Foo Bar"), ordered=True)
+    assert "no_shared_word" in features(_c(5, "Quux"), _c(6, "Zork"))

@@ -62,12 +62,17 @@ FROZEN = frozenset({"bias"})
 # its namesake, "year unknown" grew to +2 and "other genres" to +0.3, and
 # Valve's Deadlock became LLL games' DeadLock).
 AGAINST_SAME = DIFFER_SIGNS | {
+    "no_shared_word",
+    "two_lists_one_store",
+    "hltb_differs",
+    "publisher_differs",
     "developer_differs",
     "genres_differ",
     "text_differ",
     "years_gap",
 }
-UNKNOWN_SIGNS = frozenset({"year_unknown", "name_unknown"})
+# "list_one"/"list_none" say only how pairs were picked for labelling (#218).
+UNKNOWN_SIGNS = frozenset({"year_unknown", "name_unknown", "list_one", "list_none"})
 # A class with fewer labels than this is pulled to its start that much
 # harder (remake 10, compilation 8, VR 3 labels in October 2026).
 FEW_LABELS = 40
