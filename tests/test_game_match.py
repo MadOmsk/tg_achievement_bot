@@ -207,8 +207,10 @@ def test_a_remaster_with_a_list_partly_its_originals() -> None:
     assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
 
 
-def test_a_later_product_on_a_new_console_with_its_own_list_is_a_remaster() -> None:
-    """Ghost of Tsushima Director's Cut on PS5 (owner, 2026-10-11)."""
+def test_a_later_product_on_a_new_console_with_its_own_list_is_an_edition() -> None:
+    """Ghost of Tsushima Director's Cut on PS5 (owner, 2026-10-11): a
+    remaster then; the game with more of it, an enhanced edition, since
+    that is a class of its own (owner, 2026-10-27)."""
     ps4 = _c(
         1,
         "Ghost of Tsushima",
@@ -230,7 +232,7 @@ def test_a_later_product_on_a_new_console_with_its_own_list_is_a_remaster() -> N
         achievements=_list("got", 50) | _list("iki", 16),
     )
     v = compare(ps4, ps5)
-    assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
+    assert (v.subject, v.relation) == (2, "enhanced_of"), v.reasons
 
 
 def test_a_remake_by_the_same_studio() -> None:
@@ -1506,6 +1508,24 @@ def test_an_enhanced_edition_is_marked_in_its_game() -> None:
     assert roles[1] == roles[3] == ("version", None)
     told = _roles([plain, cut], [{"version_id": 4, "other_id": 1, "relation": "enhanced_of"}])
     assert told[4] == ("enhanced", 1)
+
+
+def test_the_models_enhanced_edition_joins_its_game() -> None:
+    """Enhanced is a class of the model's own (owner, 2026-10-27): its sure
+    answer keeps the two in one game, and marks the edition of the other."""
+    from bot.services.game_link import _cluster, _roles
+    from bot.services.game_match import Verdict
+
+    plain = _c(1, "Sonic Adventure", year=1999)
+    cut = _c(2, "Sonic Adventure DX", year=2003)
+    probs = {"same": 0.02, "enhanced_of": 0.97, "other": 0.01}
+    v = Verdict(2, 1, "enhanced_of", 0.97, probs, "linked", {"name": 0.9})
+    assert v.p_join == 0.99
+    assert _cluster([plain, cut], {(1, 2): v}, []) == [{1, 2}]
+    assert _roles([plain, cut], [], {(1, 2): v})[2] == ("enhanced", 1)
+    # A label says otherwise: the label stands.
+    said = [{"version_id": 2, "other_id": 1, "relation": "same"}]
+    assert _roles([plain, cut], said, {(1, 2): v})[2] == ("version", None)
 
 
 def test_a_friends_pass_is_a_part_of_its_game() -> None:

@@ -20,6 +20,7 @@ import argparse
 import json
 import sqlite3
 import zlib
+from collections import Counter
 from collections.abc import Callable
 from html import escape
 from pathlib import Path
@@ -157,6 +158,7 @@ PAGES = {
     "/payloads": "Payloads",
     "/decisions": "Answer history",
     "/conflicts": "Contradictions",
+    "/recheck": "To recheck",
     "/series": "Series",
     "/octopus": "Octopus",
 }
@@ -517,6 +519,12 @@ _HOME_SECTIONS = (
             ),
             ("match_pairs", "/review", "the pairs the model is unsure of: its review queue", None),
             ("match_decisions", "/conflicts", "answers that contradict each other", None),
+            (
+                "game_relations",
+                "/recheck",
+                "relations the linker set by itself, for the advisers to recheck",
+                None,
+            ),
         ),
     ),
     (
@@ -3223,6 +3231,42 @@ async def conflicts_page(request: web.Request) -> web.Response:
     )
 
 
+async def recheck_page(request: web.Request) -> web.Response:
+    """The relations the linker set by itself (owner, 2026-10-27): its first
+    guess, until an adviser's or the operator's label settles each.
+    `scripts.review_questions --recheck` asks them all."""
+    from scripts.review_questions import to_recheck
+
+    with _db(request) as conn:
+        found = to_recheck(conn)
+        ids = sorted({v for a, b, _r in found for v in (a, b)})
+        names = {
+            r["version_id"]: f"{r['name']} ({r['console_name']})"
+            for r in conn.execute(
+                "SELECT version_id, name, "
+                + _console_sql("store", "console")
+                + " AS console_name FROM versions WHERE version_id IN ("
+                + ",".join("?" * len(ids))
+                + ")",
+                ids,
+            )
+        }
+    counts = Counter(r for _a, _b, r in found)
+    rows = [
+        f"<li><a href='/version/{a}'>v{a}</a> → <a href='/version/{b}'>v{b}</a>: "
+        f"{_relation_sentence(r, names.get(a, f'v{a}'), names.get(b, f'v{b}'))}</li>"
+        for a, b, r in found
+    ]
+    return _page(
+        PAGES["/recheck"],
+        f"<p>{len(found)} to recheck: "
+        + escape(", ".join(f"{r} {n}" for r, n in counts.most_common()))
+        + "</p><ul>"
+        + "".join(rows)
+        + "</ul>",
+    )
+
+
 async def _series_named(repo: Repo, relation: str, which: str, form) -> list[str] | None:
     """The series an answer "another of the series" names: by id, or typed
     (several by commas, owner, 2026-10-24); [] for any other answer, None
@@ -3886,6 +3930,7 @@ def build(
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
     app.router.add_get("/conflicts", conflicts_page)
+    app.router.add_get("/recheck", recheck_page)
     app.router.add_get("/proposals", proposals)
     app.router.add_get("/advised", advised)
     from scripts import trial_page

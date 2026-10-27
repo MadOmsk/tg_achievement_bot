@@ -140,7 +140,7 @@ class Verdict:
 
     subject: int  # version id
     other: int
-    relation: str  # same / remaster_of / remake_of / contains / vr_of / other
+    relation: str  # one of CLASSES, or other
     p: float  # the probability of `relation`
     probs: dict[str, float]
     state: str  # linked / review / apart
@@ -150,6 +150,11 @@ class Verdict:
     @property
     def p_same(self) -> float:
         return self.probs.get("same", 0.0)
+
+    @property
+    def p_join(self) -> float:
+        """That the two are one game: the same, or one an enhanced edition."""
+        return sum(self.probs.get(c, 0.0) for c in JOIN_CLASSES)
 
 
 def is_part(kind: str | None, role: str | None, names: tuple[str, ...] | list[str]) -> bool:
@@ -226,10 +231,20 @@ def is_enhanced(candidate: Candidate) -> bool:
 
 
 # The relations a pair of versions can have (#147; owner, 2026-10-11): one
-# game, or two games of which the first (the subject) is a remaster, a remake,
-# a compilation or the VR version of the second — or nothing ("other").
-CLASSES = ("same", "remaster_of", "remake_of", "contains", "vr_of")
-RELATIONS = CLASSES[1:]
+# game, the first (the subject) an enhanced edition of the second — kept in
+# its game, a class of its own (owner, 2026-10-27) —, or two games of which
+# the first is a remaster, a remake, a compilation or the VR version of the
+# second — or nothing ("other").
+CLASSES = ("same", "enhanced_of", "remaster_of", "remake_of", "contains", "vr_of")
+# The classes that keep two versions in one game.
+JOIN_CLASSES = ("same", "enhanced_of")
+# The relations between two games of their own.
+RELATIONS = tuple(c for c in CLASSES if c not in JOIN_CLASSES)
+# A model's answer that is neither one game nor nothing is its first guess,
+# written so the catalog has one, and asked of the web-searching advisers
+# until a label settles it (owner, 2026-10-27: "determine what it can, mark
+# it for a recheck").
+RECHECK = CLASSES[1:]
 
 # What each sign adds to each class's log-odds against "other" (whose log-odds
 # is 0); a softmax makes them probabilities. Every rule is a weight, nothing is
@@ -285,6 +300,50 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "tool_of": 7.0,
         "mode_of": 7.0,  # a mode's launcher, its game's name opening its own
         "extra_of": 7.0,  # a soundtrack or an artbook of this very game
+    },
+    # An enhanced edition (GOTY, Definitive, Director's Cut, Special
+    # Edition): one game made more of, a product of its own, often a list of
+    # its own, a few years later at most. Starting values, until a fit.
+    "enhanced_of": {
+        "bias": -5.0,
+        "one_list": -2.0,
+        "unknown_pc_namesake": -6.0,
+        "cross_gen_set": -2.0,
+        "later_list_same_family": 2.0,
+        "later_list_same_store": 2.0,
+        "same_name": -4.0,
+        "same_name_far": -2.0,
+        "subtitles_differ": -3.0,
+        "same_group": 2.0,
+        "steam_parent": -2.0,
+        "same_hltb": 2.5,
+        "year_unknown": 0.45,
+        "name": 8.0,
+        "full_name": 1.0,
+        "franchise": 0.5,
+        "subtitle": -1.0,
+        "numbers_differ": -9.0,
+        "number_missing": -2.0,
+        "remaster_word": 0.5,
+        "enhanced_word": 4.0,
+        "remake_word": -2.0,
+        "edition_word_near": 3.0,
+        "compilation_word": -2.0,
+        "vr_word": -4.0,
+        "overlap_high": 3.0,
+        "overlap_partial": 2.0,
+        "overlap_low": -1.0,
+        "years_near": 1.0,
+        "years_gap": -0.1,
+        "developer_same": 0.7,
+        "developer_differs": -1.0,
+        "publisher_same": 0.5,
+        "demo_of": -5.0,
+        "tool_of": -5.0,
+        "mode_of": -5.0,
+        "extra_of": -5.0,
+        "extra_pair": -20.0,
+        "extra_both": -20.0,
     },
     "remaster_of": {
         "bias": -5.0,

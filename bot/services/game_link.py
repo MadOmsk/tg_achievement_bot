@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from bot.services.game_match import (
     DIFFER_SIGNS,
+    JOIN_CLASSES,
     LINK_P,
     RELATIONS,
     VETO_P,
@@ -142,13 +143,13 @@ class GameLinker:
             lambda: {(a, b): compare(candidates[a], candidates[b]) for a, b in pairs}
         )
         groups = _cluster(members, verdicts, labels)
-        groups, enhanced = _split_enhanced(groups, candidates, labels)
+        groups, enhanced = _split_enhanced(groups, candidates, labels, verdicts)
         group_of = {v: i for i, g in enumerate(groups) for v in g}
         surest: dict[int, float] = {}
         for (a, b), v in verdicts.items():
             if group_of[a] == group_of[b]:
-                surest[a] = max(surest.get(a, 0.0), v.p_same)
-                surest[b] = max(surest.get(b, 0.0), v.p_same)
+                surest[a] = max(surest.get(a, 0.0), v.p_join)
+                surest[b] = max(surest.get(b, 0.0), v.p_join)
 
         anchors = await self._repo.games_anchored_in(list(around))
         old_games = {int(m["game_id"]) for m in now_in.values()}
@@ -167,7 +168,7 @@ class GameLinker:
                     target = await self._repo.create_game(
                         game_name(cluster), anchor.year, anchor.version_id
                     )
-                for version_id, (role, of) in _roles(cluster, labels).items():
+                for version_id, (role, of) in _roles(cluster, labels, verdicts).items():
                     assignment[version_id] = (target, role, of, surest.get(version_id))
                     game_of[version_id] = target
                 report.games[target] = sorted(group)
@@ -333,7 +334,7 @@ def _cluster(
         # year split Fall Guys and Among Us); it may still join.
         if "name_unknown" in v.features:
             continue
-        if v.p_same < VETO_P and "one_list" not in v.features and _differ(v):
+        if v.p_join < VETO_P and "one_list" not in v.features and _differ(v):
             forbidden[a].add(b)
             forbidden[b].add(a)
 
@@ -352,8 +353,8 @@ def _cluster(
     for lab in labels:
         if lab["relation"] in JOINING:
             join(lab["version_id"], lab["other_id"], force=True)
-    for (a, b), v in sorted(verdicts.items(), key=lambda kv: -kv[1].p_same):
-        if v.p_same < LINK_P:
+    for (a, b), v in sorted(verdicts.items(), key=lambda kv: -kv[1].p_join):
+        if v.p_join < LINK_P:
             break
         join(a, b, force=False)
     unique: dict[int, set[int]] = {}
@@ -363,7 +364,10 @@ def _cluster(
 
 
 def _split_enhanced(
-    groups: list[set[int]], candidates: dict[int, Candidate], labels: list[dict]
+    groups: list[set[int]],
+    candidates: dict[int, Candidate],
+    labels: list[dict],
+    verdicts: dict[tuple[int, int], Verdict] | None = None,
 ) -> tuple[list[set[int]], list[tuple[int, int]]]:
     """An enhanced edition sold under a product of its own beside the plain
     game is a game of its own (owner, 2026-10-25): where one store sells
@@ -373,6 +377,8 @@ def _split_enhanced(
     Complete Edition), the enhanced edition is the game there, and stays.
     Returns the groups and `(enhanced group, its game's group)` pairs."""
     said = {lab["version_id"] for lab in labels if lab["relation"] == "enhanced_of"}
+    labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
+    said |= set(_model_enhanced(verdicts or {}, labelled))
     # A version labelled a part (an add-on named "Special Edition Upgrade")
     # is no edition, whatever its name says.
     parts = {
@@ -402,6 +408,22 @@ def _split_enhanced(
     return out, pairs
 
 
+def _model_enhanced(
+    verdicts: dict[tuple[int, int], Verdict], labelled: set[frozenset[int]]
+) -> dict[int, int]:
+    """The model's sure enhanced editions, each with the version it enhances
+    (the surest): what no label says otherwise of."""
+    found: dict[int, tuple[int, float]] = {}
+    for v in verdicts.values():
+        if v.state != "linked" or v.relation != ENHANCED:
+            continue
+        if frozenset((v.subject, v.other)) in labelled:
+            continue
+        if v.subject not in found or found[v.subject][1] < v.p:
+            found[v.subject] = (v.other, v.p)
+    return {e: of for e, (of, _p) in found.items()}
+
+
 def _differ(v: Verdict) -> bool:
     """A sign the two versions are not one game: one of `DIFFER_SIGNS`, or
     the model's likeliest answer is a relation of its own — a remaster, a
@@ -419,7 +441,11 @@ def _anchor(cluster: list[Candidate]) -> Candidate:
     return min(plain, key=lambda c: (era(c) or 9999, c.version_id))
 
 
-def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str, int | None]]:
+def _roles(
+    cluster: list[Candidate],
+    labels: list[dict],
+    verdicts: dict[tuple[int, int], Verdict] | None = None,
+) -> dict[int, tuple[str, int | None]]:
     """Each version's role in its game, and for a demo, a tool or a mode the
     version it is of (owner, 2026-10-09): the one on the same console, else the same
     store, else any — the one whose name opens it first."""
@@ -429,6 +455,10 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
         for lab in labels
         if lab["version_id"] in ids and lab["other_id"] in ids
     }
+    labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
+    for e, of in _model_enhanced(verdicts or {}, labelled).items():
+        if e in ids and of in ids and e not in told:
+            told[e] = (ENHANCED, of)
     games = [c for c in cluster if kind_of(c) not in PARTS]
     roles: dict[int, tuple[str, int | None]] = {}
     for c in cluster:
@@ -616,7 +646,7 @@ def _review(
         if v.state != "review" or frozenset((a, b)) in labelled:
             continue
         ga, gb = game_of.get(a), game_of.get(b)
-        if ga is None or gb is None or (ga == gb and v.relation == "same"):
+        if ga is None or gb is None or (ga == gb and v.relation in JOIN_CLASSES):
             continue
         key = frozenset((ga, gb))
         if ga != gb and (key in related or key in decided):

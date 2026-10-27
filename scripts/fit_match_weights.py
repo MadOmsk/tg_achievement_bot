@@ -186,12 +186,16 @@ async def run(args: argparse.Namespace) -> Weights | None:
         print(f"recall per class on the yardstick ({verdict.yardstick}), current → fitted:")
         for c, (was, n) in verdict.recall_start.items():
             now = verdict.recall_fitted.get(c, (0.0, 0))[0]
-            mark = "  LOST" if c in verdict.lost else ""
-            print(f"  {c:12} n={n:4}  {was:5.1%} → {now:5.1%}{mark}")
+            print(f"  {c:12} n={n:4}  {was:5.1%} → {now:5.1%}")
         print(
             f"  macro          {macro(verdict.recall_start):5.1%} → "
             f"{macro(verdict.recall_fitted):5.1%}"
         )
+        print("judged as one game / related / other:")
+        for c, (was, n) in verdict.coarse_recall_start.items():
+            now = verdict.coarse_recall_fitted.get(c, (0.0, 0))[0]
+            mark = "  LOST" if c in verdict.lost else ""
+            print(f"  {c:12} n={n:4}  {was:5.1%} → {now:5.1%}{mark}")
         if verdict.viewer and verdict.viewer[0].n:
             was, now = verdict.viewer
             print(
@@ -199,9 +203,15 @@ async def run(args: argparse.Namespace) -> Weights | None:
                 f"  →  {now.accuracy:5.1%} · {now.log_loss:.3f}"
             )
         print(
-            f"GATE ({verdict.yardstick}): {verdict.start.accuracy:.1%} · "
+            f"all classes ({verdict.yardstick}): {verdict.start.accuracy:.1%} · "
             f"{verdict.start.log_loss:.3f} → {verdict.fitted.accuracy:.1%} · "
-            f"{verdict.fitted.log_loss:.3f} — {'PASSED' if verdict.passed else 'not passed'}"
+            f"{verdict.fitted.log_loss:.3f}"
+        )
+        was, now = verdict.coarse_start, verdict.coarse_fitted
+        print(
+            f"GATE ({verdict.yardstick}, coarse): {was.accuracy:.1%} · {was.log_loss:.3f}"
+            f" → {now.accuracy:.1%} · {now.log_loss:.3f}"
+            f" — {'PASSED' if verdict.passed else 'not passed'}"
         )
         if args.quick:
             return None

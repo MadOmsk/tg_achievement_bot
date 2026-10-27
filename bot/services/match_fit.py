@@ -28,7 +28,7 @@ import math
 import random
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from bot.services.advice import ADVISER_SOURCES, ALL_THREE, BOTH
@@ -81,7 +81,8 @@ FEW_LABELS = 40
 LABEL_CLASS = {
     "same": "same",
     "edition": "same",
-    "enhanced_of": "same",  # an enhanced edition is one game (owner, 2026-10-24)
+    # One game, yet a class of its own (owner, 2026-10-27).
+    "enhanced_of": "enhanced_of",
     "demo_of": "same",
     "tool_of": "same",
     "mode_of": "same",
@@ -379,6 +380,25 @@ def _score(rows: list[tuple[Example, dict[str, float]]]) -> Score:
     return Score(right / len(rows), loss / len(rows), len(rows))
 
 
+# What the gate judges (owner, 2026-10-27): one game, related, or nothing.
+# Which relation a related pair has is the web-searching advisers' to settle
+# (every such answer is rechecked), so a fit is not refused for mixing up a
+# remaster and a remake — only for missing that two are related at all.
+def coarse(label: str) -> str:
+    return label if label in ("same", "other") else "related"
+
+
+def coarse_probs(p: dict[str, float]) -> dict[str, float]:
+    out = {"same": 0.0, "related": 0.0, "other": 0.0}
+    for c, v in p.items():
+        out[coarse(c)] += v
+    return out
+
+
+def _coarse_rows(rows: list[tuple[Example, dict[str, float]]]) -> list[tuple[Example, dict]]:
+    return [(replace(e, label=coarse(e.label)), coarse_probs(p)) for e, p in rows]
+
+
 # A class's recall may not fall by more than this on the yardstick, once it
 # has `RECALL_MIN_N` labels there (fewer: noise, reported only).
 RECALL_SLACK = 0.02
@@ -412,24 +432,31 @@ class Gate:
     viewer: tuple[Score, Score] | None = None
     # Which labels it is judged on: the frozen set, or the operator's labels.
     yardstick: str = "operator"
+    # The same, as one game / related / other (`coarse`): what it is judged by.
+    coarse_start: Score = field(default_factory=lambda: Score(0.0, 0.0, 0))
+    coarse_fitted: Score = field(default_factory=lambda: Score(0.0, 0.0, 0))
+    coarse_recall_start: dict[str, tuple[float, int]] = field(default_factory=dict)
+    coarse_recall_fitted: dict[str, tuple[float, int]] = field(default_factory=dict)
 
     @property
     def lost(self) -> list[str]:
-        """Classes whose recall fell by more than the slack."""
+        """Coarse classes whose recall fell by more than the slack."""
         return [
             c
-            for c, (was, n) in self.recall_start.items()
-            if n >= RECALL_MIN_N and self.recall_fitted.get(c, (0.0, 0))[0] < was - RECALL_SLACK
+            for c, (was, n) in self.coarse_recall_start.items()
+            if n >= RECALL_MIN_N
+            and self.coarse_recall_fitted.get(c, (0.0, 0))[0] < was - RECALL_SLACK
         ]
 
     @property
     def passed(self) -> bool:
-        """The fit answers the yardstick better: a lower log-loss, no fewer
-        right, and no class's recall lost."""
+        """The fit tells one game, related and other apart better on the
+        yardstick: a lower log-loss, no fewer right, and none of the three
+        recalled less."""
         return (
-            self.fitted.n > 0
-            and self.fitted.log_loss < self.start.log_loss
-            and self.fitted.accuracy >= self.start.accuracy
+            self.coarse_fitted.n > 0
+            and self.coarse_fitted.log_loss < self.coarse_start.log_loss
+            and self.coarse_fitted.accuracy >= self.coarse_start.accuracy
             and not self.lost
         )
 
@@ -452,6 +479,8 @@ def gate(rows: list[HeldOut], frozen: set[tuple[int, int]] | None = None) -> Gat
     else:
         judged = [r for r in rows if r.example.operator]
     viewer = [r for r in judged if r.example.source == "viewer"]
+    start = _coarse_rows([(r.example, r.start) for r in judged])
+    fitted = _coarse_rows([(r.example, r.fitted) for r in judged])
     return Gate(
         _score([(r.example, r.start) for r in judged]),
         _score([(r.example, r.fitted) for r in judged]),
@@ -469,4 +498,8 @@ def gate(rows: list[HeldOut], frozen: set[tuple[int, int]] | None = None) -> Gat
             _score([(r.example, r.fitted) for r in viewer]),
         ),
         "frozen" if frozen is not None else "operator",
+        _score(start),
+        _score(fitted),
+        recall(start),
+        recall(fitted),
     )

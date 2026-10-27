@@ -15,8 +15,13 @@ things relate, not only enhanced editions). Four kinds, each answered by
 
 Nothing already labelled is asked again. Read-only, safe beside the viewer.
 
+`--recheck` asks instead about every relation the linker set by itself
+(`to_recheck`; owner, 2026-10-27): the model's answer is its first guess,
+written so the catalog has one, and settled by the advisers' labels.
+
 Usage:
     … -m scripts.review_questions --db data/games.db --out questions.json [--total 500]
+    … -m scripts.review_questions --db data/games.db --out recheck.json --recheck
 """
 
 from __future__ import annotations
@@ -29,6 +34,12 @@ from pathlib import Path
 from scripts.advise_pairs import read_only_uri
 
 SHARES = {"relations": 0.1, "hltb": 0.15, "series": 0.3}  # the rest: pairs in one game
+
+# A version's role in its game that the linker gives it and an adviser checks.
+PART_ROLES = ("enhanced", "demo", "tool", "mode", "extra", "pass")
+# What to ask beside a VR version (owner, 2026-10-27): a VR version of the
+# very game, or another game of its series made for VR.
+VR_QUESTION = "the VR version of this very game, or another game of its series made for VR?"
 
 
 def _version(conn: sqlite3.Connection, vid: int) -> dict:
@@ -50,6 +61,50 @@ def _plain(conn: sqlite3.Connection, game_id: int) -> int | None:
         (game_id,),
     ).fetchone()
     return int(row[0]) if row else None
+
+
+def to_recheck(conn: sqlite3.Connection) -> list[tuple[int, int, str]]:
+    """Every relation the linker set by itself and no label settles yet, as
+    `(the version it is about, the other, the relation)`: between two games
+    (a remaster, a remake, a compilation, a VR version, an enhanced edition
+    of its own), as a pair of their own versions, and inside a game (an
+    enhanced edition, a demo, a tool, a mode, an extra, a pass) — the
+    version and the one it is of."""
+    labelled = {
+        frozenset((int(a), int(b)))
+        for a, b in conn.execute("SELECT version_id, other_id FROM match_decisions")
+    }
+    found: list[tuple[int, int, str]] = []
+    for game, related, kind in conn.execute(
+        "SELECT game_id, related_id, kind FROM game_relations WHERE source = 'auto'"
+        " ORDER BY kind, game_id"
+    ):
+        a, b = _plain(conn, game), _plain(conn, related)
+        if a and b and a != b and frozenset((a, b)) not in labelled:
+            found.append((a, b, str(kind)))
+    marks = ",".join("?" * len(PART_ROLES))
+    for vid, of, role in conn.execute(
+        "SELECT version_id, of_version_id, role FROM versions WHERE role IN (" + marks + ")"
+        " AND of_version_id IS NOT NULL ORDER BY role, version_id",
+        PART_ROLES,
+    ):
+        if frozenset((int(vid), int(of))) not in labelled:
+            found.append((int(vid), int(of), f"{role}_of"))
+    return found
+
+
+def recheck_questions(db: Path) -> list[dict]:
+    conn = sqlite3.connect(read_only_uri(db), uri=True)
+    conn.row_factory = sqlite3.Row
+    out = []
+    for a, b, relation in to_recheck(conn):
+        q = {"type": "pair", "a": a, "b": b, "asked_for": f"recheck: the model said A {relation} B",
+             "A": _version(conn, a), "B": _version(conn, b)}  # fmt: skip
+        if relation == "vr_of":
+            q["question"] = VR_QUESTION
+        out.append(q)
+    conn.close()
+    return out
 
 
 def build(db: Path, total: int) -> list[dict]:
@@ -156,8 +211,11 @@ def main() -> None:
     parser.add_argument("--db", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--total", type=int, default=500)
+    parser.add_argument("--recheck", action="store_true")
     args = parser.parse_args()
-    questions = build(Path(args.db), args.total)
+    questions = (
+        recheck_questions(Path(args.db)) if args.recheck else build(Path(args.db), args.total)
+    )
     Path(args.out).write_text(json.dumps(questions, ensure_ascii=False, indent=1), "utf-8")
     counts: dict[str, int] = {}
     for q in questions:

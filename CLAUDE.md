@@ -998,7 +998,10 @@ What the stores and HLTB say about a game, collected but not shown yet
     `COMMON_WORD` versions —, a store's group or cross-gen set, an HLTB entry,
     one list) is read from its subject's side (the VR one, the compilation, the
     later one) — and each directed class from whichever side makes it likelier,
-    the relation pointing from there (#218: `subject_of` is a guess); each class sums its `WEIGHTS` over the pair's signs and a
+    the relation pointing from there (#218: `subject_of` is a guess); its
+    classes are one game, an **enhanced edition** (one game too, a class of
+    its own — owner, 2026-10-27), a remaster, a remake, a compilation, a VR
+    version, or "other"; each class sums its `WEIGHTS` over the pair's signs and a
     softmax against "other" gives probabilities (owner, 2026-10-10: every rule a
     weight, nothing certain). The likeliest at `LINK_P` (0.95 while the fit runs
     overconfident, #218) and `CLOSE_CALL`
@@ -1011,6 +1014,15 @@ What the stores and HLTB say about a game, collected but not shown yet
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
+  - **The model's relation is a first guess, rechecked** (owner,
+    2026-10-27): whatever the linker sets by itself that is neither one game
+    nor nothing — a relation between games, or a role in a game (enhanced,
+    demo, tool, mode, extra, pass) — is written so the catalog has one, and
+    stays on the viewer's «To recheck» (`review_questions.to_recheck`) until
+    a label settles it; `review_questions --recheck` asks them all of the
+    web-searching advisers (a VR version: this game in VR, or another game of
+    its series made for VR). The model only has to tell one game, related
+    and other apart well; which relation it is is the advisers'.
   - **A name never learned is no name** (the training audit, 2026-10-24): a
     stand-in named by its own id («1881441063») has no names for the model;
     its pairs show `name_unknown` instead of any name sign, and veto nothing
@@ -1053,8 +1065,10 @@ What the stores and HLTB say about a game, collected but not shown yet
     `data/advice/eval_set.json`; #218: the operator's set grew harder with
     every batch, so fits could not be compared), their labels as they stand.
     It prints each class's recall, their average and the viewer's labels
-    alone, and **refuses a fit that loses a class** (recall down more than
-    2 points on 10+ labels). The
+    alone, and judges by **one game / related / other** (`match_fit.coarse`,
+    owner, 2026-10-27: every relation is rechecked): a fit must lower that
+    log-loss, answer no fewer right, and **lose none of the three** (recall
+    down more than 2 points on 10+ labels). The
     script also scores every pair the linker compares with both weights and
     counts what would move. **A fit lives in the database** (`match_weights`,
     migration 129): `--save` keeps it and makes it the active set only when

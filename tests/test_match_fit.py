@@ -110,17 +110,39 @@ def test_the_frozen_set_is_the_yardstick_with_recall_per_class() -> None:
 
 
 def test_a_fit_that_loses_a_class_is_refused() -> None:
+    """Judged as one game / related / other (owner, 2026-10-27): missing
+    that two are related refuses a fit; mixing a remaster with a remake
+    does not — the advisers recheck which relation it is."""
     from bot.services.match_fit import Gate, Score
 
-    better = Score(0.9, 0.2, 40)
-    verdict = Gate(
-        Score(0.8, 0.5, 40),
-        better,
-        {},
-        recall_start={"same": (0.9, 30), "remaster_of": (0.5, 10)},
-        recall_fitted={"same": (1.0, 30), "remaster_of": (0.3, 10)},
-    )
-    assert verdict.lost == ["remaster_of"] and not verdict.passed
+    def judged(related_after: float) -> Gate:
+        return Gate(
+            Score(0.8, 0.5, 40),
+            Score(0.7, 0.6, 40),
+            {},
+            recall_start={"same": (0.9, 30), "remaster_of": (0.5, 10)},
+            recall_fitted={"same": (1.0, 30), "remaster_of": (0.2, 10)},
+            coarse_start=Score(0.8, 0.5, 40),
+            coarse_fitted=Score(0.9, 0.3, 40),
+            coarse_recall_start={"same": (0.9, 30), "related": (0.6, 10)},
+            coarse_recall_fitted={"same": (1.0, 30), "related": (related_after, 10)},
+        )
+
+    assert judged(0.3).lost == ["related"] and not judged(0.3).passed
+    assert judged(0.6).lost == [] and judged(0.6).passed
+
+
+def test_coarse_sums_the_relations() -> None:
+    from bot.services.match_fit import coarse, coarse_probs
+
+    assert [coarse(c) for c in ("same", "enhanced_of", "vr_of", "other")] == [
+        "same",
+        "related",
+        "related",
+        "other",
+    ]
+    p = coarse_probs({"same": 0.2, "enhanced_of": 0.3, "remake_of": 0.1, "other": 0.4})
+    assert p == {"same": 0.2, "related": 0.4, "other": 0.4}
 
 
 def test_a_fit_stops_once_settled() -> None:
