@@ -58,6 +58,7 @@ Layout:
     _octopus.py     the octopus's queue and what it reads to assemble a game (#215).
     _game_page.py   the Mini App's game page: a game whole, the games a search
                     finds, favorite games (130).
+    _pass.py        the season pass: the themes each person claimed (131).
     _series.py      game series: which games are in each, proposed by the
                     linker or said by the operator and the advisers (105).
 
@@ -134,6 +135,7 @@ from bot.db.repo._models import (
 )
 from bot.db.repo._notifications import NotificationRow, PushSubscription, _NotificationsRepo
 from bot.db.repo._octopus import _OctopusRepo
+from bot.db.repo._pass import _PassRepo
 from bot.db.repo._passkeys import PasskeyRow, _PasskeysRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
@@ -238,6 +240,7 @@ class Repo(
     _GamesRepo,
     _GamePageRepo,
     _SeriesRepo,
+    _PassRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 

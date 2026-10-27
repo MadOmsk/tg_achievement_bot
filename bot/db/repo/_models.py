@@ -489,6 +489,8 @@ class ChatMemberStat:
     count: int
     score: int
     rare: int
+    #: The app's own points for the window (`_sql.points`).
+    points: int = 0
     # Behind `count`'s single combined total (2026-09-05 follow-up) — a
     # parenthetical next to it, not a second sort key or a second row.
     xbox_count: int = 0

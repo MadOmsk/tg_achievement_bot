@@ -30,6 +30,17 @@ export type GamePlayer = {
   platform: string;
   title_id: string;
   total: number | null;
+  /** Every list the person played, the most earned first (one game on Xbox
+   * and Steam is two lists, never summed). */
+  lists?: GameListPlayed[];
+};
+
+export type GameListPlayed = {
+  count: number;
+  last: string | null;
+  platform: string;
+  title_id: string;
+  total: number | null;
 };
 
 export type GameNews = {

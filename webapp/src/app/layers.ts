@@ -48,8 +48,11 @@ export type Layer =
       /** The game's cover the page opening it already shows. */
       cover?: string | null;
       person: { id: number; name: string } | null;
+      /** The other platforms the person played the game on, to switch to. */
+      lists?: { platform: string; title_id: string; count?: number }[];
     }
   | { kind: "achievement"; ach: AchView }
+  | { kind: "pass" }
   | { kind: "gallery"; game: string; cover: string | null; videos: Video[]; screenshots: string[] }
   | {
       kind: "achievementRef";

@@ -145,8 +145,10 @@ export function Home({ refreshKey }: { refreshKey: number }) {
           months={mine.data?.months?.length ? mine.data.months : recentMonths(12)}
           onMonth={setMonth}
           personId={me.person_id}
+          season
         />
       )}
+
 
       {hasAccount && (
         <section className="sec">

@@ -1,8 +1,8 @@
 import type { AchView } from "../app/layers";
 import { useApp } from "../app/context";
-import { isVeiled, rareLevel, TIER_NAME } from "../app/views";
+import { isVeiled, pointsOf, rareLevel, TIER_NAME } from "../app/views";
 import { tick } from "../core/haptic";
-import { num, pct } from "../i18n";
+import { num, pct, plural } from "../i18n";
 import { Face } from "../ui/Face";
 import { AchPic } from "../ui/Pic";
 import { isWideArt } from "./AchRow";
@@ -54,7 +54,9 @@ export function AchTile({
       </span>
       <span className="tile-kicker">
         <span className={level ? `mark-${level}` : ""}>{capital(tr(TIER_NAME[level ?? "common"]))}</span>
-        {ach.gamerscore ? <span className="tile-worth">{num(ach.gamerscore, locale)} G</span> : null}
+        <span className="tile-worth">
+          {num(pointsOf(ach.rarity, ach), locale)} {plural(locale, pointsOf(ach.rarity, ach), ["ptsOne", "ptsFew", "ptsMany"])}
+        </span>
       </span>
       <span className="tile-name clamp-2">{veiled ? tr("secretAchievement") : ach.name}</span>
       <span className="tile-game clamp-1">{ach.game}</span>

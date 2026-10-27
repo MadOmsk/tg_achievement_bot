@@ -59,12 +59,12 @@ Chips are four kinds: `chip-outline` (a fact: a genre, points),
 A game's page takes its scheme from its art, so on it a toggle or a mark
 uses the scheme's roles (`primary-container`), never the shared pink.
 
-**Palettes.** Nine, picked in Settings → Appearance («Внешний вид») and kept on the
+**Palettes.** Six, picked in Settings → Appearance («Внешний вид») and kept on the
 device (`app/env.ts::look`, `localStorage`): **Violet** (the default, the
 logo's lilac with a pink accent), **Mint** (teal with coral), **Amber** (warm
 orange with coral), **Ocean** (blue with gold), **Rose** (pink with blue),
-**Lilac** (lilac-blue with pink), **Forest** (green with amber), **Garnet** (red with
-sky), **Graphite** (neutral grey with cyan). Each has a dark and a light form; the mode is Auto
+**Graphite** (neutral grey with cyan). Violet is always open; the others are
+the season pass's rewards (`core/pass.ts`). Each has a dark and a light form; the mode is Auto
 (Telegram's own scheme inside it, the system's elsewhere), Light or Dark. A
 palette is one block of tokens in `tokens.css` under
 `:root[data-palette="…"]` and its `[data-theme="light"]` twin — a new palette
@@ -94,7 +94,7 @@ Roboto Flex, variable. **Width is a voice**: numbers are narrow and heavy
 | `.t-meta` | 13 / 400, `--on-surface-3` | dates, counts, sources |
 | `.t-num` | narrow, 800 | any number shown as a value |
 
-Lists of achievements write their worth as one meta line (`15 G · 6,3 % ·
+Lists of achievements write their worth as one meta line (`20 очков · 6,3 % ·
 12 октября`, `AchMarks plain`), rarity coloured by how rare; chips are for
 filters and states, not for every value.
 
@@ -133,6 +133,12 @@ A picture is never framed or tinted by its tier: rarity shows on its badge;
 a feed card takes a bare wash of it. Places take the same colours: first
 mythic, second legendary, third rare (the podium, the leaders' marks). Use
 the tiers for rank and rarity only.
+
+**Points are the app's own** (owner, 2026-10-27): an achievement is worth
+its tier — common 10, rare 20, legendary 30, mythic 50 (`views.POINTS`, the
+server's `_sql.points`) — on every platform, in place of Xbox's G. Rankings,
+the month card and the share of the circle count points. Tens leave room for
+a step between.
 
 ## The feed's card
 

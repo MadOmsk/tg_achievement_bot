@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { clubApi, type PersonPayload } from "../api";
 import { useLoad } from "../app/useLoad";
+import { PassStrip } from "../screens/pass/PassCard";
 import { useApp } from "../app/context";
 import { tick } from "../core/haptic";
-import { formatMonth } from "../core/people-utils";
+import { formatMonth, currentMonth } from "../core/people-utils";
 import { num, plural } from "../i18n";
 import { Face } from "../ui/Face";
 import { Icon } from "../ui/Icon";
@@ -11,8 +12,9 @@ import { MonthSheet } from "./Months";
 
 /** A person's month as one card, by what matters: how many achievements
  * (the points and the games small beside), the place among the people
- * followed, and those people in a row — each with their place and how many
- * the person lacks to pass them (+) or leads them by (−). Home
+ * followed by the app's own points, and those people in a row — each with
+ * their place and how many points the person lacks to pass them (+) or leads
+ * them by (−). Home
  * shows the viewer's, a person's page that person's. */
 export function MonthHero({
   payload,
@@ -20,6 +22,7 @@ export function MonthHero({
   months,
   onMonth,
   personId,
+  season = false,
 }: {
   payload: PersonPayload | null | undefined;
   month: string;
@@ -29,17 +32,23 @@ export function MonthHero({
   onMonth?: (month: string) => void;
   /** Whose month it is: their place among the people the viewer follows. */
   personId?: number;
+  /** Home's own card: this month's season pass under the race. */
+  season?: boolean;
 }) {
   const { data, tr, locale, open, me } = useApp();
   const summary = useLoad(personId ? `summary:${month}:hero` : null, () => clubApi.fetchSummary(data, "following", { month }));
-  const leaders = [...(summary.data?.month ?? [])].filter((r) => r.count > 0).sort((a, b) => b.count - a.count || b.score - a.score);
+  const leaders = [...(summary.data?.month ?? [])]
+    .filter((r) => r.count > 0)
+    .sort((a, b) => (b.points ?? 0) - (a.points ?? 0) || b.count - a.count);
   const place = personId ? leaders.findIndex((r) => r.person_id === personId) + 1 : 0;
   // Until both the month and the race are in, the card keeps their shapes.
   const ready = Boolean(payload) && (!personId || Boolean(summary.data) || Boolean(summary.error));
-  const mine = place > 0 ? leaders[place - 1].count : 0;
+  const mine = place > 0 ? (leaders[place - 1].points ?? 0) : 0;
   const [pick, setPick] = useState(false);
   const list = months?.length ? months : [month];
   const label = formatMonth(month, locale, "sheet");
+  // The pass is this month's: another month shows its race.
+  const pass = season && month === currentMonth();
   return (
     <section className="home-hero">
       <span className="home-hero-deco shape-clover4" aria-hidden="true" />
@@ -73,11 +82,10 @@ export function MonthHero({
       {payload ? (
         <p className="home-hero-line">
           <span>{plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}</span>
-          {payload.month.score > 0 && (
-            <span>
-              <b className="t-num">+{num(payload.month.score, locale)}</b> G
-            </span>
-          )}
+          <span>
+            <b className="t-num">{num(payload.month.points ?? 0, locale)}</b>{" "}
+            {plural(locale, payload.month.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}
+          </span>
           <span>
             <b className="t-num">{num(payload.games.length, locale)}</b>{" "}
             {plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}
@@ -100,7 +108,10 @@ export function MonthHero({
         <div className="home-hero-people rail">
           {leaders.map((r, i) => {
             const isMe = r.person_id === personId;
-            const diff = r.count - mine;
+            // Above the person: how many to pass them (one more than the
+            // difference). Below: how far ahead the person is; level is "+0".
+            const above = i < place - 1;
+            const gap = above ? (r.points ?? 0) - mine + 1 : mine - (r.points ?? 0);
             return (
               <button
                 key={r.person_id}
@@ -117,14 +128,23 @@ export function MonthHero({
                   </span>
                   <span className="home-hero-person-at t-num">{i + 1}</span>
                 </span>
-                <span className={`home-hero-person-gap t-num${isMe ? "" : diff >= 0 ? " home-hero-person-ahead" : " home-hero-person-behind"}`}>
-                  {isMe ? (personId === me.person_id ? tr("you") : num(r.count, locale)) : diff >= 0 ? `+${num(diff + 1, locale)}` : `−${num(-diff, locale)}`}
+                <span className={`home-hero-person-gap t-num${isMe ? "" : above ? " home-hero-person-ahead" : " home-hero-person-behind"}`}>
+                  {isMe
+                    ? personId === me.person_id
+                      ? tr("you")
+                      : num(r.points ?? 0, locale)
+                    : above
+                      ? `+${num(gap, locale)}`
+                      : gap > 0
+                        ? `−${num(gap, locale)}`
+                        : "+0"}
                 </span>
               </button>
             );
           })}
         </div>
       )}
+      {pass && <PassStrip />}
     </section>
   );
 }

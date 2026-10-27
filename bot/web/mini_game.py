@@ -113,21 +113,31 @@ async def handle_game_page(request: web.Request) -> web.Response:
         person = await repo.get_user(int(row["person_id"]))
         if person is None:
             continue
-        # The same count the feed and the posts show (`title_progress`), so a
-        # game reads "40/50" everywhere; the list's own size when it knows none.
-        known = await repo.title_progress(
-            account_platform_of(row["platform"]), str(row["xuid"]), str(row["title_id"])
-        )
+        # One entry per list the person played (a game on Xbox and Steam is
+        # two lists, never summed), the most earned first.
+        played = []
+        for one in row["lists"]:
+            # The same count the feed and the posts show (`title_progress`), so a
+            # game reads "40/50" everywhere; the list's own size when it knows none.
+            known = await repo.title_progress(
+                account_platform_of(one["platform"]), str(one["xuid"]), str(one["title_id"])
+            )
+            played.append(
+                {
+                    "count": known.unlocked if known else int(one["n"]),
+                    "last": one["last"],
+                    "platform": one["platform"],
+                    "title_id": str(one["title_id"]),
+                    "total": (known.total if known else None)
+                    or totals.get((one["platform"], str(one["title_id"])))
+                    or None,
+                }
+            )
         item = {
             "person_id": person.id,
             "name": person_name_of(person),
-            "count": known.unlocked if known else int(row["n"]),
-            "last": row["last"],
-            "platform": row["platform"],
-            "title_id": str(row["title_id"]),
-            "total": (known.total if known else None)
-            or totals.get((row["platform"], str(row["title_id"])))
-            or None,
+            **played[0],
+            "lists": played,
         }
         if person.id == viewed:
             progress = item

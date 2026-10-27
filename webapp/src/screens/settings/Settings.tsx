@@ -3,6 +3,7 @@ import { userApi, type UserSettingsPatch } from "../../api";
 import { peopleApi, type ActivityVisible } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
 import { inTelegram, look, PALETTES, setLook } from "../../app/env";
+import { PALETTE_NAMES, paletteLevel, paletteOpen, usePass } from "../../core/pass";
 import type { SettingsPaneName } from "../../app/layers";
 import { useLoad } from "../../app/useLoad";
 import { TIMEZONES } from "../../core/constants";
@@ -140,21 +141,11 @@ function Root() {
   );
 }
 
-const PALETTE_NAMES = {
-  violet: "paletteViolet",
-  mint: "paletteMint",
-  ember: "paletteEmber",
-  ocean: "paletteOcean",
-  rose: "paletteRose",
-  forest: "paletteForest",
-  garnet: "paletteGarnet",
-  lilac: "paletteLilac",
-  graphite: "paletteGraphite",
-} as const;
-
 function AppearancePane() {
-  const { tr } = useApp();
+  const { tr, open, data } = useApp();
   const [view, setView] = useState(look);
+  // Themes past Violet are the season pass's, claimed on the server.
+  const pass = usePass(data);
   const pick = (next: Partial<ReturnType<typeof look>>) => {
     setLook(next);
     setView(look());
@@ -164,19 +155,29 @@ function AppearancePane() {
       <Group>
         <div className="set-pad set-look">
           <div className="swatches" role="radiogroup" aria-label={tr("appearance")}>
-            {PALETTES.map((p) => (
-              <button
-                key={p}
-                type="button"
-                role="radio"
-                aria-checked={view.palette === p}
-                className={`swatch swatch-${p}${view.palette === p ? " swatch-on" : ""}`}
-                onClick={() => pick({ palette: p })}
-              >
-                <span className="swatch-dot shape-cookie9">{view.palette === p && <Icon name="check" size={18} />}</span>
-                <span>{tr(PALETTE_NAMES[p])}</span>
-              </button>
-            ))}
+            {PALETTES.map((p) => {
+              const shut = !paletteOpen(p, pass);
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  role="radio"
+                  aria-checked={view.palette === p}
+                  className={`swatch swatch-${p}${view.palette === p ? " swatch-on" : ""}${shut ? " swatch-shut" : ""}`}
+                  onClick={() => (shut ? open({ kind: "pass" }) : pick({ palette: p }))}
+                >
+                  <span className="swatch-dot shape-cookie9">
+                    {view.palette === p ? <Icon name="check" size={18} /> : shut ? <Icon name="lock" size={16} /> : null}
+                  </span>
+                  <span>{tr(PALETTE_NAMES[p])}</span>
+                  {shut && (
+                    <span className="swatch-level">
+                      {tr("passLevel")} {paletteLevel(p, pass)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
           <Segmented
             options={[

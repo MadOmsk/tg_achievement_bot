@@ -78,6 +78,7 @@ from bot.web.mini_chat import (
 )
 from bot.web.mini_game import setup_game_routes
 from bot.web.mini_me import build_me_payload
+from bot.web.mini_pass import setup_pass_routes
 
 log = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
     setup_game_routes(app)
+    setup_pass_routes(app)
 
 
 def _default_notifier(settings: Settings, repo: Repo, bot: Any) -> Notifier:
@@ -873,23 +875,36 @@ async def handle_person_avatar(request: web.Request) -> web.Response:
     return await _avatar_of(request, target, target.tg_id)
 
 
-async def _avatar_of(request: web.Request, target: User | None, tg_id: int | None) -> web.Response:
-    """The picture the person chose (#157), else their Telegram photo."""
-    repo: Repo = request.app["mini_repo"]
-    custom = await repo.custom_avatar_path(target.id) if target and target.id else None
-    if custom:
-        file = avatars.avatar_dir() / custom
+def _file_picture(request: web.Request, paths: list[str]) -> web.Response | None:
+    for path in paths:
+        file = avatars.avatar_dir() / path
         if file.is_file():
             body = file.read_bytes()
             return _picture(request, body, image_mime(body))
+    return None
+
+
+async def _avatar_of(request: web.Request, target: User | None, tg_id: int | None) -> web.Response:
+    """The picture the person chose (#157), else their Telegram photo, else
+    their game account's. What is on disk comes first: a Telegram `file_id`
+    opens only for the bot that saw it, so the test server, on a copy of
+    production's database, could fetch nobody's face by it."""
+    repo: Repo = request.app["mini_repo"]
+    own, accounts = await repo.face_paths(target.id) if target and target.id else ([], [])
+    found = _file_picture(request, own)
+    if found is not None:
+        return found
     bot = request.app.get("mini_bot")
-    if bot is None or tg_id is None:
-        raise web.HTTPNotFound(text="no photo")
-    result = await load_avatar_bytes(bot, tg_id, file_id=target.photo_file_id if target else None)
-    if result is None:
-        raise web.HTTPNotFound(text="no photo")
-    body, mime = result
-    return _picture(request, body, mime)
+    if bot is not None and tg_id is not None:
+        file_id = target.photo_file_id if target else None
+        result = await load_avatar_bytes(bot, tg_id, file_id=file_id)
+        if result is not None:
+            body, mime = result
+            return _picture(request, body, mime)
+    found = _file_picture(request, accounts)
+    if found is not None:
+        return found
+    raise web.HTTPNotFound(text="no photo")
 
 
 def _picture(request: web.Request, body: bytes, mime: str) -> web.Response:

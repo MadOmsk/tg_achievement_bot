@@ -16,6 +16,7 @@ const SearchPage = lazy(() => import("../screens/people/SearchPage").then((m) =>
 const ConnectPage = lazy(() => import("../screens/settings/Accounts").then((m) => ({ default: m.ConnectPage })));
 const SettingsPage = lazy(() => import("../screens/settings/Settings").then((m) => ({ default: m.SettingsPage })));
 const GalleryPage = lazy(() => import("../screens/game/GalleryPage").then((m) => ({ default: m.GalleryPage })));
+const PassPage = lazy(() => import("../screens/pass/PassPage").then((m) => ({ default: m.PassPage })));
 const AchievementByRef = lazy(() => import("../screens/game/AchievementByRef").then((m) => ({ default: m.AchievementByRef })));
 
 const LOADERS = [
@@ -32,6 +33,7 @@ const LOADERS = [
   () => import("../screens/settings/Settings"),
   () => import("../screens/game/GalleryPage"),
   () => import("../screens/game/AchievementByRef"),
+  () => import("../screens/pass/PassPage"),
 ];
 
 /** Fetch every page's code once the app is idle, so a first visit never
@@ -120,7 +122,7 @@ export function LayerView({
       case "game":
         return <GamePage gameRef={layer.ref} onClose={close} layer={key} />;
       case "achievements":
-        return <Achievements platform={layer.platform} titleId={layer.titleId} name={layer.name} cover={layer.cover ?? null} person={layer.person} onClose={close} layer={key} />;
+        return <Achievements platform={layer.platform} titleId={layer.titleId} name={layer.name} cover={layer.cover ?? null} person={layer.person} lists={layer.lists} onClose={close} layer={key} />;
       case "achievement":
         return <AchievementPage ach={layer.ach} onClose={close} layer={key} />;
       case "gallery":
@@ -142,6 +144,8 @@ export function LayerView({
         return <FollowsPage personId={layer.personId} which={layer.which} onClose={close} layer={key} />;
       case "news":
         return <NewsPostPage appid={layer.appid} gid={layer.gid} item={layer.item} game={layer.game} onClose={close} layer={key} />;
+      case "pass":
+        return <PassPage onClose={close} layer={key} />;
       case "notifications":
         return <NotificationsPage onClose={close} layer={key} />;
       case "search":

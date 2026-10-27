@@ -143,6 +143,11 @@
   padding: 16px var(--gutter) 0;
 }
 
+.gp-chips .chip {
+  height: 32px;
+  min-height: 0;
+}
+
 .gp-actions {
   display: flex;
   gap: 8px;
@@ -741,20 +746,6 @@
   color: var(--on-surface-2);
 }
 
-.list-tiers {
-  display: flex;
-  gap: 10px;
-  font-weight: 800;
-  font-size: 14px;
-  color: var(--on-surface-2);
-}
-
-.list-tiers > span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .list-guide {
   padding: 14px 12px 0;
 }
@@ -1161,4 +1152,19 @@
 .gp-progress-done .go-mark {
   background: color-mix(in srgb, var(--on-tertiary-container) 14%, transparent);
   color: var(--on-tertiary-container);
+}
+
+.gp-progress-lists {
+  padding: 14px 14px 0;
+}
+
+.list-plats {
+  justify-content: center;
+  padding: 14px var(--gutter) 0;
+}
+
+.gp-other-plats {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--on-surface-3);
 }

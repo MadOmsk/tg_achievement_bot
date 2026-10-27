@@ -271,6 +271,7 @@ async def build_person_payload(
     month_count, month_score = await repo.achievement_counts_for_person(
         target.id, month_since, month_until
     )
+    month_points = await repo.points_for_person(target.id, month_since, month_until)
     month_xbox, month_steam, month_psn = await repo.achievement_platform_breakdown(
         target.id, month_since, until=month_until
     )
@@ -401,6 +402,7 @@ async def build_person_payload(
         "month": {
             "count": month_count,
             "score": month_score,
+            "points": month_points,
             "xbox": month_xbox,
             "steam": month_steam,
             "psn": month_psn,
@@ -545,6 +547,7 @@ def _stat_json(row: ChatMemberStat) -> dict[str, Any]:
         "name": person_label(person_id=row.person_id, handle=row.handle),
         "count": row.count,
         "score": row.score,
+        "points": row.points,
         "rare": row.rare,
         "xbox": row.xbox_count,
         "steam": row.steam_count,

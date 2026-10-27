@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useApp } from "../app/context";
 import type { AchView } from "../app/layers";
-import { isVeiled, rareLevel, revealed } from "../app/views";
-import { num, pct } from "../i18n";
+import { isVeiled, pointsOf, rareLevel, revealed } from "../app/views";
+import { num, pct, plural } from "../i18n";
 import { tick } from "../core/haptic";
 import { AchPic } from "../ui/Pic";
 import "./parts.css";
@@ -13,7 +13,7 @@ export function isWideArt(platform: string): boolean {
 }
 
 /** What an achievement is worth and how rare, on one scale for every
- * platform: its points (Xbox), then its tier — rare, legendary, mythic — or
+ * platform: the app's own points, then its tier — rare, legendary, mythic — or
  * its share. A PSN trophy's metal is not shown: its tier says it. */
 export function AchMarks({
   ach,
@@ -34,7 +34,8 @@ export function AchMarks({
   const { locale } = useApp();
   const tier = rareLevel(ach.rarity, ach);
   if (plain) {
-    const worth = ach.gamerscore ? <span className="mark-worth">{num(ach.gamerscore, locale)} G</span> : null;
+    const pts = pointsOf(ach.rarity, ach);
+    const worth = <span className="mark-worth">{num(pts, locale)} {plural(locale, pts, ["ptsOne", "ptsFew", "ptsMany"])}</span>;
     const rarity =
       ach.rarity != null || tier === "mythic" ? (
         <span className={`mark-rarity${tier ? ` mark-${tier}` : ""}`}>
@@ -57,7 +58,9 @@ export function AchMarks({
   }
   return (
     <span className={`marks marks-${size}`}>
-      {ach.gamerscore ? <span className="chip chip-outline">{num(ach.gamerscore, locale)} G</span> : null}
+      <span className="chip chip-outline">
+        {num(pointsOf(ach.rarity, ach), locale)} {plural(locale, pointsOf(ach.rarity, ach), ["ptsOne", "ptsFew", "ptsMany"])}
+      </span>
       {(ach.rarity != null || tier === "mythic") && (
         <span className={`chip ${tier ? `chip-tier chip-tier-${tier}` : "chip-outline"}`}>
           {tier && <span className="rare-mark shape-flower6" />}
@@ -118,7 +121,7 @@ export function AchRow({
   );
 }
 
-const PLATFORM_SHORT: Record<string, string> = {
+export const PLATFORM_SHORT: Record<string, string> = {
   xbox_modern: "XBOX",
   xbox_360: "XBOX 360",
   xbox: "XBOX",
