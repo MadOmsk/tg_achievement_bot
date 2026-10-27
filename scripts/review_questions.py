@@ -20,26 +20,33 @@ Nothing already labelled is asked again. Read-only, safe beside the viewer.
 written so the catalog has one, and settled by the advisers' labels — and
 about the old labels the owner's definitions changed (`to_relabel`): an
 edition labelled "same" before an enhanced edition was an answer of its own.
-`--prompt` also writes the file to hand each adviser (`<out stem>.<adviser>.md`),
-whose answer file is named after the model that answered
-(`<out stem>.<model>.json`).
+Each question lists every version filed with either side, with its store id
+(an edition is told by being sold beside the plain game under another id);
+a stand-in known only by its number is left out. `--check` mixes in pairs
+the operator labelled, blind, and `--score` measures an adviser on them
+before anything is written. `--prompt` writes the one file every adviser
+gets (`<out stem>.md`); its answer file is named after the model that
+answered (`<out stem>.<model>.json`).
 
 Usage:
     … -m scripts.review_questions --db data/games.db --out questions.json [--total 500]
     … -m scripts.review_questions --db data/games.db --out recheck.json --recheck
-        [--prompt gemini,claude]
+        [--check 40] [--prompt]
+    … -m scripts.review_questions --db data/games.db --out recheck.json --score answers.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import sqlite3
 from pathlib import Path
 
 from bot.services.advice import DEFINITIONS
 from scripts.advise_pairs import read_only_uri
+from scripts.web_labels import label_of
 
 SHARES = {"relations": 0.1, "hltb": 0.15, "series": 0.3}  # the rest: pairs in one game
 
@@ -48,6 +55,8 @@ PART_ROLES = ("enhanced", "demo", "tool", "mode", "extra", "pass")
 # What to ask beside a VR version (owner, 2026-10-27): a VR version of the
 # very game, or another game of its series made for VR.
 VR_QUESTION = "the VR version of this very game, or another game of its series made for VR?"
+CATALOG_LIMIT = 16  # versions listed beside a question, per game
+SEED = 20261027  # the order questions are asked in, fixed for a rerun
 # The words of an edition's name (owner, 2026-10-27: a pair labelled "same"
 # where one side is named so is asked again under the enhanced definition).
 EDITION_WORDS = re.compile(
@@ -124,21 +133,97 @@ def to_relabel(conn: sqlite3.Connection) -> list[tuple[int, int]]:
     return found
 
 
-def recheck_questions(db: Path) -> list[dict]:
+def _nameless(conn: sqlite3.Connection, vid: int) -> bool:
+    """A stand-in known by its number alone: nothing to look up."""
+    row = conn.execute("SELECT name FROM versions WHERE version_id = ?", (vid,)).fetchone()
+    return not row or not row[0] or str(row[0]).isdigit()
+
+
+def _catalog(conn: sqlite3.Connection, vid: int) -> list[str]:
+    """Every named version of the game this version is filed under, one line
+    each: the store ids an adviser needs to tell an edition sold beside the
+    plain game from the same product renamed (owner, 2026-10-27)."""
+    lines = []
+    for r in conn.execute(
+        "SELECT o.version_id, o.store, o.console, o.product_id, o.name, o.release_date,"
+        " o.stand_in FROM versions v JOIN versions o ON o.game_id = v.game_id"
+        " WHERE v.version_id = ? ORDER BY o.store, o.console, o.version_id LIMIT ?",
+        (vid, CATALOG_LIMIT),
+    ):
+        if not r["name"] or str(r["name"]).isdigit():
+            continue
+        what = "achievement list, no store product" if r["stand_in"] else r["product_id"]
+        lines.append(
+            f"{r['version_id']} · {r['store']} {r['console']} · {what} · {r['name']}"
+            f" · {r['release_date'] or '?'}"
+        )
+    return lines
+
+
+def _question(conn: sqlite3.Connection, a: int, b: int, why: str) -> dict:
+    q = {"type": "pair", "a": a, "b": b, "asked_for": why,
+         "A": _version(conn, a), "B": _version(conn, b),
+         "catalog_A": _catalog(conn, a)}  # fmt: skip
+    if q["A"]["game"] != q["B"]["game"]:
+        q["catalog_B"] = _catalog(conn, b)
+    return q
+
+
+def _known(conn: sqlite3.Connection, n: int, skip: set[frozenset[int]]) -> list[dict]:
+    """`n` pairs the operator labelled by hand, asked blind among the rest
+    so the answers can be scored before any is written: a few of every
+    relation, the rest one game, another game of the series, unrelated."""
+    by_relation: dict[str, list[tuple[int, int]]] = {}
+    for a, b, relation in conn.execute(
+        "SELECT version_id, other_id, relation FROM match_decisions"
+        " WHERE decided_by = 'viewer' ORDER BY decided_at DESC"
+    ):
+        pair = (int(a), int(b))
+        if frozenset(pair) in skip or _nameless(conn, pair[0]) or _nameless(conn, pair[1]):
+            continue
+        by_relation.setdefault(str(relation), []).append(pair)
+    common = ("same", "series", "other")
+    rare = [r for r in by_relation if r not in common]
+    picked: list[tuple[int, int, str]] = []
+    for relation in rare:
+        picked += [(a, b, relation) for a, b in by_relation[relation][: max(2, n // 10)]]
+    left = max(0, n - len(picked))
+    for i, relation in enumerate(common):
+        take = left // len(common) + (1 if i < left % len(common) else 0)
+        picked += [(a, b, relation) for a, b in by_relation.get(relation, [])[:take]]
+    out = []
+    for a, b, relation in picked[:n]:
+        q = _question(conn, a, b, "check: labelled by the operator")
+        q["known"] = relation
+        out.append(q)
+    return out
+
+
+def recheck_questions(db: Path, check: int = 0) -> list[dict]:
+    """The recheck batch, nameless stand-ins left out, with `check` pairs of
+    known answer mixed in at fixed places."""
     conn = sqlite3.connect(read_only_uri(db), uri=True)
     conn.row_factory = sqlite3.Row
     out = []
-    for a, b, relation in to_recheck(conn):
-        q = {"type": "pair", "a": a, "b": b, "asked_for": f"recheck: the model said A {relation} B",
-             "A": _version(conn, a), "B": _version(conn, b)}  # fmt: skip
-        if relation == "vr_of":
+    asked: set[frozenset[int]] = set()
+    pairs = [
+        (a, b, f"recheck: the model said A {relation} B") for a, b, relation in to_recheck(conn)
+    ]
+    pairs += [(a, b, "relabel: an edition labelled before the enhanced definition")
+              for a, b in to_relabel(conn)]  # fmt: skip
+    for a, b, why in pairs:
+        if _nameless(conn, a) or _nameless(conn, b) or frozenset((a, b)) in asked:
+            continue
+        asked.add(frozenset((a, b)))
+        q = _question(conn, a, b, why)
+        if why.endswith("vr_of B"):
             q["question"] = VR_QUESTION
         out.append(q)
-    for a, b in to_relabel(conn):
-        out.append({"type": "pair", "a": a, "b": b,
-                    "asked_for": "relabel: an edition labelled before the enhanced definition",
-                    "A": _version(conn, a), "B": _version(conn, b)})  # fmt: skip
+    known = _known(conn, check, asked)
     conn.close()
+    random.Random(SEED).shuffle(out)
+    for i, q in enumerate(known):
+        out.insert((i * 7 + 3) % (len(out) + 1), q)
     return out
 
 
@@ -157,16 +242,18 @@ must be marked `"searched": false` and will be thrown away. Never invent a sourc
 
 A JSON array of `pair` questions at the end of this file: two versions `A` and `B`
 (name, console, store, product id, release date, developer, publisher, and the game
-the catalog filed them under). `asked_for` says why it is asked; it is not the answer,
-and a guess of the model's it names may well be wrong. A `question` field, where there
-is one, is the one thing to settle. The store data may be incomplete or wrong (a
-store's date is often a re-release's); rely on what the sources say about the games.
+the catalog filed them under). `catalog_A` lists every version our catalog files
+with A — `version id · store console · product id · name · release date` — and
+`catalog_B` those filed with B when B is filed elsewhere. "achievement list, no store
+product" is a game's achievement list we hold without its store page. A `question`
+field, where there is one, is the one thing to settle. Our data may be incomplete or
+wrong (a store's date is often a re-release's): check it against the sources.
 
-## Relations
+## Definitions
 
-Use these definitions exactly as written:
+Use these exactly as written:
 
-- same: one game — the same release on another console or store, a regional id, a
+- same: one game — the same product on another console or store, a regional id, a
   standard or Deluxe edition sold under one id, a port however late. Two demos of one
   game are `same`.
 {definitions}
@@ -182,6 +269,23 @@ Use these definitions exactly as written:
 - series: different games of one series — sequels, prequels, spin-offs, a reboot that
   is a new game (give `series_name`).
 - not_related: unrelated.
+
+## How to decide — in this order
+
+1. **Are A and B one game at all?** If they are different games: `series`,
+   `not_related`, `contains` or `vr_of`. Stop.
+2. **Is one of them not the game itself?** A demo, a tool, a mode launcher, an extra,
+   a friend's pass: `demo_of`, `tool_of`, `mode_of`, `extra_of`, `pass_of`. Stop.
+3. **Is one of them an edition of its own?** An edition is a property of the
+   *edition*, not of this pair's two stores: it is an edition of its own when **in
+   any store** it is sold beside the plain game under **another product id** — look
+   at `catalog_A` / `catalog_B` and at the stores. So a Definitive Edition that
+   replaced the plain game on Steam (one app id, renamed) but is sold beside it on
+   Xbox under its own id is an edition of its own, and is `enhanced_of` (or
+   `remaster_of`) against the plain game in every store. Then, by what it changes:
+   mostly added content → `enhanced_of`; better graphics on the old assets →
+   `remaster_of`; the game made anew → `remake_of`.
+4. Otherwise: `same`.
 
 For a directed relation (enhanced_of, remaster_of, remake_of, demo_of, tool_of,
 mode_of, extra_of, pass_of, contains, vr_of) give `direction`: `"a"` if A is the
@@ -199,13 +303,14 @@ remake), when sources disagree, or when you found the game but not this release.
 ## Output
 
 {count} questions. Answer every one and give the whole answer as ONE file named
-**`{stem}.<model>.json`**, where `<model>` is your own exact model name and version
-(for example `{example}`), in lower case with hyphens. The file is a JSON array, one
-object per question, in the questions' order:
+**`{stem}.<model>.json`**, where `<model>` is your own exact model name and version in
+lower case with hyphens (for example `gemini-3-pro` or `claude-opus-5-5`). The file is
+a JSON array, one object per question, in the questions' order:
 
 `{{"a": <A version_id>, "b": <B version_id>, "relation": "...", "direction":
 "a"|"b"|null, "series_name": "..."|null, "confidence": "high"|"medium"|"low",
-"searched": true|false, "why": "<one sentence>", "source": "<url>", "model": "<model>"}}`
+"searched": true|false, "why": "<one sentence naming the product ids or pages that
+decided it>", "source": "<url>", "model": "<model>"}}`
 
 If the questions do not all fit in one reply, work through them in parts as large as
 you can, and say at the end of each part which pair you stopped at; I will reply
@@ -217,18 +322,42 @@ you can, and say at the end of each part which pair you stopped at; I will reply
 {questions}
 ```
 """
-EXAMPLES = {"gemini": "gemini-3-pro", "claude": "claude-opus-5-5"}
 
 
-def prompt(questions: list[dict], stem: str, adviser: str) -> str:
-    """The file to hand one adviser, with the owner's definitions as they stand."""
+def prompt(questions: list[dict], stem: str) -> str:
+    """The one file every adviser gets, blind: the definitions as they stand,
+    and nothing that says what the model or the operator answered."""
+    blind = [{k: v for k, v in q.items() if k not in ("asked_for", "known")} for q in questions]
     return PROMPT.format(
         definitions=DEFINITIONS,
-        count=len(questions),
+        count=len(blind),
         stem=stem,
-        example=EXAMPLES.get(adviser, adviser),
-        questions=json.dumps(questions, ensure_ascii=False, indent=1),
+        questions=json.dumps(blind, ensure_ascii=False, indent=1),
     )
+
+
+def score(questions: list[dict], answers: list[dict]) -> tuple[list[str], list[dict]]:
+    """How an adviser did on the pairs of known answer (report lines), and
+    its answers on the rest — the ones to write."""
+    known = {(q["a"], q["b"]): q["known"] for q in questions if "known" in q}
+    report, right, kept = [], 0, []
+    for ans in answers:
+        pair = (int(ans["a"]), int(ans["b"]))
+        if pair not in known:
+            kept.append(ans)
+            continue
+        said = label_of({**ans, "confidence": "high", "searched": True})
+        relation = said[2] if said else str(ans.get("relation"))
+        if said and said[:2] != pair:
+            relation += " (reversed)"
+        ok = relation == known[pair]
+        right += ok
+        if not ok:
+            report.append(
+                f"  {pair}: said {relation} ({ans.get('confidence')}), known {known[pair]}"
+            )
+    report.insert(0, f"known pairs: {right}/{len(known)} right")
+    return report, kept
 
 
 def build(db: Path, total: int) -> list[dict]:
@@ -336,17 +465,31 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--total", type=int, default=500)
     parser.add_argument("--recheck", action="store_true")
-    parser.add_argument("--prompt", default="", help="advisers to write a file for: gemini,claude")
+    parser.add_argument("--check", type=int, default=40, help="pairs of known answer mixed in")
+    parser.add_argument("--prompt", action="store_true", help="also write <out stem>.md")
+    parser.add_argument("--score", help="an adviser's answer file, scored against --out")
     args = parser.parse_args()
-    questions = (
-        recheck_questions(Path(args.db)) if args.recheck else build(Path(args.db), args.total)
-    )
     out = Path(args.out)
+    if args.score:
+        answers_path = Path(args.score)
+        report, kept = score(
+            json.loads(out.read_text("utf-8")), json.loads(answers_path.read_text("utf-8"))
+        )
+        print(chr(10).join(report))
+        to_write = answers_path.with_name(answers_path.stem + ".to_write.json")
+        to_write.write_text(json.dumps(kept, ensure_ascii=False, indent=1), "utf-8")
+        print(f"{len(kept)} answers to write → {to_write}")
+        return
+    questions = (
+        recheck_questions(Path(args.db), args.check)
+        if args.recheck
+        else build(Path(args.db), args.total)
+    )
     out.write_text(json.dumps(questions, ensure_ascii=False, indent=1), "utf-8")
-    for adviser in filter(None, args.prompt.split(",")):
-        path = out.with_name(f"{out.stem}.{adviser}.md")
-        path.write_text(prompt(questions, out.stem, adviser), "utf-8")
-        print(f"for {adviser}: {path}")
+    if args.prompt:
+        path = out.with_suffix(".md")
+        path.write_text(prompt(questions, out.stem), "utf-8")
+        print(f"for the advisers: {path}")
     counts: dict[str, int] = {}
     for q in questions:
         counts[q["type"]] = counts.get(q["type"], 0) + 1

@@ -3,7 +3,7 @@
 import sqlite3
 
 from bot.services.advice import DEFINITIONS
-from scripts.review_questions import prompt, to_recheck, to_relabel
+from scripts.review_questions import prompt, score, to_recheck, to_relabel
 
 
 def _db() -> sqlite3.Connection:
@@ -50,6 +50,26 @@ def test_an_edition_labelled_same_is_asked_again() -> None:
 
 
 def test_the_prompt_gives_the_definitions_as_they_stand() -> None:
-    text = prompt([{"type": "pair", "a": 1, "b": 2}], "2026-10-27-recheck", "gemini")
+    text = prompt(
+        [{"type": "pair", "a": 1, "b": 2, "asked_for": "recheck: the model said", "known": "x"}],
+        "2026-10-27-recheck",
+    )
     assert DEFINITIONS in text
     assert "2026-10-27-recheck.<model>.json" in text
+    assert "the model said" not in text and '"known"' not in text  # asked blind
+
+
+def test_an_adviser_is_scored_on_the_pairs_of_known_answer() -> None:
+    questions = [
+        {"a": 1, "b": 2, "known": "enhanced_of"},
+        {"a": 3, "b": 4, "known": "same"},
+        {"a": 5, "b": 6},
+    ]
+    answers = [
+        {"a": 1, "b": 2, "relation": "enhanced_of", "direction": "a", "confidence": "low"},
+        {"a": 3, "b": 4, "relation": "series", "confidence": "high"},
+        {"a": 5, "b": 6, "relation": "same", "confidence": "high"},
+    ]
+    report, kept = score(questions, answers)
+    assert report[0] == "known pairs: 1/2 right"
+    assert kept == [answers[2]]
