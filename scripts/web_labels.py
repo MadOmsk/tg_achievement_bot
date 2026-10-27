@@ -36,6 +36,7 @@ from pathlib import Path
 from bot.db.repo import Database, Repo
 from bot.services.game_link import GameLinker
 from bot.services.game_match import MODEL
+from bot.services.label_conflicts import around, conflicts
 from scripts.catalog_viewer import _put_in_series
 
 SOURCE = "claude-web"
@@ -136,6 +137,10 @@ async def write(
                 overrule=source == SOURCE,
             )
         await GameLinker(repo).link_versions(sorted({v for a, b, *_ in labels for v in (a, b)}))
+        touched = {v for a, b, *_ in labels for v in (a, b)}
+        clash = around(conflicts(await repo.all_decisions()), touched)
+        if clash:
+            print(f"{len(clash)} contradiction(s) among these answers: see /conflicts")
         # "Another game of the series" says which, as the viewer's answer does.
         for a, b, _relation, series in labels:
             if series:

@@ -183,6 +183,7 @@ name, or when the tree goes stale.
 │   │   ├── advice.py             the advisers' review of the games matcher: questions, answers,
 │   │   │                         the agreement rule, `data/advice/` (#147, no DB access)
 │   │   ├── game_series.py        game series proposed from relations, labels, franchise names
+│   │   ├── label_conflicts.py    labels that contradict each other (#218), no DB access
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -925,7 +926,13 @@ What the stores and HLTB say about a game, collected but not shown yet
   has no foreign keys, so a store re-parse deleting a version keeps every
   answer about it, with which product each side was (`subject_key`,
   `other_key`: store:product_id:console); the linker reads only labels between
-  versions that exist, the fit reads a gone pair from its feature snapshot. A game keeps
+  versions that exist, the fit reads a gone pair from its feature snapshot.
+  **Contradictions are shown, never settled by code** (#218 step 5,
+  `services/label_conflicts.py`): a label keeping two versions apart that
+  joining labels link anyway, or two labels between the same two groups
+  saying different things. Each new label is checked (the viewer's message,
+  `web_labels`' output); the viewer's «Contradictions» lists them as cards,
+  and taking one answer back settles it. A game keeps
   its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
   first plain version); a list's stand-in that becomes a store product keeps
   its row and id.

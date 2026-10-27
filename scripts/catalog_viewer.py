@@ -156,6 +156,7 @@ PAGES = {
     "/fetch": "Fetch state",
     "/payloads": "Payloads",
     "/decisions": "Answer history",
+    "/conflicts": "Contradictions",
     "/series": "Series",
     "/octopus": "Octopus",
 }
@@ -515,6 +516,7 @@ _HOME_SECTIONS = (
                 None,
             ),
             ("match_pairs", "/review", "the pairs the model is unsure of: its review queue", None),
+            ("match_decisions", "/conflicts", "answers that contradict each other", None),
         ),
     ),
     (
@@ -3156,7 +3158,69 @@ async def decide(request: web.Request) -> web.Response:
         raise _back(back, "a series name, please")
     await _label(repo, version_id, other_id, relation)
     await _put_in_series(repo, which, named, (version_id, other_id))
-    raise _back(back, f"version {version_id} {relation} version {other_id}")
+    message = f"version {version_id} {relation} version {other_id}"
+    raise _back(back, message + await _contradicted(repo, (version_id, other_id)))
+
+
+async def _contradicted(repo: Repo, version_ids: tuple[int, ...]) -> str:
+    """What a label just written contradicts, in a word for the message
+    (#218 step 5): the cards are on /conflicts."""
+    from bot.services.label_conflicts import around, conflicts
+
+    n = len(around(conflicts(await repo.all_decisions()), version_ids))
+    return f" — ⚠ contradicts {n} answer(s): see Contradictions" if n else ""
+
+
+async def conflicts_page(request: web.Request) -> web.Response:
+    """Answers that contradict each other (#218 step 5): a label keeping
+    two versions apart that answers joining them link anyway, or two
+    answers between the same two groups saying different things. Each
+    card shows both sides; taking one back settles it."""
+    from bot.services.label_conflicts import conflicts
+
+    rows = await _repo(request).all_decisions()
+    whose = {(r["version_id"], r["other_id"]): r["decided_by"] for r in rows}
+    found = conflicts(rows)
+    ids = sorted({v for c in found for v in c.versions()})
+    with _db(request) as conn:
+        names = {
+            r["version_id"]: f"{r['name']} ({r['console_name']})"
+            for r in conn.execute(
+                "SELECT version_id, name, "
+                + _console_sql("store", "console")
+                + " AS console_name FROM versions WHERE version_id IN ("
+                + ",".join("?" * len(ids))
+                + ")",
+                ids,
+            )
+        }
+
+    def line(lab: tuple[int, int, str]) -> str:
+        a, b, relation = lab
+        by = whose.get((a, b)) or whose.get((b, a)) or "?"
+        return (
+            f"<li><a href='/version/{a}'>v{a}</a> → <a href='/version/{b}'>v{b}</a>: "
+            f"{_relation_sentence(relation, names.get(a, f'v{a}'), names.get(b, f'v{b}'))}"
+            f" <small>({escape('you' if by == 'viewer' else by)})</small>"
+            f"{_undo_form(a, b, '/conflicts')}</li>"
+        )
+
+    heads = {
+        "apart_in_group": "kept apart, yet joined by",
+        "relations_disagree": "says otherwise than",
+    }
+    cards = [
+        "<div style='border:1px solid #ccc;border-radius:8px;padding:8px;margin:8px 0'>"
+        f"<ul>{line(c.label)}</ul><p><small>{heads[c.kind]}</small></p>"
+        f"<ul>{''.join(line(lab) for lab in c.against)}</ul></div>"
+        for c in found
+    ]
+    return _page(
+        PAGES["/conflicts"],
+        _flash(request)
+        + f"<p>{len(found)} contradiction(s)</p>"
+        + ("".join(cards) or "<p>(none)</p>"),
+    )
 
 
 async def _series_named(repo: Repo, relation: str, which: str, form) -> list[str] | None:
@@ -3821,6 +3885,7 @@ def build(
     app.router.add_get("/game/{game_id:\\d+}", game)
     app.router.add_get("/review", review)
     app.router.add_get("/decisions", decisions)
+    app.router.add_get("/conflicts", conflicts_page)
     app.router.add_get("/proposals", proposals)
     app.router.add_get("/advised", advised)
     from scripts import trial_page
