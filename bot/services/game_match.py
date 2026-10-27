@@ -826,10 +826,20 @@ _EDITION_KINDS = (
 )
 # Words a name may add that say nothing of which game it is.
 _FILLER = frozenset({"the", "a", "an", "of", "and", "edition", "game"})
+# A store's word for a release's state, not a new game (owner, 2026-10-27:
+# "Classic", "Legacy", "Trophies" taught a fit that added words mean one game,
+# and Tomb Raider: Underworld became Anniversary). Not cut from a name's core.
+_STATUS_WORDS = frozenset({"classic", "legacy", "trophies", "redux", "reloaded"})
 
 
 def _content_words(name: str) -> set[str]:
-    return {w for w in name.split() if w not in _FILLER and w not in _EDITION_TAIL_WORDS}
+    """The words that say which game a name is: no filler, no edition or
+    status word — so a name adding any is a new title (a sequel's subtitle)."""
+    return {
+        w
+        for w in name.split()
+        if w not in _FILLER and w not in _EDITION_TAIL_WORDS and w not in _STATUS_WORDS
+    }
 
 
 def shape_features(s: Candidate, o: Candidate, gap: int | None) -> dict[str, float]:

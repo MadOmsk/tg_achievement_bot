@@ -61,7 +61,13 @@ FROZEN = frozenset({"bias"})
 # (2026-10-25: fitted on labels where an unnamed, undated Xbox id mostly was
 # its namesake, "year unknown" grew to +2 and "other genres" to +0.3, and
 # Valve's Deadlock became LLL games' DeadLock).
+# A name going on past the other's — a subtitle, words a title adds — is
+# never a sign of one game either (2026-10-27: fitted on the enhanced
+# editions' labels it became one, and sequels of a series joined:
+# Tomb Raider: Underworld and Anniversary, Halo 3 and ODST).
 AGAINST_SAME = DIFFER_SIGNS | {
+    "subtitle",
+    "words_added",
     "no_shared_word",
     "two_lists_one_store",
     "hltb_differs",
