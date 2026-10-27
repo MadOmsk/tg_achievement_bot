@@ -31,3 +31,11 @@ def test_a_stand_in_is_never_named_by_its_list_id() -> None:
     record = {"platform": "xbox_modern", "title_id": "2046213688", "name": "2046213688"}
     assert stand_in_for({**record, "name_en": "Weird West"}).name == "Weird West"
     assert stand_in_for(record).name is None
+
+
+def test_names_can_come_from_a_dump(tmp_path) -> None:
+    from scripts.restore_list_names import names_in
+
+    dump = tmp_path / "names.json"
+    dump.write_text('[["xbox_360", "1297287339", "Gears of War 3"]]', "utf-8")
+    assert names_in(str(dump)) == {("xbox_360", "1297287339"): "Gears of War 3"}
