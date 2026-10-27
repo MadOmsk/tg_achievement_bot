@@ -17,9 +17,13 @@ export function Hero({
   return (
     <div className={`hero${full ? " hero-full" : ""}`}>
       {ground && <img src={ground} alt="" className="hero-ground" aria-hidden="true" />}
-      <button type="button" className="hero-stage" onClick={onOpen} disabled={!onOpen}>
-        {children}
-      </button>
+      {onOpen ? (
+        <button type="button" className="hero-stage" onClick={onOpen}>
+          {children}
+        </button>
+      ) : (
+        <div className="hero-stage hero-stage-still">{children}</div>
+      )}
     </div>
   );
 }

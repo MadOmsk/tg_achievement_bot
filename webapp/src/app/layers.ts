@@ -49,7 +49,7 @@ export type Layer =
       cover?: string | null;
       person: { id: number; name: string } | null;
       /** The other platforms the person played the game on, to switch to. */
-      lists?: { platform: string; title_id: string; count?: number }[];
+      lists?: { platform: string; title_id: string; count?: number; total?: number | null }[];
     }
   | { kind: "achievement"; ach: AchView }
   | { kind: "pass" }

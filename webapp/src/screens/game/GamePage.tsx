@@ -10,8 +10,7 @@ import { dayLabel, num, type TranslationKey } from "../../i18n";
 import { consoleLabel } from "../../parts/platforms";
 import { FAVORITES_CHANGED } from "../../parts/FollowButton";
 import { DoneMark } from "../../parts/DoneMark";
-import { PLATFORM_SHORT } from "../../parts/AchRow";
-import { PlatformTabs } from "../../parts/PlatformTabs";
+import { PlatformPicker } from "../../parts/PlatformPicker";
 import { NewsCard } from "../news/News";
 import { Button, Chip, Empty, Section } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
@@ -156,6 +155,8 @@ function GameBody({
     .join(" · ");
   // A game played on several platforms: one list's progress at a time, the
   // most earned first (two lists are never summed).
+  // A game played on several platforms: one list at a time, the most earned
+  // first (two lists are never summed).
   const lead = g.progress;
   const played = lead?.lists ?? [];
   const picked = played.find((l) => `${l.platform}:${l.title_id}` === pickedList);
@@ -260,13 +261,23 @@ function GameBody({
 
       {progress && (
         <section className={`gp-progress${done ? " gp-progress-done" : ""}`}>
-          {played.length > 1 && (
-            <PlatformTabs
-              className="gp-progress-lists"
-              lists={played}
-              value={`${progress!.platform}:${progress!.title_id}`}
-              onChange={setPickedList}
-            />
+          {(!done || played.length > 1) && (
+            <div className="gp-progress-head">
+              {!done && <span className="gp-progress-label">{whose ? whose.name : tr("gpProgressMine")}</span>}
+              {played.length > 1 && (
+                <PlatformPicker
+                  className="gp-progress-plat"
+                  lists={played}
+                  value={`${progress!.platform}:${progress!.title_id}`}
+                  onChange={setPickedList}
+                />
+              )}
+              {!done && (
+                <button type="button" className="gp-progress-go" aria-label={tr("gpGameAchievements")} onClick={() => openList()}>
+                  <GoMark />
+                </button>
+              )}
+            </div>
           )}
           {done ? (
             <button type="button" className="gp-progress-main" onClick={() => openList()}>
@@ -289,12 +300,6 @@ function GameBody({
             </button>
           ) : (
           <button type="button" className="gp-progress-main" onClick={() => openList()}>
-            <span className="gp-progress-top">
-              <span className="gp-progress-label">
-                {whose ? whose.name : tr("gpProgressMine")}
-              </span>
-              <GoMark />
-            </span>
             <span className="gp-progress-row">
               <span className="gp-progress-num">
                 {progress.count}
@@ -338,9 +343,6 @@ function GameBody({
                     <span className="gp-other-text">
                       <span className="clamp-1">{p.name}</span>
                       <b className="t-num">{p.count}</b>
-                      {(p.lists?.length ?? 0) > 1 && (
-                        <span className="gp-other-plats">{p.lists!.map((l) => PLATFORM_SHORT[l.platform] ?? l.platform).join(" · ")}</span>
-                      )}
                     </span>
                   </button>
                 ))}
