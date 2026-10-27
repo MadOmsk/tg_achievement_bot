@@ -104,6 +104,8 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                     "name": row.data.get("name"),
                     # The game a tap opens, on that person's progress.
                     "game": game,
+                    # The achievement a new post names: a tap opens it.
+                    "achievement_id": row.data.get("achievement_id") if game else None,
                     # A game's post a tap opens over its game (owner, 2026-10-08).
                     "news": {"appid": row.data["appid"], "gid": row.data["gid"]}
                     if row.kind == "game_news" and row.data.get("appid") and row.data.get("gid")

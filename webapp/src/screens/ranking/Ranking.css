@@ -1,0 +1,283 @@
+.board-switch {
+  padding: 18px var(--gutter) 0;
+}
+
+.rank-hero {
+  position: relative;
+  margin: 12px 12px 0;
+  padding: 20px;
+  min-height: 176px;
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xl) var(--r-s);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  overflow: hidden;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.rank-hero-shape {
+  position: absolute;
+  right: -60px;
+  top: -60px;
+  width: 220px;
+  height: 220px;
+  background: var(--primary-container-2);
+}
+
+.rank-hero-text {
+  position: relative;
+}
+
+.rank-hero-kick {
+  font-size: 15px;
+  font-weight: 650;
+  font-stretch: 125%;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.rank-hero .t-display {
+  margin-top: 4px;
+}
+
+.rank-hero-line {
+  margin-top: 6px;
+  color: var(--on-primary-container-2);
+}
+
+.rank-hero-me {
+  position: absolute;
+  right: 20px;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-primary-container-2);
+}
+
+.rank-hero-place {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tertiary);
+  color: var(--on-tertiary);
+  font-size: 30px;
+  font-weight: 900;
+  font-stretch: 60%;
+}
+
+.leader {
+  min-height: 68px;
+}
+
+.leader-me {
+  background: var(--secondary-container);
+}
+
+.leader-rank {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-stretch: 60%;
+  font-size: 18px;
+  color: var(--on-surface-3);
+}
+
+.leader-top {
+  color: var(--on-tier-mythic);
+  background: var(--tier-mythic);
+  font-size: 15px;
+}
+
+.leader-top-1 {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.leader-top-2 {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+.leader-count {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--on-surface-3);
+}
+
+.leader-count b {
+  font-size: 24px;
+  color: var(--on-surface);
+}
+
+.rank-game-cover {
+  width: 44px;
+  height: 58px;
+  border-radius: 12px;
+}
+
+.rank-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.rank-ring-pct {
+  font-size: 22px;
+  color: var(--on-primary-container);
+}
+
+
+
+.rank-hero .ring-off {
+  stroke: color-mix(in srgb, var(--on-primary-container) 18%, transparent);
+}
+
+.rank-hero .ring-on {
+  stroke: var(--on-primary-container);
+}
+
+.rank-hero-num {
+  font-size: 56px;
+  line-height: 1;
+  color: var(--on-primary-container);
+}
+
+.rank-hero-num small {
+  font-size: 24px;
+  color: var(--on-primary-container-2);
+}
+
+.rank-place-chip {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 32px;
+}
+
+.podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 6px;
+  margin: 0 12px 12px;
+  padding: 20px 10px 0;
+  border-radius: var(--r-xl);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.podium-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.podium-face {
+  position: relative;
+}
+
+.podium-medal {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  width: 30px;
+  height: 30px;
+  margin-left: -15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 850;
+  background: var(--surface-4);
+  color: var(--on-surface);
+}
+
+.podium-1 .podium-medal {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.podium-2 .podium-medal {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.podium-3 .podium-medal {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+.podium-name {
+  max-width: 100%;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.podium-block {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+  border-radius: var(--r-m) var(--r-m) 0 0;
+  background: linear-gradient(var(--surface-3), var(--surface-1));
+  overflow: hidden;
+}
+
+.podium-1 .podium-block {
+  height: 132px;
+  background: linear-gradient(color-mix(in srgb, var(--tier-mythic) 46%, var(--surface-2)), var(--surface-1));
+}
+
+.podium-2 .podium-block {
+  height: 100px;
+  background: linear-gradient(color-mix(in srgb, var(--tier-legendary) 40%, var(--surface-2)), var(--surface-1));
+}
+
+.podium-3 .podium-block {
+  height: 80px;
+  background: linear-gradient(color-mix(in srgb, var(--tier-epic) 38%, var(--surface-2)), var(--surface-1));
+}
+
+.podium-block b {
+  position: relative;
+  font-size: 26px;
+}
+
+
+.trend-meta {
+  font-size: 13px;
+  color: var(--on-surface-3);
+}
+
+.hunts.rail {
+  display: flex;
+  gap: 10px;
+  padding: 0 var(--gutter) 4px;
+}
+
+.rares {
+  gap: 12px;
+  align-items: flex-start;
+}
+

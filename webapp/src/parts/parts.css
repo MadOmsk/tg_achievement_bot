@@ -1,0 +1,1010 @@
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tier {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bronze);
+}
+
+.tier-silver {
+  background: var(--silver);
+}
+
+.tier-gold {
+  background: var(--gold);
+}
+
+.tier-platinum {
+  background: var(--platinum);
+}
+
+.rare-mark {
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+}
+
+.ach-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 8px 0;
+  text-align: left;
+  border-radius: var(--r-m);
+  transition: background var(--t-fast);
+}
+
+.ach-row:active {
+  background: var(--surface-3);
+}
+
+.ach-pic-wide {
+  width: 104px;
+  height: 58px;
+  border-radius: 18px 18px 18px 6px;
+}
+
+.ach-pic-square {
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+}
+
+.ach-row-compact .ach-pic-wide {
+  width: 86px;
+  height: 48px;
+}
+
+.ach-row-compact .ach-pic-square {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+.ach-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ach-name {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.ach-desc {
+  margin-top: 3px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--on-surface-2);
+}
+
+.months {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.months .seg {
+  flex: 1;
+  min-width: 0;
+}
+
+.months-more {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: 16px;
+  background: var(--surface-3);
+  color: var(--on-surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The months a list has, newest first, a year at a time: the year's number,
+   then its months three to a row — the chosen one filled, this month marked. */
+.months-year + .months-year {
+  margin-top: 14px;
+}
+
+.months-year-title {
+  padding: 0 24px 8px;
+  font-size: 15px;
+  color: var(--on-surface-3);
+}
+
+.months-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 16px 4px;
+}
+
+.months-grid button {
+  position: relative;
+  height: 48px;
+  border-radius: var(--r-m);
+  background: var(--surface-3);
+  font-size: 14px;
+  font-weight: 650;
+  transition:
+    border-radius var(--t-mid) var(--spring),
+    background var(--t-fast);
+}
+
+.months-grid button:active {
+  border-radius: var(--r-s);
+}
+
+.months-grid .months-now::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.months-grid .months-on {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+/* Posts in a row are one segmented group: 3 px apart, the group's outer
+   corners large, the corners between them small. */
+
+.ach-row-plain {
+  padding: 12px 0;
+  align-items: center;
+}
+
+.ach-row-plain .ach-pic-wide {
+  width: 88px;
+  height: 50px;
+  border-radius: 12px;
+}
+
+.ach-row-plain .ach-pic-square {
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+}
+
+.ach-row-plain .ach-name {
+  font-size: 15px;
+}
+
+.ach-row-plain .ach-desc {
+  margin-top: 2px;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.marks-plain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.mark-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mark-date {
+  font-weight: 600;
+}
+
+.marks-plain {
+  flex-wrap: wrap;
+}
+
+.mark-worth,
+.mark-rarity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mark-rare {
+  color: var(--tier-epic);
+}
+
+.mark-legendary {
+  color: var(--tier-legendary);
+}
+
+.mark-mythic {
+  color: var(--tier-mythic);
+}
+
+.marks-plain .rare-mark {
+  width: 11px;
+  height: 11px;
+}
+
+.split {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.split button {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 22px 6px 6px 22px;
+  transition: border-radius var(--t-mid) var(--spring);
+}
+
+.split button:last-child {
+  width: 44px;
+  padding: 0;
+  border-radius: 6px 22px 22px 6px;
+}
+
+.split button:active {
+  border-radius: 14px;
+}
+
+.pull {
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  transition: height var(--t-mid) var(--spring-soft);
+}
+
+.pull .spinner {
+  margin-top: 10px;
+}
+
+.rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 var(--gutter) 4px;
+}
+
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+.rail > * {
+  flex: 0 0 auto;
+}
+
+.install {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 12px 0;
+  padding: 12px 8px 12px 12px;
+  border-radius: var(--r-l);
+  background: var(--surface-1);
+}
+
+.install-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.install-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.acc-mark {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 13px;
+  font-stretch: 80%;
+}
+
+.acc-xbox {
+  background: var(--xbox);
+  color: var(--on-xbox);
+}
+
+.acc-psn {
+  background: var(--psn);
+  color: var(--on-psn);
+}
+
+.acc-steam {
+  background: var(--steam);
+  color: var(--on-steam);
+}
+
+.done-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: var(--tertiary);
+  color: var(--on-tertiary);
+}
+
+.skel-face {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.skel-line {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+}
+
+.kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px 0 8px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kind-patch {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.kind-news {
+  background: var(--tertiary-container);
+  color: var(--on-tertiary-container);
+}
+
+.favs {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.fav-heart {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tertiary);
+  color: var(--on-tertiary);
+}
+
+.fav-hint {
+  width: 138px;
+  height: 184px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border: 2px dashed var(--outline);
+  border-radius: var(--r-l);
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--on-surface-3);
+}
+
+.code-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.code-boxes {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.code-boxes input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  font-size: 16px;
+  z-index: 1;
+}
+
+.code-boxes:focus-within .code-box-at {
+  box-shadow: inset 0 0 0 2px var(--primary);
+  border-radius: 22px;
+}
+
+.code-box {
+  height: 60px;
+  border-radius: 16px;
+  background: var(--surface-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  font-stretch: 60%;
+  transition: border-radius var(--t-mid) var(--spring);
+}
+
+.code-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.form-error {
+  font-size: 13.5px;
+  color: var(--error);
+}
+
+/* A person's month (MonthHero): Home's and a person's page's. */
+.home-hero {
+  position: relative;
+  isolation: isolate;
+  margin: 16px 12px 0;
+  padding: 20px 20px 18px;
+  border-radius: var(--r-xl) var(--r-xl) var(--r-xl) var(--r-s);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  overflow: hidden;
+}
+
+/* Expressive's shape behind the place, a shade lighter than the card. */
+.home-hero-deco {
+  position: absolute;
+  z-index: -1;
+  right: -56px;
+  top: 34px;
+  width: 230px;
+  height: 230px;
+  background: var(--primary-container-2);
+  transform: rotate(18deg);
+}
+
+.home-hero-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -6px -8px 6px 0;
+}
+
+.home-hero-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  color: inherit;
+}
+
+.home-hero-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* The place: a flower in the tier's colour of the podium — first mythic,
+   second legendary, third rare —, quiet from the fourth down. */
+.home-hero-medal {
+  flex: 0 0 auto;
+  width: 104px;
+  height: 104px;
+  margin-right: 4px;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.28));
+  animation: medal-in var(--t-slow) var(--spring);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--on-primary-container) 16%, transparent);
+  line-height: 1;
+}
+
+.home-hero-medal b {
+  font-size: 44px;
+}
+
+.home-hero-medal span {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.home-hero-medal-1 {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.home-hero-medal-2 {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.home-hero-medal-3 {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+@keyframes medal-in {
+  from {
+    transform: scale(0.6) rotate(-30deg);
+    opacity: 0;
+  }
+}
+
+/* Who is just above or below, and how close: one pill. */
+/* The people followed in a row, by place: a large face in a ring of the
+   podium's colour for the first three (mythic, legendary, rare), the place
+   on its corner, and under it a chip of how many the person lacks to pass
+   them (+) or leads them by (−). The person's own ring is lit. */
+.home-hero-people {
+  gap: 10px;
+  margin: 18px -16px 0;
+  padding: 2px 16px 2px;
+}
+
+.home-hero-person {
+  --ring: color-mix(in srgb, var(--on-primary-container) 18%, transparent);
+  flex: 0 0 auto;
+  width: 66px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  transition: transform var(--t-fast) var(--spring);
+}
+
+.home-hero-person:active {
+  transform: scale(0.94);
+}
+
+.home-hero-person-1 {
+  --ring: var(--tier-mythic);
+}
+
+.home-hero-person-2 {
+  --ring: var(--tier-legendary);
+}
+
+.home-hero-person-3 {
+  --ring: var(--tier-epic);
+}
+
+.home-hero-person-me {
+  --ring: var(--on-primary-container);
+}
+
+.home-hero-person-face {
+  position: relative;
+  display: flex;
+}
+
+.home-hero-person-ring {
+  display: flex;
+  padding: 3px;
+  background: var(--ring);
+}
+
+.home-hero-person-at {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--primary-container-2);
+  box-shadow: 0 0 0 2px var(--primary-container);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.home-hero-person-1 .home-hero-person-at {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.home-hero-person-2 .home-hero-person-at {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.home-hero-person-3 .home-hero-person-at {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+.home-hero-person-gap {
+  min-width: 40px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 12.5px;
+  line-height: 1;
+  background: color-mix(in srgb, var(--on-primary-container) 10%, transparent);
+}
+
+.home-hero-person-me .home-hero-person-gap {
+  background: var(--on-primary-container);
+  color: var(--primary-container);
+}
+
+.home-hero-person-ahead {
+  color: var(--on-primary-container);
+}
+
+.home-hero-person-behind {
+  color: var(--on-primary-container-2);
+  background: transparent;
+}
+
+.home-hero-text {
+  min-width: 0;
+}
+
+.home-hero-month {
+  font-size: 15px;
+  font-weight: 650;
+  font-stretch: 125%;
+  letter-spacing: 0.03em;
+}
+
+.home-hero-num {
+  margin-top: 4px;
+  color: var(--on-primary-container);
+}
+
+/* The month's figures beside the count: the words quiet, the numbers lit. */
+.home-hero-line {
+  display: flex;
+  white-space: nowrap;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--on-primary-container-2);
+}
+
+.home-hero-line > span + span::before {
+  content: "·";
+  margin: 0 7px;
+  opacity: 0.6;
+}
+
+.home-hero-line b {
+  font-size: 15px;
+  color: var(--on-primary-container);
+}
+
+.home-hero .home-hero-ghost {
+  display: block;
+  background: color-mix(in srgb, var(--on-primary-container) 14%, transparent);
+  animation: ghost 1.4s ease-in-out infinite;
+}
+
+.home-hero-ghost-num {
+  width: 120px;
+  height: 96px;
+  margin-top: 8px;
+  border-radius: var(--r-m);
+}
+
+.home-hero-ghost-medal {
+  flex: 0 0 auto;
+  width: 104px;
+  height: 104px;
+  margin-right: 4px;
+}
+
+.home-hero-person-ghost {
+  pointer-events: none;
+}
+
+.home-hero-ghost-face {
+  width: 60px;
+  height: 60px;
+}
+
+.home-hero-ghost-chip {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+}
+
+.home-hero-ghost-line {
+  width: 110px;
+  height: 14px;
+  margin-top: 10px;
+  border-radius: 7px;
+}
+
+@keyframes ghost {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.row-sub.acc-facts {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.acc-facts > span {
+  white-space: nowrap;
+}
+
+.acc-facts > span + span::before {
+  content: "·";
+  margin: 0 5px;
+}
+
+/* One card of a rail (AchTile): Home's latest, the hunts, the rare finds. */
+.tile {
+  width: 176px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 12px;
+  border-radius: var(--r-l);
+  background: var(--surface-1);
+  text-align: left;
+}
+
+.tile-skel {
+  height: 214px;
+}
+
+.tile-art {
+  position: relative;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.tile-pic {
+  width: 160px;
+  height: 90px;
+  border-radius: 20px 20px 20px 6px;
+}
+
+.tile-pic-sq .pic-img {
+  object-fit: contain;
+}
+
+.tile-badge {
+  position: absolute;
+  right: -6px;
+  bottom: -12px;
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-4);
+  color: var(--on-surface);
+  box-shadow: var(--shadow-1);
+}
+
+.tile-badge b {
+  font-size: 12px;
+}
+
+.tile-badge-rare {
+  background: var(--tier-epic);
+  color: var(--on-tier-epic);
+}
+
+.tile-badge-legendary {
+  background: var(--tier-legendary);
+  color: var(--on-tier-legendary);
+}
+
+.tile-badge-plain {
+  background: var(--surface-4);
+  color: var(--on-surface);
+}
+
+.tile-badge-mythic {
+  background: var(--tier-mythic);
+  color: var(--on-tier-mythic);
+}
+
+.tile-name {
+  padding: 0 4px;
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.tile-game {
+  padding: 0 4px;
+  font-size: 12.5px;
+  color: var(--on-surface-3);
+}
+
+.tile-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  padding: 0 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.tile-worth::before {
+  content: "·";
+  margin-right: 6px;
+}
+
+.tile .marks-plain,
+.tile-who {
+  margin-top: 6px;
+  padding: 0 4px;
+}
+
+.tile-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--on-surface-2);
+}
+
+.tile-faces {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.tile-faces > span {
+  display: flex;
+  margin-left: -8px;
+  padding: 2px;
+  background: var(--surface-1);
+  -webkit-mask: url("../styles/shapes/cookie12.svg") center / contain no-repeat;
+  mask: url("../styles/shapes/cookie12.svg") center / contain no-repeat;
+}
+
+.tile-faces > span:first-child {
+  margin-left: -2px;
+}
+
+.tile-faces .face-initials {
+  font-size: 9px !important;
+}
+
+/* A game in a rail (GameTile), as a magazine sets it: a tall cover on its
+   own, the name and what the rail says under it, no card around. */
+.month-games {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.game-tile {
+  width: 138px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.game-tile-skel {
+  height: 250px;
+  border-radius: var(--r-l);
+}
+
+.game-tile-art {
+  position: relative;
+  display: block;
+  margin-bottom: 4px;
+  border-radius: var(--r-l);
+  box-shadow: var(--shadow-1);
+  transition: transform var(--t-fast) var(--spring);
+}
+
+.game-tile:active .game-tile-art {
+  transform: scale(0.97);
+}
+
+.game-tile-cover {
+  width: 138px;
+  height: 184px;
+  border-radius: var(--r-l);
+}
+
+.game-tile-art .fav-heart {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+.game-tile-art .done-mark {
+  position: absolute;
+  right: -6px;
+  bottom: -8px;
+  box-shadow: 0 0 0 4px var(--surface);
+}
+
+.game-tile-name {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.game-tile-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.game-tile-gain {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.game-tile-num {
+  font-size: 16px;
+}
+
+.game-tile-done .game-tile-gain,
+.game-tile-done .game-tile-num {
+  color: var(--tertiary);
+}
+
+.sec-head .split button {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px 6px 6px 20px;
+}
+
+.sec-head .split button:last-child {
+  width: 40px;
+  padding: 0;
+  border-radius: 6px 20px 20px 6px;
+}

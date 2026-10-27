@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from bot.constants import Platform, PresenceState
 from bot.db.repo import PresenceRow, PsnPresenceRow, SteamPresenceRow
+from bot.util import real_game_name
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,7 @@ def pick_presence(
             CurrentPresence(
                 platform=Platform.XBOX_MODERN,
                 online=xbox.state == PresenceState.ONLINE,
-                game=xbox.title_name,
+                game=real_game_name(xbox.title_name),
                 title_id=xbox.title_id,
                 updated_at=xbox.updated_at,
             )
@@ -71,7 +72,7 @@ def pick_presence(
                 # Steam's own enum: 0 is offline, every other value is some
                 # shade of online (away, busy, looking to trade...).
                 online=(steam.persona_state or 0) != 0,
-                game=steam.game_name,
+                game=real_game_name(steam.game_name),
                 title_id=steam.gameid,
                 updated_at=steam.updated_at,
             )
@@ -81,7 +82,7 @@ def pick_presence(
             CurrentPresence(
                 platform=Platform.PSN,
                 online=psn.state == PresenceState.ONLINE,
-                game=psn.title_name,
+                game=real_game_name(psn.title_name),
                 title_id=psn.title_id,
                 updated_at=psn.updated_at,
             )

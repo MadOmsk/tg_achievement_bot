@@ -1,5 +1,5 @@
 import { BaseApi, WEB_SESSION } from "../base/baseApi";
-import { API_BASE_ROUTES, USER_ROUTES } from "../../components/shared/constants/routes";
+import { API_BASE_ROUTES, USER_ROUTES } from "../../core/constants/routes";
 import type {
   InvitesResponse,
   AccountPlatform,

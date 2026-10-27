@@ -42,6 +42,16 @@ def test_playing_shows_the_device() -> None:
     assert presence_text(row, "en") == "playing [<i>Series X|S</i>] — Halo Infinite"
 
 
+def test_an_id_is_never_shown_as_the_game() -> None:
+    """Xbox answers some titles with their own id as the name; a status
+    "играет 704208617" told nobody anything (owner, 2026-10-12)."""
+    row = presence("Online", "704208617", "704208617")
+    assert presence_text(row, "ru") == "играет"
+    assert presence_text(row, "en") == "playing"
+    nameless = presence("Online", "704208617", None, device="XboxSeriesX")
+    assert presence_text(nameless, "ru") == "играет [<i>Series X|S</i>]"
+
+
 def test_online_not_playing() -> None:
     row = presence("Online", None)
     assert presence_text(row, "ru") == "в сети, не играет"

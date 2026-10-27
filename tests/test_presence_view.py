@@ -85,3 +85,17 @@ def test_steam_persona_states_other_than_zero_are_all_online() -> None:
 
     assert picked is not None
     assert picked.online
+
+
+def test_a_games_name_is_never_its_id() -> None:
+    row = PresenceRow(
+        xuid="xuid-1",
+        state="Online",
+        title_id="704208617",
+        title_name="704208617",
+        updated_at="2026-10-12T10:00:00+00:00",
+    )
+    picked = pick_presence(xbox=row)
+    assert picked is not None
+    assert picked.game is None
+    assert picked.title_id == "704208617"

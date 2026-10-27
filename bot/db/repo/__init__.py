@@ -56,6 +56,8 @@ Layout:
     _games.py       games over versions: which game each version is, how, and
                     who decided it (092).
     _octopus.py     the octopus's queue and what it reads to assemble a game (#215).
+    _game_page.py   the Mini App's game page: a game whole, the games a search
+                    finds, favorite games (130).
     _series.py      game series: which games are in each, proposed by the
                     linker or said by the operator and the advisers (105).
 
@@ -85,6 +87,7 @@ from bot.db.repo._database import (
 from bot.db.repo._descriptions import _DescriptionsRepo
 from bot.db.repo._flood import _FloodRepo
 from bot.db.repo._follows import FollowTooSoon, PersonRow, _FollowsRepo
+from bot.db.repo._game_page import _GamePageRepo
 from bot.db.repo._games import _GamesRepo
 from bot.db.repo._guides import GuideChannel, GuideMoment, GuideVideoRow, _GuidesRepo
 from bot.db.repo._handles import HandleInvalid, HandleState, HandleTooSoon, _HandlesRepo
@@ -233,6 +236,7 @@ class Repo(
     _StoresRepo,
     _HltbReadRepo,
     _GamesRepo,
+    _GamePageRepo,
     _SeriesRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""

@@ -10,6 +10,16 @@ from bot.i18n import translator
 _OFFSET_RE = re.compile(r"^(?:utc)?\s*([+-])?(\d{1,2})(?::([0-5]\d))?$", re.IGNORECASE)
 
 
+def real_game_name(name: str | None) -> str | None:
+    """A game's name, or None when what came is no name: empty, or only digits.
+
+    Xbox presence answers some titles with their own id as the name, and a
+    status line then said "играет 704208617" (owner, 2026-10-12). An id tells
+    nobody anything; no name is better than that one."""
+    text = (name or "").strip()
+    return text if text and not text.isdigit() else None
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC)
 

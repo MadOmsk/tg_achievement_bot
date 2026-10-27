@@ -1,0 +1,130 @@
+import { useState } from "react";
+import { clubApi, type PersonPayload } from "../api";
+import { useLoad } from "../app/useLoad";
+import { useApp } from "../app/context";
+import { tick } from "../core/haptic";
+import { formatMonth } from "../core/people-utils";
+import { num, plural } from "../i18n";
+import { Face } from "../ui/Face";
+import { Icon } from "../ui/Icon";
+import { MonthSheet } from "./Months";
+
+/** A person's month as one card, by what matters: how many achievements
+ * (the points and the games small beside), the place among the people
+ * followed, and those people in a row — each with their place and how many
+ * the person lacks to pass them (+) or leads them by (−). Home
+ * shows the viewer's, a person's page that person's. */
+export function MonthHero({
+  payload,
+  month,
+  months,
+  onMonth,
+  personId,
+}: {
+  payload: PersonPayload | null | undefined;
+  month: string;
+  /** The months there are to see, newest first; with `onMonth` the card
+   * turns from one to the next. */
+  months?: string[];
+  onMonth?: (month: string) => void;
+  /** Whose month it is: their place among the people the viewer follows. */
+  personId?: number;
+}) {
+  const { data, tr, locale, open, me } = useApp();
+  const summary = useLoad(personId ? `summary:${month}:hero` : null, () => clubApi.fetchSummary(data, "following", { month }));
+  const leaders = [...(summary.data?.month ?? [])].filter((r) => r.count > 0).sort((a, b) => b.count - a.count || b.score - a.score);
+  const place = personId ? leaders.findIndex((r) => r.person_id === personId) + 1 : 0;
+  // Until both the month and the race are in, the card keeps their shapes.
+  const ready = Boolean(payload) && (!personId || Boolean(summary.data) || Boolean(summary.error));
+  const mine = place > 0 ? leaders[place - 1].count : 0;
+  const [pick, setPick] = useState(false);
+  const list = months?.length ? months : [month];
+  const label = formatMonth(month, locale, "sheet");
+  return (
+    <section className="home-hero">
+      <span className="home-hero-deco shape-clover4" aria-hidden="true" />
+      {onMonth ? (
+        <div className="home-hero-nav">
+          <button type="button" className="home-hero-month home-hero-pick" onClick={() => setPick(true)}>
+            {label.toUpperCase()}
+            <Icon name="down" size={18} />
+          </button>
+        </div>
+      ) : (
+        <p className="home-hero-month">{label.split(" ")[0].toUpperCase()}</p>
+      )}
+      {pick && onMonth && <MonthSheet months={list} value={month} onChange={onMonth} onClose={() => setPick(false)} />}
+      <div className="home-hero-main">
+        <div className="home-hero-text">
+          {payload ? (
+            <p className="t-display home-hero-num">{num(payload.month.count, locale)}</p>
+          ) : (
+            <span className="home-hero-ghost home-hero-ghost-num" />
+          )}
+        </div>
+        {!ready && <span className="home-hero-ghost home-hero-ghost-medal shape-flower6" />}
+        {ready && place > 0 && (
+          <span key={`${month}:${place}`} className={`home-hero-medal shape-flower6${place <= 3 ? ` home-hero-medal-${place}` : ""}`}>
+            <b className="t-num">{place}</b>
+            <span>{tr("heroPlaceWord")}</span>
+          </span>
+        )}
+      </div>
+      {payload ? (
+        <p className="home-hero-line">
+          <span>{plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}</span>
+          {payload.month.score > 0 && (
+            <span>
+              <b className="t-num">+{num(payload.month.score, locale)}</b> G
+            </span>
+          )}
+          <span>
+            <b className="t-num">{num(payload.games.length, locale)}</b>{" "}
+            {plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}
+          </span>
+        </p>
+      ) : (
+        <span className="home-hero-ghost home-hero-ghost-line" />
+      )}
+      {!ready && (
+        <div className="home-hero-people rail" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span key={i} className="home-hero-person home-hero-person-ghost">
+              <span className="home-hero-ghost home-hero-ghost-face shape-cookie12" />
+              <span className="home-hero-ghost home-hero-ghost-chip" />
+            </span>
+          ))}
+        </div>
+      )}
+      {ready && place > 0 && leaders.length > 1 && (
+        <div className="home-hero-people rail">
+          {leaders.map((r, i) => {
+            const isMe = r.person_id === personId;
+            const diff = r.count - mine;
+            return (
+              <button
+                key={r.person_id}
+                type="button"
+                className={`home-hero-person${i < 3 ? ` home-hero-person-${i + 1}` : ""}${isMe ? " home-hero-person-me" : ""}`}
+                onClick={() => {
+                  tick();
+                  open({ kind: "person", personId: r.person_id });
+                }}
+              >
+                <span className="home-hero-person-face">
+                  <span className="home-hero-person-ring shape-cookie12">
+                    <Face personId={r.person_id} name={r.name} size={54} />
+                  </span>
+                  <span className="home-hero-person-at t-num">{i + 1}</span>
+                </span>
+                <span className={`home-hero-person-gap t-num${isMe ? "" : diff >= 0 ? " home-hero-person-ahead" : " home-hero-person-behind"}`}>
+                  {isMe ? (personId === me.person_id ? tr("you") : num(r.count, locale)) : diff >= 0 ? `+${num(diff + 1, locale)}` : `−${num(-diff, locale)}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}

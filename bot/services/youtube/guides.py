@@ -13,6 +13,23 @@ they are about in three ways, each matched only by an exact name:
 
 Every timeline line is kept; the collectibles and chapters among them match
 no achievement's name and so never show.
+
+Other big guide channels (read 2026-10-12, PowerPyx, HarryNinetyFour,
+Maka91Productions, 100% Guides, PS5Trophies) name an achievement in their
+*titles*, with a guide phrase after it and no 🏆:
+
+- "Mortal Shell 2 - Bag Holder Trophy / Achievement Guide" — the name stands
+  before the phrase, in the part after the game;
+- "The Blood of Dawnwalker - All Tower Locations (Bird's-Eye View Trophy
+  Guide)" — in parentheses;
+- "Silent Hill F — Go Away! - Trophy Guide" — the part before a bare phrase;
+- "Mortal Shell 2 Heavy Metal Trophy Guide" — no separator at all: the game
+  and the name are one run of words, told apart only by knowing the game
+  (a *joined* mark: `= game name`), and "Control Resonant All Dog & Toy
+  Locations (Dog's Best Friend Trophy Guide)" a *loose* one (`~name`, the
+  game is the words it starts with).
+
+Each is still matched only by an exact name.
 """
 
 from __future__ import annotations
@@ -22,9 +39,16 @@ from dataclasses import dataclass
 
 from bot.services.hltb_match import core, normalize
 
-# The channels read, by YouTube channel id.
+# The channels read, by YouTube channel id (the biggest that guide achievements
+# by name, owner, 2026-10-12; sizes then): TrophyTom first, as it always was.
 CHANNELS = {
-    "UCFXmIUDNofRpYSG7lku0i_Q": "TrophyTom",
+    "UCFXmIUDNofRpYSG7lku0i_Q": "TrophyTom",  # 197k
+    "UCWBA1-H9A5IldSb3tNwQmtQ": "PowerPyx",  # 1.24M
+    "UCX2tHrgdOPDtQRidMS946Fw": "PS5Trophies",  # 1.11M
+    "UCRL1kBjkg-F5KY7vZUZgTeA": "HarryNinetyFour",  # 809k
+    "UCZojkqUeuaZyAQc8KaBNrJw": "Maka91Productions",  # 465k
+    "UCRvx1nQZ-YXvxc6IOB8mKPg": "100% Guides",  # 230k
+    "UCjXhYVGTDHsx2LWKIvtjSEA": "Carrot Helper",  # 113k, whole-game 100% walkthroughs
 }
 
 _SEPARATOR = re.compile(r"\s+[-–—]\s+")
@@ -38,6 +62,26 @@ _PART = re.compile(r"\s*[-–—]\s*part\s*(\d+)\s*$", re.IGNORECASE)
 _NOTE = re.compile(
     r"\s*(?:[-–—]\s*(?:un)?missable|\((?:un)?missable\)|\(optional\))\s*$", re.IGNORECASE
 )
+
+# What a title carries that is not a name: *1000G IN 1.5 HOURS*, #Xbox, [4K].
+_DECOR = re.compile(r"\*[^*]*\*|#\w+|\[[^\]]*\]")
+_WORD = r"(?:trophy|trophies|achievements?)"
+# "Trophy Guide", "Trophy / Achievement Guide", "Trophy Guide / Achievement
+# Guide", "Achievement/Trophy Guide", "Trophy Guide & Roadmap".
+_GUIDE = (
+    rf"{_WORD}(?:\s*[/&]\s*{_WORD})?\s+guide"
+    rf"(?:\s*[/&]\s*{_WORD}(?:\s+guide)?)?(?:\s*&\s*roadmap)?"
+)
+_GUIDE_END = re.compile(rf"^(?P<name>.*?)[\s\-–—:|]*{_GUIDE}[\s.!)]*$", re.IGNORECASE)
+# Inside parentheses a bare "Guide" is enough: "(Freeze Frame Guide)".
+_BARE_GUIDE_END = re.compile(r"^(?P<name>.*?)[\s\-–—:|]*\bguide[\s.!)]*$", re.IGNORECASE)
+_PAREN = re.compile(r"\(([^()]*)\)\s*$")
+
+# Marks that are not a plain name: the whole title without its phrase, to be
+# told from "game name" by the game (joined), and a name whose game is the
+# words the title starts with (loose).
+JOINED = "= "
+LOOSE = "~"
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,17 +135,60 @@ def _label(text: str) -> tuple[str, int]:
     return key_of(text), part
 
 
-def marks_of(title: str, description: str) -> list[Mark]:
-    """Every moment the video names: its whole length for a one-achievement
-    title, and each line of its description's timeline."""
-    marks: dict[tuple[str, int], Mark] = {}
+def _guided(part: str) -> tuple[str, bool] | None:
+    """What stands before a guide phrase that ends `part`, and whether it was
+    in parentheses; "" for a bare phrase; None when `part` has no phrase."""
+    found = _PAREN.search(part)
+    if found:
+        inner = found.group(1).strip()
+        match = _GUIDE_END.match(inner) or _BARE_GUIDE_END.match(inner)
+        if match:
+            return match.group("name").strip(), True
+    match = _GUIDE_END.match(part.strip())
+    return (match.group("name").strip(), False) if match else None
+
+
+def title_mark(title: str) -> Mark | None:
+    """The one achievement a title names, as a mark at the video's start; None
+    for a whole-game video and for titles that name nothing."""
     if _TROPHY_MARK in title:
         head = title.split(_TROPHY_MARK, 1)[0]
         parts = _SEPARATOR.split(head.strip())
         if len(parts) > 1:
             label, part = _label(parts[-1])
             if label:
-                marks[(label, 0)] = Mark(label, 0, part)
+                return Mark(label, 0, part)
+        return None
+    parts = [p.strip() for p in _SEPARATOR.split(_DECOR.sub(" ", title)) if p.strip()]
+    if not parts:
+        return None
+    guided = _guided(parts[-1])
+    if guided is None:
+        return None
+    name, in_paren = guided
+    if not name:
+        # "Game - Silent Hill F — Go Away! - Trophy Guide": the part before it.
+        if len(parts) < 3:
+            return None
+        name, in_paren = parts[-2], False
+    label, part = _label(name)
+    if not label:
+        return None
+    if len(parts) > 1:
+        return Mark(label, 0, part)
+    # No separator: the game and the name are not told apart by the title alone.
+    if in_paren:
+        return Mark(LOOSE + label, 0, part)
+    return Mark(JOINED + label, 0, part)
+
+
+def marks_of(title: str, description: str) -> list[Mark]:
+    """Every moment the video names: its whole length for a one-achievement
+    title, and each line of its description's timeline."""
+    marks: dict[tuple[str, int], Mark] = {}
+    named = title_mark(title)
+    if named is not None:
+        marks[(named.label, 0)] = named
     for line in description.splitlines():
         found = _TIMELINE.match(line)
         if not found:
