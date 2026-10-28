@@ -28,6 +28,7 @@ from urllib.parse import quote, urlencode
 
 from aiohttp import web
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.db.repo._sql import BONUS_IN, OWN_EDITION, PART_OF_BUNDLE, STEAM_APP_OF_TITLE
 from bot.services.advice import (
@@ -44,7 +45,7 @@ PAGE_SIZE = 100
 
 
 def _db(request: web.Request) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{request.app['db_path']}?mode=ro", uri=True)
+    conn = files.connect(request.app["db_path"], readonly=True)
     conn.row_factory = sqlite3.Row
     return conn
 

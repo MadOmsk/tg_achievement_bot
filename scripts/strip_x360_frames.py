@@ -13,9 +13,9 @@ every write is a rename, and the databases are only read.
 from __future__ import annotations
 
 import argparse
-import sqlite3
 from pathlib import Path
 
+from bot.db import files
 from bot.services import covers, game_art, media, x360_frame
 from bot.services.achievement_icons import detect_mime
 from bot.services.game_page import https
@@ -44,7 +44,7 @@ def strip_covers(apply: bool) -> tuple[int, int]:
 
 def list_icons(db: Path) -> set[str]:
     # Read-only: the database may belong to a running bot.
-    with sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True) as conn:
+    with files.connect(db, readonly=True) as conn:
         rows = conn.execute(
             "SELECT icon_url FROM achievement_list_connectors"
             " WHERE platform = 'xbox_360' AND icon_url IS NOT NULL"

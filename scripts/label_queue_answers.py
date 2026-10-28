@@ -27,12 +27,12 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import sqlite3
 from pathlib import Path
 
+from bot.db import files
 from bot.services.advice import AdviceStore, decide, label_of, parse_answers, validate
 from bot.util import utcnow_iso
-from scripts.advise_pairs import import_answers, read_only_uri
+from scripts.advise_pairs import import_answers
 
 AUDIT_SEED = 1024
 
@@ -98,7 +98,7 @@ def stage(db: Path, prefix: Path, claude: Path, gemini: Path, audit: int) -> Non
 
 def score(db: Path, prefix: Path) -> None:
     held = json.loads(prefix.with_suffix(".audit.json").read_text("utf-8"))
-    conn = sqlite3.connect(read_only_uri(db), uri=True)
+    conn = files.connect(db, readonly=True)
     labels = {
         frozenset((a, b)): (a, b, relation)
         for a, b, relation in conn.execute(

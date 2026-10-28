@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet
 
 from bot.config import Settings
 from bot.db.repo import Database, Repo
+from bot.db.repo._games_db import GAMES_DB_KEY
 from bot.i18n import DEFAULT_LOCALE, LOCALES_DIR
 from bot.poller import fetcher, psn_fetcher, steam_fetcher, steam_localization
 from bot.services import game_art, title_catalog
@@ -79,13 +80,19 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         pytest.fail(f"reached for the network: {sorted(set(reached))}", pytrace=False)
 
 
+def _games_of(db_path: Path) -> Path:
+    return db_path.with_name(db_path.stem + ".games.db")
+
+
 @pytest.fixture(scope="session")
 def _db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     template_dir = tmp_path_factory.mktemp("db_template")
     template_path = template_dir / "template.db"
 
     async def _init() -> None:
-        db = await Database(template_path).connect()
+        # Two files, as on the servers (#229): every test runs against the
+        # catalog attached from a games database of its own.
+        db = await Database(template_path, games=_games_of(template_path)).connect()
         await db.close()
 
     asyncio.run(_init())
@@ -96,12 +103,22 @@ def _db_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
 async def database(tmp_path: Path, _db_template: Path) -> AsyncIterator[Database]:
     db_path = tmp_path / "test.db"
     shutil.copyfile(_db_template, db_path)
+    games_path = _games_of(db_path)
+    shutil.copyfile(_games_of(_db_template), games_path)
     db = Database(db_path)
     db._conn = await aiosqlite.connect(db_path)
     db._conn.row_factory = aiosqlite.Row
     await db._conn.execute("PRAGMA journal_mode = WAL")
     await db._conn.execute("PRAGMA foreign_keys = ON")
     await db._conn.execute("PRAGMA synchronous = OFF")
+    await db._conn.execute("ATTACH DATABASE ? AS games", (str(games_path),))
+    await db._conn.execute("PRAGMA games.journal_mode = WAL")
+    await db._conn.execute("PRAGMA games.synchronous = OFF")
+    await db._conn.execute(
+        "UPDATE app_settings SET value = ? WHERE key = ?", (str(games_path), GAMES_DB_KEY)
+    )
+    await db._conn.commit()
+    db.games_path = games_path
     try:
         yield db
     finally:

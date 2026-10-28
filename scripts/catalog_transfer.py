@@ -37,6 +37,8 @@ import sqlite3
 import time
 from pathlib import Path
 
+from bot.db import files
+
 # Parents before children; the order only matters for reading the counts.
 TABLES = (
     "games",
@@ -84,25 +86,45 @@ def _migration(conn: sqlite3.Connection, schema: str = "main") -> str:
     return str(conn.execute(f"SELECT MAX(version) FROM {schema}.schema_migrations").fetchone()[0])
 
 
-def _columns(conn: sqlite3.Connection, table: str, schema: str = "main") -> list[str]:
-    return [r[1] for r in conn.execute(f"PRAGMA {schema}.table_info({table})")]
+# A database whose catalog lives in a games file (#229) is opened with it
+# attached (`bot.db.files`): an unqualified name finds the table wherever it
+# is, so "" is "this database", whichever of its two files holds the table.
+def _at(schema: str) -> str:
+    return f"{schema}." if schema else ""
 
 
-def _count(conn: sqlite3.Connection, table: str, schema: str = "main") -> int:
-    return int(conn.execute(f"SELECT COUNT(*) FROM {schema}.{table}").fetchone()[0])
+def _columns(conn: sqlite3.Connection, table: str, schema: str = "") -> list[str]:
+    return [r[1] for r in conn.execute(f"PRAGMA {_at(schema)}table_info({table})")]
+
+
+def _count(conn: sqlite3.Connection, table: str, schema: str = "") -> int:
+    return int(conn.execute(f"SELECT COUNT(*) FROM {_at(schema)}{table}").fetchone()[0])
+
+
+def _source(conn: sqlite3.Connection, db: Path) -> str:
+    """Attach `db` as `src` (and its games file as `srcg`); the schema its
+    catalog tables are in."""
+    conn.execute("ATTACH DATABASE ? AS src", (str(db),))
+    games = files.games_of(sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True))
+    if games is None:
+        return "src"
+    conn.execute("ATTACH DATABASE ? AS srcg", (str(games),))
+    return "srcg"
 
 
 def export(db: Path, out: Path, tables: tuple[str, ...]) -> None:
     if out.exists():
         raise SystemExit(f"{out} exists")
     conn = sqlite3.connect(out)
-    conn.execute("ATTACH DATABASE ? AS src", (str(db),))
+    where = _source(conn, db)
     conn.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY)")
     conn.execute("INSERT INTO schema_migrations VALUES (?)", (_migration(conn, "src"),))
     for table in tables:
-        conn.execute(f"CREATE TABLE {table} AS SELECT * FROM src.{table}")
-        print(f"  {table:22} {_count(conn, table):7}")
+        conn.execute(f"CREATE TABLE main.{table} AS SELECT * FROM {where}.{table}")
+        print(f"  {table:22} {_count(conn, table, 'main'):7}")
     conn.commit()
+    if where == "srcg":
+        conn.execute("DETACH DATABASE srcg")
     conn.execute("DETACH DATABASE src")
     conn.execute("VACUUM")
     conn.close()
@@ -118,7 +140,7 @@ def _keyed(conn: sqlite3.Connection, table: str) -> bool:
 
 def import_(db: Path, file: Path, *, dry_run: bool) -> list[int]:
     """The catalog replaced; returns the kept stand-ins' new ids."""
-    conn = sqlite3.connect(db, isolation_level=None)
+    conn = files.connect(db, isolation_level=None)
     conn.execute("ATTACH DATABASE ? AS src", (str(file),))
     here, there = _migration(conn), _migration(conn, "src")
     if here != there:
@@ -134,9 +156,7 @@ def import_(db: Path, file: Path, *, dry_run: bool) -> list[int]:
     before = {t: _count(conn, t) for t in tables}
     if not dry_run:
         backup = db.with_name(f"{db.stem}-pre-catalog-{time.strftime('%Y%m%d-%H%M%S')}.db")
-        target = sqlite3.connect(backup)
-        conn.backup(target)
-        target.close()
+        files.backup(db, backup)
         print(f"backup: {backup}")
     conn.execute("PRAGMA foreign_keys = OFF")
     conn.execute("BEGIN")
