@@ -18,6 +18,27 @@ _PLAYABLE_ROLES = "('version', 'enhanced')"
 
 
 class _GamePageRepo:
+    async def earned_groups(self, platform: str, title_id: str) -> dict[str, str]:
+        """Each achievement's group as somebody's earned row has it (`base` /
+        `non_base` on Xbox) — the catalog's list often carries none."""
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, MAX(trophy_group_id) FROM seen_achievements"
+            " WHERE platform = ? AND title_id = ? AND trophy_group_id IS NOT NULL"
+            " GROUP BY achievement_id",
+            (platform, title_id),
+        )
+        return {str(row[0]): str(row[1]) for row in await cursor.fetchall()}
+
+    async def list_dlc_names(self, platform: str, title_id: str) -> list[tuple[str, str | None]]:
+        """The add-ons of a list's versions, by name (English, Russian)."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT d.name, d.name_ru FROM dlcs d"
+            " JOIN versions v ON v.version_id = d.version_id"
+            " WHERE v.platform = ? AND v.title_id = ? AND d.name IS NOT NULL",
+            (platform, title_id),
+        )
+        return [(row[0], row[1]) for row in await cursor.fetchall()]
+
     async def live_game_id(self, game_id: int) -> int | None:
         """The game an id names now: a merged game's id leads to the game it
         went into. None when there is no such game."""

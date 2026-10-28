@@ -16,7 +16,7 @@ const SearchPage = lazy(() => import("../screens/people/SearchPage").then((m) =>
 const ConnectPage = lazy(() => import("../screens/settings/Accounts").then((m) => ({ default: m.ConnectPage })));
 const SettingsPage = lazy(() => import("../screens/settings/Settings").then((m) => ({ default: m.SettingsPage })));
 const GalleryPage = lazy(() => import("../screens/game/GalleryPage").then((m) => ({ default: m.GalleryPage })));
-const PassPage = lazy(() => import("../screens/pass/PassPage").then((m) => ({ default: m.PassPage })));
+const SeasonPassPage = lazy(() => import("../screens/season-pass/SeasonPassPage").then((m) => ({ default: m.SeasonPassPage })));
 const AchievementByRef = lazy(() => import("../screens/game/AchievementByRef").then((m) => ({ default: m.AchievementByRef })));
 
 const LOADERS = [
@@ -33,7 +33,7 @@ const LOADERS = [
   () => import("../screens/settings/Settings"),
   () => import("../screens/game/GalleryPage"),
   () => import("../screens/game/AchievementByRef"),
-  () => import("../screens/pass/PassPage"),
+  () => import("../screens/season-pass/SeasonPassPage"),
 ];
 
 /** Fetch every page's code once the app is idle, so a first visit never
@@ -145,7 +145,7 @@ export function LayerView({
       case "news":
         return <NewsPostPage appid={layer.appid} gid={layer.gid} item={layer.item} game={layer.game} onClose={close} layer={key} />;
       case "pass":
-        return <PassPage onClose={close} layer={key} />;
+        return <SeasonPassPage onClose={close} layer={key} />;
       case "notifications":
         return <NotificationsPage onClose={close} layer={key} />;
       case "search":

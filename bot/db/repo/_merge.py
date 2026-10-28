@@ -187,6 +187,18 @@ class _MergeRepo:
                 " WHERE person_id = :absorb",
                 a,
             )
+            await conn.execute(
+                "INSERT OR IGNORE INTO pass_reached (person_id, item_id, month, reached_at)"
+                " SELECT :keep, item_id, month, reached_at FROM pass_reached"
+                " WHERE person_id = :absorb",
+                a,
+            )
+            # A code taken by the absorbed side is the kept person's; where both
+            # took one of the same reward, the absorbed one's stays taken.
+            await conn.execute(
+                "UPDATE OR IGNORE pass_item_codes SET person_id = :keep WHERE person_id = :absorb",
+                a,
+            )
             for table in ("web_sessions", "notifications", "push_subscriptions", "passkeys"):
                 await conn.execute(
                     f"UPDATE {table} SET person_id = :keep WHERE person_id = :absorb", a

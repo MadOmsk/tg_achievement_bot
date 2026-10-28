@@ -176,62 +176,12 @@
   justify-content: center;
 }
 
-.crop {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 0 20px 8px;
-}
 
-.crop-box {
-  position: relative;
-  width: 100%;
-  max-width: 360px;
-  aspect-ratio: 1;
-  margin: 0 auto;
-  overflow: hidden;
-  border-radius: var(--r-l);
-  background: #000;
-  touch-action: none;
-}
 
-.crop-box img {
-  position: absolute;
-  left: 0;
-  top: 0;
-  max-width: none;
-  user-select: none;
-}
 
-.crop-mask {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.5);
-  outline: 2px solid rgba(255, 255, 255, 0.7);
-  -webkit-mask: none;
-  mask: none;
-  border-radius: 50%;
-}
 
-.crop-zoom {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  color: var(--on-surface-2);
-}
 
-.crop-zoom input {
-  flex: 1;
-  accent-color: var(--primary);
-}
 
-.crop-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
 
 .acc-big {
   width: 88px;
@@ -336,6 +286,10 @@
 
 .swatch-graphite .swatch-dot {
   background: linear-gradient(135deg, #c3c9d0 0 50%, #a6ecf2 50%);
+}
+
+.swatch-halloween .swatch-dot {
+  background: linear-gradient(135deg, #ffb77c 0 50%, #deb7ff 50%);
 }
 
 .swatch-dot svg {

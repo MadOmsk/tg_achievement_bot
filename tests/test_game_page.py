@@ -333,3 +333,21 @@ def test_search_reads_a_dotted_name_as_one_word() -> None:
     names = [(1, "S.T.A.L.K.E.R. 2: Heart of Chornobyl"), (2, "Assassin's Creed")]
     assert [g for g, _r, _l in game_page.rank_search(names, "stalker")] == [1]
     assert [g for g, _r, _l in game_page.rank_search(names, "assassins")] == [2]
+
+
+async def test_an_xbox_lists_later_achievements_are_known_by_the_earned_rows(repo: Repo) -> None:
+    """The catalog's Xbox list often names no group; an earned row does
+    (`base` / `non_base`), and the page splits the list by it (owner,
+    2026-10-27)."""
+    person = await repo.ensure_user(7, "xb")
+    assert person is not None
+    await repo.link_platform_account(person, "xbox", "x1", "xb")
+    for achievement_id, group in (("1", "base"), ("2", "non_base")):
+        await repo._conn.execute(
+            "INSERT INTO seen_achievements (platform, xuid, title_id, achievement_id, name,"
+            " trophy_group_id, created_at) VALUES ('xbox_modern', 'x1', 'T1', ?, 'a', ?, ?)",
+            (achievement_id, group, "2026-10-27T10:00:00+00:00"),
+        )
+    await repo._conn.commit()
+    assert await repo.earned_groups("xbox_modern", "T1") == {"1": "base", "2": "non_base"}
+    assert await repo.earned_groups("xbox_modern", "other") == {}

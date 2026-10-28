@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { clubApi, type PersonPayload } from "../api";
 import { useLoad } from "../app/useLoad";
-import { PassStrip } from "../screens/pass/PassCard";
+import { PassStrip } from "../screens/season-pass/SeasonPassCard";
 import { useApp } from "../app/context";
 import { tick } from "../core/haptic";
 import { formatMonth, currentMonth } from "../core/people-utils";

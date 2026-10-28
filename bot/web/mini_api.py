@@ -1148,6 +1148,34 @@ async def handle_game_details(request: web.Request) -> web.Response:
     percent = round((unlocked / total) * 100, 1) if total > 0 else 0.0
 
     groups = await repo.get_title_groups(title_id) if platform == Platform.PSN else []
+    # Xbox has no group per DLC, only the list a game shipped with (`base`) and
+    # what came later (`non_base`, owner, 2026-10-15): the page splits the two
+    # once some achievement is known to be of the second, its name the add-on's
+    # when the game has one (owner, 2026-10-27).
+    xbox_groups: dict[str, str] = {}
+    if platform in (Platform.XBOX_MODERN, Platform.XBOX_360):
+        earned = await repo.earned_groups(platform, title_id)
+        for item in checklist:
+            known = item.achievement.trophy_group_id or earned.get(item.achievement.achievement_id)
+            xbox_groups[item.achievement.achievement_id] = (
+                "non_base" if known == "non_base" else "base"
+            )
+        if "non_base" in xbox_groups.values():
+            dlcs = await repo.list_dlc_names(platform, title_id)
+            name_en, name_ru = dlcs[0] if len(dlcs) == 1 else (None, None)
+            groups = [
+                {"group_id": "base", "name": None, "name_ru": None, "name_en": None, "total": None},
+                {
+                    "group_id": "non_base",
+                    # No single add-on to name it by: the app words it.
+                    "name": name_en,
+                    "name_ru": name_ru or name_en,
+                    "name_en": name_en,
+                    "total": None,
+                },
+            ]
+        else:
+            xbox_groups = {}
 
     return web.json_response(
         {
@@ -1184,7 +1212,9 @@ async def handle_game_details(request: web.Request) -> web.Response:
                     "is_secret": item.achievement.is_secret,
                     "gamerscore": item.achievement.gamerscore,
                     "trophy_type": item.achievement.trophy_type,
-                    "trophy_group_id": item.achievement.trophy_group_id,
+                    "trophy_group_id": xbox_groups.get(
+                        item.achievement.achievement_id, item.achievement.trophy_group_id
+                    ),
                     "rarity_percent": item.achievement.rarity_percent,
                     "is_unlocked": item.is_unlocked,
                     "unlocked_at": item.unlocked_at,

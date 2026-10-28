@@ -348,6 +348,8 @@ async def run(settings: Settings) -> None:
 
     # Followers hear of a new post by their own choice (owner, 2026-10-05).
     publisher.on_new_post = notifications.tell_about_post
+
+    publisher.on_points = notifications.tell_about_pass_levels
     steam_extras.on_new_posts = notifications.tell_about_game_news
 
     async def on_xbox_login_dead(person: int) -> None:
