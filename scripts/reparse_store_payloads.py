@@ -27,6 +27,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services.game_link import GameLinker
 from bot.services.store_collect import StoreCollector
@@ -64,7 +65,7 @@ SUMMARY = (
 
 
 def _counts(path: Path) -> dict[str, object]:
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    conn = files.connect(path, readonly=True)
     try:
         found: dict[str, object] = {}
         for label, query in SUMMARY:
@@ -79,13 +80,7 @@ def _counts(path: Path) -> dict[str, object]:
 
 def _copy(source: Path, target: Path) -> None:
     """A copy as sqlite makes it (the database runs in WAL mode: never `cp`)."""
-    src = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)
-    dst = sqlite3.connect(target)
-    try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
+    files.backup(source, target)
 
 
 async def _run(path: Path) -> dict[str, int]:

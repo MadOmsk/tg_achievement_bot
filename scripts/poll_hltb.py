@@ -21,11 +21,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sqlite3
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services.stores import hltb_page
 
@@ -38,13 +38,7 @@ def _backup(db_path: Path) -> Path:
     backups = Path("backups")
     backups.mkdir(exist_ok=True)
     target = backups / f"{db_path.stem}-pre-hltb-poll-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 

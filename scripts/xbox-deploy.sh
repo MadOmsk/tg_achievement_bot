@@ -9,7 +9,7 @@
 # already in the repository", not "root on the box".
 #
 #   xbox-deploy test|prod [/path/to/spa.tgz]
-#   xbox-deploy catalog [--dry-run]
+#   xbox-deploy games split|join|leave [--dry-run]
 #
 # A deploy (test or prod) does these things, in this order and for these
 # reasons:
@@ -27,13 +27,14 @@
 #      systemctl says the unit was asked to start, not that the bot came up.
 #      The log line does.
 #
-# `catalog` carries the games catalog from the test server to prod (owner,
-# 2026-10-28: the octopus assembles it on the test server): export from
-# test.db with the test bot stopped for a moment, then replace prod's
-# catalog with it (scripts/catalog_transfer.py, which backs bot.db up first)
-# and bring in `catalog/`, with prod stopped. `--dry-run` does all of it on
-# a copy of bot.db instead and touches prod not at all. Both databases must
-# be at the same migration, or nothing starts.
+# `games` moves the bots onto one games database (#229; owner, 2026-10-28),
+# with each bot it touches stopped (scripts/games_db.py, which copies the
+# database into backups/ first):
+#   split  the test server's catalog becomes the shared file ($GAMES_DB);
+#   join   prod takes the shared file, adding what only it knew of its lists;
+#   leave  both copy the shared catalog back and part, for a rework of the
+#          games database that cannot be shared (CLAUDE.md).
+# `--dry-run` does it on copies in a temporary folder, no bot stopped.
 #
 # Install on the server:
 #   install -m 0755 scripts/xbox-deploy.sh /usr/local/bin/xbox-deploy
@@ -42,13 +43,14 @@
 
 set -euo pipefail
 
-MODE="${1:?usage: xbox-deploy test|prod [spa.tgz] | xbox-deploy catalog [--dry-run]}"
+MODE="${1:?usage: xbox-deploy test|prod [spa.tgz] | xbox-deploy games split|join|leave [--dry-run]}"
 
 RUN_AS=botsvc
 PROD_DIR=/opt/xbox_achievement_bot
 TEST_DIR=/opt/xbox_bot_test
-# Pre-catalog copies of bot.db kept beside it (200 MB each).
-KEEP_CATALOG_BACKUPS=2
+# The games database both bots attach (#229).
+GAMES_DIR=/srv/unlocked-games
+GAMES_DB=$GAMES_DIR/games.db
 
 say() { echo "==> $*"; }
 fail() {
@@ -124,22 +126,24 @@ start_bot() {
 
 # sqlite's own backup(), never cp: these run in WAL mode and a plain copy of
 # one can come back malformed (CLAUDE.md, Operations). Run from a checkout.
+# A database keeping its games in a file of its own (#229) is copied with it
+# (`<copy>.games.db`, the copy naming it); a checkout from before has no
+# `bot.db.files`, and its database is one file.
 copy_db() {
   sudo -u "$RUN_AS" .venv/bin/python - "$1" "$2" <<'PY'
 import sqlite3, sys
 src, dst = sys.argv[1], sys.argv[2]
-source = sqlite3.connect(src)
-target = sqlite3.connect(dst)
-source.backup(target)
-target.close()
-source.close()
+try:
+    from bot.db import files
+except ImportError:
+    source = sqlite3.connect(src)
+    target = sqlite3.connect(dst)
+    source.backup(target)
+    target.close()
+    source.close()
+else:
+    files.backup(src, dst)
 PY
-}
-
-# Run as botsvc, never root: a root-owned -wal or -shm beside a database
-# locks its bot out of it.
-migration() {
-  sudo -u "$RUN_AS" sqlite3 "file:$1?mode=ro" "SELECT MAX(version) FROM schema_migrations"
 }
 
 deploy() {
@@ -176,12 +180,13 @@ deploy() {
   # Only the newest backups are kept (owner, 2026-10-23: every deploy's copy,
   # kept forever, had filled the disk to 96%). Only this script's own copies
   # (<db>-YYYYMMDD-HHMMSS.db) are pruned; a copy named by hand stays.
-  # shellcheck disable=SC2012  # names this script and catalog_transfer chose
+  # A copy's games file (<copy>.games.db) goes with it.
+  # shellcheck disable=SC2012  # names this script chose
   ls -1t data/backups |
     { grep -E "^$(basename "$db" .db)-[0-9]{8}-[0-9]{6}\.db$" || true; } |
     tail -n +$((keep_backups + 1)) |
     while read -r old; do
-      sudo -u "$RUN_AS" rm -f -- "data/backups/$old"
+      sudo -u "$RUN_AS" rm -f -- "data/backups/$old" "data/backups/${old%.db}.games.db"
       say "pruned old backup: $old"
     done
 
@@ -243,81 +248,52 @@ deploy() {
   say "$target deployed"
 }
 
-catalog() {
-  local dry_run=0
-  case "${1:-}" in
-    "") ;;
-    --dry-run) dry_run=1 ;;
+games() {
+  local command="${1:-}" dry_run="${2:-}"
+  case "$command" in
+    split | join | leave) ;;
     *)
-      echo "usage: xbox-deploy catalog [--dry-run]" >&2
+      echo "usage: xbox-deploy games split|join|leave [--dry-run]" >&2
       exit 2
       ;;
   esac
+  case "$dry_run" in
+    "" | --dry-run) ;;
+    *)
+      echo "usage: xbox-deploy games split|join|leave [--dry-run]" >&2
+      exit 2
+      ;;
+  esac
+  mkdir -p "$GAMES_DIR"
+  chown "$RUN_AS:$RUN_AS" "$GAMES_DIR"
 
-  local test_db="$TEST_DIR/data/test.db" prod_db="$PROD_DIR/data/bot.db"
-  local test_at prod_at
-  test_at="$(migration "$test_db")"
-  prod_at="$(migration "$prod_db")"
-  if [ -z "$test_at" ] || [ -z "$prod_at" ]; then
-    fail "could not read the databases' migrations"
-  fi
-  if [ "$test_at" != "$prod_at" ]; then
-    fail "migrations differ: test.db is at $test_at, bot.db at $prod_at;" \
-      "deploy so both run the same migrations first. Nothing was changed."
-  fi
-  say "both databases at migration $test_at"
-
-  WORK="$(mktemp -d /var/tmp/xbox-catalog.XXXXXX)"
-  chown "$RUN_AS:$RUN_AS" "$WORK"
-  local file="$WORK/catalog.db"
-
-  # A moment's stop for a catalog that holds still while it is copied.
-  cd "$TEST_DIR"
-  stop_bot xbox-bot-test
-  # The octopus's queue is each server's own work: prod keeps its own.
-  sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_transfer export \
-    --db data/test.db --out "$file" --except octopus_queue
-  start_bot xbox-bot-test || exit 1
-
-  cd "$PROD_DIR"
-  if [ "$dry_run" = 1 ]; then
-    # The whole transfer, rehearsed on a copy of bot.db: the import's own
-    # dry run writes and rolls back inside the live file, which would stall
-    # the running bot. Prod is neither stopped nor written.
-    local copy="$WORK/bot.db"
-    say "dry run: rehearsing on a copy of bot.db"
-    copy_db data/bot.db "$copy"
-    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_transfer import \
-      --db "$copy" --file "$file"
-    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_files import --db "$copy"
-    say "dry run done: prod was not touched"
-    return 0
-  fi
-
-  stop_bot xbox-bot
-  sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_transfer import \
-    --db data/bot.db --file "$file"
-  sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_files import --db data/bot.db
-  start_bot xbox-bot || exit 1
-
-  # catalog_transfer's own copies (bot-pre-catalog-YYYYMMDD-HHMMSS.db),
-  # the newest kept.
-  # shellcheck disable=SC2012  # names this script and catalog_transfer chose
-  ls -1t data |
-    { grep -E '^bot-pre-catalog-[0-9]{8}-[0-9]{6}\.db$' || true; } |
-    tail -n +$((KEEP_CATALOG_BACKUPS + 1)) |
-    while read -r old; do
-      rm -f -- "data/$old"
-      say "pruned old catalog backup: $old"
-    done
-  say "catalog carried from the test server to prod"
+  # app_dir, service and database of each bot the command touches.
+  local -a bots
+  case "$command" in
+    split) bots=("$TEST_DIR xbox-bot-test data/test.db") ;;
+    join) bots=("$PROD_DIR xbox-bot data/bot.db") ;;
+    leave) bots=("$TEST_DIR xbox-bot-test data/test.db" "$PROD_DIR xbox-bot data/bot.db") ;;
+  esac
+  local bot app_dir service db
+  for bot in "${bots[@]}"; do
+    read -r app_dir service db <<<"$bot"
+    cd "$app_dir"
+    if [ -n "$dry_run" ]; then
+      sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.games_db "$command"         --db "$db" --games "$GAMES_DB" --dry-run
+      continue
+    fi
+    stop_bot "$service"
+    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.games_db "$command"       --db "$db" --games "$GAMES_DB"
+    start_bot "$service" || exit 1
+  done
+  say "games $command${dry_run:+ (dry run)} done"
 }
 
 case "$MODE" in
   test | prod) deploy "$MODE" "${2:-}" ;;
-  catalog) catalog "${2:-}" ;;
+  games) games "${2:-}" "${3:-}" ;;
   *)
-    echo "unknown mode: $MODE (expected test, prod or catalog)" >&2
+    echo "unknown mode: $MODE (expected test, prod or games)" >&2
     exit 2
     ;;
 esac

@@ -17,13 +17,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-import aiosqlite
-
 from bot.config import get_settings
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.lock import AlreadyRunningError, single_instance
 from bot.services.crypto import TokenCipher
@@ -35,13 +33,7 @@ def _backup(db_path: Path) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     Path("backups").mkdir(exist_ok=True)
     target = Path("backups") / f"{db_path.stem}-pre-names-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 
@@ -50,12 +42,7 @@ async def _open_as_is(path: Path) -> Database:
     another bot, maybe on older code — `Database.connect` once migrated the
     dev bot's file to this branch's schema and the dev bot refused to start
     (2026-10-15). Writable: a refreshed token is stored back."""
-    database = Database(path)
-    conn = await aiosqlite.connect(path)
-    conn.row_factory = aiosqlite.Row
-    await conn.execute("PRAGMA busy_timeout = 30000")
-    database._conn = conn
-    return database
+    return await files.open_database(path)
 
 
 async def run(args: argparse.Namespace) -> int:

@@ -10,6 +10,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bot.db import files
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = ROOT / "data" / "bot.db"
 
@@ -26,7 +28,7 @@ def main() -> int:
         return 0
 
     # read-only: the running bot must not be disturbed by a status check
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn = files.connect(db_path, readonly=True)
     try:
         # People with at least one active platform link (#52) — users.xuid
         # no longer exists; the account lives on accounts/account_links.

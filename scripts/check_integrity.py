@@ -40,6 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot.config import Settings
+from bot.db import files
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import NPSSO_KEY
 from bot.services.psn.client import build_client
@@ -64,7 +65,7 @@ class Report:
 
 
 def _open_ro(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    conn = files.connect(path, readonly=True)
     conn.row_factory = sqlite3.Row
     return conn
 

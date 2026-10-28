@@ -15,12 +15,12 @@ import argparse
 import asyncio
 import logging
 import os
-import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
@@ -34,13 +34,7 @@ def _backup(db_path: Path) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     Path("backups").mkdir(exist_ok=True)
     target = Path("backups") / f"{db_path.stem}-pre-collect-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 

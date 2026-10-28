@@ -51,6 +51,7 @@ from typing import Any
 
 import aiosqlite
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services.advice import (
     ADVISER_SOURCES,
@@ -101,11 +102,7 @@ def read_only_uri(path: Path) -> str:
 async def open_read_only(path: Path) -> Database:
     """The database opened read-only: no bring-up, no migration, nothing
     written (export, status and conflicts run beside the viewer)."""
-    database = Database(path)
-    conn = await aiosqlite.connect(read_only_uri(path), uri=True)
-    conn.row_factory = aiosqlite.Row
-    database._conn = conn
-    return database
+    return await files.open_database(path, readonly=True)
 
 
 async def _rows(conn: aiosqlite.Connection, sql: str, params: tuple = ()) -> list[dict]:

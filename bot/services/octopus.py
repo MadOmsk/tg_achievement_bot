@@ -191,10 +191,10 @@ class OctopusCollector:
         or `limit` entries were handled."""
         report = OctopusReport()
         while limit is None or report.handled < limit:
-            items = await self._repo.octopus_due(1)
-            if not items:
+            taken = await self._repo.octopus_take()
+            if taken is None:
                 break
-            key, reason = items[0]
+            key, reason = taken
             try:
                 await self._entry(key, reason, report, force)
             except Exception as exc:

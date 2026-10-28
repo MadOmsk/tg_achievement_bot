@@ -15,10 +15,10 @@ import argparse
 import asyncio
 import json
 import logging
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services import edition_media, images
 from bot.services.stores import psn_product, steam_store, xbox_catalog
@@ -31,13 +31,7 @@ def _backup(db_path: Path) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     Path("backups").mkdir(exist_ok=True)
     target = Path("backups") / f"{db_path.stem}-pre-edition-media-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 

@@ -15,10 +15,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services.store_collect import CollectReport, StoreCollector
 
@@ -29,18 +29,12 @@ def _backup(db_path: Path) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     Path("backups").mkdir(exist_ok=True)
     target = Path("backups") / f"{db_path.stem}-pre-x360-addons-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 
 def _titles(db_path: Path) -> list[str]:
-    with sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True) as conn:
+    with files.connect(db_path, readonly=True) as conn:
         rows = conn.execute(
             "SELECT DISTINCT title_id FROM versions WHERE store = 'xbox' AND console = '360'"
             " AND stand_in = 0 AND platform = 'xbox_360' AND title_id IS NOT NULL ORDER BY title_id"

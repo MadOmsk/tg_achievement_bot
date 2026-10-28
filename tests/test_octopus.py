@@ -282,3 +282,13 @@ async def test_the_admin_home_tells_how_the_octopus_is_getting_on(repo: Repo) ->
     assert status.on and status.queue == 2
     assert status.hour == before + 1
     assert worker.last_game is not None and status.last_name == worker.last_game.name
+
+
+async def test_an_entry_is_taken_once(repo: Repo) -> None:
+    # Two bots share the queue (#229): a taken entry is held, not handed again.
+    await repo.octopus_enqueue("list:steam:1", "page")
+    await repo.octopus_enqueue("list:steam:2", "page")
+    first, second = await repo.octopus_take(), await repo.octopus_take()
+    assert {first[0], second[0]} == {"list:steam:1", "list:steam:2"}
+    assert await repo.octopus_take() is None
+    assert await repo.octopus_waiting() == 2  # held, still in the queue
