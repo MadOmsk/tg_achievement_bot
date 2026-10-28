@@ -197,6 +197,7 @@ name, or when the tree goes stale.
 │   │   ├── game_series.py        game series proposed from relations, labels, franchise names
 │   │   ├── label_conflicts.py    labels that contradict each other (#218), no DB access
 │   │   ├── game_page.py          the Mini App's game page put together from the catalog (no network)
+│   │   ├── game_descriptions.py  a game's description translated once, the achievements' rule (#230)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -1972,6 +1973,16 @@ elsewhere in this file still describe the bot.
   like an icon (1280 px) and keeps it under `data/covers/art/` (named by the
   address's hash); the octopus keeps a game's art as it assembles it. Screenshots
   and trailers stay the stores' links.
+  **Its description follows the achievements' rule** (owner, 2026-10-28;
+  #230, migration 138, `services/game_descriptions.py`): a store's Russian is
+  kept only when it is Russian (Cyrillic, not its English handed back;
+  `_stores.native_ru`) and marked `native`; with none, the English a Russian
+  reader is shown — a version's or HLTB's summary — is translated by Haiku in
+  the background the first time the page is opened in Russian, and kept with a
+  hash of that English (`versions.description_source = 'llm'`,
+  `description_ru_of`; `hltb_entries.summary_ru_of`). A changed English text is
+  translated again; a store's own Russian replaces ours; no key leaves it
+  English.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,

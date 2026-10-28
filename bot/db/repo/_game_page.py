@@ -108,12 +108,27 @@ class _GamePageRepo:
         cursor = await self._conn.execute(
             "SELECT version_id, store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, role, developer, publisher, release_date, genres, also_on,"
-            "  description_en, description_ru, media, on_sale, stand_in, store_ids"
+            "  description_en, description_ru, description_source, description_ru_of,"
+            "  media, on_sale, stand_in, store_ids"
             " FROM versions WHERE game_id = ?"
             " ORDER BY release_date IS NULL, release_date, version_id",
             (game_id,),
         )
         return [dict(row) for row in await cursor.fetchall()]
+
+    async def set_version_description_ru(
+        self, version_id: int, translated: str, of: str | None
+    ) -> None:
+        """Our translation of a version's English description (#230), kept
+        with a hash of the English it was made from; a store's own Russian
+        is never replaced by it."""
+        await self._conn.execute(
+            "UPDATE versions SET description_ru = ?, description_source = 'llm',"
+            "  description_ru_of = ?"
+            " WHERE version_id = ? AND COALESCE(description_source, '') <> 'native'",
+            (translated, of, version_id),
+        )
+        await self._conn.commit()
 
     async def game_page_lists(self, game_id: int) -> list[dict[str, Any]]:
         """The game's achievement lists, each once, with its size: the

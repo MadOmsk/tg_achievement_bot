@@ -14,7 +14,7 @@ from aiohttp import web
 
 from bot.constants import account_platform_of
 from bot.db.repo import Repo
-from bot.services import game_page
+from bot.services import game_descriptions, game_page
 from bot.services.naming import person_name_of
 
 log = logging.getLogger(__name__)
@@ -93,6 +93,12 @@ async def handle_game_page(request: web.Request) -> web.Response:
     hltb_found = await repo.game_hltb(game_id)
     hltb_entry = hltb_found["entry"] if hltb_found else None
     art = game_page.art_of(versions, game_page.list_icons(lists))
+    if locale == "ru":
+        # No Russian story yet: Haiku translates the English once, for the
+        # next visit (#230).
+        game_descriptions.translate_later(
+            repo, request.app.get("mini_anthropic_auth"), versions, hltb_entry
+        )
 
     # Who here played it: the viewer, whom they follow, and the person it was
     # opened from — each only as far as their privacy lets the viewer see.
