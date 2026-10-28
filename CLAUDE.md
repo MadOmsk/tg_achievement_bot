@@ -169,6 +169,7 @@ name, or when the tree goes stale.
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
 │   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
+│   │   ├── game_art.py           a game's poster, hero and header kept on disk, served signed
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -1931,6 +1932,14 @@ elsewhere in this file still describe the bot.
   2026-10-26; `game_page.videos_of`: PSN's mp4, else Xbox's and Steam's HLS,
   each with its picture, six at most), in the app, full screen — links only,
   nothing is downloaded.
+  **Its poster, hero and header come from our server** (owner, 2026-10-28;
+  `services/game_art.py`): `art_of` hands the app `/api/mini/art/{sig}?u=<store
+  address>`, signed with a key from `FERNET_KEY` so the route (no sign-in: an
+  `<img>` carries no Init Data) fetches only addresses the server gave out, from
+  the stores' picture hosts only. The first request downloads it, shrinks it
+  like an icon (1280 px) and keeps it under `data/covers/art/` (named by the
+  address's hash); the octopus keeps a game's art as it assembles it. Screenshots
+  and trailers stay the stores' links.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **A game played on several platforms is one list each, never summed**

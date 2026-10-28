@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import hashlib
+import hmac
 import logging
 import time
 from typing import Any
@@ -25,7 +26,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars, custom_avatars
+from bot.services import achievement_icons, avatars, custom_avatars, game_art
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -114,6 +115,7 @@ def setup_mini_api(
     admin_credentials: AdminCredentials | None = None,
 ) -> None:
     app["mini_settings"] = settings
+    game_art.configure(settings.fernet_key.get_secret_value())
     app["mini_repo"] = repo
     app["mini_connect"] = connect
     app["mini_steam_auth"] = steam_auth
@@ -194,6 +196,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/avatar/p/{person_id}", handle_person_avatar)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
     app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
+    app.router.add_get("/api/mini/art/{sig}", handle_game_art)
     app.router.add_get(
         "/api/mini/ach-icon/{platform}/{title_id}/{achievement_id:.+}",
         handle_achievement_icon,
@@ -964,6 +967,25 @@ async def handle_achievement_icon(request: web.Request) -> web.Response:
     )
     if result is None:
         raise web.HTTPNotFound(text="icon not found")
+    body, mime = result
+    return web.Response(
+        body=body,
+        content_type=mime,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+async def handle_game_art(request: web.Request) -> web.Response:
+    """A game's store picture from our disk (`game_art`). No sign-in: an
+    <img> carries no Init Data; the signature is what limits it to the
+    addresses this server handed out."""
+    url = request.query.get("u", "")
+    sig = request.match_info.get("sig", "")
+    if not url or not hmac.compare_digest(sig, game_art.sign(url)) or not game_art.allowed(url):
+        raise web.HTTPNotFound(text="no such picture")
+    result = await game_art.get(url)
+    if result is None:
+        raise web.HTTPNotFound(text="no such picture")
     body, mime = result
     return web.Response(
         body=body,

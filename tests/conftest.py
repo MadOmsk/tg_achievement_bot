@@ -17,7 +17,7 @@ from bot.config import Settings
 from bot.db.repo import Database, Repo
 from bot.i18n import DEFAULT_LOCALE, LOCALES_DIR
 from bot.poller import fetcher, psn_fetcher, steam_fetcher, steam_localization
-from bot.services import title_catalog
+from bot.services import game_art, title_catalog
 from bot.services.crypto import TokenCipher
 from bot.services.steam import achievements as steam_achievements
 from bot.services.steam.auth import SteamAuth
@@ -70,6 +70,10 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # An Xbox collection also searches the add-ons sold alone: the errand of
     # `test_xbox_addons_alone`, which stubs it again.
     monkeypatch.setattr(xbox_catalog, "search_addons", _no_addons)
+    # A game's art kept on disk: `test_game_art`'s errand; signing stays off
+    # (another test's app setup would otherwise leave it on for the rest).
+    monkeypatch.setattr(game_art, "ensure", _nothing)
+    monkeypatch.setattr(game_art, "_secret", None)
     yield
     if reached:
         pytest.fail(f"reached for the network: {sorted(set(reached))}", pytrace=False)

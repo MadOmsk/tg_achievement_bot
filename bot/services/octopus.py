@@ -45,7 +45,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from bot.db.repo import Repo
-from bot.services import psn_products
+from bot.services import game_art, game_page, psn_products
 from bot.services.game_link import LinkReport, link_and_spread
 from bot.services.game_match import name_key
 from bot.services.store_collect import StoreCollector
@@ -344,6 +344,17 @@ class OctopusCollector:
                 await self._repo.record_fetch(
                     anchor_key(row), SOURCE, status="ok", changed=bool(report.found)
                 )
+        # The game's poster, hero and header kept on our disk (owner,
+        # 2026-10-28), so the Mini App never reaches a store's CDN for them.
+        try:
+            lists = await self._repo.game_page_lists(game)
+            art = game_page.store_art(
+                await self._repo.game_page_versions(game),
+                [row["icon_url"] for row in lists if row.get("icon_url")],
+            )
+            await game_art.ensure(list(art.values()))
+        except Exception as exc:  # a picture never fails the assembly
+            log.info("octopus: art of game %s not kept: %r", game, exc)
         gaps = await self._repo.octopus_gaps(game)
         report.stand_ins, report.hltb = gaps["stand_ins"], gaps["hltb"]
         return report
