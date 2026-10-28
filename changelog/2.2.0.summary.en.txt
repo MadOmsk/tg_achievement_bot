@@ -1,0 +1,4 @@
+• Game descriptions translated into Russian, once a game
+• Xbox 360 games show their add-ons — a Season Pass, for one
+• Xbox 360 store posters without the "XBOX 360" band
+• One games database for prod and the test server
