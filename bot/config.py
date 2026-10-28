@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     catchup_idle_interval_minutes: int = 1440  # 24 hours
 
     db_path: Path = Path("data/bot.db")
+    # The games database's pictures, shared by prod and the test server
+    # (`services/media.py`); unset, they stay under `data/`.
+    media_dir: Path | None = None
     log_level: str = "INFO"
     tz: str = "Europe/Moscow"
 

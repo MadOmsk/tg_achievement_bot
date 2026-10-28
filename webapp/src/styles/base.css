@@ -141,6 +141,26 @@ h3 {
   mask: url("./shapes/flower6.svg") center / contain no-repeat;
 }
 
+.shape-sunny8 {
+  -webkit-mask: url("./shapes/sunny8.svg") center / contain no-repeat;
+  mask: url("./shapes/sunny8.svg") center / contain no-repeat;
+}
+
+.shape-burst12 {
+  -webkit-mask: url("./shapes/burst12.svg") center / contain no-repeat;
+  mask: url("./shapes/burst12.svg") center / contain no-repeat;
+}
+
+.shape-gem {
+  -webkit-mask: url("./shapes/gem.svg") center / contain no-repeat;
+  mask: url("./shapes/gem.svg") center / contain no-repeat;
+}
+
+.shape-puffy {
+  -webkit-mask: url("./shapes/puffy.svg") center / contain no-repeat;
+  mask: url("./shapes/puffy.svg") center / contain no-repeat;
+}
+
 .clamp-1 {
   overflow: hidden;
   white-space: nowrap;

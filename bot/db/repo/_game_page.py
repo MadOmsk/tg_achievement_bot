@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from bot.db.repo._sql import OWNED_BY_PERSON, earned_at
+from bot.services import x360_frame
 from bot.util import utcnow
 
 # A merge chain is short; this only stops a cycle the operator could make.
@@ -17,6 +18,27 @@ _PLAYABLE_ROLES = "('version', 'enhanced')"
 
 
 class _GamePageRepo:
+    async def earned_groups(self, platform: str, title_id: str) -> dict[str, str]:
+        """Each achievement's group as somebody's earned row has it (`base` /
+        `non_base` on Xbox) — the catalog's list often carries none."""
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, MAX(trophy_group_id) FROM seen_achievements"
+            " WHERE platform = ? AND title_id = ? AND trophy_group_id IS NOT NULL"
+            " GROUP BY achievement_id",
+            (platform, title_id),
+        )
+        return {str(row[0]): str(row[1]) for row in await cursor.fetchall()}
+
+    async def list_dlc_names(self, platform: str, title_id: str) -> list[tuple[str, str | None]]:
+        """The add-ons of a list's versions, by name (English, Russian)."""
+        cursor = await self._conn.execute(
+            "SELECT DISTINCT d.name, d.name_ru FROM dlcs d"
+            " JOIN versions v ON v.version_id = d.version_id"
+            " WHERE v.platform = ? AND v.title_id = ? AND d.name IS NOT NULL",
+            (platform, title_id),
+        )
+        return [(row[0], row[1]) for row in await cursor.fetchall()]
+
     async def live_game_id(self, game_id: int) -> int | None:
         """The game an id names now: a merged game's id leads to the game it
         went into. None when there is no such game."""
@@ -188,7 +210,8 @@ class _GamePageRepo:
             for row in await cursor.fetchall()
         }
         cursor = await self._conn.execute(
-            "SELECT v.game_id, v.store, v.product_id, v.console, v.media, a.icon_url"
+            "SELECT v.game_id, v.store, v.product_id, v.console, v.media, a.icon_url,"
+            "  a.platform AS list_platform"
             " FROM versions v LEFT JOIN achievement_list_connectors a"
             "  ON a.platform = v.platform AND a.title_id = v.title_id"
             f" WHERE v.game_id IN ({marks}) AND v.role IN {_PLAYABLE_ROLES}",
@@ -207,7 +230,7 @@ class _GamePageRepo:
                 }
             )
             if row["icon_url"]:
-                card["icons"].append(row["icon_url"])
+                card["icons"].append(x360_frame.mark(row["icon_url"], row["list_platform"]))
         return cards
 
     async def game_steam_apps(self, game_id: int) -> list[int]:

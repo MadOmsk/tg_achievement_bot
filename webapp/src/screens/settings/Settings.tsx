@@ -3,7 +3,7 @@ import { userApi, type UserSettingsPatch } from "../../api";
 import { peopleApi, type ActivityVisible } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
 import { inTelegram, look, PALETTES, setLook } from "../../app/env";
-import { PALETTE_NAMES, paletteLevel, paletteOpen, usePass } from "../../core/pass";
+import { PALETTE_NAMES, paletteLevel, paletteOpen, usePass } from "../../core/season-pass";
 import type { SettingsPaneName } from "../../app/layers";
 import { useLoad } from "../../app/useLoad";
 import { TIMEZONES } from "../../core/constants";
@@ -361,6 +361,7 @@ function PublishingPane() {
 
 const POST_CHOICES = ["off", "friends", "following"] as const;
 const NEWS_CHOICES = ["off", "all", "patch", "news", "favorites"] as const;
+const LEVEL_CHOICES = ["all", "prizes", "off"] as const;
 
 /** A channel's kinds as the server keeps them: `new_post:friends`,
  * `game_news:patch`, `new_follower`… */
@@ -377,6 +378,10 @@ function readChannel(tokens: string[] | undefined) {
     follower: list.includes("new_follower"),
     friend: list.includes("new_friend"),
     xbox: list.includes("xbox_login_dead"),
+    // On until switched off (`pass_reward:off`).
+    reward: !list.includes("pass_reward:off"),
+    // Every level unless `pass_level:prizes` or `pass_level:off`.
+    level: list.includes("pass_level:off") ? "off" : list.includes("pass_level:prizes") ? "prizes" : "all",
   };
 }
 
@@ -387,6 +392,8 @@ function writeChannel(c: ReturnType<typeof readChannel>, push: boolean): string[
   if (c.follower) out.push("new_follower");
   if (c.friend) out.push("new_friend");
   if (push && c.xbox) out.push("xbox_login_dead");
+  if (!c.reward) out.push("pass_reward:off");
+  if (c.level !== "all") out.push(`pass_level:${c.level}`);
   return out;
 }
 
@@ -463,6 +470,7 @@ function ChannelChoices({ tokens, push, onSave }: { tokens: string[] | undefined
     news: "notifyGameNewsNews",
     favorites: "notifyGameNewsFavorites",
   };
+  const levelLabel: Record<string, TranslationKey> = { all: "notifyPassLevelsAll", prizes: "notifyPassLevelsPrizes", off: "notifyOff" };
   return (
     <div className="set-choices">
       <p className="set-label">{tr("notifyPosts")}</p>
@@ -481,10 +489,19 @@ function ChannelChoices({ tokens, push, onSave }: { tokens: string[] | undefined
           </button>
         ))}
       </div>
+      <p className="set-label">{tr("notifyPassLevels")}</p>
+      <div className="set-chips">
+        {LEVEL_CHOICES.map((v) => (
+          <button key={v} type="button" className={`set-chip${c.level === v ? " on" : ""}`} onClick={() => set({ level: v })}>
+            {tr(levelLabel[v])}
+          </button>
+        ))}
+      </div>
       <Group>
         <Row title={tr("notifyFollowers")} trail={<Toggle checked={c.follower} label={tr("notifyFollowers")} onChange={(v) => set({ follower: v })} />} />
         <Row title={tr("notifyFriends")} trail={<Toggle checked={c.friend} label={tr("notifyFriends")} onChange={(v) => set({ friend: v })} />} />
         {push && <Row title={tr("notifyAccount")} trail={<Toggle checked={c.xbox} label={tr("notifyAccount")} onChange={(v) => set({ xbox: v })} />} />}
+        <Row title={tr("notifyPassRewards")} trail={<Toggle checked={c.reward} label={tr("notifyPassRewards")} onChange={(v) => set({ reward: v })} />} />
       </Group>
     </div>
   );

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import hashlib
+import hmac
 import logging
 import time
 from typing import Any
@@ -25,7 +26,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars, custom_avatars
+from bot.services import achievement_icons, avatars, custom_avatars, game_art
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -114,6 +115,7 @@ def setup_mini_api(
     admin_credentials: AdminCredentials | None = None,
 ) -> None:
     app["mini_settings"] = settings
+    game_art.configure(settings.fernet_key.get_secret_value())
     app["mini_repo"] = repo
     app["mini_connect"] = connect
     app["mini_steam_auth"] = steam_auth
@@ -194,6 +196,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/avatar/p/{person_id}", handle_person_avatar)
     app.router.add_get("/api/mini/avatar/{tg_id}", handle_avatar)
     app.router.add_get("/api/mini/x360-icon/{title_hex}/{image_hex}", handle_x360_icon)
+    app.router.add_get("/api/mini/art/{sig}", handle_game_art)
     app.router.add_get(
         "/api/mini/ach-icon/{platform}/{title_id}/{achievement_id:.+}",
         handle_achievement_icon,
@@ -972,6 +975,25 @@ async def handle_achievement_icon(request: web.Request) -> web.Response:
     )
 
 
+async def handle_game_art(request: web.Request) -> web.Response:
+    """A game's store picture from our disk (`game_art`). No sign-in: an
+    <img> carries no Init Data; the signature is what limits it to the
+    addresses this server handed out."""
+    url = request.query.get("u", "")
+    sig = request.match_info.get("sig", "")
+    if not url or not hmac.compare_digest(sig, game_art.sign(url)) or not game_art.allowed(url):
+        raise web.HTTPNotFound(text="no such picture")
+    result = await game_art.get(url)
+    if result is None:
+        raise web.HTTPNotFound(text="no such picture")
+    body, mime = result
+    return web.Response(
+        body=body,
+        content_type=mime,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
 async def handle_chat_person(request: web.Request) -> web.Response:
     # A chat is optional (#156): it only says which chat the page was opened
     # from. Without one — somebody who has no chat at all — the privacy check
@@ -1126,6 +1148,34 @@ async def handle_game_details(request: web.Request) -> web.Response:
     percent = round((unlocked / total) * 100, 1) if total > 0 else 0.0
 
     groups = await repo.get_title_groups(title_id) if platform == Platform.PSN else []
+    # Xbox has no group per DLC, only the list a game shipped with (`base`) and
+    # what came later (`non_base`, owner, 2026-10-15): the page splits the two
+    # once some achievement is known to be of the second, its name the add-on's
+    # when the game has one (owner, 2026-10-27).
+    xbox_groups: dict[str, str] = {}
+    if platform in (Platform.XBOX_MODERN, Platform.XBOX_360):
+        earned = await repo.earned_groups(platform, title_id)
+        for item in checklist:
+            known = item.achievement.trophy_group_id or earned.get(item.achievement.achievement_id)
+            xbox_groups[item.achievement.achievement_id] = (
+                "non_base" if known == "non_base" else "base"
+            )
+        if "non_base" in xbox_groups.values():
+            dlcs = await repo.list_dlc_names(platform, title_id)
+            name_en, name_ru = dlcs[0] if len(dlcs) == 1 else (None, None)
+            groups = [
+                {"group_id": "base", "name": None, "name_ru": None, "name_en": None, "total": None},
+                {
+                    "group_id": "non_base",
+                    # No single add-on to name it by: the app words it.
+                    "name": name_en,
+                    "name_ru": name_ru or name_en,
+                    "name_en": name_en,
+                    "total": None,
+                },
+            ]
+        else:
+            xbox_groups = {}
 
     return web.json_response(
         {
@@ -1162,7 +1212,9 @@ async def handle_game_details(request: web.Request) -> web.Response:
                     "is_secret": item.achievement.is_secret,
                     "gamerscore": item.achievement.gamerscore,
                     "trophy_type": item.achievement.trophy_type,
-                    "trophy_group_id": item.achievement.trophy_group_id,
+                    "trophy_group_id": xbox_groups.get(
+                        item.achievement.achievement_id, item.achievement.trophy_group_id
+                    ),
                     "rarity_percent": item.achievement.rarity_percent,
                     "is_unlocked": item.is_unlocked,
                     "unlocked_at": item.unlocked_at,

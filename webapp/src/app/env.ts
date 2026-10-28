@@ -33,9 +33,9 @@ export function paintTelegram(surface: string): void {
   app.setBackgroundColor?.(surface);
 }
 
-export type Palette = "violet" | "graphite" | "ocean" | "mint" | "ember" | "rose";
+export type Palette = "violet" | "graphite" | "ocean" | "mint" | "ember" | "rose" | "halloween";
 export type Mode = "auto" | "light" | "dark";
-export const PALETTES: Palette[] = ["violet", "graphite", "ocean", "mint", "ember", "rose"];
+export const PALETTES: Palette[] = ["violet", "graphite", "ocean", "mint", "ember", "rose", "halloween"];
 const LOOK_KEY = "look";
 const LOOK_CHANGED = "look-changed";
 

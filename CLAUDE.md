@@ -20,7 +20,7 @@ as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
 badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
 `any` icon that Android draws on its launch splash. The sign-in screens write
-the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
+the name as one word — the logo's U with its sparkle, no tile, then "nlocked" in Nunito ExtraBold, its seven
 letters kept in `public/fonts`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
@@ -169,6 +169,9 @@ name, or when the tree goes stale.
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
 │   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
+│   │   ├── game_art.py           a game's poster, hero and header kept on disk, served signed
+│   │   ├── media.py              where the games database's pictures live (`MEDIA_DIR`)
+│   │   ├── x360_frame.py         Xbox 360 box art kept without the console's header or bar
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -261,6 +264,7 @@ name, or when the tree goes stale.
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
 │   ├── cache_achievement_icons.py                                   icon pre-caching (#99)
+│   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
 │   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
 │                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
@@ -304,7 +308,7 @@ super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller interval settings, and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
@@ -542,7 +546,12 @@ every column. History: #106.
   id (a merged game leading on). A merge of two people moves them.
 - **Season pass claims** (`pass_claims (person_id, palette, month)`, migration
   131; owner, 2026-10-27): the themes a person claimed, each checked against
-  the month's points by the server (User interface: the season pass).
+  the month's points by the server (User interface: the season pass). The
+  pass's levels are `pass_items` and a prize's codes `pass_item_codes` (133;
+  a draft and waiting changes live on the row): a prize says which platform it is for, `platform`, free text
+  (Xbox, PlayStation, Steam or anything typed; 135); a code is taken once `claimed_at` is set, `person_id` says by whom (a
+  merge moves it; a deleted person's code stays taken). The levels each person reached this month
+  are `pass_reached (person_id, item_id, month)` (134; a merge moves them).
 - **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -651,6 +660,22 @@ every column. History: #106.
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
   the publisher renders the same list once per chat.
 - **Rarity**: see Lists and tables.
+- **The games database's pictures are one cache for prod and the test server**
+  (owner, 2026-10-28; `services/media.py`): `MEDIA_DIR` (on the VPS
+  `/srv/unlocked-media`, owned by `botsvc`) holds `achievements/` and `covers/`
+  (list covers, `art/`, `editions/`, `hltb/`) — and every picture the catalog
+  adds later; unset, they stay under `data/`. A file's name never depends on the
+  server and every write is a rename, so both bots share it. People's pictures
+  (`data/avatars/`) stay each server's own; the dev server keeps its own cache.
+- **An Xbox 360 game's art is kept without the console's frame** (owner,
+  2026-10-28; `services/x360_frame.py`): the portrait box art loses its header
+  (the "XBOX 360" logo, Platinum Hits, Games for Windows LIVE, ARCADE — the top
+  13%), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
+  Cut on download — a 360 list's cover (`covers.download(platform=)`) and a
+  poster that stands in from a 360 list's icon (marked `#x360`, so `game_art`
+  cuts it; a fragment is never sent) —; anything else is left as it came, and a
+  picture cut once is neither shape. What was kept before is cut by
+  `scripts/strip_x360_frames.py` (no request, beside a running bot).
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
   without the bot token and a platform URL can break. Telegram photos
   (`users.photo_*`) and account avatars (`accounts.avatar_url/path/hash`) go to
@@ -1204,6 +1229,11 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   catalog points outside itself only by a list's (platform, title_id), so
   nothing else moves; a list the file lacks keeps its own stand-in, linked
   into a game after. `--tables match_weights` carries a new fit alone.
+  **From the test server to prod** (owner, 2026-10-28; the octopus assembled
+  games on the test server, a one-off): `sudo xbox-deploy catalog [--dry-run]`
+  on the VPS, each run replacing prod's catalog with the test server's as it
+  is then; the dry run rehearses it all on a copy of `bot.db` and touches prod
+  not at all. See Operations → Deploys.
 - **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
   `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
   production, the test server and the dev server. A label names its versions by
@@ -1661,9 +1691,9 @@ elsewhere in this file still describe the bot.
   the logo's lilac (a pink accent on the search button), shapes that morph
   (faces cut as scalloped "cookies", a flower for rarity), progress as a running
   wave, connected button groups, Roboto Flex whose width is a voice (narrow
-  numbers, wide headlines); dark first, the same scheme light. **Six
+  numbers, wide headlines); dark first, the same scheme light. **Seven
   palettes** — Violet (the default, always open), then Graphite, Ocean, Mint,
-  Amber, Rose, each opened by the season pass — and a mode (auto, light,
+  Amber, Rose, Halloween (owner, 2026-10-28), each opened by the season pass — and a mode (auto, light,
   dark), picked in Settings → Appearance and kept on the device. How to make
   anything new look like the rest is `docs/design-system.md` (its rarity tiers —
   mythic green, legendary orange, rare purple — are the app's Fortnite note).
@@ -1931,20 +1961,36 @@ elsewhere in this file still describe the bot.
   2026-10-26; `game_page.videos_of`: PSN's mp4, else Xbox's and Steam's HLS,
   each with its picture, six at most), in the app, full screen — links only,
   nothing is downloaded.
+  **Its poster, hero and header come from our server** (owner, 2026-10-28;
+  `services/game_art.py`): `art_of` hands the app `/api/mini/art/{sig}?u=<store
+  address>`, signed with a key from `FERNET_KEY` so the route (no sign-in: an
+  `<img>` carries no Init Data) fetches only addresses the server gave out, from
+  the stores' picture hosts only. The first request downloads it, shrinks it
+  like an icon (1280 px) and keeps it under `data/covers/art/` (named by the
+  address's hash); the octopus keeps a game's art as it assembles it. Screenshots
+  and trailers stay the stores' links.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
+  **An Xbox list is split in two** where some of it came later (owner,
+  2026-10-27): the main game (`base`) and the add-ons (`non_base`), named
+  after the add-on when the list's versions have exactly one, else «Дополнения».
+  An achievement's group is the catalog's, else any earned row's
+  (`repo.earned_groups`) — the catalog's list often names none; one nobody
+  earned and the catalog does not name stays with the main game.
   **A game played on several platforms is one list each, never summed**
   (owner, 2026-10-27): `progress` and every player carry `lists`, the most
   earned first (`repo.game_players`); the progress card and the achievements
   page switch between them, the most earned shown first.
 - **Favorite games** (owner, 2026-10-25; `PUT|DELETE /api/mini/game/{id}/favorite`,
-  `GET /api/mini/game-favorites?person=`): a heart on a game's page puts it on
+  `GET /api/mini/game-favorites?person=`): a heart on a game's page — in the
+  page's bar, opposite the way back, over the art and after it alike, its
+  count beside it (owner, 2026-10-27) — puts it on
   the person's profile, seen only by a viewer `can_view_activity` lets in. A
   favorite's news are read every hour (`poller/patch_refresh.py`), and told to
   whoever keeps it, played or not — «Новости игр: только избранные» carries
   only those.
 - **The season pass** (owner, 2026-10-27; `bot/services/season_pass.py`,
-  `web/mini_pass.py`, `core/pass.ts`, `screens/pass/`, migration 131): the
+  `web/mini_pass.py`, `core/season-pass.ts`, `screens/season-pass/`, migration 131): the
   month's points (`repo.points_for_person`, the person's own calendar month)
   climb five levels, the calmest theme first and the most colourful last, each
   giving one of the app's themes to claim («Получить», with a burst). **The
@@ -1953,8 +1999,61 @@ elsewhere in this file still describe the bot.
   claim for good (a merge moves them); `GET /api/mini/pass` is the state every
   screen reads. Violet is everybody's; every other theme opens in Settings →
   Appearance only once claimed, and a theme on the device the server does not
-  give is taken off. Home's month card shows the season in place of the
-  race, and a tap opens the pass. Every month runs the same levels again.
+  give is taken off. **A pass a month** (owner, 2026-10-28; migration 136,
+  `pass_items.month`): each month's pass is its own levels, **empty until the
+  super-admin publishes one**; the editor works on this month or any of the
+  eleven ahead (`?edit=`, `EDIT_MONTHS`, picked in a sheet that counts each
+  month's levels), so a pass is built ahead and shown on its 1st. A month's
+  pass may have a name, its theme («Хэллоуин»; `pass_seasons`, migration 137,
+  `PUT /api/mini/pass/season`), shown on its card and waiting for the
+  month's publish like a level. Earlier months
+  are looked back on (`GET /api/mini/pass?month=`, the arrows by the month's
+  name): their points, what was claimed, one's own codes — nothing is taken
+  from them. A theme once claimed is kept for good, whatever month. A prize's
+  codes left are a badge on its card's right, loud when a quarter or fewer
+  are; a tap lists who took them (`GET …/items/{id}/takers`: nickname, face,
+  when — never the codes). Home's month card shows the race of friends and, under
+  it, the door to the pass. Every month runs the same levels again.
+  **The pass is the super-admin's to build** (owner, 2026-10-28; migration
+  133: `pass_items` — a level each, `theme` / `game` / `code`, its points,
+  `state` draft / live / removed and its waiting changes in `pending` —, and
+  `pass_item_codes`; `db/repo/_pass.py`): the app's five themes are written
+  once as live levels (`ensure_pass_seeded`), and from then on any level may be
+  added, changed or deleted in the Mini App's pass («Изменить», the
+  super-admin's alone — an exception to the admin registry's rule of both
+  panels) **only while nobody has it**: a theme claimed or a code taken locks
+  it (409 `taken`). Every edit is a **draft only the super-admin sees**: a new
+  level is `draft`, a change to a live one waits in `pending`, a deletion is
+  `pending.remove`; **one «Опубликовать»** (`POST /api/mini/pass/publish`)
+  lays it all in, in one transaction, skipping a level claimed meanwhile;
+  «Сбросить» throws the draft away. The bar sits where the tabs do. A palette
+  is one level's. The points field shows this month's best score and last
+  month's best and middle (`_month_scores`, each person's own month, counted
+  again every ten minutes). A prize is a stack of codes, **one to a person**,
+  for whoever has its points this month (0 is anyone), until they run out — a
+  code is taken by one statement, so two taps never get the same one, and a
+  prize taken down stays for whoever took a code. It is **a game of ours**
+  (picked from the catalog: its name, cover and page) or **a code** for
+  anything else, with a picture of its own if sent (`PUT …/items/{id}/image`,
+  saved again as a JPEG by `services/pass_pictures.py` under
+  `data/covers/pass/`, served to anybody). Themes and prizes are **one
+  vertical timeline, by points**: a rail with a node and the points of each,
+  filled up to a «Ты здесь» row (what is next, and how far), a card each. Every
+  screen showing the pass asks again each minute and on coming back to the
+  app, so a publish shows with no reload. «Оповестить всех» in the publish
+  dialog tells everybody of the new levels (`pass_reward`, the one notice kind
+  **on until switched off** — `notifier.DEFAULT_ON`, a channel's
+  `pass_reward:off`; Settings → Уведомления, «Призы сезонного пропуска»); a tap
+  opens the pass (`t=pass`). **A level reached is told** (owner, 2026-10-28;
+  `pass_level`, `Notifier.tell_about_pass_levels`, migration 134
+  `pass_reached`): after every publish the month's points are checked, and
+  the levels newly reached are marked (each once a month) and told as one
+  notice, of the highest — on until switched off, a channel choosing every
+  level, prizes only (`pass_level:prizes`: a game or a code, not a theme) or
+  none (Settings → Уведомления, «Уровни сезонного пропуска»).
+- **The month's games are listed newest first** wherever the Mini App shows
+  them — Home, a profile, the Ranking, Search (owner, 2026-10-27;
+  `users_games_achievements(order="recent")`); the bot's lists keep the count.
 - **The ranking's year** is `/club/summary`'s `year`, from 1 January to the end
   of the month shown, in the same timezone (owner, 2026-10-07).
 
@@ -2751,8 +2850,28 @@ It:
 2. `git fetch --prune` and `git merge --ff-only` — never a robot's merge commit;
 3. reinstalls dependencies only when `pyproject.toml` changed;
 4. unpacks the Mini App CI built (built there, not on the 300 MB box);
-5. restarts, then **verifies** the bot's own `is up (v…)` line, bounded by a timestamp
-   taken before the restart.
+5. stops the bot and brings in the catalog's labels and weights from `catalog/`
+   (`scripts/catalog_files.py import`: it compares, so an unchanged folder writes
+   nothing; a failure still starts the bot and turns the deploy red);
+6. starts it, then **verifies** the bot's own `is up (v…)` line, bounded by a timestamp
+   taken before the start.
+
+**One run at a time** (`/run/xbox-deploy.lock`): a test deploy, a prod deploy and a
+catalog transfer all stop and start bots on the one box. **A bot the script stopped
+is started again on any failure.** The script reinstalls itself from the checkout,
+but the run that installs it finishes as the old one: a change to it takes effect
+from the next deploy.
+
+**`xbox-deploy catalog [--dry-run]`** carries the games catalog from the test server
+to prod, run by hand on the VPS (no workflow: owner, 2026-10-28, a one-off). It refuses, changing nothing, while
+`test.db` and `bot.db` are at different migrations. Then: the test bot stops for
+the export (`catalog_transfer export --except octopus_queue`: the octopus's queue is
+each server's own work) and starts again; prod stops,
+`catalog_transfer import` (which backs `bot.db` up beside it — the two newest
+`bot-pre-catalog-*.db` are kept) and `catalog_files import` run, and prod starts and
+is verified. The dry run does the import on a copy of `bot.db` in a temporary
+folder — the import's own dry run writes and rolls back inside the live file,
+which would stall the running bot.
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.

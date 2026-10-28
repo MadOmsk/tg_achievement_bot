@@ -291,7 +291,7 @@ export function Empty({ icon = "sparkle", title, text, action }: {
 }) {
   return (
     <div className="empty">
-      <span className="empty-mark shape-cookie9">
+      <span className="empty-mark shape-puffy">
         <Icon name={icon} size={28} />
       </span>
       <p className="t-label">{title}</p>

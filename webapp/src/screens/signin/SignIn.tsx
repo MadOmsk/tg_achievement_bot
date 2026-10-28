@@ -199,7 +199,7 @@ export function SignIn({ locale, onSignedIn }: { locale: Locale; onSignedIn: () 
                 onChange={(e) => setEmail(e.target.value)}
               />
               <Button wide variant="filled" type="submit" busy={busy}>
-                {tr("emailGetCode")}
+                {tr("loginButton")}
               </Button>
             </form>
           )}

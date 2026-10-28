@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { gameApi, type GameCard, type GamePage as GamePageData, type GameRef } from "../../api";
 import { useApp } from "../../app/context";
 import { rememberGameArt, useArtTheme } from "../../app/artTheme";
@@ -203,32 +203,33 @@ function GameBody({
   };
 
   const others = g.players.filter((p) => p.person_id !== (progress?.person_id ?? me.person_id));
-  const heartAt = useRef<HTMLSpanElement>(null);
-  const heart = (where: "head" | "bar") => (
+  // The heart lives in the page's bar, opposite the way back, over the art
+  // and after it alike (owner, 2026-10-27).
+  const heart = (
     <button
       type="button"
-      className={`gp-fav gp-fav-${where} shape-cookie9${fav.on ? " gp-fav-on" : ""}`}
+      className={`gp-fav${fav.on ? " gp-fav-on" : ""}`}
       aria-label={fav.on ? tr("gpFavorited") : tr("gpFavorite")}
       aria-pressed={fav.on}
       disabled={busy}
       onClick={() => void toggleFav()}
     >
-      <Icon name="heart" size={where === "bar" ? 20 : 22} filled={fav.on} />
+      <span className="gp-fav-shape shape-cookie9">
+        <Icon name="heart" size={20} filled={fav.on} />
+      </span>
+      {/* How many keep it: the number beside the heart. */}
+      {fav.count > 0 && <b className="gp-fav-count t-num">{fav.count}</b>}
     </button>
   );
   return (
     <>
-      <BarAction anchor={heartAt}>{heart("bar")}</BarAction>
+      <BarAction>{heart}</BarAction>
       <div className="gp-head">
         <Cover src={g.art.poster} className="gp-poster" />
         <div className="gp-titles">
           <h1 className="gp-title clamp-3">{locale === "ru" && g.game.name_ru ? g.game.name_ru : g.game.name}</h1>
           <p className="gp-sub clamp-2">{[years(g.game), studio].filter(Boolean).join(" · ")}</p>
         </div>
-        <span className="gp-fav-wrap" ref={heartAt}>
-          {heart("head")}
-          {fav.count > 0 && <span className="gp-fav-count t-num">{fav.count}</span>}
-        </span>
       </div>
 
       <div className="gp-chips">

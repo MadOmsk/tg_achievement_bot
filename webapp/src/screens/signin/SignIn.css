@@ -22,16 +22,21 @@
 
 .wordmark {
   display: inline-flex;
-  align-items: flex-end;
+  align-items: baseline;
   gap: 0;
   color: var(--on-surface);
 }
 
 .wordmark-u {
-  width: 0.6em;
-  height: 0.72em;
-  margin-right: 0.03em;
+  width: 0.83em;
+  height: 0.85em;
+  margin-right: -0.16em;
   color: var(--primary);
+  overflow: visible;
+}
+
+.wordmark-spark {
+  fill: var(--tertiary);
 }
 
 .wordmark-rest {

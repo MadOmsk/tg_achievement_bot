@@ -45,6 +45,11 @@ jobs:
       - name: ruff format
         run: ruff format --check .
 
+      - name: shellcheck
+        # The deploy script runs as root on the server; ubuntu-latest has
+        # shellcheck already.
+        run: shellcheck scripts/xbox-deploy.sh
+
       - name: pytest
         # Real Xbox/Steam/PSN/HLTB/Telegram calls are forbidden in tests
         # (CLAUDE.md), so this needs no secrets and no network of its own.

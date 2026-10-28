@@ -84,7 +84,7 @@ class CoverRefresh:
         name = covers.cover_name(title.platform, title.title_id)
         url, saved = candidates[0], None
         for candidate in candidates:
-            saved = await covers.download(candidate, name)
+            saved = await covers.download(candidate, name, platform=title.platform)
             if saved is not None:
                 url = candidate
                 break

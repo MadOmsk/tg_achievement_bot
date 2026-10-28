@@ -200,16 +200,16 @@ export function Home({ refreshKey }: { refreshKey: number }) {
                 <button
                   key={m.person_id}
                   type="button"
-                  className="now-person"
+                  className={`now-person${p ? "" : " now-off"}`}
                   onClick={() => {
                     tick();
                     open({ kind: "person", personId: m.person_id });
                   }}
                 >
-                  <Face personId={m.person_id} name={m.name} size={68} presence={p} />
+                  <Face personId={m.person_id} name={m.name} size={68} presence={p} thinRing />
                   <span className="now-name clamp-1">{m.name}</span>
                   <span className="now-status clamp-1">
-                    {m.playing ? m.title_name || tr("playing") : p === "online" ? tr("idle") : " "}
+                    {m.playing ? m.title_name || tr("playing") : p === "online" ? tr("idle") : tr("nowOffline")}
                   </span>
                 </button>
               );

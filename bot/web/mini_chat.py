@@ -211,7 +211,9 @@ async def build_summary_payload(
         limit=0,
         locale=locale,
         until=until,
-        order="count",
+        # The month's games newest first, wherever the app lists them (owner,
+        # 2026-10-27).
+        order="recent",
     )
     # Same calendar-month window as games/month leaders — finds and
     # "hunting together" on the Mini App stats tab read this list, not a
@@ -350,6 +352,7 @@ async def build_person_payload(
         limit=games_limit,
         locale=locale,
         until=month_until,
+        order="recent",
     )
     games = [
         {

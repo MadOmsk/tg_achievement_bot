@@ -456,6 +456,9 @@ class TitleCatalogService:
                     icon_url=item.icon_url,
                     is_secret=item.is_secret,
                     gamerscore=item.gamerscore,
+                    # Contract 6's `groupIds`: the list a game shipped with or
+                    # what came later — the whole list's, earned or not.
+                    trophy_group_id=item.trophy_group_id,
                     rarity_percent=item.rarity_percent,
                     updated_at=now,
                 )

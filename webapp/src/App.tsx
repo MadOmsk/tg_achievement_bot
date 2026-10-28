@@ -126,6 +126,7 @@ function placeLayers(): Stacked[] {
   const asked = new URLSearchParams(window.location.search).get("t");
   if (asked === "people") out.push({ kind: "search" });
   if (asked === "settings") out.push({ kind: "settings", pane: "root" });
+  if (asked === "pass") out.push({ kind: "pass" });
   if (launch.personId != null) out.push({ kind: "person", personId: launch.personId });
   if (launch.game && launch.achievement) {
     const who = launch.game.person && "person_id" in launch.game.person ? launch.game.person : null;

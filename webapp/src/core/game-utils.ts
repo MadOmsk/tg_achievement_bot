@@ -31,6 +31,8 @@ export function groupLabel(
   gameName: string,
 ): string {
   const raw = pickLocale(locale, group.name_ru, group.name_en, group.name);
+  // Xbox's later achievements with no add-on to name them by.
+  if (!raw && group.group_id === "non_base") return t(locale, "addonsGroup");
   if (!raw) return t(locale, "mainGame");
   const game = gameName.trim().toLowerCase();
   if (game && raw.trim().toLowerCase() === game) {

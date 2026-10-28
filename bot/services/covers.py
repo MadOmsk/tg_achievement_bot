@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bot.services import images
+from bot.services import images, x360_frame
 
 COVER_DIR = Path("data/covers")
 
@@ -34,8 +34,12 @@ def cover_name(platform: str | None, title_id: str) -> str:
     return images.safe_name(platform or "unknown", title_id)
 
 
-async def download(url: str, name: str, *, root: Path | None = None) -> tuple[str, str] | None:
+async def download(
+    url: str, name: str, *, platform: str | None = None, root: Path | None = None
+) -> tuple[str, str] | None:
     """Fetch one cover and write it as `name`. `(name, sha256)`, or `None`
     when the fetch failed — an ordinary outcome for somebody else's CDN, and
-    never a reason to fail the tick this rides on."""
-    return await images.download(url, name, cover_dir(root))
+    never a reason to fail the tick this rides on. A 360 game's cover is kept
+    without the console's frame (`x360_frame`)."""
+    transform = x360_frame.strip if platform == "xbox_360" else None
+    return await images.download(url, name, cover_dir(root), transform=transform)
