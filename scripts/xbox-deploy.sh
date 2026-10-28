@@ -274,8 +274,9 @@ catalog() {
   # A moment's stop for a catalog that holds still while it is copied.
   cd "$TEST_DIR"
   stop_bot xbox-bot-test
+  # The octopus's queue is each server's own work: prod keeps its own.
   sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_transfer export \
-    --db data/test.db --out "$file"
+    --db data/test.db --out "$file" --except octopus_queue
   start_bot xbox-bot-test || exit 1
 
   cd "$PROD_DIR"

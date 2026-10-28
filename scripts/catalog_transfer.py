@@ -24,7 +24,7 @@ stopped; a copy of the target is made first, beside it.
 
 Usage:
     .venv/Scripts/python.exe -X utf8 -m scripts.catalog_transfer export \\
-        --db data/games.db --out catalog.db [--tables match_weights]
+        --db data/games.db --out catalog.db [--tables match_weights] [--except octopus_queue]
     .venv/Scripts/python.exe -X utf8 -m scripts.catalog_transfer import \\
         --db data/bot.db --file catalog.db [--dry-run]
 """
@@ -242,16 +242,18 @@ def main() -> None:
     out.add_argument("--db", required=True)
     out.add_argument("--out", required=True)
     out.add_argument("--tables", nargs="*", default=list(TABLES))
+    out.add_argument("--except", dest="skip", nargs="*", default=[], help="tables left out")
     into = sub.add_parser("import")
     into.add_argument("--db", required=True)
     into.add_argument("--file", required=True)
     into.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.command == "export":
-        unknown = set(args.tables) - set(TABLES)
+        unknown = (set(args.tables) | set(args.skip)) - set(TABLES)
         if unknown:
             raise SystemExit(f"not catalog tables: {sorted(unknown)}")
-        export(Path(args.db), Path(args.out), tuple(t for t in TABLES if t in args.tables))
+        chosen = tuple(t for t in TABLES if t in args.tables and t not in args.skip)
+        export(Path(args.db), Path(args.out), chosen)
         return
     kept = import_(Path(args.db), Path(args.file), dry_run=args.dry_run)
     if kept:

@@ -2802,7 +2802,8 @@ from the next deploy.
 to prod (`.github/workflows/catalog.yml`, by hand only, `dry_run` on by default; it
 shares prod's deploy concurrency group). It refuses, changing nothing, while
 `test.db` and `bot.db` are at different migrations. Then: the test bot stops for
-the export (`catalog_transfer export`) and starts again; prod stops,
+the export (`catalog_transfer export --except octopus_queue`: the octopus's queue is
+each server's own work) and starts again; prod stops,
 `catalog_transfer import` (which backs `bot.db` up beside it — the two newest
 `bot-pre-catalog-*.db` are kept) and `catalog_files import` run, and prod starts and
 is verified. The dry run does the import on a copy of `bot.db` in a temporary
