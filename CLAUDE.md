@@ -20,7 +20,7 @@ as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
 badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
 `any` icon that Android draws on its launch splash. The sign-in screens write
-the name as one word — the U, then "nlocked" in Nunito ExtraBold, its seven
+the name as one word — the logo's U with its sparkle, no tile, then "nlocked" in Nunito ExtraBold, its seven
 letters kept in `public/fonts`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
 BotFather.
@@ -540,7 +540,12 @@ every column. History: #106.
   id (a merged game leading on). A merge of two people moves them.
 - **Season pass claims** (`pass_claims (person_id, palette, month)`, migration
   131; owner, 2026-10-27): the themes a person claimed, each checked against
-  the month's points by the server (User interface: the season pass).
+  the month's points by the server (User interface: the season pass). The
+  pass's levels are `pass_items` and a prize's codes `pass_item_codes` (132;
+  a draft and waiting changes live on the row): a prize says which platform it is for, `platform`, free text
+  (Xbox, PlayStation, Steam or anything typed; 134); a code is taken once `claimed_at` is set, `person_id` says by whom (a
+  merge moves it; a deleted person's code stays taken). The levels each person reached this month
+  are `pass_reached (person_id, item_id, month)` (133; a merge moves them).
 - **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -1876,18 +1881,26 @@ elsewhere in this file still describe the bot.
   nothing is downloaded.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
+  **An Xbox list is split in two** where some of it came later (owner,
+  2026-10-27): the main game (`base`) and the add-ons (`non_base`), named
+  after the add-on when the list's versions have exactly one, else «Дополнения».
+  An achievement's group is the catalog's, else any earned row's
+  (`repo.earned_groups`) — the catalog's list often names none; one nobody
+  earned and the catalog does not name stays with the main game.
   **A game played on several platforms is one list each, never summed**
   (owner, 2026-10-27): `progress` and every player carry `lists`, the most
   earned first (`repo.game_players`); the progress card and the achievements
   page switch between them, the most earned shown first.
 - **Favorite games** (owner, 2026-10-25; `PUT|DELETE /api/mini/game/{id}/favorite`,
-  `GET /api/mini/game-favorites?person=`): a heart on a game's page puts it on
+  `GET /api/mini/game-favorites?person=`): a heart on a game's page — in the
+  page's bar, opposite the way back, over the art and after it alike, its
+  count beside it (owner, 2026-10-27) — puts it on
   the person's profile, seen only by a viewer `can_view_activity` lets in. A
   favorite's news are read every hour (`poller/patch_refresh.py`), and told to
   whoever keeps it, played or not — «Новости игр: только избранные» carries
   only those.
 - **The season pass** (owner, 2026-10-27; `bot/services/season_pass.py`,
-  `web/mini_pass.py`, `core/pass.ts`, `screens/pass/`, migration 131): the
+  `web/mini_pass.py`, `core/season-pass.ts`, `screens/season-pass/`, migration 131): the
   month's points (`repo.points_for_person`, the person's own calendar month)
   climb five levels, the calmest theme first and the most colourful last, each
   giving one of the app's themes to claim («Получить», with a burst). **The
@@ -1896,8 +1909,58 @@ elsewhere in this file still describe the bot.
   claim for good (a merge moves them); `GET /api/mini/pass` is the state every
   screen reads. Violet is everybody's; every other theme opens in Settings →
   Appearance only once claimed, and a theme on the device the server does not
-  give is taken off. Home's month card shows the season in place of the
-  race, and a tap opens the pass. Every month runs the same levels again.
+  give is taken off. **A pass a month** (owner, 2026-10-28; migration 135,
+  `pass_items.month`): each month's pass is its own levels, **empty until the
+  super-admin publishes one**; the editor works on this month or any of the
+  eleven ahead (`?edit=`, `EDIT_MONTHS`, picked in a sheet that counts each
+  month's levels), so a pass is built ahead and shown on its 1st. Earlier months
+  are looked back on (`GET /api/mini/pass?month=`, the arrows by the month's
+  name): their points, what was claimed, one's own codes — nothing is taken
+  from them. A theme once claimed is kept for good, whatever month. A prize's
+  codes left are a badge on its card's right, loud when a quarter or fewer
+  are; a tap lists who took them (`GET …/items/{id}/takers`: nickname, face,
+  when — never the codes). Home's month card shows the race of friends and, under
+  it, the door to the pass. Every month runs the same levels again.
+  **The pass is the super-admin's to build** (owner, 2026-10-28; migration
+  132: `pass_items` — a level each, `theme` / `game` / `code`, its points,
+  `state` draft / live / removed and its waiting changes in `pending` —, and
+  `pass_item_codes`; `db/repo/_pass.py`): the app's five themes are written
+  once as live levels (`ensure_pass_seeded`), and from then on any level may be
+  added, changed or deleted in the Mini App's pass («Изменить», the
+  super-admin's alone — an exception to the admin registry's rule of both
+  panels) **only while nobody has it**: a theme claimed or a code taken locks
+  it (409 `taken`). Every edit is a **draft only the super-admin sees**: a new
+  level is `draft`, a change to a live one waits in `pending`, a deletion is
+  `pending.remove`; **one «Опубликовать»** (`POST /api/mini/pass/publish`)
+  lays it all in, in one transaction, skipping a level claimed meanwhile;
+  «Сбросить» throws the draft away. The bar sits where the tabs do. A palette
+  is one level's. The points field shows this month's best score and last
+  month's best and middle (`_month_scores`, each person's own month, counted
+  again every ten minutes). A prize is a stack of codes, **one to a person**,
+  for whoever has its points this month (0 is anyone), until they run out — a
+  code is taken by one statement, so two taps never get the same one, and a
+  prize taken down stays for whoever took a code. It is **a game of ours**
+  (picked from the catalog: its name, cover and page) or **a code** for
+  anything else, with a picture of its own if sent (`PUT …/items/{id}/image`,
+  saved again as a JPEG by `services/pass_pictures.py` under
+  `data/covers/pass/`, served to anybody). Themes and prizes are **one
+  vertical timeline, by points**: a rail with a node and the points of each,
+  filled up to a «Ты здесь» row (what is next, and how far), a card each. Every
+  screen showing the pass asks again each minute and on coming back to the
+  app, so a publish shows with no reload. «Оповестить всех» in the publish
+  dialog tells everybody of the new levels (`pass_reward`, the one notice kind
+  **on until switched off** — `notifier.DEFAULT_ON`, a channel's
+  `pass_reward:off`; Settings → Уведомления, «Призы сезонного пропуска»); a tap
+  opens the pass (`t=pass`). **A level reached is told** (owner, 2026-10-28;
+  `pass_level`, `Notifier.tell_about_pass_levels`, migration 133
+  `pass_reached`): after every publish the month's points are checked, and
+  the levels newly reached are marked (each once a month) and told as one
+  notice, of the highest — on until switched off, a channel choosing every
+  level, prizes only (`pass_level:prizes`: a game or a code, not a theme) or
+  none (Settings → Уведомления, «Уровни сезонного пропуска»).
+- **The month's games are listed newest first** wherever the Mini App shows
+  them — Home, a profile, the Ranking, Search (owner, 2026-10-27;
+  `users_games_achievements(order="recent")`); the bot's lists keep the count.
 - **The ranking's year** is `/club/summary`'s `year`, from 1 January to the end
   of the month shown, in the same timezone (owner, 2026-10-07).
 

@@ -117,3 +117,8 @@
   padding: 0 var(--gutter) 12px;
 }
 
+
+.now-person:not(.now-off) .now-status {
+  color: var(--primary);
+  font-weight: 700;
+}

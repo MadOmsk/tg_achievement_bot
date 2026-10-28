@@ -170,6 +170,8 @@ class Publisher:
         self._worker: asyncio.Task[None] | None = None
         # Set once the app's notifications exist (bot/main.py).
         self.on_new_post: PostNotice | None = None
+        # The season pass's levels the new points reach (owner, 2026-10-28).
+        self.on_points: Callable[[int], Awaitable[None]] | None = None
         self._notices: set[asyncio.Task[None]] = set()
 
     async def _get_bot_username(self) -> str:
@@ -251,6 +253,8 @@ class Publisher:
         """
         if not achievements:
             return
+        # Points count whether the account posts or not, as the pass does.
+        self._check_pass(person_id)
         # The person's own switch for this account (#20): muted, it stays
         # stored and counted, and posts nowhere.
         if not await self._repo.account_publishes(
@@ -403,6 +407,21 @@ class Publisher:
             style=style,
         )
         return await self._deliver(job)
+
+    def _check_pass(self, person_id: int) -> None:
+        if self.on_points is None:
+            return
+        check = self.on_points
+
+        async def run() -> None:
+            try:
+                await check(person_id)
+            except Exception:
+                log.exception("pass levels for person_id=%s failed", person_id)
+
+        task = asyncio.create_task(run())
+        self._notices.add(task)
+        task.add_done_callback(self._notices.discard)
 
     def _tell_followers(
         self, person_id: int, achievements: list[AchievementRow], title_name: str | None

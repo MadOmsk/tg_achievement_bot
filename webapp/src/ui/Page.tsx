@@ -16,13 +16,16 @@ const BarSlot = createContext<HTMLElement | null>(null);
  * the bar, so it stays a tap away (the app's way, for every page with an
  * action in its head). Its place in the page stays as it is; the bar shows
  * this compact twin. */
-export function BarAction({ children, anchor }: { children: ReactNode; anchor: RefObject<HTMLElement | null> }) {
+/** A page's action in its bar: shown once `anchor` (its twin on the page)
+ * scrolls under the bar, or always with no anchor. */
+export function BarAction({ children, anchor }: { children: ReactNode; anchor?: RefObject<HTMLElement | null> }) {
   const slot = useContext(BarSlot);
-  const [shown, setShown] = useState(false);
+  const [shown, setShown] = useState(!anchor);
   // The anchor may come after the page does (a person's card loads first):
   // look for it after every render, watch it once it is there.
   const watched = useRef<{ node: HTMLElement; io: IntersectionObserver } | null>(null);
   useEffect(() => {
+    if (!anchor) return;
     const node = anchor.current;
     if (watched.current?.node === node) return;
     watched.current?.io.disconnect();

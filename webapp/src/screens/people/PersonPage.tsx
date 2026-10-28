@@ -82,6 +82,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       title={name}
       onBack={onClose}
       layer={layer}
+      hero
       actions={
         self ? (
           <IconButton icon="settings" label={tr("settings")} variant="plain" onClick={() => open({ kind: "settings", pane: "profile" })} />
@@ -89,8 +90,9 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       }
     >
       <header className="pp-head">
+        <Backdrop key={personId} src={faceUrl(personId)} />
         <button type="button" className="pp-face" onClick={() => openImage(faceUrl(personId))} aria-label={name}>
-          <Face personId={personId} name={name || "?"} size={112} presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
+          <Face personId={personId} name={name || "?"} size={112} thinRing presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
         {name ? <h1 className="pp-name">{name}</h1> : <span className="skel pp-skel-name" />}
         {!hidden && (c?.activity?.platforms?.length ?? 0) > 0 && (
@@ -288,5 +290,15 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
         </Section>
       )}
     </Page>
+  );
+}
+
+/** The face again behind the head, blurred into a glow of its colours. */
+function Backdrop({ src }: { src: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className={`pp-backdrop${shown ? " on" : ""}`} aria-hidden="true">
+      <img src={src} alt="" onLoad={() => setShown(true)} />
+    </span>
   );
 }

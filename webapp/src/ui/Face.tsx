@@ -28,6 +28,7 @@ export function Face({
   size = 44,
   presence = null,
   dim = false,
+  thinRing = false,
   version,
 }: {
   personId: number;
@@ -35,12 +36,13 @@ export function Face({
   size?: number;
   presence?: Presence;
   dim?: boolean;
+  thinRing?: boolean;
   /** Changes when one's own picture changes, so the new one shows at once. */
   version?: number;
 }) {
   const [failed, setFailed] = useState(false);
   if (name && name !== "?") seenNames.set(personId, name);
-  const ring = presence ? Math.max(3, Math.round(size * 0.08)) : 0;
+  const ring = presence ? Math.max(thinRing ? 2 : 3, Math.round(size * (thinRing ? 0.05 : 0.08))) : 0;
   const inner = size - ring * 2;
   const src = `${faceUrl(personId)}${version ? `?v=${version}` : ""}`;
   return (

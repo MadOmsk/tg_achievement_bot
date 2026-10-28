@@ -877,6 +877,48 @@ CREATE TABLE IF NOT EXISTS pass_claims (
     PRIMARY KEY (person_id, palette)
 );
 
+-- The season pass's levels (132; owner, 2026-10-27): themes and prizes,
+-- edited by the super-admin as a draft and shown once published.
+CREATE TABLE IF NOT EXISTS pass_items (
+    item_id      INTEGER PRIMARY KEY,
+    kind         TEXT NOT NULL,             -- theme / game / code
+    palette      TEXT,                      -- a theme's
+    tier         TEXT,                      -- a theme's look: common / rare / legendary / mythic
+    title        TEXT,
+    description  TEXT,
+    points       INTEGER NOT NULL DEFAULT 0,
+    image_path   TEXT,
+    game_id      INTEGER,
+    platform     TEXT,                      -- a prize's, free text (134)
+    month        TEXT,                      -- whose pass it is: YYYY-MM (135)
+    state        TEXT NOT NULL DEFAULT 'draft',  -- draft / live / removed
+    pending      TEXT,
+    created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at   TEXT NOT NULL,
+    published_at TEXT,
+    removed_at   TEXT
+);
+CREATE TABLE IF NOT EXISTS pass_item_codes (
+    code_id    INTEGER PRIMARY KEY,
+    item_id    INTEGER NOT NULL REFERENCES pass_items(item_id) ON DELETE CASCADE,
+    code       TEXT NOT NULL,
+    person_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    claimed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pass_item_codes_item ON pass_item_codes (item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pass_item_codes_one_each
+    ON pass_item_codes (item_id, person_id) WHERE person_id IS NOT NULL;
+
+-- The pass's levels a person reached, per month (133; owner, 2026-10-28):
+-- each is told once a month.
+CREATE TABLE IF NOT EXISTS pass_reached (
+    person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    item_id    INTEGER NOT NULL REFERENCES pass_items(item_id) ON DELETE CASCADE,
+    month      TEXT NOT NULL,
+    reached_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, item_id, month)
+);
+
 CREATE TABLE IF NOT EXISTS blocks (
     person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

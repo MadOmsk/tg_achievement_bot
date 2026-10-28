@@ -170,63 +170,54 @@
 /* The heart at the end of the title's row, how many keep the game under it;
    once the page scrolls, it moves up into the bar. */
 .gp-fav {
+  position: relative;
+  height: 44px;
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 6px;
+  transition: transform var(--t-mid) var(--spring);
+}
+
+.gp-fav-shape {
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--surface-3);
   color: var(--on-surface);
   box-shadow: var(--shadow-1);
-  transition:
-    background var(--t-fast),
-    opacity var(--t-fast),
-    transform var(--t-mid) var(--spring);
-}
-
-.gp-fav-wrap {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding-top: 50px;
-}
-
-.gp-fav-head {
-  width: 48px;
-  height: 48px;
+  transition: background var(--t-fast);
 }
 
 .gp-fav-count {
-  transition: opacity var(--t-fast);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--on-surface);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
 }
 
-/* Once the page scrolls, the heart moves up into the bar. */
 
 
-.gp-fav-bar {
-  width: 44px;
-  height: 44px;
-  box-shadow: none;
-}
+
+
+
 
 .gp-fav:active {
   transform: scale(0.9) rotate(-12deg);
 }
 
-.gp-fav-on {
+.gp-fav-on .gp-fav-shape {
   background: var(--primary);
   color: var(--on-primary);
 }
+
 
 .gp-fav-on svg {
   animation: heart-pop var(--t-slow) var(--spring);
 }
 
-.gp-fav-count {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--on-surface-3);
-}
 
 .gp-head .gp-titles {
   padding-right: 0;
@@ -1214,3 +1205,5 @@
   font-size: 13px;
   font-weight: 650;
 }
+
+

@@ -32,6 +32,7 @@ from bot.i18n import gettext
 from bot.services import webpush
 from bot.services.crypto import TokenCipher
 from bot.services.naming import person_name
+from bot.services.stats import month_window_utc
 from bot.services.webpush import VapidKeys
 from bot.util import thousands, utcnow
 
@@ -47,7 +48,17 @@ POST_NOTICE_CHOICES = ("friends", "following")
 POST_NOTICE_INTERVAL = timedelta(hours=3)
 # `favorites`: every post, but only of the games one keeps as favorites.
 GAME_NEWS_CHOICES = ("all", "patch", "news", "favorites")
-QUALIFIERS = {"new_post": POST_NOTICE_CHOICES, "game_news": GAME_NEWS_CHOICES}
+QUALIFIERS = {
+    "new_post": POST_NOTICE_CHOICES,
+    "game_news": GAME_NEWS_CHOICES,
+    "pass_reward": ("off",),
+    # `prizes`: only a level that gives a prize (a game, a code), not a theme.
+    "pass_level": ("off", "prizes"),
+}
+# Kinds a channel carries unless switched off (`<kind>:off`): the super-admin's
+# word to everyone (owner, 2026-10-27), and one's own pass climbing (owner,
+# 2026-10-28) — every other kind is opt-in.
+DEFAULT_ON = frozenset({"pass_reward", "pass_level"})
 
 
 def channel_token_valid(token: str) -> bool:
@@ -60,7 +71,12 @@ def channel_token_valid(token: str) -> bool:
 def carries(tokens: frozenset[str], kind: str, data: dict[str, Any], *, friend: bool) -> bool:
     """Whether a channel set to `tokens` carries this notice: its kind is on,
     and its qualifier lets it through — a post of a friend only for
-    `new_post:friends`, a game's patch only for `game_news:patch`."""
+    `new_post:friends`, a game's patch only for `game_news:patch`. A kind
+    `DEFAULT_ON` is carried unless the channel says `<kind>:off`."""
+    if kind in DEFAULT_ON:
+        if f"{kind}:off" in tokens:
+            return False
+        return f"{kind}:prizes" not in tokens or bool(data.get("prize"))
     for token in tokens:
         key, _, qualifier = token.partition(":")
         if key != kind:
@@ -123,6 +139,10 @@ KINDS: dict[str, Kind] = {
     # A new post of the developer of a game the person plays (owner, 2026-10-06).
     "game_news": Kind("notification-game-news", game=True),
     "xbox_login_dead": Kind("notification-xbox-login-dead", telegram=False),
+    # The super-admin put a reward in the season pass (owner, 2026-10-27).
+    "pass_reward": Kind("notification-pass-reward"),
+    # The person's month's points reached a level of the pass (owner, 2026-10-28).
+    "pass_level": Kind("notification-pass-level"),
 }
 UNKNOWN = Kind("notification-unknown")
 
@@ -353,6 +373,51 @@ class Notifier:
                 except Exception:
                     log.exception("game news notice to person_id=%s failed", person)
 
+    async def tell_about_reward(self, title: str) -> None:
+        """Tell everybody of a reward the super-admin put in the pass. One
+        recipient failing never stops the rest."""
+        for person in await self._repo.all_person_ids():
+            try:
+                await self.notify(person, "pass_reward", title=title)
+            except Exception:
+                log.exception("reward notice to person_id=%s failed", person)
+
+    async def tell_about_pass_levels(self, person_id: int) -> None:
+        """Tell a person of the pass's levels their month's points just
+        reached: one notice, of the highest — `prize` when any of them gives a
+        prize, for a channel set to prizes only. Each level once a month."""
+        settings = await self._repo.get_user_settings(person_id)
+        tz = settings.tz_offset_min if settings else None
+        local = utcnow() + timedelta(minutes=tz or 0)
+        since, until = month_window_utc(local.year, local.month, tz)
+        points = await self._repo.points_for_person(person_id, since, until)
+        fresh = await self._repo.mark_pass_reached(
+            person_id, f"{local.year:04d}-{local.month:02d}", points
+        )
+        if not fresh:
+            return
+        items = [await self._repo.pass_item(item_id) for item_id in fresh]
+        items = [item for item in items if item]
+        if not items:
+            return
+        top = items[-1]
+        title = top["title"]
+        if not title and top["game_id"]:
+            cards = await self._repo.game_cards([int(top["game_id"])])
+            card = cards.get(int(top["game_id"]))
+            title = card.get("name") if card else None
+        await self.notify(
+            person_id,
+            "pass_level",
+            reward=top["kind"],
+            palette=top["palette"] or "",
+            title=title or "",
+            named="yes" if title else "no",
+            points=int(top["points"]),
+            count=len(items),
+            prize=any(item["kind"] != "theme" for item in items),
+        )
+
     async def _push(self, person_id: int, kind: str, data: dict[str, Any], text: str) -> None:
         if not self.push_available:
             return
@@ -415,6 +480,8 @@ class Notifier:
             if data.get("achievement_id"):
                 # The achievement the notice names opens, over its game.
                 query["a"] = str(data["achievement_id"])
+        if kind in ("pass_reward", "pass_level"):
+            query["t"] = "pass"
         if kind == "game_news" and data.get("appid") and data.get("gid"):
             # The post itself opens, over its game (owner, 2026-10-08).
             query["n"] = f"{data['appid']}:{data['gid']}"

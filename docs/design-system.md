@@ -64,7 +64,7 @@ device (`app/env.ts::look`, `localStorage`): **Violet** (the default, the
 logo's lilac with a pink accent), **Mint** (teal with coral), **Amber** (warm
 orange with coral), **Ocean** (blue with gold), **Rose** (pink with blue),
 **Graphite** (neutral grey with cyan). Violet is always open; the others are
-the season pass's rewards (`core/pass.ts`). Each has a dark and a light form; the mode is Auto
+the season pass's rewards (`core/season-pass.ts`). Each has a dark and a light form; the mode is Auto
 (Telegram's own scheme inside it, the system's elsewhere), Light or Dark. A
 palette is one block of tokens in `tokens.css` under
 `:root[data-palette="…"]` and its `[data-theme="light"]` twin — a new palette
@@ -112,11 +112,25 @@ filters and states, not for every value.
   game and the person under an achievement. No hairlines between items: the
   gap and the ground part them. A segmented choice (`Segmented`)
   and a split button (the follow button and its menu) join the same way.
-- **Shapes carry meaning** (`styles/shapes/`, masks): a scalloped cookie
-  (`cookie12`, `cookie9`) is a person's face and a platform's mark; the flower
-  (`flower6`) is rarity and completion (`DoneMark`); the clover and the wave
-  are decoration. A face is always a cookie; a game's cover always a rounded
-  rectangle (or a circle inside the progress ring); never mix the two.
+- **Shapes carry meaning** (`styles/shapes/`, masks — a class `shape-<name>`
+  on any block). One shape, one job; a new thing takes the shape of its job,
+  never a new shape for its looks:
+
+  | Shape | Its job | Where |
+  |---|---|---|
+  | `cookie12` | a person | `Face`, its presence ring, a face's skeleton |
+  | `cookie9` | an action or a mark in an icon | icon buttons (the heart, `GoMark`), platform marks, a theme's swatch, settings' leading icons |
+  | `flower6` | rarity, a place, done | the rarity badge (`AchRow`, `AchTile`), the place medal (month card, Ranking), `DoneMark` |
+  | `sunny8` | something to take now | a pass reward ready to claim (its node) |
+  | `gem` | a prize from the organiser | a prize's node on the pass timeline |
+  | `burst12` | where one is now | «Ты здесь» on the pass timeline |
+  | `puffy` | nothing here yet | the mark of `Empty` |
+  | `clover4` | decoration only | behind the hero cards (`home-hero-deco`) |
+
+  A face is always a cookie; a game's cover always a rounded rectangle (or a
+  circle inside the progress ring); never mix the two. The shapes are drawn by
+  one rule — 360 points of a smooth outline on a 100×100 box — so a new one
+  sits with the rest.
 - **Progress is a wave**: `Wave` on a line, `WaveRing` around a cover. Full is
   all wave, in `--tertiary`.
 
