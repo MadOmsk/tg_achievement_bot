@@ -3,14 +3,16 @@ import { useApp } from "../app/context";
 import { Button } from "./Controls";
 import { Sheet } from "./Page";
 
-/** Move and zoom a picture inside a square, then keep that square as a JPEG
- * of `size` px (the server decodes and saves it again on its side). `round`
- * shows the circle a face is cut to; else the square with its corners. */
+/** Move and zoom a picture inside a frame, then keep that frame as a JPEG
+ * `size` px wide (the server decodes and saves it again on its side). The
+ * frame is a square, or `aspect` wide to 1 high (a month's cover, 16:9).
+ * `round` shows the circle a face is cut to; else the frame with its corners. */
 export function Cropper({
   src,
   title,
   size: OUT = 512,
   round = false,
+  aspect = 1,
   onCancel,
   onDone,
 }: {
@@ -18,6 +20,7 @@ export function Cropper({
   title: string;
   size?: number;
   round?: boolean;
+  aspect?: number;
   onCancel: () => void;
   onDone: (blob: Blob) => void;
 }) {
@@ -34,25 +37,27 @@ export function Cropper({
     if (box.current) setSize(box.current.clientWidth);
   }, []);
 
-  const base = natural ? size / Math.min(natural.w, natural.h) : 1;
+  const height = size / aspect;
+  // The picture covers the whole frame at zoom 1.
+  const base = natural ? Math.max(size / natural.w, height / natural.h) : 1;
   const scale = base * zoom;
   const w = (natural?.w ?? 0) * scale;
   const h = (natural?.h ?? 0) * scale;
   const clamp = (p: { x: number; y: number }) => ({
     x: Math.min(0, Math.max(size - w, p.x)),
-    y: Math.min(0, Math.max(size - h, p.y)),
+    y: Math.min(0, Math.max(height - h, p.y)),
   });
 
   useEffect(() => {
     if (!natural) return;
-    setPos((p) => clamp(p.x === 0 && p.y === 0 ? { x: (size - w) / 2, y: (size - h) / 2 } : p));
+    setPos((p) => clamp(p.x === 0 && p.y === 0 ? { x: (size - w) / 2, y: (height - h) / 2 } : p));
   }, [natural, zoom, size]);
 
   const save = () => {
     if (!img.current || !natural) return;
     const canvas = document.createElement("canvas");
     canvas.width = OUT;
-    canvas.height = OUT;
+    canvas.height = Math.round(OUT / aspect);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const k = OUT / size;
@@ -66,6 +71,7 @@ export function Cropper({
         <div
           className="crop-box"
           ref={box}
+          style={aspect !== 1 ? { aspectRatio: String(aspect), maxWidth: "none" } : undefined}
           onPointerDown={(e) => {
             (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
             drag.current = { x: e.clientX, y: e.clientY, px: pos.x, py: pos.y };

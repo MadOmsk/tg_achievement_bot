@@ -109,30 +109,56 @@ class _PassRepo:
         return [row[0] for row in await cursor.fetchall()]
 
     async def pass_season(self, month: str) -> dict[str, Any]:
-        """A month's pass's name as shown, and as the editor has it."""
+        """A month's pass's name and cover as shown, and as the editor has them."""
         cursor = await self._conn.execute(
-            "SELECT title, draft, draft_title FROM pass_seasons WHERE month = ?", (month,)
+            "SELECT title, image_path, draft, draft_title, draft_image_path"
+            " FROM pass_seasons WHERE month = ?",
+            (month,),
         )
         row = await cursor.fetchone()
         title = row["title"] if row else None
+        image = row["image_path"] if row else None
         draft = bool(row and row["draft"])
         return {
             "title": title,
+            "image_path": image,
             "draft_title": row["draft_title"] if draft else title,
+            "draft_image_path": row["draft_image_path"] if draft else image,
             "changed": draft,
         }
 
+    async def _season_draft(self, month: str, field: str, value: str | None) -> str | None:
+        """One field of a month's draft set; the draft starts from what is shown.
+        Gives back the draft cover it replaced, when one goes unused."""
+        season = await self.pass_season(month)
+        async with self.transaction():
+            await self._conn.execute(
+                "INSERT INTO pass_seasons (month, draft, draft_title, draft_image_path)"
+                " VALUES (?, 1, ?, ?) ON CONFLICT(month) DO UPDATE SET draft = 1,"
+                " draft_title = excluded.draft_title,"
+                " draft_image_path = excluded.draft_image_path",
+                (month, season["draft_title"], season["draft_image_path"]),
+            )
+            await self._conn.execute(
+                f"UPDATE pass_seasons SET {field} = ? WHERE month = ?", (value, month)
+            )
+        old = season["draft_image_path"]
+        if field == "draft_image_path" and old and old not in (value, season["image_path"]):
+            return old
+        return None
+
     async def set_pass_season_title(self, month: str, title: str | None) -> None:
         """A month's pass's name changed, waiting for the month's publish."""
-        await self._conn.execute(
-            "INSERT INTO pass_seasons (month, draft, draft_title) VALUES (?, 1, ?)"
-            " ON CONFLICT(month) DO UPDATE SET draft = 1, draft_title = excluded.draft_title",
-            (month, title),
-        )
-        await self._conn.commit()
+        await self._season_draft(month, "draft_title", title)
+
+    async def set_pass_season_image(self, month: str, path: str | None) -> str | None:
+        """A month's pass's cover changed (None takes it off), waiting for the
+        month's publish. Gives back a draft picture no longer used, to delete."""
+        return await self._season_draft(month, "draft_image_path", path)
 
     async def pass_month_counts(self, months: list[str]) -> dict[str, dict[str, int]]:
-        """How many levels each month's pass has, and how many wait for its publish."""
+        """How many levels each month's pass has, how many wait for its publish,
+        and its name as the editor has it."""
         if not months:
             return {}
         marks = ",".join("?" * len(months))
@@ -146,10 +172,14 @@ class _PassRepo:
             for row in await cursor.fetchall()
         }
         cursor = await self._conn.execute(
-            f"SELECT month FROM pass_seasons WHERE draft = 1 AND month IN ({marks})", months
+            "SELECT month, draft, CASE WHEN draft = 1 THEN draft_title ELSE title END"
+            f" FROM pass_seasons WHERE month IN ({marks})",
+            months,
         )
         for row in await cursor.fetchall():
-            counts.setdefault(row[0], {"levels": 0, "dirty": 0})["dirty"] += 1
+            entry = counts.setdefault(row[0], {"levels": 0, "dirty": 0})
+            entry["dirty"] += int(bool(row[1]))
+            entry["title"] = row[2]
         return counts
 
     async def pass_editor_items(self, month: str | None = None) -> list[dict[str, Any]]:
@@ -299,8 +329,16 @@ class _PassRepo:
                 "UPDATE pass_items SET pending = NULL WHERE (? IS NULL OR month = ?)",
                 (month, month),
             )
+            cursor = await self._conn.execute(
+                "SELECT image_path, draft_image_path FROM pass_seasons"
+                " WHERE draft = 1 AND (? IS NULL OR month = ?)",
+                (month, month),
+            )
+            for row in await cursor.fetchall():
+                if row["draft_image_path"] and row["draft_image_path"] != row["image_path"]:
+                    pictures.append(row["draft_image_path"])
             await self._conn.execute(
-                "UPDATE pass_seasons SET draft = 0, draft_title = NULL"
+                "UPDATE pass_seasons SET draft = 0, draft_title = NULL, draft_image_path = NULL"
                 " WHERE (? IS NULL OR month = ?)",
                 (month, month),
             )
@@ -365,9 +403,18 @@ class _PassRepo:
                 if codes is not None:
                     await self._replace_codes(item_id, codes)
                 changed += 1
-            # The pass's name waiting with the levels.
+            # The pass's name and cover waiting with the levels.
             cursor = await self._conn.execute(
-                "UPDATE pass_seasons SET title = draft_title, draft = 0, draft_title = NULL"
+                "SELECT image_path, draft_image_path FROM pass_seasons"
+                " WHERE draft = 1 AND (? IS NULL OR month = ?)",
+                (month, month),
+            )
+            for row in await cursor.fetchall():
+                if row["image_path"] and row["image_path"] != row["draft_image_path"]:
+                    old_pictures.append(row["image_path"])
+            cursor = await self._conn.execute(
+                "UPDATE pass_seasons SET title = draft_title, image_path = draft_image_path,"
+                " draft = 0, draft_title = NULL, draft_image_path = NULL"
                 " WHERE draft = 1 AND (? IS NULL OR month = ?)",
                 (month, month),
             )
@@ -446,6 +493,27 @@ class _PassRepo:
             (item_id,),
         )
         return [dict(row) for row in await cursor.fetchall()]
+
+    async def person_role(self, person_id: int) -> str | None:
+        """`superadmin`, `admin` or None (services/roles.py)."""
+        cursor = await self._conn.execute("SELECT role FROM users WHERE id = ?", (person_id,))
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+    async def set_person_role(self, person_id: int, role: str | None) -> None:
+        await self._conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, person_id))
+        await self._conn.commit()
+
+    async def ensure_superadmins(self, tg_ids: Iterable[int]) -> None:
+        """The super-admins the environment names are super-admins here too."""
+        ids = list(tg_ids)
+        if not ids:
+            return
+        marks = ",".join("?" * len(ids))
+        await self._conn.execute(
+            f"UPDATE users SET role = 'superadmin' WHERE tg_id IN ({marks})", ids
+        )
+        await self._conn.commit()
 
     async def all_person_ids(self) -> list[int]:
         cursor = await self._conn.execute("SELECT id FROM users ORDER BY id")

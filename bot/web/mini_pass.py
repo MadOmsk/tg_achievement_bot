@@ -19,9 +19,8 @@ from typing import Any
 
 from aiohttp import web
 
-from bot.config import Settings
 from bot.db.repo import Repo
-from bot.services import game_page, pass_pictures, season_pass
+from bot.services import game_page, pass_pictures, roles, season_pass
 from bot.services.naming import person_name
 from bot.util import utcnow
 from bot.web.mini_chat import _person_month
@@ -72,6 +71,10 @@ def setup_pass_routes(app: web.Application) -> None:
     # A level's picture is no secret: an <img> asks for it with no header.
     app.router.add_get(ITEM + "/image", handle_item_image)
     app.router.add_put("/api/mini/pass/season", handle_season_title)
+    app.router.add_put("/api/mini/pass/season/image", handle_season_image_put)
+    app.router.add_delete("/api/mini/pass/season/image", handle_season_image_delete)
+    # A cover is no secret either: an <img> asks for it with no header.
+    app.router.add_get("/api/mini/pass/season/image", handle_season_image)
     app.router.add_post("/api/mini/pass/publish", handle_publish)
     app.router.add_post("/api/mini/pass/discard", handle_discard)
 
@@ -95,6 +98,13 @@ def _sign(item_id: int, version: str) -> str:
 def _signed(request: web.Request, item_id: int) -> bool:
     given = request.query.get("s", "")
     return bool(given) and hmac.compare_digest(given, _sign(item_id, request.query.get("v", "")))
+
+
+def _cover(month: str, path: str | None, *, draft: bool = False) -> str | None:
+    if not path:
+        return None
+    version = path.rsplit("-", 1)[-1].split(".")[0]
+    return f"/api/mini/pass/season/image?month={month}&v={version}" + ("&draft=1" if draft else "")
 
 
 async def _cards(repo: Repo, rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
@@ -170,6 +180,7 @@ async def _state(
                 "description": r["description"],
                 "points": r["points"],
                 "kind": r["kind"],
+                "tier": r["tier"],
                 "game": cards.get(int(r["game_id"])) if r["game_id"] else None,
                 "platform": r["platform"],
                 "image": _picture(r["item_id"], r["image_path"]),
@@ -183,8 +194,9 @@ async def _state(
         ],
         "admin": admin,
         "current": month == current,
-        # The month's theme, as published.
-        "title": (await repo.pass_season(month))["title"],
+        # The month's theme and cover, as published.
+        "title": (season := await repo.pass_season(month))["title"],
+        "image": _cover(month, season["image_path"]),
         "months": sorted({current, *await repo.pass_months(current)}, reverse=True),
     }
     if admin:
@@ -203,9 +215,12 @@ async def _editor(repo: Repo, month: str, months: list[str]) -> dict[str, Any]:
     return {
         "month": month,
         "title": season["draft_title"],
+        "image": _cover(month, season["draft_image_path"], draft=True),
         "title_changed": season["changed"],
         # Each month to pick, with how many levels it has and how many wait.
-        "months": [{"month": m, **counts.get(m, {"levels": 0, "dirty": 0})} for m in months],
+        "months": [
+            {"title": None, **counts.get(m, {"levels": 0, "dirty": 0}), "month": m} for m in months
+        ],
         "scores": await _month_scores(repo),
         "dirty": sum(1 for r in rows if r["state"] == "draft" or r["changed"] or r["remove"])
         + int(season["changed"]),
@@ -272,8 +287,12 @@ async def _person(request: web.Request) -> tuple[Repo, int, bool]:
     user = await _require_user(request)
     if user.person_id is None:
         raise web.HTTPForbidden(text="no person")
-    settings: Settings = request.app["mini_settings"]
-    return request.app["mini_repo"], user.person_id, settings.is_superadmin(user.tg_id)
+    repo: Repo = request.app["mini_repo"]
+    # The pass's editor: a super-admin or an admin (owner, 2026-10-28).
+    admin = request.app["mini_settings"].is_superadmin(user.tg_id) or roles.runs_the_app(
+        await repo.person_role(user.person_id)
+    )
+    return repo, user.person_id, admin
 
 
 async def _admin(request: web.Request) -> tuple[Repo, int]:
@@ -348,7 +367,9 @@ async def _fields(
         codes = [str(c).strip() for c in raw if str(c).strip()] if isinstance(raw, list) else []
         if not codes or len(codes) > CODES_MAX or any(len(c) > CODE_MAX for c in codes):
             return "invalid"
-    if kind == "game":
+    # A game of the catalog, or one it lacks named by its title alone
+    # (owner, 2026-10-28); a code is for anything that is no game.
+    if kind == "game" and body.get("game_id") is not None:
         try:
             game_id = await repo.live_game_id(int(body.get("game_id")))
         except (TypeError, ValueError):
@@ -356,7 +377,11 @@ async def _fields(
         if game_id is None:
             return "no_game"
         fields["game_id"] = game_id
-    fields.update(title=title, description=description)
+    # A prize's look is a tier as a theme's is (owner, 2026-10-28).
+    look = str(body.get("tier") or "common")
+    if look not in season_pass.LOOKS:
+        return "invalid"
+    fields.update(title=title, description=description, tier=look)
     return fields, codes
 
 
@@ -554,6 +579,45 @@ async def handle_season_title(request: web.Request) -> web.Response:
         return _refuse("invalid")
     await repo.set_pass_season_title(await _edit_month(repo, person_id, request), title)
     return await _edited(repo, person_id, request)
+
+
+async def handle_season_image_put(request: web.Request) -> web.Response:
+    """The edited month's cover: the body is the image's bytes, saved again by
+    the server, waiting for the month's publish."""
+    from bot.web.mini_api import _read_capped
+
+    repo, person_id = await _admin(request)
+    month = await _edit_month(repo, person_id, request)
+    body = await _read_capped(request, pass_pictures.MAX_UPLOAD_BYTES)
+    path = await pass_pictures.store(month, body, kind="season") if body else None
+    if path is None:
+        return _refuse("invalid")
+    pass_pictures.remove(await repo.set_pass_season_image(month, path))
+    return await _edited(repo, person_id, request)
+
+
+async def handle_season_image_delete(request: web.Request) -> web.Response:
+    repo, person_id = await _admin(request)
+    month = await _edit_month(repo, person_id, request)
+    pass_pictures.remove(await repo.set_pass_season_image(month, None))
+    return await _edited(repo, person_id, request)
+
+
+async def handle_season_image(request: web.Request) -> web.Response:
+    repo: Repo = request.app["mini_repo"]
+    season = await repo.pass_season(request.query.get("month", ""))
+    path = season["draft_image_path"] if request.query.get("draft") else season["image_path"]
+    if not path:
+        raise web.HTTPNotFound(text="no picture")
+    try:
+        body = pass_pictures.read(path)
+    except OSError:
+        raise web.HTTPNotFound(text="no picture") from None
+    return web.Response(
+        body=body,
+        content_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=604800, immutable"},
+    )
 
 
 async def handle_publish(request: web.Request) -> web.Response:

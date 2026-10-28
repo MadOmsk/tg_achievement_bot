@@ -213,9 +213,19 @@ recent achievements, an achievement row, the month's
 games, months, favorite games, the follow button, the kind mark — «Патч» /
 «Новость», one look everywhere —, the game link, the account row).
 
+**The season pass is headed as an achievement is** (owner, 2026-10-28):
+`Page hero` over a `Hero full` — the month's cover edge to edge, the months'
+arrows as `glass` buttons on it —, a `flower6` on its corner with the days
+left where an achievement wears its rarity (`primary`), then a
+`chip-secondary` «Сезон · Октябрь» and the season's name as `.detail-title`;
+«Ты здесь» is a `primary-container` card on its timeline, one line of what
+the next level still needs.
+
 **A page about a list of one thing** — a game's achievements, its gallery —
-is the same page: `Page hero` over a `Hero` (the game's cover on its blurred
-ground, its name, the count), then a sticky `.list-filter` with a `Segmented`
+is the same page: `Page hero` over a `Hero` (the cover on its
+blurred ground, in its `WaveRing` where there is progress, its name, the
+count; its classes `.list-ring`, `.list-cover`, `.list-name`, `.list-stats`
+are in `ui.css`), then a sticky `.list-filter` with a `Segmented`
 (it stays under the collapsed bar on a solid ground), then the list. A
 section that shows a part of a long list gives its whole as such a page
 («Все N»), not as a sheet. Home's month card counts by day as bars

@@ -692,6 +692,12 @@ button.chip {
   pointer-events: auto;
 }
 
+/* Hidden, it takes no room: the bar's other actions keep the corner. */
+.bar-action:not(.bar-action-on) {
+  position: absolute;
+  right: 8px;
+}
+
 .appbar-solid {
   box-shadow: 0 1px 0 var(--outline-soft);
 }
@@ -1407,6 +1413,69 @@ body:has(.sheet) .toast {
   justify-content: center;
   background: var(--surface-3);
   color: var(--primary);
+}
+
+
+/* The head of a page about a list of one thing — a game's achievements, the
+   season pass: a cover in its progress ring on the Hero, its name, its count. */
+
+.list-page .hero-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.list-ring {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.list-cover {
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  box-shadow: var(--shadow-2);
+}
+
+.list-name {
+  max-width: 100%;
+  font-size: 22px;
+  font-stretch: 110%;
+}
+
+.list-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px 12px;
+}
+
+.list-stats > b {
+  font-size: 34px;
+}
+
+.list-stats > b small {
+  font-size: 18px;
+  color: var(--on-surface-2);
+}
+
+.list-pct {
+  font-size: 15px;
+  font-weight: 750;
+  color: var(--primary);
+}
+
+.list-stats-done .list-pct {
+  color: var(--tertiary);
+}
+
+.list-gs {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--on-surface-2);
 }
 
 .hero-stage-still {

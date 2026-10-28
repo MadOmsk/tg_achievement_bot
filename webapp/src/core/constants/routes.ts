@@ -48,6 +48,7 @@ export const ADMIN_ROUTES = {
   USERS: "/users",
   /** A person by their own id (#156): somebody who signed in by email has no Telegram id. */
   USER: (personId: number) => `/users/p${personId}`,
+  ROLE: (personId: number) => `/users/p${personId}/role`,
   CHATS: "/chats",
   CHAT_SETTINGS: (chatId: number) => `/chats/${chatId}/settings`,
   ACTIONS: "/actions",

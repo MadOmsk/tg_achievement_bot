@@ -76,6 +76,11 @@ export async function setSeasonTitle(initData: string, title: string): Promise<v
   publish(await passApi.seasonTitle(initData, editMonth, title));
 }
 
+/** The edited month's cover, waiting for its publish; null takes it off. */
+export async function setSeasonImage(initData: string, image: Blob | null): Promise<void> {
+  publish(await passApi.seasonImage(initData, editMonth, image));
+}
+
 export async function claimReward(initData: string, id: number): Promise<void> {
   publish(await passApi.claimReward(initData, id));
 }

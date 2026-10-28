@@ -26,7 +26,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars, custom_avatars, game_art
+from bot.services import achievement_icons, avatars, custom_avatars, game_art, roles
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -233,6 +233,11 @@ async def handle_me(request: web.Request) -> web.Response:
     user = await _require_user(request)
     settings: Settings = request.app["mini_settings"]
     repo: Repo = request.app["mini_repo"]
+    role = await repo.person_role(user.person_id)
+    # The environment's super-admins are super-admins, whatever was stored.
+    if settings.is_superadmin(user.tg_id) and role != roles.SUPERADMIN:
+        await repo.set_person_role(user.person_id, roles.SUPERADMIN)
+        role = roles.SUPERADMIN
     payload = await build_me_payload(
         repo,
         person_id=user.person_id,
@@ -240,8 +245,10 @@ async def handle_me(request: web.Request) -> web.Response:
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
-        is_superadmin=settings.is_superadmin(user.tg_id),
+        # The admin panel's door: an admin's too (owner, 2026-10-28).
+        is_superadmin=roles.runs_the_app(role),
     )
+    payload["role"] = roles.stored(role)
     # Ask once for an email, the main way in (owner, 2026-10-05) — only where
     # one can be added at all.
     payload["email_prompt"] = request.app.get("mini_email_login") is not None and (

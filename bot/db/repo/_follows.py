@@ -376,6 +376,9 @@ class _FollowsRepo:
         anybody who found the nickname."""
         if viewer == target:
             return True
+        # A super-admin opens any person (owner, 2026-10-28).
+        if await self.person_role(viewer) == "superadmin":
+            return True
         relation = await self.relation(viewer, target)
         if not can_view(await self.activity_visible(target), relation):
             return False

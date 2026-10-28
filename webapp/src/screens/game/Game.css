@@ -659,37 +659,11 @@
   gap: 12px;
 }
 
-.list-page .hero-stage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 8px;
-}
-
-.list-ring {
-  position: relative;
-  margin-bottom: 6px;
-}
-
-.list-cover {
-  width: 148px;
-  height: 148px;
-  border-radius: 50%;
-  box-shadow: var(--shadow-2);
-}
-
 .list-done {
   position: absolute;
   right: 4px;
   bottom: 4px;
   animation: heart-pop var(--t-slow) var(--spring);
-}
-
-.list-name {
-  max-width: 100%;
-  font-size: 22px;
-  font-stretch: 110%;
 }
 
 .list-owner {
@@ -702,39 +676,6 @@
   background: color-mix(in srgb, var(--surface) 55%, transparent);
   font-size: 13px;
   font-weight: 650;
-}
-
-.list-stats {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  gap: 6px 12px;
-}
-
-.list-stats > b {
-  font-size: 34px;
-}
-
-.list-stats > b small {
-  font-size: 18px;
-  color: var(--on-surface-2);
-}
-
-.list-pct {
-  font-size: 15px;
-  font-weight: 750;
-  color: var(--primary);
-}
-
-.list-stats-done .list-pct {
-  color: var(--tertiary);
-}
-
-.list-gs {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--on-surface-2);
 }
 
 .list-guide {

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ApiError } from "../../api";
-import { passApi, type PassEditorItem, type PassReward, type PassState } from "../../api/season-pass/seasonPassApi";
+import { passApi, type PassEditor, type PassEditorItem, type PassReward, type PassState } from "../../api/season-pass/seasonPassApi";
 import { useApp } from "../../app/context";
 import type { Palette } from "../../app/env";
 import { TIER_NAME } from "../../app/views";
@@ -15,6 +15,7 @@ import {
   publishPass,
   rewardOpen,
   setEditMonth,
+  setSeasonImage,
   setSeasonTitle,
   usePass,
   type Tier,
@@ -22,10 +23,12 @@ import {
 import { num, plural } from "../../i18n";
 import { Button, Empty, Field, IconButton, Row, Toggle } from "../../ui/Controls";
 import { capital } from "../../parts/Months";
-import { Icon } from "../../ui/Icon";
-import { Wave } from "../../ui/Wave";
+import { Icon, type IconName } from "../../ui/Icon";
+import { Hero } from "../../ui/Hero";
+import { Cropper } from "../../ui/Cropper";
 import { Confirm, Page, Sheet } from "../../ui/Page";
-import { CodeSheet, ItemEditor, platformName, PrizePlatformMark, TakersSheet } from "./SeasonPassRewards";
+import { useArtTheme } from "../../app/artTheme";
+import { CodeSheet, ItemEditor, platformName, PrizePlatformMark, shrink, TakersSheet } from "./SeasonPassRewards";
 import "../settings/Settings.css";
 import "./SeasonPass.css";
 
@@ -72,6 +75,7 @@ function draftItems(items: PassEditorItem[]): Item[] {
             description: e.description,
             points: e.points,
             kind: e.kind,
+            tier: e.tier,
             game: e.game,
             platform: e.platform,
             image: e.image,
@@ -104,15 +108,38 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
       live = false;
     };
   }, [data, viewMonth, toast, tr]);
-  const state = viewMonth ? past : current;
+  // The super-admin goes on into the months ahead that have a pass being
+  // built: each as anybody will see it on its 1st — nothing got, no points,
+  // its draft as if published (the editor's month is set to it).
+  const [futureMonth, setFutureMonth] = useState<string | null>(null);
+  const preview = futureMonth && current?.editor?.month === futureMonth ? previewOf(current.editor) : null;
+  const state = preview ?? (viewMonth ? past : current);
   const lookingBack = Boolean(state && !state.current);
-  const months = current?.months ?? [];
-  const at = months.indexOf(state?.month ?? "");
+  const ahead = (current?.editor?.months ?? [])
+    .filter((m) => m.month > (current?.month ?? "") && (m.levels > 0 || m.dirty > 0))
+    .map((m) => m.month)
+    .reverse();
+  const months = [...ahead, ...(current?.months ?? [])];
+  const at = months.indexOf(futureMonth ?? state?.month ?? "");
   const goMonth = (m: string | undefined) => {
-    if (!m) return;
+    if (!m || !current) return;
     tick();
-    setViewMonth(m === current?.month ? null : m);
+    if (m > current.month) {
+      setViewMonth(null);
+      setFutureMonth(m);
+      void setEditMonth(data, m).catch(() => toast(tr("somethingWrong"), "error"));
+      return;
+    }
+    if (futureMonth) {
+      setFutureMonth(null);
+      void setEditMonth(data, null).catch(() => undefined);
+    }
+    setViewMonth(m === current.month ? null : m);
   };
+  // The month's cover heads the page, and the page takes its colours from
+  // it, as a game's page does from its art.
+  const cover = state?.image ?? null;
+  const art = useArtTheme(cover);
   const p = passProgress(state);
   const { tiers, points } = p;
   // The super-admin's editor: the draft on the timeline, a tap opens a level.
@@ -123,7 +150,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
     ...p.rewards.map((r) => ({ key: `prize:${r.id}`, kind: "prize" as const, points: r.points, r })),
   ].sort((a, b) => a.points - b.points || (a.kind === b.kind ? 0 : a.kind === "theme" ? -1 : 1));
   const items = editing && editor ? draftItems(editor.items) : live;
-  const ready = (i: Item) => !editing && !lookingBack && (i.kind === "theme" ? !i.t.claimed && points >= i.points : rewardOpen(i.r, points));
+  const ready = (i: Item) => !editing && !lookingBack && !preview && (i.kind === "theme" ? !i.t.claimed && points >= i.points : rewardOpen(i.r, points));
   const have = (i: Item) => !editing && (i.kind === "theme" ? i.t.claimed : Boolean(i.r.code));
   // Where "you are" sits on the timeline: after the last reward the points reach.
   const nowAt = items.filter((i) => points >= i.points).length;
@@ -139,14 +166,16 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
   const [discarding, setDiscarding] = useState(false);
   const [pickingMonth, setPickingMonth] = useState(false);
   const [naming, setNaming] = useState(false);
-  const pts = (n: number) => `${num(n, locale)} ${plural(locale, n, ["ptsOne", "ptsFew", "ptsMany"])}`;
+  const [covering, setCovering] = useState(false);
+  const [coverCrop, setCoverCrop] = useState<string | null>(null);
 
   // Once, when the pass first comes: the timeline scrolled to "you are here".
   const scrolled = useRef(false);
   useEffect(() => {
     if (!state || scrolled.current) return;
     scrolled.current = true;
-    if (nowAt <= 1) return;
+    // Everything got: the page stays at its head, nothing below to go to.
+    if (nowAt <= 1 || got >= live.length) return;
     // Straight there as the page opens, before it is seen to move.
     requestAnimationFrame(() => {
       const row = document.getElementById("pass-now");
@@ -201,11 +230,21 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
 
   if (!state) {
     return (
-      <Page title={tr("passTitle")} onBack={onClose} layer={layer}>
-        <div className="pass-wait skel" />
+      <Page title={tr("passTitle")} onBack={onClose} layer={layer} hero>
+        <div className="pass-wait" aria-hidden="true">
+          <span className="pass-wait-cover skel" />
+          <span className="pass-wait-badge skel shape-flower6" />
+          <div className="detail">
+            <span className="pass-wait-chip skel" />
+            <span className="pass-wait-title skel" />
+          </div>
+        </div>
         <div className="pass-tl pass-tl-wait">
           {[0, 1, 2, 3].map((i) => (
-            <span key={i} className="pass-tl-ghost skel" />
+            <span key={i} className="pass-tl-wait-row">
+              <span className="pass-tl-wait-node skel shape-cookie9" />
+              <span className="pass-tl-ghost skel" />
+            </span>
           ))}
         </div>
       </Page>
@@ -221,15 +260,18 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
         <span className="pass-tl-me shape-burst12" />
       </span>
       <div className="pass-tl-here">
-        <b>
-          {tr("passHere")} · <span className="t-num">{pts(points)}</span>
-        </b>
         {next ? (
-          <span>
-            {tr("passNextItem")} «{nameOf(next)}» — {tr("passNextShort")} <b className="t-num">{pts(next.points - points)}</b>
+          <span className="clamp-2">
+            <b className="t-num">
+              {tr("passNextShort")} {num(next.points - points, locale)} {plural(locale, next.points - points, ["ptsOne", "ptsFew", "ptsMany"])}
+            </b>{" "}
+            {tr("passNextTo")} «{nameOf(next)}»
           </span>
         ) : (
-          <span>{tr("passComplete")}</span>
+          <span className="pass-tl-here-done">
+            <Icon name="check" size={18} />
+            {tr("passComplete")}
+          </span>
         )}
       </div>
     </li>
@@ -247,7 +289,18 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
             ? { cls: "changed", text: tr("passEditChanged") }
             : null;
 
-  const actions = editing ? (
+  const actions = preview ? (
+    <button
+      type="button"
+      className="link-btn"
+      onClick={() => {
+        setFutureMonth(null);
+        setEditing(true);
+      }}
+    >
+      {tr("passEdit")}
+    </button>
+  ) : editing ? (
     <button type="button" className="link-btn" onClick={() => setEditing(false)}>
       {tr("passEditDone")}
     </button>
@@ -267,51 +320,68 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
   ) : null;
 
   return (
-    <Page title={editing ? tr("passEditTitle") : tr("passTitle")} onBack={onClose} layer={layer} className={`pass-page${editing ? " pass-editing" : ""}`} actions={actions}>
-      {/* The season's head, no card (owner, 2026-10-28): its theme or its
-          month, then the least to know as a connected group, and the wave. */}
+    <Page
+      title={editing ? tr("passEditTitle") : tr("passTitle")}
+      onBack={futureMonth ? () => goMonth(current?.month) : onClose}
+      layer={layer}
+      hero={!editing}
+      style={cover && !editing && art.settled ? art.style : undefined}
+      className={`pass-page${editing ? " pass-editing" : ""}`}
+      actions={actions}
+    >
+      {/* The season's head is an achievement's (owner, 2026-10-28): the
+          month's cover on its own blurred ground, the days left where an
+          achievement wears its rarity, then the season and its name. */}
       {!editing && (
-        <header className="pass-season">
-          <span className="pass-season-deco shape-clover4" aria-hidden="true" />
-          <div className="pass-season-top">
-            <span className="pass-season-kind">
-              {tr("passSeason")} · {(lookingBack ? formatMonth(state.month, locale, "sheet") : formatMonth(state.month, locale, "sheet").split(" ")[0]).toUpperCase()}
-            </span>
-            {months.length > 1 && (
-              <span className="pass-season-nav">
-                <IconButton icon="back" label={tr("passMonthBefore")} disabled={at < 0 || at >= months.length - 1} onClick={() => goMonth(months[at + 1])} />
-                <IconButton icon="forward" label={tr("passMonthAfter")} disabled={at <= 0} onClick={() => goMonth(months[at - 1])} />
+        <>
+          <div className="pass-ap-head">
+            <Hero ground={cover} full>
+              <span className="pass-ap-stage">
+                {cover ? (
+                  <img src={cover} alt="" className="hero-pic pass-ap-pic" />
+                ) : (
+                  <span className="pass-ap-pic pass-ap-month t-num">{formatMonth(state.month, locale, "sheet").split(" ")[0].toUpperCase()}</span>
+                )}
               </span>
-            )}
+            </Hero>
+            <span className="pass-ap-badge shape-flower6">
+              {lookingBack ? (
+                <Icon name="check" size={28} />
+              ) : (
+                <>
+                  <b className="t-num">{state.days_left}</b>
+                  <span>{tr("passDaysUnit")}</span>
+                </>
+              )}
+            </span>
           </div>
-          <h2 className="pass-season-name">{state.title || capital(formatMonth(state.month, locale, "sheet").split(" ")[0])}</h2>
-          <div className="pass-season-counts">
-            <div className="pass-season-main">
-              <b className="t-num">{num(points, locale)}</b>
-              <span>{plural(locale, points, ["ptsOne", "ptsFew", "ptsMany"])}</span>
+          <div className="detail">
+            <div className="detail-meta pass-ap-meta">
+              <span className="chip chip-secondary">
+                {tr("passSeason")} · {capital(formatMonth(state.month, locale, "sheet"))}
+              </span>
+              {/* A month ahead, seen only by the super-admin, as it will be. */}
+              {preview && <span className="chip chip-outline">{tr("passPreview")}</span>}
             </div>
-            <div>
-              <b className="t-num">
-                {got}
-                <small>/{live.length}</small>
-              </b>
-              <span>{tr("passGotShort")}</span>
-            </div>
-            <div>
-              {lookingBack ? <Icon name="check" size={22} /> : <b className="t-num">{state.days_left}</b>}
-              <span>{lookingBack ? tr("passMonthOver") : tr("passDaysLeftShort")}</span>
+            {/* The season's name, the months either side of it on its right. */}
+            <div className="pass-ap-title">
+              <h1 className="detail-title">{state.title || capital(formatMonth(state.month, locale, "sheet").split(" ")[0])}</h1>
+              {months.length > 1 && (
+                <span className="pass-ap-nav">
+                  <IconButton icon="back" label={tr("passMonthBefore")} disabled={at < 0 || at >= months.length - 1} onClick={() => goMonth(months[at + 1])} />
+                  <IconButton icon="forward" label={tr("passMonthAfter")} disabled={at <= 0} onClick={() => goMonth(months[at - 1])} />
+                </span>
+              )}
             </div>
           </div>
-          {/* The whole season, not only the step since the last level. */}
-          <Wave className="pass-season-wave" value={points} total={Math.max(1, ...live.map((i) => i.points))} />
-        </header>
+        </>
       )}
 
       {editing && editor && (
         <div className="group pass-edit-months">
           <div className="group-items">
             <Row
-              lead={<Icon name="calendar" />}
+              lead={<Lead icon="calendar" />}
               title={capital(formatMonth(editor.month, locale, "sheet"))}
               sub={tr("passEditMonth")}
               chevron
@@ -321,7 +391,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
               }}
             />
             <Row
-              lead={<Icon name="sparkle" />}
+              lead={<Lead icon="sparkle" />}
               title={editor.title || tr("passEditNameNone")}
               sub={editor.title_changed ? `${tr("passEditName")} · ${tr("passEditChanged")}` : tr("passEditName")}
               chevron
@@ -330,8 +400,70 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
                 setNaming(true);
               }}
             />
+            <Row
+              lead={editor.image ? <img src={editor.image} alt="" className="pass-cover-thumb" /> : <Lead icon="image" />}
+              title={editor.image ? tr("passCoverSet") : tr("passCoverNone")}
+              sub={tr("passCover")}
+              chevron
+              onClick={() => {
+                tick();
+                setCovering(true);
+              }}
+            />
           </div>
         </div>
+      )}
+      {covering && editor && (
+        <Sheet title={tr("passCover")} onClose={() => setCovering(false)} layer="pass-cover">
+          <div className="pass-name-form">
+            <p className="pass-cover-hint">{tr("passCoverHint")}</p>
+            <label className="btn btn-filled btn-wide pass-cover-pick">
+              <Icon name="image" size={20} />
+              {editor.image ? tr("passCoverChange") : tr("passCoverPick")}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  setCovering(false);
+                  // Placed and zoomed first, as a face or a prize's picture is.
+                  void shrink(file).then((blob) => setCoverCrop(URL.createObjectURL(blob)));
+                }}
+              />
+            </label>
+            {editor.image && (
+              <Button
+                variant="tonal"
+                wide
+                onClick={() => {
+                  setCovering(false);
+                  void setSeasonImage(data, null).catch(() => toast(tr("somethingWrong"), "error"));
+                }}
+              >
+                {tr("passCoverRemove")}
+              </Button>
+            )}
+          </div>
+        </Sheet>
+      )}
+      {coverCrop && (
+        <Cropper
+          src={coverCrop}
+          title={tr("passRewardPicPlace")}
+          size={1600}
+          aspect={16 / 9}
+          onCancel={() => {
+            URL.revokeObjectURL(coverCrop);
+            setCoverCrop(null);
+          }}
+          onDone={(blob) => {
+            URL.revokeObjectURL(coverCrop);
+            setCoverCrop(null);
+            void setSeasonImage(data, blob).catch(() => toast(tr("somethingWrong"), "error"));
+          }}
+        />
       )}
       {naming && editor && (
         <NameSheet
@@ -350,13 +482,16 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
               {editor.months.map((m, k) => (
                 <Row
                   key={m.month}
-                  lead={<Icon name="calendar" />}
-                  title={capital(formatMonth(m.month, locale, "sheet"))}
-                  sub={
-                    m.levels === 0
-                      ? tr("passEditMonthEmpty")
-                      : `${tr("passEditMonthLevels").replace("{n}", String(m.levels))}${m.dirty ? ` · ${tr("passEditMonthDirty").replace("{n}", String(m.dirty))}` : ""}`
-                  }
+                  lead={<Lead icon="calendar" />}
+                  // The season's name first, when it has one; its month and rewards under it.
+                  title={m.title || capital(formatMonth(m.month, locale, "sheet"))}
+                  sub={[
+                    m.title ? capital(formatMonth(m.month, locale, "sheet")) : null,
+                    m.levels === 0 ? tr("passEditMonthEmpty") : plural(locale, m.levels, ["passRewardsOne", "passRewardsFew", "passRewardsMany"]).replace("{n}", String(m.levels)),
+                    m.dirty ? tr("passEditMonthDirty").replace("{n}", String(m.dirty)) : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                   trail={m.month === editor.month ? <Icon name="check" size={20} /> : undefined}
                   onClick={() => {
                     tick();
@@ -387,7 +522,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
           const reached = !editing && points >= i.points;
           const burst = popped.keys.includes(i.key) && own;
           const order = popped.keys.indexOf(i.key);
-          const tone = i.kind === "theme" ? `pass-tier-${i.t.tier}` : "pass-tier-prize";
+          const tone = `pass-tier-${i.kind === "theme" ? i.t.tier : (i.r.tier ?? "common")}`;
           const picture = i.kind === "prize" ? i.r.image || i.r.game?.hero || i.r.game?.poster : null;
           const mark = i.edit ? status(i.edit) : null;
           return (
@@ -440,7 +575,9 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
                   </span>
                   <span className="pass-tl-text">
                     <span className="pass-tl-kind">
-                      {i.kind === "theme" ? `${tr("passTheme")} · ${tr(TIER_NAME[i.t.tier])}` : i.r.kind === "game" ? tr("passPrizeGame") : tr("passPrize")}
+                      {i.kind === "theme"
+                        ? `${tr("passTheme")} · ${tr(TIER_NAME[i.t.tier])}`
+                        : `${i.r.kind === "game" ? tr("passPrizeGame") : tr("passPrizeCode")} · ${tr(TIER_NAME[i.r.tier ?? "common"])}`}
                       {i.kind === "prize" && i.r.platform && (
                         <span className="pass-tl-platform">
                           <PrizePlatformMark name={i.r.platform} size={16} />
@@ -487,13 +624,13 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
                       </Button>
                     ) : null}
                   </span>
-                  {i.kind === "prize" && !editing && i.r.total > 0 && (
-                    <Stock left={i.r.left} total={i.r.total} onOpen={i.r.left < i.r.total ? () => setTakers(i.r) : undefined} />
-                  )}
                   {own && i.kind === "theme" && (
                     <span className="pass-tl-done">
                       <Icon name="check" size={16} />
                     </span>
+                  )}
+                  {i.kind === "prize" && !editing && i.r.total > 0 && (
+                    <Stock left={i.r.left} total={i.r.total} onOpen={i.r.left < i.r.total ? () => setTakers(i.r) : undefined} />
                   )}
                   {editing && i.edit && (
                     <span className="pass-tl-pencil">
@@ -655,4 +792,52 @@ function NameSheet({ value, onSave, onClose }: { value: string; onSave: (title: 
       </form>
     </Sheet>
   );
+}
+
+/** A settings row's leading icon, as Settings draws it: a cookie of the
+ * secondary container. */
+function Lead({ icon }: { icon: IconName }) {
+  return (
+    <span className="set-lead set-lead-secondary shape-cookie9">
+      <Icon name={icon} size={20} />
+    </span>
+  );
+}
+
+/** The edited month's pass as a person will see it on its 1st: its levels
+ * with their drafts laid in (what is to go left out), nothing got, no points. */
+function previewOf(editor: PassEditor): PassState {
+  const levels = editor.items.filter((e) => !e.remove);
+  const [year, month] = editor.month.split("-").map(Number);
+  return {
+    ok: true,
+    month: editor.month,
+    points: 0,
+    days_left: new Date(year, month, 0).getDate(),
+    tiers: levels
+      .filter((e) => e.kind === "theme")
+      .map((e, n) => ({ id: e.id, level: n + 1, points: e.points, tier: e.tier ?? "common", palette: e.palette ?? "graphite", claimed: false })),
+    rewards: levels
+      .filter((e) => e.kind !== "theme")
+      .map((e) => ({
+        id: e.id,
+        title: e.title ?? "",
+        description: e.description,
+        points: e.points,
+        kind: e.kind as "game" | "code",
+        tier: e.tier,
+        game: e.game,
+        platform: e.platform,
+        image: e.image,
+        total: e.codes.length,
+        left: e.codes.length,
+        code: null,
+        removed: false,
+      })),
+    admin: false,
+    current: true,
+    months: [editor.month],
+    title: editor.title,
+    image: editor.image,
+  };
 }
