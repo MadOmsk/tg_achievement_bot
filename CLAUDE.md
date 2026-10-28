@@ -92,7 +92,6 @@ name, or when the tree goes stale.
 ├── .env.example / .env.test.example   environment templates (prod / test server; the dev
 │                                       server keeps its own local .env.test)
 ├── .github/workflows/ci.yml   CI on every push; deploys `prerelease` → test server, `main` → prod (#4)
-├── .github/workflows/catalog.yml   by hand: the games catalog from the test server to prod
 ├── README.md / README.ru.md   the overview, in English and in Russian
 ├── CLAUDE.md                  this file
 ├── pyproject.toml             dependencies, ruff, pytest config
@@ -1225,12 +1224,11 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   catalog points outside itself only by a list's (platform, title_id), so
   nothing else moves; a list the file lacks keeps its own stand-in, linked
   into a game after. `--tables match_weights` carries a new fit alone.
-  **From the test server to prod it is a button** (owner, 2026-10-28; the
-  octopus assembles games on the test server): GitHub → Actions → «Catalog»
-  (`.github/workflows/catalog.yml`, `xbox-deploy catalog`), as often as
-  wanted, each run replacing prod's catalog with the test server's as it is
-  then. A dry run, the default, rehearses it all on a copy of `bot.db` and
-  touches prod not at all; see Operations → Deploys.
+  **From the test server to prod** (owner, 2026-10-28; the octopus assembled
+  games on the test server, a one-off): `sudo xbox-deploy catalog [--dry-run]`
+  on the VPS, each run replacing prod's catalog with the test server's as it
+  is then; the dry run rehearses it all on a copy of `bot.db` and touches prod
+  not at all. See Operations → Deploys.
 - **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
   `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
   production, the test server and the dev server. A label names its versions by
@@ -2799,8 +2797,7 @@ but the run that installs it finishes as the old one: a change to it takes effec
 from the next deploy.
 
 **`xbox-deploy catalog [--dry-run]`** carries the games catalog from the test server
-to prod (`.github/workflows/catalog.yml`, by hand only, `dry_run` on by default; it
-shares prod's deploy concurrency group). It refuses, changing nothing, while
+to prod, run by hand on the VPS (no workflow: owner, 2026-10-28, a one-off). It refuses, changing nothing, while
 `test.db` and `bot.db` are at different migrations. Then: the test bot stops for
 the export (`catalog_transfer export --except octopus_queue`: the octopus's queue is
 each server's own work) and starts again; prod stops,
