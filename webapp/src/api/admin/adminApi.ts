@@ -12,9 +12,20 @@ import type {
   AdminUserRow,
 } from "./adminApiModels";
 
+export type Role = "user" | "admin" | "superadmin";
+
 export class AdminApi extends BaseApi {
   constructor(baseUrl: string = API_BASE_ROUTES.ADMIN) {
     super(baseUrl);
+  }
+
+  /** A person's role (owner, 2026-10-28): the super-admin's to read and give. */
+  fetchRole(initData: string, personId: number): Promise<{ role: Role; fixed: boolean }> {
+    return this.get<{ role: Role; fixed: boolean }>(initData, ADMIN_ROUTES.ROLE(personId));
+  }
+
+  putRole(initData: string, personId: number, role: Role): Promise<{ role: Role }> {
+    return this.put<{ role: Role }>(initData, ADMIN_ROUTES.ROLE(personId), { role });
   }
 
   fetchHome(initData: string): Promise<AdminHome> {

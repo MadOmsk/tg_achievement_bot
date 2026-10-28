@@ -34,6 +34,7 @@ from bot.poller.service_health import (
     KEY_CHECK_INTERVAL_KEY,
 )
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import roles
 from bot.services.admin_actions import ACTIONS, AdminContext, Confirm, Target, perform
 from bot.services.admin_actions import Scope as ActionScope
 from bot.services.admin_credentials import (
@@ -76,9 +77,16 @@ router = Router(name="admin")
 
 
 class IsSuperadmin(BaseFilter):
-    async def __call__(self, event: TelegramObject, settings: Settings) -> bool:
+    """/admin: a super-admin or an admin (owner, 2026-10-28; services/roles.py)."""
+
+    async def __call__(self, event: TelegramObject, settings: Settings, repo: Repo) -> bool:
         user = getattr(event, "from_user", None)
-        return user is not None and settings.is_superadmin(user.id)
+        if user is None:
+            return False
+        if settings.is_superadmin(user.id):
+            return True
+        person = await repo.person_id(user.id)
+        return person is not None and roles.runs_the_app(await repo.person_role(person))
 
 
 router.message.filter(IsSuperadmin())

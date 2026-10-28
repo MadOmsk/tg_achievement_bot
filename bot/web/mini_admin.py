@@ -18,6 +18,7 @@ from bot.constants import Platform, TokenStatus
 from bot.db.repo import Repo
 from bot.handlers.delivery import send_picture_samples, send_promo
 from bot.i18n import translator
+from bot.services import roles
 from bot.services.admin_actions import AdminContext, Confirm, Target, perform
 from bot.services.admin_actions import available as available_actions
 from bot.services.admin_credentials import (
@@ -279,6 +280,8 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_patch("/api/mini/admin/settings", handle_admin_settings_patch)
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
     app.router.add_get("/api/mini/admin/users/{ref}", handle_admin_user)
+    app.router.add_get("/api/mini/admin/users/{ref}/role", handle_role_get)
+    app.router.add_put("/api/mini/admin/users/{ref}/role", handle_role_put)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
     app.router.add_get("/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings)
     app.router.add_patch(
@@ -561,10 +564,61 @@ async def _keys_payload(request: web.Request, admin: Any) -> dict[str, Any]:
 
 
 async def _require_superadmin(request: web.Request):
+    """The admin panel: a super-admin or an admin (owner, 2026-10-28)."""
     from bot.web.mini_api import _require_user
 
     user = await _require_user(request)
-    settings = request.app["mini_settings"]
-    if not settings.is_superadmin(user.tg_id):
+    repo: Repo = request.app["mini_repo"]
+    if not request.app["mini_settings"].is_superadmin(user.tg_id) and not roles.runs_the_app(
+        await repo.person_role(user.person_id)
+    ):
         raise web.HTTPForbidden(text="admin only")
     return user
+
+
+async def _role_giver(request: web.Request):
+    """Giving roles is a super-admin's alone (owner, 2026-10-28)."""
+    from bot.web.mini_api import _require_user
+
+    user = await _require_user(request)
+    repo: Repo = request.app["mini_repo"]
+    if not request.app["mini_settings"].is_superadmin(user.tg_id) and not roles.gives_roles(
+        await repo.person_role(user.person_id)
+    ):
+        raise web.HTTPForbidden(text="superadmin only")
+    return user
+
+
+async def handle_role_get(request: web.Request) -> web.Response:
+    await _role_giver(request)
+    repo: Repo = request.app["mini_repo"]
+    person = await _person_of(request)
+    settings = request.app["mini_settings"]
+    tg_id = await repo.tg_id_of(person)
+    return web.json_response(
+        {
+            "ok": True,
+            "role": roles.stored(await repo.person_role(person)),
+            # Named in SUPERADMIN_TG_IDS: a super-admin whatever the app says.
+            "fixed": settings.is_superadmin(tg_id),
+        }
+    )
+
+
+async def handle_role_put(request: web.Request) -> web.Response:
+    user = await _role_giver(request)
+    repo: Repo = request.app["mini_repo"]
+    person = await _person_of(request)
+    settings = request.app["mini_settings"]
+    try:
+        body = await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest(text="bad json") from None
+    role = str((body or {}).get("role") or "")
+    if role not in roles.ROLES:
+        return web.json_response({"ok": False, "error": "invalid"}, status=400)
+    if settings.is_superadmin(await repo.tg_id_of(person)) or person == user.person_id:
+        # The environment's super-admins, and oneself, keep what they are.
+        return web.json_response({"ok": False, "error": "fixed"}, status=409)
+    await repo.set_person_role(person, None if role == roles.USER else role)
+    return web.json_response({"ok": True, "role": role})

@@ -138,6 +138,8 @@ async def run(settings: Settings) -> None:
     media.configure(settings.media_dir)
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
+    # The environment's super-admins are the column's (services/roles.py).
+    await repo.ensure_superadmins(settings.superadmin_tg_ids)
     # The platforms' answers about achievements are kept whole (raw_answers).
     raw_answers.set_sink(repo.save_payload)
     given = await repo.give_everyone_a_handle()

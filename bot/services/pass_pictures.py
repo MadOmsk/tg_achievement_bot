@@ -1,4 +1,5 @@
-"""A prize's picture in the season pass (owner, 2026-10-27): what the
+"""A prize's picture in the season pass (owner, 2026-10-27), and a month's
+cover (2026-10-28): what the
 super-admin uploads, decoded and saved again as a JPEG — the server does not
 trust the bytes it is sent, as with a person's own avatar
 (`custom_avatars.py`). Kept under `data/covers/pass/`, the path relative."""
@@ -41,13 +42,15 @@ def normalize(body: bytes) -> bytes | None:
         return None
 
 
-async def store(reward_id: int, body: bytes, root: Path | None = None) -> str | None:
-    """Save the picture of a prize; its path relative to `root`, or None when
-    `body` is no picture."""
+async def store(
+    reward_id: int | str, body: bytes, root: Path | None = None, *, kind: str = "reward"
+) -> str | None:
+    """Save the picture of a prize (or, `kind` "season", a month's cover); its
+    path relative to `root`, or None when `body` is no picture."""
     picture = await asyncio.to_thread(normalize, body)
     if picture is None:
         return None
-    name = f"reward-{reward_id}-{hashlib.sha256(picture).hexdigest()[:12]}.jpg"
+    name = f"{kind}-{reward_id}-{hashlib.sha256(picture).hexdigest()[:12]}.jpg"
     folder = (root or Path.cwd()) / DIR
     folder.mkdir(parents=True, exist_ok=True)
     (folder / name).write_bytes(picture)

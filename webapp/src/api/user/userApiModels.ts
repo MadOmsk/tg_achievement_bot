@@ -109,7 +109,10 @@ export type MeResponse = {
   username: string | null;
   first_name: string | null;
   last_name: string | null;
+  /** May open the admin panel and the pass's editor: an admin or a super-admin. */
   is_superadmin: boolean;
+  /** Who may run the app (owner, 2026-10-28); only a super-admin gives roles. */
+  role?: "user" | "admin" | "superadmin";
   is_excluded: boolean;
   settings: {
     locale: string;

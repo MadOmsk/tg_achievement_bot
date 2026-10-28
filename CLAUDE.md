@@ -94,6 +94,8 @@ name, or when the tree goes stale.
 ├── .github/workflows/ci.yml   CI on every push; deploys `prerelease` → test server, `main` → prod (#4)
 ├── README.md / README.ru.md   the overview, in English and in Russian
 ├── CLAUDE.md                  this file
+├── .claude/skills/mini-app-design/   the skill that holds any Mini App look to docs/design-system.md,
+│                              and a phone-sized screenshot of the dev server as a signed-in person
 ├── pyproject.toml             dependencies, ruff, pytest config
 ├── manage.ps1 / manage.bat    the dev server's process manager and its double-click dashboard
 ├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot;
@@ -463,10 +465,12 @@ every column. History: #106.
   in without asking. Offers and `link_` tokens live in memory for ten minutes. The
   merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
   moves between the two rows).
-  **A super-admin stays an ordinary person named by `SUPERADMIN_TG_IDS`** (owner,
-  2026-10-02): no role field. So a super-admin must always keep a Telegram id —
-  nothing (removing Telegram, a merge) may leave them without one; both refuse
-  with `admin`.
+  **Roles** (owner, 2026-10-28; `users.role`, migration 139,
+  `services/roles.py`): `superadmin`, `admin`, or none (an ordinary person).
+  The super-admins `SUPERADMIN_TG_IDS` names are always super-admins — written
+  into the column on every start and on `/me`, never changed from the app —
+  and must always keep a Telegram id: nothing (removing Telegram, a merge) may
+  leave them without one; both refuse with `admin`.
   `accounts (platform, external_id, display_name, secondary_name, gamerscore,
   psn_trophy_level, achievements_visible, avatar_*, …)` is a platform account on its
   own terms (`platform` is `xbox`/`steam`/`psn` — one Xbox account covers both
@@ -588,7 +592,11 @@ every column. History: #106.
   131; owner, 2026-10-27): the themes a person claimed, each checked against
   the month's points by the server (User interface: the season pass). The
   pass's levels are `pass_items` and a prize's codes `pass_item_codes` (133;
-  a draft and waiting changes live on the row): a prize says which platform it is for, `platform`, free text
+  a draft and waiting changes live on the row): a game prize is a game of the catalog or, when the
+  catalog lacks it, one named by its title alone (owner, 2026-10-28; a key is
+  for other services); a prize wears a tier as a theme does (`tier`: common / rare /
+  legendary / mythic, common when none was set; owner, 2026-10-28) and says
+  which platform it is for, `platform`, free text
   (Xbox, PlayStation, Steam or anything typed; 135); a code is taken once `claimed_at` is set, `person_id` says by whom (a
   merge moves it; a deleted person's code stays taken). The levels each person reached this month
   are `pass_reached (person_id, item_id, month)` (134; a merge moves them).
@@ -2055,7 +2063,15 @@ elsewhere in this file still describe the bot.
   month's levels), so a pass is built ahead and shown on its 1st. A month's
   pass may have a name, its theme («Хэллоуин»; `pass_seasons`, migration 137,
   `PUT /api/mini/pass/season`), shown on its card and waiting for the
-  month's publish like a level. Earlier months
+  month's publish like a level — and a cover (migration 138,
+  `PUT|DELETE /api/mini/pass/season/image`, saved again by
+  `pass_pictures`, placed and zoomed in a 16:9 `Cropper` first): the pass's head is an achievement's (`Hero full`:
+  the cover edge to edge with the months' arrows on it, a flower on its corner
+  with the days left, then «Сезон · Октябрь» and the season's name),
+  and the page takes its colours from it (`useArtTheme`), no colour picked by
+  hand.
+  The super-admin's arrow › goes on into the months ahead that have a pass
+  being built, each shown as anybody will see it on its 1st (a preview). Earlier months
   are looked back on (`GET /api/mini/pass?month=`, the arrows by the month's
   name): their points, what was claimed, one's own codes — nothing is taken
   from them. A theme once claimed is kept for good, whatever month. A prize's
@@ -2219,12 +2235,16 @@ keyboard.
 
 ### Admin
 
-- **Two roles, named distinctly** (owner, 2026-10-07): the **суперадмин**
-  (super-admin) is the global operator — `SUPERADMIN_TG_IDS`, any number of them,
-  `Settings.is_superadmin`; the old name `ADMIN_TG_IDS` is still read. **«Админ»
-  is reserved for a narrower role to come** (the per-chat one #15 proposes), so
-  code, text and docs never call the super-admin an admin. `/admin`, the
-  `/api/mini/admin` routes and `handlers/admin.py` name the panel, not the role.
+- **Three roles** (owner, 2026-10-28; `services/roles.py`, `users.role`): the
+  **суперадмин** (super-admin) does everything and gives the roles; the
+  **админ** (admin) does everything but give them — `/admin`, the Mini App's
+  admin, the pass's editor (`roles.runs_the_app`); everybody else is an
+  ordinary person. A super-admin is one of `SUPERADMIN_TG_IDS` (the old name
+  `ADMIN_TG_IDS` is still read) or one a super-admin made; only they give
+  roles — «⋯» on another person's page (`GET|PUT /api/mini/admin/users/p<id>/role`),
+  never to themselves nor to one the environment names — and they open any
+  person's page whatever its privacy (`repo.can_view_activity`). `/me` says
+  `role`; its `is_superadmin` is the admin door, an admin's too.
 - **One source for both admin panels** (#176; owner, 2026-10-08: a new admin
   setting appears in the bot and the Mini App at once). Both only render what
   these services answer:

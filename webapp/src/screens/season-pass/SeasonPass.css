@@ -14,19 +14,44 @@
   --tier-color: var(--tier-mythic);
 }
 
-/* A prize the super-admin put in: the app's pink accent. */
-.pass-tier-prize {
-  --tier-color: var(--tertiary);
-}
-
 .pass-art {
   display: flex;
 }
 
+/* The pass on its way, in the shape of what comes: the cover edge to edge,
+   the days' flower on its corner, the chip, the name, the timeline. */
 .pass-wait {
-  height: 180px;
-  margin: 12px 12px 0;
-  border-radius: var(--r-l);
+  position: relative;
+}
+
+.pass-wait-cover {
+  display: block;
+  height: calc(240px + var(--safe-top));
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+}
+
+.pass-wait-badge {
+  position: absolute;
+  right: 18px;
+  top: calc(240px + var(--safe-top) - 58px);
+  width: 92px;
+  height: 92px;
+}
+
+.pass-wait-chip {
+  display: block;
+  width: 150px;
+  height: 32px;
+  border-radius: var(--r-full);
+}
+
+.pass-wait-title {
+  display: block;
+  width: 70%;
+  height: 32px;
+  border-radius: var(--r-s);
 }
 
 /* The season as a timeline: a rail on the left, a node a reward with its
@@ -42,12 +67,25 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-left: 64px;
+}
+
+.pass-tl-wait-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pass-tl-wait-node {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  margin: 0 11px;
 }
 
 .pass-tl-ghost {
+  flex: 1;
   display: block;
-  height: 88px;
+  height: 92px;
   border-radius: var(--r-l);
 }
 
@@ -64,8 +102,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding-top: 20px;
 }
 
 /* The rail's segment of a row: from the top of the row to its bottom, so
@@ -91,12 +129,13 @@
   bottom: 50%;
 }
 
+/* The line starts and ends at the middle of its first and last node. */
 .pass-tl > :first-child .pass-tl-rail::before {
-  top: 36px;
+  top: 50%;
 }
 
 .pass-tl > :last-child .pass-tl-rail::before {
-  bottom: calc(100% - 36px);
+  bottom: 50%;
 }
 
 .pass-tl-node {
@@ -168,19 +207,26 @@
 
 .pass-tl-here {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 14px;
+  min-width: 0;
+  padding: 14px 16px;
   border-radius: var(--r-l);
-  background: color-mix(in srgb, var(--tertiary) 14%, var(--surface-1));
-  font-size: 13px;
-  color: var(--on-surface-2);
+  background: var(--primary-container);
+  color: var(--on-primary-container-2);
+  font-size: 14px;
+  font-weight: 650;
 }
 
-.pass-tl-here > b {
-  font-size: 14.5px;
-  color: var(--on-surface);
+.pass-tl-here b {
+  color: var(--on-primary-container);
+  font-size: 16px;
+}
+
+.pass-tl-here-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* A reward's card */
@@ -260,10 +306,6 @@
   color: var(--on-tertiary);
 }
 
-.pass-page:not(.pass-editing) .pass-tl-row:not(.pass-tl-reached):not(.pass-tl-have) .pass-tl-thumb > * {
-  filter: grayscale(0.6) brightness(0.65);
-}
-
 .pass-tl-text {
   flex: 1;
   min-width: 0;
@@ -319,19 +361,6 @@
   margin-top: 10px;
   padding: 0 16px 0 12px;
   font-size: 14px;
-}
-
-.pass-tl-done {
-  flex: 0 0 auto;
-  align-self: center;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--tier-color) 20%, transparent);
-  color: var(--tier-color);
 }
 
 .pass-stock {
@@ -595,6 +624,7 @@
   outline: none;
 }
 
+/* A prize's picture: the whole width of the form, a field's ground. */
 .pass-add-pic {
   position: relative;
   display: flex;
@@ -602,16 +632,14 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  align-self: center;
-  width: 160px;
-  height: 160px;
+  width: 100%;
+  height: 168px;
+  overflow: hidden;
   border-radius: var(--r-l);
-  background: var(--surface-2);
-  color: var(--on-surface-3);
+  background: var(--surface-3);
+  color: var(--on-surface-2);
   font-size: 13px;
   font-weight: 700;
-  overflow: hidden;
-  cursor: pointer;
 }
 
 .pass-add-pic input {
@@ -631,9 +659,9 @@
 
 .pass-add-pic-on span {
   position: relative;
-  padding: 5px 12px;
+  padding: 6px 14px;
   border-radius: var(--r-full);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  background: var(--glass);
   color: var(--on-surface);
 }
 
@@ -875,7 +903,7 @@
   min-height: 48px;
   padding: 0 14px;
   border-radius: var(--r-m);
-  background: var(--surface-2);
+  background: var(--surface-3);
   font-size: 14px;
   font-weight: 650;
   color: var(--on-surface-2);
@@ -883,7 +911,7 @@
 }
 
 .pass-edit-look.is-on {
-  background: color-mix(in srgb, var(--tier-color) 18%, var(--surface-2));
+  background: color-mix(in srgb, var(--tier-color) 18%, var(--surface-3));
   box-shadow: inset 0 0 0 1.5px var(--tier-color);
   color: var(--on-surface);
 }
@@ -903,17 +931,6 @@
   font-size: 13px;
   line-height: 1.45;
   color: var(--on-surface-2);
-}
-
-.pass-kind-icon {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-s);
-  background: var(--secondary-container);
-  color: var(--on-secondary-container);
 }
 
 .pass-add > .group {
@@ -975,127 +992,152 @@
   margin-top: 8px;
 }
 
-/* The season's head: no card, a clover of light behind it (decoration only),
-   the theme wide, the counts a connected group, the wave under them. */
-.pass-season {
-  position: relative;
-  isolation: isolate;
-  margin: 4px 0 0;
-  padding: 8px 12px 0;
-}
-
-.pass-season-deco {
-  position: absolute;
-  z-index: -1;
-  right: -70px;
-  top: -40px;
-  width: 240px;
-  height: 240px;
-  background: radial-gradient(circle at 40% 40%, var(--primary-container-2), transparent 70%);
-  opacity: 0.55;
-  transform: rotate(18deg);
-  pointer-events: none;
-}
-
-.pass-season-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 4px;
-}
-
-.pass-season-kind {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: var(--tertiary);
-}
-
-.pass-season-nav {
-  display: flex;
-  gap: 4px;
-}
-
-.pass-season-nav .ibtn:disabled {
-  opacity: 0.35;
-}
-
-.pass-season-name {
-  margin: 2px 4px 0;
-  font-size: 34px;
-  font-weight: 850;
-  font-stretch: 120%;
-  line-height: 1.05;
-  overflow-wrap: anywhere;
-}
-
-.pass-season-counts {
-  display: flex;
-  gap: 3px;
-  margin-top: 16px;
-}
-
-.pass-season-counts > div {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 72px;
-  padding: 8px;
-  border-radius: 8px;
-  background: var(--surface-1);
-  font-size: 12px;
-  color: var(--on-surface-2);
-  text-align: center;
-}
-
-.pass-season-counts > :first-child {
-  border-radius: var(--r-l) 8px 8px var(--r-l);
-}
-
-.pass-season-counts > :last-child {
-  border-radius: 8px var(--r-l) var(--r-l) 8px;
-}
-
-.pass-season-counts b {
-  font-size: 26px;
-  color: var(--on-surface);
-}
-
-.pass-season-counts b small {
-  font-size: 15px;
-  color: var(--on-surface-3);
-}
-
-/* The month's points: the one number that matters here. */
-.pass-season-counts .pass-season-main {
-  flex: 1.3;
-  background: var(--primary-container);
-  color: var(--on-primary-container-2);
-}
-
-.pass-season-counts .pass-season-main b {
-  font-size: 30px;
-  color: var(--on-primary-container);
-}
-
-.pass-season-counts svg {
-  color: var(--on-surface);
-}
-
-.pass-season-wave {
-  margin-top: 16px;
-  padding: 0 4px;
-}
-
 .pass-name-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 0 12px;
 }
+
+.pass-cover-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-s);
+  object-fit: cover;
+}
+
+.pass-cover-hint {
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--on-surface-2);
+}
+
+.pass-cover-pick {
+  position: relative;
+  gap: 8px;
+}
+
+.pass-cover-pick input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+
+
+
+/* The season's head, as an achievement's page has it: the cover on its blurred
+   ground, a flower on its corner with the days left. */
+.pass-ap-head {
+  position: relative;
+}
+
+/* No hard edge: the cover fades into the page, the flower sits on the fade. */
+.pass-ap-head .hero {
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent);
+}
+
+/* The cover runs the whole head, edge to edge under the bar. */
+.hero-full .hero-pic.pass-ap-pic,
+.hero-full .pass-ap-month {
+  width: 100%;
+  height: calc(240px + var(--safe-top));
+  min-height: 0;
+  max-height: none;
+  object-fit: cover;
+  border-radius: 0;
+}
+
+/* A little softened: the cover sets the mood, the head stays the page's. */
+.hero-full .hero-pic.pass-ap-pic {
+  filter: blur(1px);
+  transform: scale(1.01);
+}
+
+/* No cover: the month's name where the picture would be. */
+.pass-ap-month {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: var(--appbar-h);
+  background: var(--surface-4);
+  font-size: 44px;
+  color: var(--on-surface);
+}
+
+.pass-ap-badge {
+  z-index: 1;
+  position: absolute;
+  right: 18px;
+  bottom: -34px;
+  width: 92px;
+  height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.pass-ap-badge b {
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* The unit beside the number. */
+.pass-ap-badge span {
+  margin: 8px 0 0 2px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.pass-ap-meta {
+  width: 100%;
+  padding-right: 100px;
+}
+
+.pass-ap-stage {
+  position: relative;
+  display: block;
+}
+
+.pass-ap-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+/* A long name wraps beside the arrows, never under them. */
+.pass-ap-title .detail-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pass-ap-nav {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+
+.pass-ap-nav .ibtn:disabled {
+  opacity: 0.35;
+}
+
+.pass-tl-done {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tier-color) 20%, transparent);
+  color: var(--tier-color);
+}
+
