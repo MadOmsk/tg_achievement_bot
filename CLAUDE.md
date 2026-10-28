@@ -380,10 +380,12 @@ every column. History: #106.
   databases are parted for its duration** (owner, 2026-10-28; `xbox-deploy
   games leave`), and once both run the new code one `split`s again and the
   other `join`s.
-- **One writer for the catalog's background work**: the octopus and the store
-  collection run where `store_collection` is on (the test server); prod reads
-  and adds what its own polls learn. A queue entry is taken by one statement
-  and held (`octopus_take`, half an hour), so two bots never assemble one game.
+- **The catalog's background work may run on both bots**: the octopus and the
+  store collection run wherever `store_collection` is on. A queue entry is
+  taken by a conditional update that only one bot can win and held
+  (`octopus_take`, half an hour), so two bots never assemble one game.
+  **No `UPDATE … RETURNING` on the bot's connection**: an unfinished one is a
+  write in progress, and every other coroutine's commit fails meanwhile.
 
 ### Bring-up and migrations
 
@@ -2919,6 +2921,11 @@ shared file has no version for keeps its stand-in, linked into a game after —,
 `leave` copies the shared catalog back into both and parts them. The dry run
 does it on copies in a temporary folder. A deploy's backup copies the games file
 too (`<copy>.games.db`, pruned with its copy).
+**Prod's unit is `ProtectSystem=strict`**: it may write only the folders it
+names, so the shared ones are a drop-in,
+`/etc/systemd/system/xbox-bot.service.d/shared.conf` (`ReadWritePaths=
+/srv/unlocked-games /srv/unlocked-media`); a new shared folder is added there, or
+prod fails with "attempt to write a readonly database".
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.

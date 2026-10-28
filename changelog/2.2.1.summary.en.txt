@@ -1,0 +1,2 @@
+• Saves no longer fail while the games collector runs
+• Xbox 360 add-ons lost when the databases were joined are back

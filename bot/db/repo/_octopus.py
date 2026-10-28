@@ -40,21 +40,31 @@ class _OctopusRepo:
 
     async def octopus_take(self) -> tuple[str, str] | None:
         """The oldest entry due now, held for `HOLD` so another bot on the
-        shared games database (#229) does not take it too: one statement, so
-        two never get the same entry. A run that dies leaves it due again
-        when the hold runs out."""
-        now = utcnow_iso()
-        held = (utcnow() + HOLD).isoformat(timespec="seconds")
-        cursor = await self._conn.execute(
-            "UPDATE octopus_queue SET due_at = ? WHERE key = ("
-            "  SELECT key FROM octopus_queue WHERE due_at <= ?"
-            "  ORDER BY due_at, created_at, key LIMIT 1)"
-            " RETURNING key, reason",
-            (held, now),
-        )
-        row = await cursor.fetchone()
-        await self._conn.commit()
-        return (str(row[0]), str(row[1] or "")) if row else None
+        shared games database (#229) does not take it too: the hold is a
+        conditional update, which only one of two bots can win. A run that
+        dies leaves it due again when the hold runs out. No `RETURNING`: an
+        unfinished one is a write in progress, and every other coroutine's
+        commit on the connection fails while it is (2026-10-28)."""
+        for _ in range(3):
+            now = utcnow_iso()
+            cursor = await self._conn.execute(
+                "SELECT key, reason FROM octopus_queue WHERE due_at <= ?"
+                " ORDER BY due_at, created_at, key LIMIT 1",
+                (now,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row is None:
+                return None
+            held = (utcnow() + HOLD).isoformat(timespec="seconds")
+            cursor = await self._conn.execute(
+                "UPDATE octopus_queue SET due_at = ? WHERE key = ? AND due_at <= ?",
+                (held, row[0], now),
+            )
+            await self._conn.commit()
+            if cursor.rowcount == 1:
+                return str(row[0]), str(row[1] or "")
+        return None
 
     async def octopus_done(self, key: str) -> None:
         await self._conn.execute("DELETE FROM octopus_queue WHERE key = ?", (key,))
