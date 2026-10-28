@@ -465,7 +465,7 @@ every column. History: #106.
   in without asking. Offers and `link_` tokens live in memory for ten minutes. The
   merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
   moves between the two rows).
-  **Roles** (owner, 2026-10-28; `users.role`, migration 139,
+  **Roles** (owner, 2026-10-28; `users.role`, migration 140,
   `services/roles.py`): `superadmin`, `admin`, or none (an ordinary person).
   The super-admins `SUPERADMIN_TG_IDS` names are always super-admins — written
   into the column on every start and on `/me`, never changed from the app —
@@ -2063,7 +2063,7 @@ elsewhere in this file still describe the bot.
   month's levels), so a pass is built ahead and shown on its 1st. A month's
   pass may have a name, its theme («Хэллоуин»; `pass_seasons`, migration 137,
   `PUT /api/mini/pass/season`), shown on its card and waiting for the
-  month's publish like a level — and a cover (migration 138,
+  month's publish like a level — and a cover (migration 139,
   `PUT|DELETE /api/mini/pass/season/image`, saved again by
   `pass_pictures`, placed and zoomed in a 16:9 `Cropper` first): the pass's head is an achievement's (`Hero full`:
   the cover edge to edge with the months' arrows on it, a flower on its corner

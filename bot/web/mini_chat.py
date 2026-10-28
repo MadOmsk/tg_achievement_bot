@@ -19,6 +19,7 @@ from bot.db.repo import (
 )
 from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.i18n import translator
+from bot.services import game_page
 from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.presence_view import pick_presence
@@ -615,6 +616,7 @@ async def build_news_payload(
             until=after,
             limit=NEWS_MAX,
         )
+    heroes = await game_page.list_heroes(repo, [(row.platform, row.title_id) for row in rows])
     return {
         "items": [
             {
@@ -633,6 +635,7 @@ async def build_news_payload(
                     "title_id": row.title_id,
                     "name": pick_name(locale, row.game_ru, row.game_en, row.game),
                     "icon_url": _https_url(row.game_icon_url),
+                    "hero": heroes.get((row.platform, row.title_id)),
                 },
             }
             for row in rows

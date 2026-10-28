@@ -411,6 +411,18 @@ def card_of(card: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def list_heroes(repo: Any, lists: list[tuple[str, str]]) -> dict[tuple[str, str], str | None]:
+    """The wide art of the game each achievement list is in, for a post with
+    no picture of its own (owner, 2026-10-29)."""
+    games: dict[tuple[str, str], int] = {}
+    for key in dict.fromkeys(lists):
+        game_id = await repo.game_of_list(*key)
+        if game_id is not None:
+            games[key] = game_id
+    cards = await repo.game_cards(list(set(games.values())))
+    return {key: card_of(cards[g])["hero"] if g in cards else None for key, g in games.items()}
+
+
 def hltb_of(entry: dict[str, Any] | None) -> dict[str, Any] | None:
     """The hours HowLongToBeat's players took, its score and its age rating."""
     if not entry:

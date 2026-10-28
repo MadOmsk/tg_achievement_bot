@@ -26,7 +26,7 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars, custom_avatars, game_art, roles
+from bot.services import achievement_icons, avatars, custom_avatars, game_art, game_page, roles
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -762,7 +762,8 @@ async def handle_news_post(request: web.Request) -> web.Response:
             name = pick_name(locale, names[0], names[1], name_en)
             if name:
                 icon = await repo.title_icon_url(platform, title_id)
-                game = {"name": name, "icon_url": _https_url(icon)}
+                heroes = await game_page.list_heroes(repo, [key])
+                game = {"name": name, "icon_url": _https_url(icon), "hero": heroes.get(key)}
             break
     return web.json_response(
         {

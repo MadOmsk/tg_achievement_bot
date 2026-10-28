@@ -42,6 +42,8 @@ export function NewsPostPage({
   const post = item ?? fetched.data ?? null;
   const gameName = item?.game.name ?? fetched.data?.game?.name ?? game?.name ?? null;
   const gameIcon = item?.game.icon_url ?? fetched.data?.game?.icon_url ?? game?.icon_url ?? null;
+  // A post with no picture of its own shows its game's wide art, edge to edge.
+  const wide = post?.image ?? item?.game.hero ?? fetched.data?.game?.hero ?? null;
   const ref = item?.game ?? game;
   const theme = useArtTheme(gameArtOf(ref ? `${ref.platform}:${ref.title_id}` : null, gameName) ?? gameIcon);
   const text = post?.image
@@ -61,9 +63,9 @@ export function NewsPostPage({
       {!post && fetched.loading && <div className="np-skel skel" />}
       {!post && fetched.error ? <Empty icon="refresh" title={tr("loadFailed")} action={<Button variant="tonal" onClick={fetched.reload}>{tr("retry")}</Button>} /> : null}
       {post && (
-        <article>
-          <Hero full={Boolean(post.image)} ground={post.image ?? gameIcon} onOpen={post.image ? () => openImage(post.image!) : undefined}>
-            {post.image ? <img src={post.image} alt="" className="hero-pic" /> : <Cover src={gameIcon} className="hero-cover" />}
+        <article className="np-article">
+          <Hero full={Boolean(wide)} ground={wide ?? gameIcon} onOpen={wide ? () => openImage(wide) : undefined}>
+            {wide ? <img src={wide} alt="" className="hero-pic" /> : <Cover src={gameIcon} className="hero-cover" />}
           </Hero>
           <div className="detail">
             <div className="detail-meta">

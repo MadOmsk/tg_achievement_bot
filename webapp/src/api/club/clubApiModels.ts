@@ -142,7 +142,8 @@ export type NewsItem = {
   image: string | null;
   /** The post on Steam. */
   url: string;
-  game: { platform: string; title_id: string; name: string; icon_url: string | null };
+  /** `hero`: the game's wide art, for a post with no picture of its own. */
+  game: { platform: string; title_id: string; name: string; icon_url: string | null; hero?: string | null };
 };
 
 export type NewsResponse = {

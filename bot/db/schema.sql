@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
     -- When a person with no email put off adding one (migration 083): the app
     -- asks once, on opening it.
     email_prompted_at TEXT,
-    -- superadmin / admin / NULL (139): who may run the app.
+    -- superadmin / admin / NULL (140): who may run the app.
     role            TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
@@ -917,7 +917,7 @@ CREATE TABLE IF NOT EXISTS pass_seasons (
     title       TEXT,
     draft       INTEGER NOT NULL DEFAULT 0,
     draft_title TEXT,
-    image_path       TEXT,              -- its cover (138)
+    image_path       TEXT,              -- its cover (139)
     draft_image_path TEXT
 );
 
