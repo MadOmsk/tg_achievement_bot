@@ -1,4 +1,0 @@
-• Faces show again in the app opened from Telegram
-• Game posters, covers and banners are served by our server, not the stores
-• Xbox 360 covers come without their "XBOX 360" frame
-• Prod gets the games catalog the octopus assembled
