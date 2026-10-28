@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -65,7 +66,12 @@ async def fetch(url: str) -> bytes | None:
 
 
 async def download(
-    url: str, name: str, directory: Path, *, headers: dict[str, str] | None = None
+    url: str,
+    name: str,
+    directory: Path,
+    *,
+    headers: dict[str, str] | None = None,
+    transform: Callable[[bytes], bytes] | None = None,
 ) -> tuple[str, str] | None:
     """Fetch one picture and write it as `name` inside `directory`.
 
@@ -86,6 +92,8 @@ async def download(
         log.info("image for %s ignored: %s bytes", name, len(payload))
         return None
 
+    if transform is not None:
+        payload = transform(payload)
     return write(payload, name, directory)
 
 
@@ -93,7 +101,11 @@ def write(payload: bytes, name: str, directory: Path) -> tuple[str, str]:
     """The same, for bytes already in hand — Telegram's own photo arrives
     through the bot API rather than over plain HTTP."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / name).write_bytes(payload)
+    # Written aside and renamed: the cache may be shared by two bots
+    # (`MEDIA_DIR`), and neither may read half a file.
+    temporary = directory / f"{name}.part"
+    temporary.write_bytes(payload)
+    temporary.replace(directory / name)
     return name, hashlib.sha256(payload).hexdigest()
 
 

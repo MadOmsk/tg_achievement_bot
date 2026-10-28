@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from bot.db.repo._sql import OWNED_BY_PERSON, earned_at
+from bot.services import x360_frame
 from bot.util import utcnow
 
 # A merge chain is short; this only stops a cycle the operator could make.
@@ -188,7 +189,8 @@ class _GamePageRepo:
             for row in await cursor.fetchall()
         }
         cursor = await self._conn.execute(
-            "SELECT v.game_id, v.store, v.product_id, v.console, v.media, a.icon_url"
+            "SELECT v.game_id, v.store, v.product_id, v.console, v.media, a.icon_url,"
+            "  a.platform AS list_platform"
             " FROM versions v LEFT JOIN achievement_list_connectors a"
             "  ON a.platform = v.platform AND a.title_id = v.title_id"
             f" WHERE v.game_id IN ({marks}) AND v.role IN {_PLAYABLE_ROLES}",
@@ -207,7 +209,7 @@ class _GamePageRepo:
                 }
             )
             if row["icon_url"]:
-                card["icons"].append(row["icon_url"])
+                card["icons"].append(x360_frame.mark(row["icon_url"], row["list_platform"]))
         return cards
 
     async def game_steam_apps(self, game_id: int) -> list[int]:

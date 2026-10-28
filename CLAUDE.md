@@ -171,6 +171,7 @@ name, or when the tree goes stale.
 │   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
 │   │   ├── game_art.py           a game's poster, hero and header kept on disk, served signed
 │   │   ├── media.py              where the games database's pictures live (`MEDIA_DIR`)
+│   │   ├── x360_frame.py         Xbox 360 box art kept without the console's header or bar
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -263,6 +264,7 @@ name, or when the tree goes stale.
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
 │   ├── cache_achievement_icons.py                                   icon pre-caching (#99)
+│   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
 │   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
 │                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
@@ -660,6 +662,15 @@ every column. History: #106.
   adds later; unset, they stay under `data/`. A file's name never depends on the
   server and every write is a rename, so both bots share it. People's pictures
   (`data/avatars/`) stay each server's own; the dev server keeps its own cache.
+- **An Xbox 360 game's art is kept without the console's frame** (owner,
+  2026-10-28; `services/x360_frame.py`): the portrait box art loses its header
+  (the "XBOX 360" logo, Platinum Hits, Games for Windows LIVE, ARCADE — the top
+  13%), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
+  Cut on download — a 360 list's cover (`covers.download(platform=)`) and a
+  poster that stands in from a 360 list's icon (marked `#x360`, so `game_art`
+  cuts it; a fragment is never sent) —; anything else is left as it came, and a
+  picture cut once is neither shape. What was kept before is cut by
+  `scripts/strip_x360_frames.py` (no request, beside a running bot).
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
   without the bot token and a platform URL can break. Telegram photos
   (`users.photo_*`) and account avatars (`accounts.avatar_url/path/hash`) go to

@@ -350,7 +350,7 @@ class OctopusCollector:
             lists = await self._repo.game_page_lists(game)
             art = game_page.store_art(
                 await self._repo.game_page_versions(game),
-                [row["icon_url"] for row in lists if row.get("icon_url")],
+                game_page.list_icons(lists),
             )
             await game_art.ensure(list(art.values()))
         except Exception as exc:  # a picture never fails the assembly

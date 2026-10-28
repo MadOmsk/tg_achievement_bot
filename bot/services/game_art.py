@@ -6,7 +6,9 @@ route `/api/mini/art/{sig}?u=<address>` fetches only addresses this server
 handed out — a stranger cannot make it download whatever they like. The
 first request downloads it, shrinks it like an achievement icon (at most
 1280 px) and keeps it under `data/covers/art/`; every later one reads the
-file. The octopus fetches a game's art as it assembles it (`ensure`).
+file. The octopus fetches a game's art as it assembles it (`ensure`). An
+address marked as a 360 game's art (`x360_frame.MARK`) is kept without the
+console's frame.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from bot.services import achievement_icons, images
+from bot.services import achievement_icons, images, x360_frame
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +135,8 @@ async def get(url: str, *, root: Path | None = None) -> tuple[bytes, str] | None
             if data is None:
                 _misses[key] = time.monotonic()
                 return None
+            if x360_frame.marked(url):
+                data = await asyncio.to_thread(x360_frame.strip, data)
             data = await asyncio.to_thread(achievement_icons.shrink, data)
             mime, ext = achievement_icons.detect_mime(data)
             path = _path(key, ext, root)

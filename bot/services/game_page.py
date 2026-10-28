@@ -12,7 +12,7 @@ import json
 import re
 from typing import Any
 
-from bot.services import game_art
+from bot.services import game_art, x360_frame
 from bot.util import looks_russian
 
 # A game's own versions are shown on its page; a PC of no known store is a
@@ -51,6 +51,16 @@ def steam_capsule(appid: str | int) -> str:
     return (
         f"https://shared.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900.jpg"
     )
+
+
+def list_icons(lists: list[dict[str, Any]]) -> list[str]:
+    """The lists' own icons, as a poster stands in from them: a 360 list's
+    marked so its console frame is cut off (`x360_frame`)."""
+    return [
+        x360_frame.mark(row["icon_url"], row.get("platform"))
+        for row in lists
+        if row.get("icon_url")
+    ]
 
 
 def art_of(versions: list[dict[str, Any]], icons: list[str] | None = None) -> dict[str, str | None]:
