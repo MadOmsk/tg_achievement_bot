@@ -2919,6 +2919,11 @@ shared file has no version for keeps its stand-in, linked into a game after —,
 `leave` copies the shared catalog back into both and parts them. The dry run
 does it on copies in a temporary folder. A deploy's backup copies the games file
 too (`<copy>.games.db`, pruned with its copy).
+**Prod's unit is `ProtectSystem=strict`**: it may write only the folders it
+names, so the shared ones are a drop-in,
+`/etc/systemd/system/xbox-bot.service.d/shared.conf` (`ReadWritePaths=
+/srv/unlocked-games /srv/unlocked-media`); a new shared folder is added there, or
+prod fails with "attempt to write a readonly database".
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.

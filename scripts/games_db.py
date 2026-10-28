@@ -64,8 +64,11 @@ ADDED = (
     "hltb_review_scores",
     "hltb_related",
     "source_payloads",
-    "fetch_state",
 )
+# Not `fetch_state`: a joining database's "asked, next due then" would stand
+# for answers (DLC, versions) that give way to the shared file's, and the
+# shared file would not ask again until then (2026-10-28: prod's add-on
+# searches came over without their add-ons). Without it, they are asked when due.
 # An HLTB entry's rows of its own: taken only for an entry the shared file
 # did not have, never mixed into one it reads from a newer page.
 HLTB_CHILDREN = frozenset(
