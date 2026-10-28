@@ -2815,8 +2815,9 @@ A VPS at Spaceship (Namecheap), Ubuntu 24.04, nginx + systemd, dedicated user
 whose ports are never exposed (`OAUTH_LISTEN_HOST=127.0.0.1`).
 **SSH is keys only, on port 22022** (owner, 2026-10-23: password login
 is off, root by key only). CI's deploy connects on 22022 too, with
-`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches;
-port 22 is to be closed once a deploy over 22022 has gone through.
+`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches.
+Port 22 is closed: `ssh.socket` listens on 22022 alone (its `override.conf`,
+#228); ufw is off, nothing else is exposed.
 
 ```bash
 systemctl {start|stop|restart|status} xbox-bot        # xbox-bot-test for the test server
