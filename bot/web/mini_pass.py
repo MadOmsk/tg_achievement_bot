@@ -19,6 +19,7 @@ from typing import Any
 
 from aiohttp import web
 
+from bot.config import Settings
 from bot.db.repo import Repo
 from bot.services import game_page, pass_pictures, roles, season_pass
 from bot.services.naming import person_name
@@ -89,13 +90,13 @@ def _picture(item_id: int, path: str | None, *, draft: bool = False) -> str | No
     return url + f"&draft=1&s={_sign(item_id, version)}" if draft else url
 
 
-def _sign(item_id: int, version: str) -> str:
+def _sign(item_id: int | str, version: str) -> str:
     if _key is None:
         return ""
     return hmac.new(_key, f"{item_id}:{version}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
-def _signed(request: web.Request, item_id: int) -> bool:
+def _signed(request: web.Request, item_id: int | str) -> bool:
     given = request.query.get("s", "")
     return bool(given) and hmac.compare_digest(given, _sign(item_id, request.query.get("v", "")))
 
@@ -104,7 +105,9 @@ def _cover(month: str, path: str | None, *, draft: bool = False) -> str | None:
     if not path:
         return None
     version = path.rsplit("-", 1)[-1].split(".")[0]
-    return f"/api/mini/pass/season/image?month={month}&v={version}" + ("&draft=1" if draft else "")
+    url = f"/api/mini/pass/season/image?month={month}&v={version}"
+    # A cover waiting for the publish is the editor's, as a level's picture is.
+    return url + f"&draft=1&s={_sign('season:' + month, version)}" if draft else url
 
 
 async def _cards(repo: Repo, rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
@@ -605,8 +608,12 @@ async def handle_season_image_delete(request: web.Request) -> web.Response:
 
 async def handle_season_image(request: web.Request) -> web.Response:
     repo: Repo = request.app["mini_repo"]
-    season = await repo.pass_season(request.query.get("month", ""))
-    path = season["draft_image_path"] if request.query.get("draft") else season["image_path"]
+    month = request.query.get("month", "")
+    season = await repo.pass_season(month)
+    draft = bool(request.query.get("draft"))
+    if draft and not _signed(request, "season:" + month):
+        raise web.HTTPNotFound(text="no picture")
+    path = season["draft_image_path"] if draft else season["image_path"]
     if not path:
         raise web.HTTPNotFound(text="no picture")
     try:
