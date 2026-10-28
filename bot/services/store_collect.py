@@ -144,6 +144,7 @@ class StoreCollector:
                 await self._psn(title_id, report, force)
             elif platform == "xbox_360":
                 await self.x360_by_name(title_id, force=force)
+                await self._x360_addons(title_id, report, force)
             await self._list_version(platform, title_id, report)
             # Before HLTB: looking for the other stores finds the HLTB entry,
             # which the HLTB step then links to every version of this list.
@@ -310,16 +311,21 @@ class StoreCollector:
         # Every product carrying this title id is this game's: an add-on
         # naming any of them as its own is the game's (a cross-gen game's).
         owners = {str(p.get("ProductId")) for p in found if p.get("ProductId")}
+        all_ids: list[int] = []
         for product in games:
             versions = xbox_catalog.parse_product(product)
             ids = await self._save_xbox_versions(
                 versions, "xbox_modern", title_id, "played", ("played", f"xbox_modern:{title_id}")
             )
             report.versions += ids
+            all_ids += ids
             if versions:
                 changed |= await self._xbox_addons(
                     versions[0].product_id, versions[0].dlc_ids, ids, report, owners
                 )
+        changed |= await self._xbox_addons_alone(
+            owners, [xbox_catalog.title_of(p) for p in games], all_ids, report, force
+        )
         steam_appid = await self._title_steam_appid("xbox_modern", title_id)
         patched = await self._recently_patched(steam_appid)
         await self._repo.record_fetch(subject, source, status="ok", changed=changed or patched)
@@ -388,6 +394,80 @@ class StoreCollector:
                 await self._repo.save_dlc(version_id, addon)
             report.dlcs += 1
         return changed
+
+    async def _xbox_addons_alone(
+        self,
+        owners: set[str],
+        names: list[str | None],
+        version_ids: list[int],
+        report: CollectReport,
+        force: bool,
+    ) -> bool:
+        """The add-ons sold only on their own (owner, 2026-10-27): no edition
+        lists them, so the catalog's add-ons for the game's names are read,
+        and those naming one of `owners` (the game's products) as their
+        parent are kept. Two names at most, when due (`fetch_state`)."""
+        searched = list(dict.fromkeys(n for n in map(_store_name, names) if n))[:2]
+        if not owners or not searched or not version_ids:
+            return False
+        subject, source = f"xbox_addons_alone:{min(owners)}", "xbox_addon_search"
+        if not force and not await self._repo.fetch_due(subject, source):
+            report.skipped.append(source)
+            return False
+        report.asked.append(source)
+        try:
+            ids: list[str] = []
+            for name in searched:
+                ids += [i for i in await xbox_catalog.search_addons(name) if i not in ids]
+            found = await xbox_catalog.products(ids) if ids else []
+        except Exception as exc:
+            report.errors.append(f"{source}: {exc!r}")
+            await self._repo.record_fetch(subject, source, status="error", error=repr(exc))
+            return False
+        mine = [p for p in found if xbox_catalog.belongs_to(p, owners)]
+        changed = await self._repo.save_payload(subject, source, mine)
+        for product in mine:
+            addon = xbox_catalog.parse_addon(product)
+            if addon is None:
+                continue
+            for version_id in version_ids:
+                await self._repo.save_dlc(version_id, addon)
+            report.dlcs += 1
+        await self._repo.record_fetch(
+            subject, source, status="ok" if mine else "not_found", changed=changed
+        )
+        return changed
+
+    async def xbox_product_addons(self, version: dict, *, force: bool = False) -> CollectReport:
+        """An Xbox store product with no achievement list of ours (the
+        octopus's find by name): its add-ons sold on their own."""
+        product_id = str(version["product_id"])
+        report = CollectReport("xbox", product_id)
+        ids = [int(v["version_id"]) for v in await self._repo.versions_of_product(
+            "xbox", product_id)]  # fmt: skip
+        await self._xbox_addons_alone(
+            {product_id}, [version.get("name")], ids or [int(version["version_id"])], report, force
+        )
+        return report
+
+    async def _x360_addons(self, title_id: str, report: CollectReport, force: bool) -> None:
+        """A 360 game's add-ons: it has no editions, so only those sold on
+        their own exist, under its backward-compatible product."""
+        versions = [
+            v
+            for v in await self._repo.versions_of_title("xbox_360", title_id)
+            if v["store"] == "xbox" and not v["stand_in"]
+        ]
+        if not versions:
+            return
+        record = await self._repo.title_record("xbox_360", title_id) or {}
+        await self._xbox_addons_alone(
+            {str(v["product_id"]) for v in versions},
+            [versions[0]["name"], record.get("name"), record.get("name_en")],
+            [int(v["version_id"]) for v in versions],
+            report,
+            force,
+        )
 
     async def _xbox_editions(
         self, editions: list[dict], items: list[dict], report: CollectReport
@@ -611,6 +691,13 @@ class StoreCollector:
                 owners = {pid for pid, tids in title_ids_of.items() if tids & own}
                 await self._xbox_addons(
                     versions[0].product_id, versions[0].dlc_ids, ids, report, owners
+                )
+                await self._xbox_addons_alone(
+                    owners | {versions[0].product_id},
+                    [xbox_catalog.title_of(product)],
+                    ids,
+                    report,
+                    False,
                 )
         await self._xbox_editions(editions, [], report)
 
@@ -1215,6 +1302,12 @@ async def link_hltb_entry(repo: Repo, hltb_id: int) -> None:
         names,
     )
     await repo.replace_dlc_hltb([int(d["dlc_id"]) for d in dlcs], links)
+
+
+def _store_name(name: object) -> str:
+    """A name to ask a store's search with: no ®™©, never an id."""
+    text = re.sub(r"[®™©]", "", str(name or "")).strip()
+    return "" if not text or text.isdigit() or text == "?" else text
 
 
 async def link_x360_product(repo: Repo, title_id: str) -> int | None:

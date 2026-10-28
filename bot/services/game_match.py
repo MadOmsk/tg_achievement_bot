@@ -140,7 +140,7 @@ class Verdict:
 
     subject: int  # version id
     other: int
-    relation: str  # same / remaster_of / remake_of / contains / vr_of / other
+    relation: str  # one of CLASSES, or other
     p: float  # the probability of `relation`
     probs: dict[str, float]
     state: str  # linked / review / apart
@@ -150,6 +150,11 @@ class Verdict:
     @property
     def p_same(self) -> float:
         return self.probs.get("same", 0.0)
+
+    @property
+    def p_join(self) -> float:
+        """That the two are one game: the same, or one an enhanced edition."""
+        return sum(self.probs.get(c, 0.0) for c in JOIN_CLASSES)
 
 
 def is_part(kind: str | None, role: str | None, names: tuple[str, ...] | list[str]) -> bool:
@@ -226,10 +231,20 @@ def is_enhanced(candidate: Candidate) -> bool:
 
 
 # The relations a pair of versions can have (#147; owner, 2026-10-11): one
-# game, or two games of which the first (the subject) is a remaster, a remake,
-# a compilation or the VR version of the second — or nothing ("other").
-CLASSES = ("same", "remaster_of", "remake_of", "contains", "vr_of")
-RELATIONS = CLASSES[1:]
+# game, the first (the subject) an enhanced edition of the second — kept in
+# its game, a class of its own (owner, 2026-10-27) —, or two games of which
+# the first is a remaster, a remake, a compilation or the VR version of the
+# second — or nothing ("other").
+CLASSES = ("same", "enhanced_of", "remaster_of", "remake_of", "contains", "vr_of")
+# The classes that keep two versions in one game.
+JOIN_CLASSES = ("same", "enhanced_of")
+# The relations between two games of their own.
+RELATIONS = tuple(c for c in CLASSES if c not in JOIN_CLASSES)
+# A model's answer that is neither one game nor nothing is its first guess,
+# written so the catalog has one, and asked of the web-searching advisers
+# until a label settles it (owner, 2026-10-27: "determine what it can, mark
+# it for a recheck").
+RECHECK = CLASSES[1:]
 
 # What each sign adds to each class's log-odds against "other" (whose log-odds
 # is 0); a softmax makes them probabilities. Every rule is a weight, nothing is
@@ -260,7 +275,8 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "full_name": 4.4,  # the very same full name, a few years apart at most
         "franchise": 2.0,  # one name ends the other ("Call of Duty: Modern Warfare 2")
         "subtitle": -1.5,  # one name opens the other, which goes on
-        "numbers_differ": -9.0,  # Halo and Halo 2
+        "numbers_differ": -9.0,  # Halo 2 and Halo 3
+        "number_missing": -4.5,  # Halo and Halo 2 — or Skyrim and its edition
         "remaster_word": -1.0,
         "enhanced_word": -1.0,  # as remaster_word until a fit splits them
         "remake_word": -2.0,
@@ -285,6 +301,50 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "mode_of": 7.0,  # a mode's launcher, its game's name opening its own
         "extra_of": 7.0,  # a soundtrack or an artbook of this very game
     },
+    # An enhanced edition (GOTY, Definitive, Director's Cut, Special
+    # Edition): one game made more of, a product of its own, often a list of
+    # its own, a few years later at most. Starting values, until a fit.
+    "enhanced_of": {
+        "bias": -5.0,
+        "one_list": -2.0,
+        "unknown_pc_namesake": -6.0,
+        "cross_gen_set": -2.0,
+        "later_list_same_family": 2.0,
+        "later_list_same_store": 2.0,
+        "same_name": -4.0,
+        "same_name_far": -2.0,
+        "subtitles_differ": -3.0,
+        "same_group": 2.0,
+        "steam_parent": -2.0,
+        "same_hltb": 2.5,
+        "year_unknown": 0.45,
+        "name": 8.0,
+        "full_name": 1.0,
+        "franchise": 0.5,
+        "subtitle": -1.0,
+        "numbers_differ": -9.0,
+        "number_missing": -2.0,
+        "remaster_word": 0.5,
+        "enhanced_word": 4.0,
+        "remake_word": -2.0,
+        "edition_word_near": 3.0,
+        "compilation_word": -2.0,
+        "vr_word": -4.0,
+        "overlap_high": 3.0,
+        "overlap_partial": 2.0,
+        "overlap_low": -1.0,
+        "years_near": 1.0,
+        "years_gap": -0.1,
+        "developer_same": 0.7,
+        "developer_differs": -1.0,
+        "publisher_same": 0.5,
+        "demo_of": -5.0,
+        "tool_of": -5.0,
+        "mode_of": -5.0,
+        "extra_of": -5.0,
+        "extra_pair": -20.0,
+        "extra_both": -20.0,
+    },
     "remaster_of": {
         "bias": -5.0,
         "one_list": -6.0,
@@ -305,6 +365,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "franchise": 1.0,
         "subtitle": -1.0,
         "numbers_differ": -9.0,
+        "number_missing": -4.5,
         "remaster_word": 3.0,
         "enhanced_word": 3.0,
         "remake_word": 0.5,
@@ -342,6 +403,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "full_name": 2.0,
         "subtitle": 0.5,
         "numbers_differ": -6.0,
+        "number_missing": -3.0,
         "remaster_word": -1.0,
         "enhanced_word": -1.0,
         "remake_word": 4.0,
@@ -398,6 +460,7 @@ WEIGHTS: dict[str, dict[str, float]] = {
         "vr_word": 8.0,
         "name": 8.0,
         "numbers_differ": -9.0,
+        "number_missing": -4.5,
         "overlap_high": 1.0,
         "overlap_partial": 1.0,
         "developer_same": 0.5,
@@ -455,7 +518,9 @@ def model_name() -> str:
 
 
 MODEL = "multiclass-1"  # stored beside every decision: which weights saw it
-LINK_P = 0.85  # at or above: linked (one game, or the relation)
+# At or above: linked (one game, or the relation). 0.95 while the fit's
+# probabilities run overconfident (#218: wrong links on the gate 8.9% → 6.8%).
+LINK_P = 0.95
 REVIEW_P = 0.15  # at or above (below LINK_P): the operator decides
 CLOSE_CALL = 0.2  # two classes this close: the operator decides
 VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
@@ -466,6 +531,7 @@ VETO_P = 0.05  # below this "same", two clusters never join (unless one list)
 DIFFER_SIGNS = frozenset(
     {
         "numbers_differ",
+        "number_missing",
         "subtitles_differ",
         "same_name_far",
         "same_name_other_studio",
@@ -668,7 +734,10 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["tool_of"] = 1.0
         f.pop("subtitle", None)
     elif name < 1.0 and _numbers(s) != _numbers(o):
-        f["numbers_differ"] = 1.0
+        # Two numbers that disagree are two games (Halo 2, Halo 3); a
+        # number on one side only is weaker (#218): Halo and Halo 2, but
+        # Skyrim and "The Elder Scrolls V: Skyrim" too.
+        f["numbers_differ" if _numbers(s) and _numbers(o) else "number_missing"] = 1.0
 
     def says(pattern: re.Pattern[str], c: Candidate) -> bool:
         return any(pattern.search(n) for n in c.names)
@@ -725,6 +794,7 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
         f["years_near"] = 1.0
     else:
         f["years_gap"] = float(min(gap - NEAR_YEARS, 9))
+    f.update(shape_features(s, o, gap))
     f.update(text_features(s, o))
     if not s.names or not o.names:
         for sign in _NAME_SIGNS:
@@ -744,6 +814,68 @@ def features(a: Candidate, b: Candidate, *, ordered: bool = False) -> dict[str, 
     return f
 
 
+# Kinds of edition word (#218): a Game of the Year is the game with its
+# DLC, a Definitive one is often more, HD is a remaster's.
+_EDITION_KINDS = (
+    ("word_goty", re.compile(r"\b(game of the year|goty|complete)\b", re.IGNORECASE)),
+    (
+        "word_definitive",
+        re.compile(r"\b(definitive|ultimate|enhanced|director'?s cut)\b", re.IGNORECASE),
+    ),
+    ("word_hd", re.compile(r"\b(hd|4k|remaster(?:ed)?)\b", re.IGNORECASE)),
+)
+# Words a name may add that say nothing of which game it is.
+_FILLER = frozenset({"the", "a", "an", "of", "and", "edition", "game"})
+
+
+def _content_words(name: str) -> set[str]:
+    return {w for w in name.split() if w not in _FILLER and w not in _EDITION_TAIL_WORDS}
+
+
+def shape_features(s: Candidate, o: Candidate, gap: int | None) -> dict[str, float]:
+    """What the shape of a pair says (#218): whose achievement list is
+    known and how much they share, the words each name adds, the kind of
+    edition word, and what the stores tell apart."""
+    f: dict[str, float] = {}
+    sa, oa = len(s.achievements), len(o.achievements)
+    known = (sa >= ACHIEVEMENTS_MIN) + (oa >= ACHIEVEMENTS_MIN)
+    if known == 2:
+        overlap = len(s.achievements & o.achievements) / min(sa, oa)
+        f["overlap"] = overlap
+        f["count_ratio"] = min(sa, oa) / max(sa, oa)
+        if gap is not None and gap >= FAR_YEARS:
+            f["overlap_far"] = overlap
+    else:
+        f["list_one" if known == 1 else "list_none"] = 1.0
+
+    pairs = [(_content_words(x), _content_words(y)) for x in s.fulls for y in o.fulls]
+    if pairs:
+        x, y = max(pairs, key=lambda p: (len(p[0] & p[1]), -len(p[0] ^ p[1])))
+        if not x & y:
+            f["no_shared_word"] = 1.0
+        elif x - y and y - x:
+            f["words_both_added"] = 1.0
+        elif x - y:
+            f["words_added"] = 1.0
+        elif not y - x:
+            f["words_none_added"] = 1.0
+
+    def says(pattern: re.Pattern[str], c: Candidate) -> bool:
+        return any(pattern.search(n) for n in c.names)
+
+    for sign, pattern in _EDITION_KINDS:
+        if says(pattern, s) and not says(pattern, o):
+            f[sign] = 1.0
+
+    if s.store == o.store and s.list_key and o.list_key and s.list_key != o.list_key:
+        f["two_lists_one_store"] = 1.0
+    if s.hltb_ids and o.hltb_ids and not s.hltb_ids & o.hltb_ids:
+        f["hltb_differs"] = 1.0
+    if s.publisher and o.publisher and not _same(s.publisher, o.publisher):
+        f["publisher_differs"] = 1.0
+    return f
+
+
 # What a pair's names say — nothing when one side has none.
 _NAME_SIGNS = (
     "name",
@@ -752,7 +884,12 @@ _NAME_SIGNS = (
     "subtitle",
     "subtitles_differ",
     "numbers_differ",
+    "number_missing",
     "same_name",
+    "no_shared_word",
+    "words_both_added",
+    "words_added",
+    "words_none_added",
     "same_name_far",
     "same_name_other_studio",
 )
@@ -763,12 +900,45 @@ def probabilities(
 ) -> dict[str, float]:
     """Each class's probability (and "other"'s): a softmax over the log-odds."""
     w = weights or _active
-    logits = {c: sum(w.get(c, {}).get(k, 0.0) * v for k, v in f.items()) for c in CLASSES}
+
+    def weight(c: str, k: str) -> float:
+        # A sign newer than the weights in use (a fit names every sign it
+        # saw, zeros included) speaks with its hand weight until a fit
+        # learns it.
+        known = w.get(c, {})
+        return known[k] if k in known else WEIGHTS[c].get(k, 0.0)
+
+    logits = {c: sum(weight(c, k) * v for k, v in f.items()) for c in CLASSES}
     logits["other"] = 0.0
     top = max(logits.values())
     exp = {c: math.exp(max(-40.0, x - top)) for c, x in logits.items()}
     total = sum(exp.values())
     return {c: v / total for c, v in exp.items()}
+
+
+DIRECTED = tuple(c for c in CLASSES if c != "same")
+
+
+def both_ways(
+    f: dict[str, float],
+    r: dict[str, float] | None,
+    weights: dict[str, dict[str, float]] | None = None,
+) -> tuple[dict[str, float], bool]:
+    """Each class's probability with the pair read from both sides (#218):
+    `f` from the subject's side (`subject_of`), `r` from the other's. A
+    relation points one way and `subject_of` is a guess; the fit learns a
+    labelled remaster from its own side, so a guess the wrong way round
+    lost every such label. "same" and "other" are read from `f`, each
+    directed class from the side that makes it likelier; and whether the
+    likeliest directed class reads from `r`."""
+    p = probabilities(f, weights)
+    if r is None or r == f:
+        return p, False
+    q = probabilities(r, weights)
+    merged = {c: max(p[c], q[c]) if c in DIRECTED else v for c, v in p.items()}
+    total = sum(merged.values())
+    best = max(DIRECTED, key=merged.__getitem__)
+    return {c: v / total for c, v in merged.items()}, q[best] > p[best]
 
 
 def compare(
@@ -777,11 +947,15 @@ def compare(
     """How two versions relate, and how sure the model is (`weights`: other
     weights than those in use, a fit's, to see what it would change)."""
     s, o = subject_of(a, b)
-    f = features(a, b)
-    probs = probabilities(f, weights)
+    f = features(s, o, ordered=True)
+    probs, turned = both_ways(f, features(o, s, ordered=True), weights)
     ranked = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
     (relation, p), (_second, p2) = ranked[0], ranked[1]
     best_link = max(((c, probs[c]) for c in CLASSES), key=lambda kv: kv[1])
+    if turned and best_link[0] != "same":
+        # The relation reads from the other side: it points from there.
+        s, o = o, s
+        f = features(s, o, ordered=True)
     # The same name years apart or by another studio is the operator's —
     # unless one is the PC game the Xbox app saw (its year is a guess).
     namesake = (
@@ -1380,8 +1554,21 @@ def _numbers(candidate: Candidate) -> set[str]:
     for name in candidate.cores:
         # Four digits too: Battlefield 1942 is not 2042. A year a store adds
         # in parentheses ("(2005)") is gone with the parenthesis already.
-        found |= {tok for tok in name.split() if tok.isdigit() and len(tok) <= 4}
+        # A platform's number is not the game's ("PlayStation 4 Edition",
+        # "for Xbox 360", #218).
+        words = name.split()
+        found |= {
+            tok
+            for i, tok in enumerate(words)
+            if tok.isdigit()
+            and len(tok) <= 4
+            and (i == 0 or words[i - 1] not in _PLATFORM_NUMBERED)
+        }
     return found
+
+
+# Words a platform's own number follows.
+_PLATFORM_NUMBERED = frozenset({"playstation", "ps", "xbox", "windows", "win", "nintendo", "wii"})
 
 
 def _same(a: str | None, b: str | None) -> bool:

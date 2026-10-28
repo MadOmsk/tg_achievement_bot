@@ -13,7 +13,7 @@ import { AchTile } from "../../parts/AchTile";
 import { achOfFeed } from "../../app/views";
 import { AccountChip } from "../../parts/AccountCard";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
-import { Face, faceUrl, knownName } from "../../ui/Face";
+import { Face, faceSrc, knownName } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
 import { BarAction, Confirm, Page, Sheet } from "../../ui/Page";
 import { openImage } from "../../ui/Viewer";
@@ -90,8 +90,8 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       }
     >
       <header className="pp-head">
-        <Backdrop key={personId} src={faceUrl(personId)} />
-        <button type="button" className="pp-face" onClick={() => openImage(faceUrl(personId))} aria-label={name}>
+        <Backdrop key={personId} personId={personId} />
+        <button type="button" className="pp-face" onClick={() => void faceSrc(personId).then((src) => src && openImage(src))} aria-label={name}>
           <Face personId={personId} name={name || "?"} size={112} thinRing presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
         {name ? <h1 className="pp-name">{name}</h1> : <span className="skel pp-skel-name" />}
@@ -294,11 +294,19 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
 }
 
 /** The face again behind the head, blurred into a glow of its colours. */
-function Backdrop({ src }: { src: string }) {
+function Backdrop({ personId }: { personId: number }) {
+  const [src, setSrc] = useState<string | null>(null);
   const [shown, setShown] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void faceSrc(personId).then((url) => live && setSrc(url));
+    return () => {
+      live = false;
+    };
+  }, [personId]);
   return (
     <span className={`pp-backdrop${shown ? " on" : ""}`} aria-hidden="true">
-      <img src={src} alt="" onLoad={() => setShown(true)} />
+      {src && <img src={src} alt="" onLoad={() => setShown(true)} />}
     </span>
   );
 }

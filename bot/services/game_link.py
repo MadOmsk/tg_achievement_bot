@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from bot.services.game_match import (
     DIFFER_SIGNS,
+    JOIN_CLASSES,
     LINK_P,
     RELATIONS,
     VETO_P,
@@ -53,6 +54,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Labels that put two versions in one game; every other label keeps them apart.
+# (An enhanced edition joins its game here, and may leave it after for a
+# game of its own: `_split_enhanced`.)
 JOINING = {
     "same",
     "edition",
@@ -71,6 +74,8 @@ PARTS = ("demo", "tool", "mode", "extra", "pass")
 # series" (owner, 2026-10-11) — the same for building games, kept apart for
 # what it tells about the model's mistakes.
 NOT_RELATED = {"other", "series"}
+# An enhanced edition split into a game of its own (`_split_enhanced`).
+ENHANCED = "enhanced_of"
 # A word in more versions' names than this tells nothing ("war", "star").
 COMMON_WORD = 60
 # One linker at a time in a process: two collections of one game's lists at
@@ -138,12 +143,13 @@ class GameLinker:
             lambda: {(a, b): compare(candidates[a], candidates[b]) for a, b in pairs}
         )
         groups = _cluster(members, verdicts, labels)
+        groups, enhanced = _split_enhanced(groups, candidates, labels, verdicts)
         group_of = {v: i for i, g in enumerate(groups) for v in g}
         surest: dict[int, float] = {}
         for (a, b), v in verdicts.items():
             if group_of[a] == group_of[b]:
-                surest[a] = max(surest.get(a, 0.0), v.p_same)
-                surest[b] = max(surest.get(b, 0.0), v.p_same)
+                surest[a] = max(surest.get(a, 0.0), v.p_join)
+                surest[b] = max(surest.get(b, 0.0), v.p_join)
 
         anchors = await self._repo.games_anchored_in(list(around))
         old_games = {int(m["game_id"]) for m in now_in.values()}
@@ -162,16 +168,20 @@ class GameLinker:
                     target = await self._repo.create_game(
                         game_name(cluster), anchor.year, anchor.version_id
                     )
-                for version_id, (role, of) in _roles(cluster, labels).items():
+                for version_id, (role, of) in _roles(cluster, labels, verdicts).items():
                     assignment[version_id] = (target, role, of, surest.get(version_id))
                     game_of[version_id] = target
                 report.games[target] = sorted(group)
             await self._repo.write_members(assignment)
 
             relations = _relations(groups, game_of, verdicts, labels, candidates)
+            for e, base in enhanced:
+                g, r = game_of[next(iter(groups[e]))], game_of[next(iter(groups[base]))]
+                relations[(g, r, ENHANCED)] = ("auto", None)
             # Named once the relations are known: a remaster, a remake, a VR
-            # version or a compilation is called by its own release.
-            subjects = {g for g, _r, kind in relations if kind in RELATIONS}
+            # version, an enhanced edition or a compilation is called by its
+            # own release.
+            subjects = {g for g, _r, kind in relations if kind in (*RELATIONS, ENHANCED)}
             for group in groups:
                 target = game_of[next(iter(group))]
                 cluster = [candidates[v] for v in group]
@@ -324,7 +334,7 @@ def _cluster(
         # year split Fall Guys and Among Us); it may still join.
         if "name_unknown" in v.features:
             continue
-        if v.p_same < VETO_P and "one_list" not in v.features and _differ(v):
+        if v.p_join < VETO_P and "one_list" not in v.features and _differ(v):
             forbidden[a].add(b)
             forbidden[b].add(a)
 
@@ -343,14 +353,75 @@ def _cluster(
     for lab in labels:
         if lab["relation"] in JOINING:
             join(lab["version_id"], lab["other_id"], force=True)
-    for (a, b), v in sorted(verdicts.items(), key=lambda kv: -kv[1].p_same):
-        if v.p_same < LINK_P:
+    for (a, b), v in sorted(verdicts.items(), key=lambda kv: -kv[1].p_join):
+        if v.p_join < LINK_P:
             break
         join(a, b, force=False)
     unique: dict[int, set[int]] = {}
     for g in group.values():
         unique[id(g)] = g
     return list(unique.values())
+
+
+def _split_enhanced(
+    groups: list[set[int]],
+    candidates: dict[int, Candidate],
+    labels: list[dict],
+    verdicts: dict[tuple[int, int], Verdict] | None = None,
+) -> tuple[list[set[int]], list[tuple[int, int]]]:
+    """An enhanced edition sold under a product of its own beside the plain
+    game is a game of its own (owner, 2026-10-25): where one store sells
+    both — the plain game and the GOTY, the Definitive, the Director's Cut —
+    the group's enhanced versions leave it for a game of their own, related
+    `enhanced_of` to it. Where no store sells both (Steam sells only the
+    Complete Edition), the enhanced edition is the game there, and stays.
+    Returns the groups and `(enhanced group, its game's group)` pairs."""
+    said = {lab["version_id"] for lab in labels if lab["relation"] == "enhanced_of"}
+    labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
+    said |= set(_model_enhanced(verdicts or {}, labelled))
+    # A version labelled a part (an add-on named "Special Edition Upgrade")
+    # is no edition, whatever its name says.
+    parts = {
+        lab["version_id"]
+        for lab in labels
+        if lab["relation"] in ("demo_of", "tool_of", "mode_of", "extra_of", "pass_of")
+    }
+    out: list[set[int]] = []
+    pairs: list[tuple[int, int]] = []
+    for group in groups:
+        cluster = [candidates[v] for v in group]
+        enhanced = {
+            c.version_id
+            for c in cluster
+            if c.version_id in said or (kind_of(c) == "edition" and c.version_id not in parts)
+        }
+        plain = [
+            c for c in cluster if c.version_id not in enhanced | parts and kind_of(c) not in PARTS
+        ]
+        both = {c.store for c in plain} & {candidates[v].store for v in enhanced}
+        if not enhanced or not plain or not (both - {"unknown"}):
+            out.append(group)
+            continue
+        out.append(group - enhanced)
+        out.append(set(enhanced))
+        pairs.append((len(out) - 1, len(out) - 2))
+    return out, pairs
+
+
+def _model_enhanced(
+    verdicts: dict[tuple[int, int], Verdict], labelled: set[frozenset[int]]
+) -> dict[int, int]:
+    """The model's sure enhanced editions, each with the version it enhances
+    (the surest): what no label says otherwise of."""
+    found: dict[int, tuple[int, float]] = {}
+    for v in verdicts.values():
+        if v.state != "linked" or v.relation != ENHANCED:
+            continue
+        if frozenset((v.subject, v.other)) in labelled:
+            continue
+        if v.subject not in found or found[v.subject][1] < v.p:
+            found[v.subject] = (v.other, v.p)
+    return {e: of for e, (of, _p) in found.items()}
 
 
 def _differ(v: Verdict) -> bool:
@@ -370,7 +441,11 @@ def _anchor(cluster: list[Candidate]) -> Candidate:
     return min(plain, key=lambda c: (era(c) or 9999, c.version_id))
 
 
-def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str, int | None]]:
+def _roles(
+    cluster: list[Candidate],
+    labels: list[dict],
+    verdicts: dict[tuple[int, int], Verdict] | None = None,
+) -> dict[int, tuple[str, int | None]]:
     """Each version's role in its game, and for a demo, a tool or a mode the
     version it is of (owner, 2026-10-09): the one on the same console, else the same
     store, else any — the one whose name opens it first."""
@@ -380,6 +455,10 @@ def _roles(cluster: list[Candidate], labels: list[dict]) -> dict[int, tuple[str,
         for lab in labels
         if lab["version_id"] in ids and lab["other_id"] in ids
     }
+    labelled = {frozenset((lab["version_id"], lab["other_id"])) for lab in labels}
+    for e, of in _model_enhanced(verdicts or {}, labelled).items():
+        if e in ids and of in ids and e not in told:
+            told[e] = (ENHANCED, of)
     games = [c for c in cluster if kind_of(c) not in PARTS]
     roles: dict[int, tuple[str, int | None]] = {}
     for c in cluster:
@@ -567,7 +646,7 @@ def _review(
         if v.state != "review" or frozenset((a, b)) in labelled:
             continue
         ga, gb = game_of.get(a), game_of.get(b)
-        if ga is None or gb is None or (ga == gb and v.relation == "same"):
+        if ga is None or gb is None or (ga == gb and v.relation in JOIN_CLASSES):
             continue
         key = frozenset((ga, gb))
         if ga != gb and (key in related or key in decided):

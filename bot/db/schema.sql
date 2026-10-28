@@ -877,7 +877,7 @@ CREATE TABLE IF NOT EXISTS pass_claims (
     PRIMARY KEY (person_id, palette)
 );
 
--- The season pass's levels (132; owner, 2026-10-27): themes and prizes,
+-- The season pass's levels (133; owner, 2026-10-27): themes and prizes,
 -- edited by the super-admin as a draft and shown once published.
 CREATE TABLE IF NOT EXISTS pass_items (
     item_id      INTEGER PRIMARY KEY,
@@ -889,8 +889,8 @@ CREATE TABLE IF NOT EXISTS pass_items (
     points       INTEGER NOT NULL DEFAULT 0,
     image_path   TEXT,
     game_id      INTEGER,
-    platform     TEXT,                      -- a prize's, free text (134)
-    month        TEXT,                      -- whose pass it is: YYYY-MM (135)
+    platform     TEXT,                      -- a prize's, free text (135)
+    month        TEXT,                      -- whose pass it is: YYYY-MM (136)
     state        TEXT NOT NULL DEFAULT 'draft',  -- draft / live / removed
     pending      TEXT,
     created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -909,7 +909,7 @@ CREATE INDEX IF NOT EXISTS idx_pass_item_codes_item ON pass_item_codes (item_id)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pass_item_codes_one_each
     ON pass_item_codes (item_id, person_id) WHERE person_id IS NOT NULL;
 
--- The pass's levels a person reached, per month (133; owner, 2026-10-28):
+-- The pass's levels a person reached, per month (134; owner, 2026-10-28):
 -- each is told once a month.
 CREATE TABLE IF NOT EXISTS pass_reached (
     person_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1494,12 +1494,14 @@ CREATE TABLE IF NOT EXISTS game_series (
 );
 CREATE INDEX IF NOT EXISTS idx_game_series_series ON game_series(series_id);
 
--- A stand-in version is named by its list (117): the name follows the list's.
+-- A stand-in version is named by its list (117): the name follows the list's;
+-- the list's own id is no name (130).
 CREATE TRIGGER IF NOT EXISTS list_name_reaches_its_stand_ins
 AFTER UPDATE OF name, name_ru, name_en ON achievement_list_connectors
 BEGIN
     UPDATE versions SET
         name = CASE WHEN NEW.name IS NOT NULL AND NEW.name NOT IN ('', '?')
+                         AND NEW.name <> NEW.title_id
                     THEN NEW.name ELSE COALESCE(NEW.name_en, name) END,
         name_ru = NEW.name_ru
     WHERE stand_in = 1 AND platform = NEW.platform AND title_id = NEW.title_id;

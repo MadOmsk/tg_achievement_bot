@@ -1,6 +1,6 @@
 """The season pass: the themes each person claimed (131), and the pass's levels
-with their codes (132), edited by the super-admin as a draft, a pass a month
-(135), and the levels each person reached in a month (133). A `month` of None
+with their codes (133), edited by the super-admin as a draft, a pass a month
+(136), and the levels each person reached in a month (134). A `month` of None
 reads every month."""
 
 from __future__ import annotations

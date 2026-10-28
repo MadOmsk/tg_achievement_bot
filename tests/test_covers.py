@@ -59,7 +59,7 @@ def _downloads_to(monkeypatch, tmp_path, *, payload: bytes | None = b"\xff\xd8jp
     """Keep the walker off the network; still exercise the real writer."""
     saved: list[str] = []
 
-    async def fake_download(url: str, name: str, *, root=None):
+    async def fake_download(url: str, name: str, *, platform=None, root=None):
         saved.append(url)
         if payload is None:
             return None
@@ -112,7 +112,7 @@ async def test_an_old_steam_game_falls_back_to_its_header(
     )
     tried: list[str] = []
 
-    async def download(url, name):
+    async def download(url, name, **kwargs):
         tried.append(url)
         if url.endswith("library_600x900.jpg"):
             return None
@@ -276,7 +276,7 @@ async def test_a_new_steam_game_takes_the_header_its_store_page_names(
         asked.append(appid)
         return header
 
-    async def download(url, name):
+    async def download(url, name, **kwargs):
         return ("covers/new.jpg", "hash") if url == header else None
 
     monkeypatch.setattr(covers_poller, "steam_store_header", store)

@@ -92,7 +92,7 @@ async def handle_game_page(request: web.Request) -> web.Response:
     lists = await repo.game_page_lists(game_id)
     hltb_found = await repo.game_hltb(game_id)
     hltb_entry = hltb_found["entry"] if hltb_found else None
-    art = game_page.art_of(versions, [row["icon_url"] for row in lists if row.get("icon_url")])
+    art = game_page.art_of(versions, game_page.list_icons(lists))
 
     # Who here played it: the viewer, whom they follow, and the person it was
     # opened from — each only as far as their privacy lets the viewer see.

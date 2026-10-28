@@ -207,8 +207,10 @@ def test_a_remaster_with_a_list_partly_its_originals() -> None:
     assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
 
 
-def test_a_later_product_on_a_new_console_with_its_own_list_is_a_remaster() -> None:
-    """Ghost of Tsushima Director's Cut on PS5 (owner, 2026-10-11)."""
+def test_a_later_product_on_a_new_console_with_its_own_list_is_an_edition() -> None:
+    """Ghost of Tsushima Director's Cut on PS5 (owner, 2026-10-11): a
+    remaster then; the game with more of it, an enhanced edition, since
+    that is a class of its own (owner, 2026-10-27)."""
     ps4 = _c(
         1,
         "Ghost of Tsushima",
@@ -230,7 +232,7 @@ def test_a_later_product_on_a_new_console_with_its_own_list_is_a_remaster() -> N
         achievements=_list("got", 50) | _list("iki", 16),
     )
     v = compare(ps4, ps5)
-    assert (v.subject, v.relation) == (2, "remaster_of"), v.reasons
+    assert (v.subject, v.relation) == (2, "enhanced_of"), v.reasons
 
 
 def test_a_remake_by_the_same_studio() -> None:
@@ -1508,6 +1510,24 @@ def test_an_enhanced_edition_is_marked_in_its_game() -> None:
     assert told[4] == ("enhanced", 1)
 
 
+def test_the_models_enhanced_edition_joins_its_game() -> None:
+    """Enhanced is a class of the model's own (owner, 2026-10-27): its sure
+    answer keeps the two in one game, and marks the edition of the other."""
+    from bot.services.game_link import _cluster, _roles
+    from bot.services.game_match import Verdict
+
+    plain = _c(1, "Sonic Adventure", year=1999)
+    cut = _c(2, "Sonic Adventure DX", year=2003)
+    probs = {"same": 0.02, "enhanced_of": 0.97, "other": 0.01}
+    v = Verdict(2, 1, "enhanced_of", 0.97, probs, "linked", {"name": 0.9})
+    assert v.p_join == 0.99
+    assert _cluster([plain, cut], {(1, 2): v}, []) == [{1, 2}]
+    assert _roles([plain, cut], [], {(1, 2): v})[2] == ("enhanced", 1)
+    # A label says otherwise: the label stands.
+    said = [{"version_id": 2, "other_id": 1, "relation": "same"}]
+    assert _roles([plain, cut], said, {(1, 2): v})[2] == ("version", None)
+
+
 def test_a_friends_pass_is_a_part_of_its_game() -> None:
     """A friend's pass (owner, 2026-10-25): a free copy to play the whole
     game with its owner — not a demo, a role in the game all the same."""
@@ -1520,3 +1540,89 @@ def test_a_friends_pass_is_a_part_of_its_game() -> None:
     assert _roles([game, pass_], [])[2] == ("pass", 1)
     told = _roles([game, pass_], [{"version_id": 2, "other_id": 1, "relation": "pass_of"}])
     assert told[2] == ("pass", 1)
+
+
+async def test_an_enhanced_edition_sold_beside_the_plain_game_is_a_game_of_its_own(
+    repo: Repo,
+) -> None:
+    """Owner, 2026-10-25: where a store sells both the plain game and its
+    enhanced edition, the edition is a game of its own, related to it."""
+    plain = await _version(repo, "XBPLAIN", "The Witcher 3: Wild Hunt", "2015")
+    goty = await _version(
+        repo, "XBGOTY", "The Witcher 3: Wild Hunt - Game of the Year Edition", "2016"
+    )
+    await repo.save_decision(goty, plain, "enhanced_of", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([plain, goty])
+    g_plain, g_goty = await repo.linked_game_of(plain), await repo.linked_game_of(goty)
+    assert g_plain != g_goty
+    cur = await repo._conn.execute("SELECT game_id, related_id, kind FROM game_relations")
+    assert [tuple(r) for r in await cur.fetchall()] == [(g_goty, g_plain, "enhanced_of")]
+
+
+async def test_an_enhanced_edition_no_store_sells_beside_the_plain_game_stays(
+    repo: Repo,
+) -> None:
+    """Steam sells only the Complete Edition: there it is the game."""
+    ps4 = await _version(repo, "PSPLAIN", "Horizon Zero Dawn", "2017", store="psn", console="ps4")
+    steam = await _version(
+        repo,
+        "1151640",
+        "Horizon Zero Dawn Complete Edition",
+        "2020",
+        store="steam",
+        console="steam",
+    )
+    await repo.save_decision(steam, ps4, "enhanced_of", features=None, model=None, decided_by="t")
+    await GameLinker(repo).link_versions([ps4, steam])
+    assert await repo.linked_game_of(ps4) == await repo.linked_game_of(steam)
+
+
+def test_a_relation_is_read_from_both_sides() -> None:
+    """`subject_of` guesses which side a relation points from; a remaster it
+    guessed the wrong way round was read without its word (#218 step 2)."""
+    from bot.services.game_match import both_ways, subject_of
+
+    remaster = _c(1, "Foo Remastered", console="ps4", store="psn", year=2018)
+    port = _c(2, "Foo", console="ps5", store="psn", year=2021)
+    assert subject_of(remaster, port)[0] is port
+    weights = {"remaster_of": {"remaster_word": 6.0, "bias": -2.0}, "same": {"bias": -2.0}}
+    f = features(port, remaster, ordered=True)
+    r = features(remaster, port, ordered=True)
+    assert "remaster_word" not in f and "remaster_word" in r
+    probs, turned = both_ways(f, r, weights)
+    assert turned and max(probs, key=probs.__getitem__) == "remaster_of"
+    assert abs(sum(probs.values()) - 1.0) < 1e-9
+    verdict = compare(port, remaster, weights)
+    assert (verdict.relation, verdict.subject) == ("remaster_of", 1)
+
+
+def test_numbers_conflict_or_go_missing() -> None:
+    """Two numbers that disagree are two games; one on one side only is a
+    weaker sign; a platform's number is no number of the game's (#218)."""
+    two, three = _c(1, "Halo 2"), _c(2, "Halo 3")
+    assert "numbers_differ" in features(two, three)
+    assert "number_missing" in features(_c(3, "Halo"), two)
+    ps4 = _c(4, "Foo Bar PlayStation 4 Edition", store="psn", console="ps4")
+    f = features(ps4, _c(5, "Foo Bar"))
+    assert not {"numbers_differ", "number_missing"} & set(f)
+
+
+def test_the_shape_of_a_pair() -> None:
+    """Whose list is known, the words a name adds, the edition's kind and
+    what the stores tell apart (#218)."""
+    base = _c(1, "Foo Bar", achievements=_list("a", 20), hltb_ids=frozenset({1}))
+    goty = _c(
+        2,
+        "Foo Bar Game of the Year Edition",
+        achievements=_list("a", 10),
+        hltb_ids=frozenset({2}),
+        list_key=("xbox_modern", "2"),
+    )
+    f = features(goty, base, ordered=True)
+    assert f["overlap"] == 1.0 and f["count_ratio"] == 0.5
+    assert "word_goty" in f and "hltb_differs" in f
+    assert "words_none_added" in f
+    heist = _c(3, "Foo Bar: The Heist")
+    assert "list_none" in features(heist, _c(4, "Foo Bar"))
+    assert "words_added" in features(heist, _c(4, "Foo Bar"), ordered=True)
+    assert "no_shared_word" in features(_c(5, "Quux"), _c(6, "Zork"))

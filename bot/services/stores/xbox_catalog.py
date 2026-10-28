@@ -65,8 +65,9 @@ async def products_for_title(title_id: str) -> list[dict]:
 
 
 async def search(name: str) -> list[dict]:
-    """The catalog's games for a name (its autosuggest): `ProductId`, `Title`,
-    `Type`. 360 games played on One are here under ids of their own."""
+    """The catalog's products for a name (its autosuggest): `ProductId`,
+    `Title`, `Type` — games, and add-ons typed `Durable`. 360 games played on
+    One are here under ids of their own."""
     await LIMITER.acquire()
     async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
         response = await client.get(
@@ -78,6 +79,20 @@ async def search(name: str) -> list[dict]:
     for family in (response.json() or {}).get("Results") or []:
         found += [p for p in family.get("Products") or [] if p.get("ProductId")]
     return found
+
+
+async def search_addons(name: str) -> list[str]:
+    """The ids of the add-ons the catalog suggests for a name. An add-on sold
+    only on its own is in no edition, so this is the way to it — a 360
+    game's above all, which has no editions (owner, 2026-10-27: Gears of War
+    3's Season Pass, BP0MGTDNQP50, names the 360 product as its parent)."""
+    return [
+        str(p["ProductId"])
+        # Autosuggest hands add-ons out among the "Games" family's products
+        # (typed `Durable`); its "Durables" family answers nothing.
+        for p in await search(name)
+        if p.get("Type") == "Durable" and p.get("ProductId")
+    ]
 
 
 async def products(big_ids: list[str]) -> list[dict]:

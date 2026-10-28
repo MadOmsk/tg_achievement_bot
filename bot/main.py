@@ -68,7 +68,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
-from bot.services import achievement_icons, raw_answers
+from bot.services import achievement_icons, media, raw_answers
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -135,6 +135,7 @@ def setup_logging(level: str) -> None:
 
 
 async def run(settings: Settings) -> None:
+    media.configure(settings.media_dir)
     database = await Database(settings.db_path).connect()
     repo = Repo(database)
     # The platforms' answers about achievements are kept whole (raw_answers).

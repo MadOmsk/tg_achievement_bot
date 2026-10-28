@@ -104,6 +104,7 @@ name, or when the tree goes stale.
 │                              (`mini-app-spec.md`: what the Mini App does, for its design;
 │                              `mini-app-design-brief.md`: the task for that design;
 │                              `design-system.md`: the look, its tokens, components, rules)
+├── catalog/                   the games catalog's labels and fitted weights, by key (`scripts/catalog_files.py`)
 ├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
@@ -168,6 +169,9 @@ name, or when the tree goes stale.
 │   │   ├── images.py, avatars.py, covers.py   fetch, bound, hash and store pictures (#55)
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
 │   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
+│   │   ├── game_art.py           a game's poster, hero and header kept on disk, served signed
+│   │   ├── media.py              where the games database's pictures live (`MEDIA_DIR`)
+│   │   ├── x360_frame.py         Xbox 360 box art kept without the console's header or bar
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -191,6 +195,7 @@ name, or when the tree goes stale.
 │   │   ├── advice.py             the advisers' review of the games matcher: questions, answers,
 │   │   │                         the agreement rule, `data/advice/` (#147, no DB access)
 │   │   ├── game_series.py        game series proposed from relations, labels, franchise names
+│   │   ├── label_conflicts.py    labels that contradict each other (#218), no DB access
 │   │   ├── game_page.py          the Mini App's game page put together from the catalog (no network)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
@@ -259,6 +264,7 @@ name, or when the tree goes stale.
 │   ├── db_status.py              summary for `manage.ps1 status`
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
 │   ├── cache_achievement_icons.py                                   icon pre-caching (#99)
+│   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
 │   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
 │                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
@@ -302,7 +308,7 @@ super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller interval settings, and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
@@ -541,11 +547,11 @@ every column. History: #106.
 - **Season pass claims** (`pass_claims (person_id, palette, month)`, migration
   131; owner, 2026-10-27): the themes a person claimed, each checked against
   the month's points by the server (User interface: the season pass). The
-  pass's levels are `pass_items` and a prize's codes `pass_item_codes` (132;
+  pass's levels are `pass_items` and a prize's codes `pass_item_codes` (133;
   a draft and waiting changes live on the row): a prize says which platform it is for, `platform`, free text
-  (Xbox, PlayStation, Steam or anything typed; 134); a code is taken once `claimed_at` is set, `person_id` says by whom (a
+  (Xbox, PlayStation, Steam or anything typed; 135); a code is taken once `claimed_at` is set, `person_id` says by whom (a
   merge moves it; a deleted person's code stays taken). The levels each person reached this month
-  are `pass_reached (person_id, item_id, month)` (133; a merge moves them).
+  are `pass_reached (person_id, item_id, month)` (134; a merge moves them).
 - **Anti-flood state**: `notification_throttle (person_id, chat_id, window_started_at,
   count_in_window, throttled)`. No buffer table — a held-back achievement is exactly
   one missing from `publications` for that chat, which `unpublished_achievements()`
@@ -563,7 +569,7 @@ every column. History: #106.
   list on one platform and keeps that list's own facts — the platform's name
   for it, its size, platforms, when it was checked. A game's name, cover and
   description are `games` and `versions`; a screen never presents a row of it
-  as a game. A stand-in version's name follows its list's (a trigger).
+  as a game. A stand-in version's name follows its list's (a trigger); a list's own id is never a name (migration 132: an adviser cannot look a number up), the English name stands in, and `scripts/restore_list_names.py` takes names another copy learned.
   The code says `titles` in places (variables, `title_id`, `titles_on`): the
   name of the thing before it was renamed, not another table.
 - One row per list (one achievement list on one platform),
@@ -654,6 +660,22 @@ every column. History: #106.
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
   the publisher renders the same list once per chat.
 - **Rarity**: see Lists and tables.
+- **The games database's pictures are one cache for prod and the test server**
+  (owner, 2026-10-28; `services/media.py`): `MEDIA_DIR` (on the VPS
+  `/srv/unlocked-media`, owned by `botsvc`) holds `achievements/` and `covers/`
+  (list covers, `art/`, `editions/`, `hltb/`) — and every picture the catalog
+  adds later; unset, they stay under `data/`. A file's name never depends on the
+  server and every write is a rename, so both bots share it. People's pictures
+  (`data/avatars/`) stay each server's own; the dev server keeps its own cache.
+- **An Xbox 360 game's art is kept without the console's frame** (owner,
+  2026-10-28; `services/x360_frame.py`): the portrait box art loses its header
+  (the "XBOX 360" logo, Platinum Hits, Games for Windows LIVE, ARCADE — the top
+  13%), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
+  Cut on download — a 360 list's cover (`covers.download(platform=)`) and a
+  poster that stands in from a 360 list's icon (marked `#x360`, so `game_art`
+  cuts it; a fragment is never sent) —; anything else is left as it came, and a
+  picture cut once is neither shape. What was kept before is cut by
+  `scripts/strip_x360_frames.py` (no request, beside a running bot).
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
   without the bot token and a platform URL can break. Telegram photos
   (`users.photo_*`) and account avatars (`accounts.avatar_url/path/hash`) go to
@@ -759,8 +781,12 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     (`part`s); no game → `addon_pack` (shown with the game's DLC). Every game
     item keeps its version link; `reparse_stored` re-reads kept ones last
     (`classify_editions`, a kind set by hand kept); a save that gives no scope
-    keeps it. An add-on sold only on its own is
-    not found this way. `9998-12-30` is "not on sale", no date. Each price period is an
+    keeps it. **An add-on sold only on its own** is in no edition: the
+    catalog's add-on search (`search_addons`: autosuggest's `Durable` products) by the
+    game's names finds it, kept when it names the game's product as its
+    parent (owner, 2026-10-27; `_xbox_addons_alone`, when due) — the only
+    way to a **360 game's** add-ons (Gears of War 3's Season Pass), for its
+    list, a modern list and the octopus's store-only Xbox products alike. `9998-12-30` is "not on sale", no date. Each price period is an
     availability with its own end, so an answer is judged on sale **as of when
     it was given** — a stored one re-read later keeps its time
     (`sold(product, now)`; 2026-10-26: a re-parse read 548 games as off sale,
@@ -951,7 +977,13 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   has no foreign keys, so a store re-parse deleting a version keeps every
   answer about it, with which product each side was (`subject_key`,
   `other_key`: store:product_id:console); the linker reads only labels between
-  versions that exist, the fit reads a gone pair from its feature snapshot. A game keeps
+  versions that exist, the fit reads a gone pair from its feature snapshot.
+  **Contradictions are shown, never settled by code** (#218 step 5,
+  `services/label_conflicts.py`): a label keeping two versions apart that
+  joining labels link anyway, or two labels between the same two groups
+  saying different things. Each new label is checked (the viewer's message,
+  `web_labels`' output); the viewer's «Contradictions» lists them as cards,
+  and taking one answer back settles it. A game keeps
   its id through rebuilds by its **anchor** (`games.anchor_version_id`, its
   first plain version); a list's stand-in that becomes a store product keeps
   its row and id.
@@ -967,19 +999,31 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     `game_match.is_enhanced`, or an `enhanced_of` label — one game to a fit).
     A pack a store sells around one version is an edition (`editions`), not a
     version. Such a game is named by its own release.
-  - **Enhanced or remaster** (owner, 2026-10-25): an enhanced edition is the
-    same game with minimal changes but added content (its DLC, a Director's
-    Cut's chapter, modest resolution or frame-rate work); a remaster means
-    larger graphical changes. Which one a given game is, is the labels'
-    answer (the operator's, the web-checked ones), never a rule written here:
-    this file keeps principles, not per-game decisions.
+  - **Enhanced, remaster, remake** (owner, 2026-10-27):
+    - an **enhanced edition** is an edition under an id of its own in a
+      store, mostly the game with added content, with no focus on better
+      graphics (GOTY, Complete, Definitive, Director's Cut);
+    - a **remaster** is a release with improved graphics that keeps the
+      original's main assets, not rebuilt;
+    - a **remake** is a game made on the basis of an old one.
+
+    **Every instruction to a model that labels pairs gives these
+    definitions as they stand** — the advisers' prompt (`advice.DEFINITIONS`
+    inside `advice.RULES`), the web-searching agents', Gemini's. Which one a
+    given game is, is the labels' answer, never a rule written here: this
+    file keeps principles, not per-game decisions.
   - **Where an enhanced edition goes** (owner, 2026-10-25): one sold under
     its own product id on a platform (a store page and id of its own, apart
     from the plain game's) is **a game of its own**, related to the original
     as `enhanced_of`, like a remaster; one that is the same product upgraded
     (a free update, the same id) stays inside the game with the role
-    `enhanced`. **Not built yet**: the linker still keeps every enhanced
-    edition inside its game.
+    `enhanced`. Built as a split after joining (`game_link._split_enhanced`;
+    #218): the model joins an enhanced edition to its game (its own class,
+    `enhanced_of`, joins like "same"); then, where one store sells both the plain game
+    and the enhanced one, every enhanced version of the group leaves it for
+    a game of its own, related `enhanced_of` (a family relation for series
+    too). Where no store sells both — Steam sells only the Complete Edition
+    — it is the game there and stays, role `enhanced`.
   - **A game's name keeps the words that tell it apart** (owner, 2026-10-12;
     `game_match.game_name`): the full release name, platform tails cut ("-
     Xbox Series X|S", "(PC)", "for Windows 10", "Windows 10 Edition"), when
@@ -1011,9 +1055,14 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     could be one game (a telling word of the name — none in more than
     `COMMON_WORD` versions —, a store's group or cross-gen set, an HLTB entry,
     one list) is read from its subject's side (the VR one, the compilation, the
-    later one); each class sums its `WEIGHTS` over the pair's signs and a
+    later one) — and each directed class from whichever side makes it likelier,
+    the relation pointing from there (#218: `subject_of` is a guess); its
+    classes are one game, an **enhanced edition** (one game too, a class of
+    its own — owner, 2026-10-27), a remaster, a remake, a compilation, a VR
+    version, or "other"; each class sums its `WEIGHTS` over the pair's signs and a
     softmax against "other" gives probabilities (owner, 2026-10-10: every rule a
-    weight, nothing certain). The likeliest at `LINK_P` (0.85) and `CLOSE_CALL`
+    weight, nothing certain). The likeliest at `LINK_P` (0.95 while the fit runs
+    overconfident, #218) and `CLOSE_CALL`
     ahead is taken; from `REVIEW_P` (0.15) the pair goes to the **review list**
     (`match_pairs`, one per pair of games). Versions join a game from the surest
     pair down, **never across a veto** (a pair under `VETO_P` "same" that
@@ -1023,6 +1072,15 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     years later): A~B and B~C no longer drag A and C together. The operator's
     labels come first. One linker at a time; a component is written in one
     transaction. The viewer's «rules» page shows every weight.
+  - **The model's relation is a first guess, rechecked** (owner,
+    2026-10-27): whatever the linker sets by itself that is neither one game
+    nor nothing — a relation between games, or a role in a game (enhanced,
+    demo, tool, mode, extra, pass) — is written so the catalog has one, and
+    stays on the viewer's «To recheck» (`review_questions.to_recheck`) until
+    a label settles it; `review_questions --recheck` asks them all of the
+    web-searching advisers (a VR version: this game in VR, or another game of
+    its series made for VR). The model only has to tell one game, related
+    and other apart well; which relation it is is the advisers'.
   - **A name never learned is no name** (the training audit, 2026-10-24): a
     stand-in named by its own id («1881441063») has no names for the model;
     its pairs show `name_unknown` instead of any name sign, and veto nothing
@@ -1051,14 +1109,24 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
 
   - **Fitting the weights** (`services/match_fit.py`, `scripts/fit_match_weights.py`):
     every label's pair is read as the model reads it now (the label's own
-    version as the subject), and the weights are fitted by gradient descent
-    **pulled towards the current ones** (a proximal step, `strength` 0.001,
-    step 0.5, 800 passes); **the bias is never fitted** (labels come from the
+    version as the subject; scored from both sides as the linker reads it),
+    and the weights are fitted by gradient descent **pulled towards the
+    current ones** (a proximal step, `strength` 0.0001, step 0.5, until no
+    weight moves by `tol`); then **one temperature** fitted on the held-out
+    answers scales every weight, so a probability means what it says (#218); **the bias is never fitted** (labels come from the
     review list), and a class with fewer than `FEW_LABELS` labels is pulled
     harder. A label weighs by who gave it (`label_weight`). **A fit is judged
     held out by game** (labels joined by a game sit in one fold — a random
     split flattered it by ~4 points) **and on the operator's labels alone**
-    (`gate`; the advisers' scores are printed beside, never decide). The
+    (`gate`; the advisers' scores are printed beside, never decide) — or,
+    once frozen, **on a fixed set of pairs** (`--freeze-eval`,
+    `data/advice/eval_set.json`; #218: the operator's set grew harder with
+    every batch, so fits could not be compared), their labels as they stand.
+    It prints each class's recall, their average and the viewer's labels
+    alone, and judges by **one game / related / other** (`match_fit.coarse`,
+    owner, 2026-10-27: every relation is rechecked): a fit must lower that
+    log-loss, answer no fewer right, and **lose none of the three** (recall
+    down more than 2 points on 10+ labels). The
     script also scores every pair the linker compares with both weights and
     counts what would move. **A fit lives in the database** (`match_weights`,
     migration 129): `--save` keeps it and makes it the active set only when
@@ -1161,6 +1229,20 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   catalog points outside itself only by a list's (platform, title_id), so
   nothing else moves; a list the file lacks keeps its own stand-in, linked
   into a game after. `--tables match_weights` carries a new fit alone.
+  **From the test server to prod** (owner, 2026-10-28; the octopus assembled
+  games on the test server, a one-off): `sudo xbox-deploy catalog [--dry-run]`
+  on the VPS, each run replacing prod's catalog with the test server's as it
+  is then; the dry run rehearses it all on a copy of `bot.db` and touches prod
+  not at all. See Operations → Deploys.
+- **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
+  `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
+  production, the test server and the dev server. A label names its versions by
+  key (`store:product id:console`), never by id — each copy numbers its own; the
+  weights are the active fitted set. Trained in one place (a fresh anonymized
+  copy of production); after a labelling session or a fit that passed
+  (`fit_match_weights --save` writes them), `export` and commit; another copy
+  `import`s them — a label set as the file has it, a key it has not collected
+  counted and left, the weights made active — and its catalog is linked there.
 - By hand: `scripts/collect_game.py <platform> <title_id> [--force]`; to look and
   decide: `scripts/catalog_viewer.py` (bare HTML; games and their family, the
   labels; merge / relate / detach / "not related" are labels too; rename,
@@ -1879,6 +1961,14 @@ elsewhere in this file still describe the bot.
   2026-10-26; `game_page.videos_of`: PSN's mp4, else Xbox's and Steam's HLS,
   each with its picture, six at most), in the app, full screen — links only,
   nothing is downloaded.
+  **Its poster, hero and header come from our server** (owner, 2026-10-28;
+  `services/game_art.py`): `art_of` hands the app `/api/mini/art/{sig}?u=<store
+  address>`, signed with a key from `FERNET_KEY` so the route (no sign-in: an
+  `<img>` carries no Init Data) fetches only addresses the server gave out, from
+  the stores' picture hosts only. The first request downloads it, shrinks it
+  like an icon (1280 px) and keeps it under `data/covers/art/` (named by the
+  address's hash); the octopus keeps a game's art as it assembles it. Screenshots
+  and trailers stay the stores' links.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,
@@ -1909,7 +1999,7 @@ elsewhere in this file still describe the bot.
   claim for good (a merge moves them); `GET /api/mini/pass` is the state every
   screen reads. Violet is everybody's; every other theme opens in Settings →
   Appearance only once claimed, and a theme on the device the server does not
-  give is taken off. **A pass a month** (owner, 2026-10-28; migration 135,
+  give is taken off. **A pass a month** (owner, 2026-10-28; migration 136,
   `pass_items.month`): each month's pass is its own levels, **empty until the
   super-admin publishes one**; the editor works on this month or any of the
   eleven ahead (`?edit=`, `EDIT_MONTHS`, picked in a sheet that counts each
@@ -1952,7 +2042,7 @@ elsewhere in this file still describe the bot.
   **on until switched off** — `notifier.DEFAULT_ON`, a channel's
   `pass_reward:off`; Settings → Уведомления, «Призы сезонного пропуска»); a tap
   opens the pass (`t=pass`). **A level reached is told** (owner, 2026-10-28;
-  `pass_level`, `Notifier.tell_about_pass_levels`, migration 133
+  `pass_level`, `Notifier.tell_about_pass_levels`, migration 134
   `pass_reached`): after every publish the month's points are checked, and
   the levels newly reached are marked (each once a month) and told as one
   notice, of the highest — on until switched off, a channel choosing every
@@ -2644,7 +2734,8 @@ and a look at how it words its titles).
 **`A.B.C.D`** (#56) from `bot/version.py`, shown at the end of `/help` and the hub
 and logged at startup (`… is up (v1.4.3.058)`). History: #112.
 
-- **A** — the architecture; by hand, on a rewrite.
+- **A** — the architecture; by hand, on a rewrite. `2` since 2.0 (the games
+  catalog and the new Mini App; owner, 2026-10-27), which started B again at 0.
 - **B** — the minor line: `TRUNK_LINE` on `main`, **one above it on every working
   branch**, so the test server reads the line its work will ship in and "which bot is
   this" is answerable from the version. Only a release that starts a new minor bumps
@@ -2756,8 +2847,28 @@ It:
 2. `git fetch --prune` and `git merge --ff-only` — never a robot's merge commit;
 3. reinstalls dependencies only when `pyproject.toml` changed;
 4. unpacks the Mini App CI built (built there, not on the 300 MB box);
-5. restarts, then **verifies** the bot's own `is up (v…)` line, bounded by a timestamp
-   taken before the restart.
+5. stops the bot and brings in the catalog's labels and weights from `catalog/`
+   (`scripts/catalog_files.py import`: it compares, so an unchanged folder writes
+   nothing; a failure still starts the bot and turns the deploy red);
+6. starts it, then **verifies** the bot's own `is up (v…)` line, bounded by a timestamp
+   taken before the start.
+
+**One run at a time** (`/run/xbox-deploy.lock`): a test deploy, a prod deploy and a
+catalog transfer all stop and start bots on the one box. **A bot the script stopped
+is started again on any failure.** The script reinstalls itself from the checkout,
+but the run that installs it finishes as the old one: a change to it takes effect
+from the next deploy.
+
+**`xbox-deploy catalog [--dry-run]`** carries the games catalog from the test server
+to prod, run by hand on the VPS (no workflow: owner, 2026-10-28, a one-off). It refuses, changing nothing, while
+`test.db` and `bot.db` are at different migrations. Then: the test bot stops for
+the export (`catalog_transfer export --except octopus_queue`: the octopus's queue is
+each server's own work) and starts again; prod stops,
+`catalog_transfer import` (which backs `bot.db` up beside it — the two newest
+`bot-pre-catalog-*.db` are kept) and `catalog_files import` run, and prod starts and
+is verified. The dry run does the import on a copy of `bot.db` in a temporary
+folder — the import's own dry run writes and rolls back inside the live file,
+which would stall the running bot.
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.

@@ -224,8 +224,11 @@ class _AdminRepo:
         cursor = await self._conn.execute(
             "UPDATE achievement_list_connectors SET name_ru = COALESCE(?, name_ru), name_en = "
             "COALESCE(?, name_en),"
+            # A list named by nothing but its id (130) takes the name now learned.
+            " name = CASE WHEN name IS NULL OR name IN ('', '?') OR name = title_id"
+            " THEN COALESCE(?, ?, name) ELSE name END,"
             f"  updated_at = ? WHERE {where} AND title_id = ?",
-            (name_ru, name_en, now, *params, title_id),
+            (name_ru, name_en, name_en, name_ru, now, *params, title_id),
         )
         if not cursor.rowcount and platform != "xbox":
             # The game is not in `titles` yet — the first poll of it learns
@@ -450,7 +453,10 @@ class _AdminRepo:
             "INSERT INTO achievement_list_connectors"
             " (platform, title_id, name, icon_url, achievements_total, platforms, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(platform, title_id) DO UPDATE SET name = excluded.name,"
+            # A caller that knows no name passes the id: it never replaces one.
+            "ON CONFLICT(platform, title_id) DO UPDATE SET name = CASE"
+            " WHEN excluded.name = excluded.title_id THEN achievement_list_connectors.name"
+            " ELSE excluded.name END,"
             " updated_at = excluded.updated_at,"
             " icon_url = COALESCE(excluded.icon_url, achievement_list_connectors.icon_url),"
             # Same "only overwrite when this call actually has one" rule as

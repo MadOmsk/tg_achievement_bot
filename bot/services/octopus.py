@@ -9,7 +9,8 @@ DLC, editions and HowLongToBeat. A chain with a goal, not a crawl:
    a search, then one game per distinct find; a game → its anchor version.
 2. **Anchor → the game** it is in (the linker makes one if none).
 3. **Each version of that game expanded**: its list or product collected (own
-   product, sibling products by id, HLTB, DLC, editions), and the game searched
+   product, sibling products by id, HLTB, DLC, editions; an Xbox product's
+   add-ons sold alone, a 360 game's above all), and the game searched
    by every different name it goes by; then **the linker**
    (`game_link.link_and_spread`) over this game's neighbourhood. What it puts
    in *this* game is a version; another game — a remaster, a remake, a
@@ -44,7 +45,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from bot.db.repo import Repo
-from bot.services import psn_products
+from bot.services import game_art, game_page, psn_products
 from bot.services.game_link import LinkReport, link_and_spread
 from bot.services.game_match import name_key
 from bot.services.store_collect import StoreCollector
@@ -343,6 +344,17 @@ class OctopusCollector:
                 await self._repo.record_fetch(
                     anchor_key(row), SOURCE, status="ok", changed=bool(report.found)
                 )
+        # The game's poster, hero and header kept on our disk (owner,
+        # 2026-10-28), so the Mini App never reaches a store's CDN for them.
+        try:
+            lists = await self._repo.game_page_lists(game)
+            art = game_page.store_art(
+                await self._repo.game_page_versions(game),
+                game_page.list_icons(lists),
+            )
+            await game_art.ensure(list(art.values()))
+        except Exception as exc:  # a picture never fails the assembly
+            log.info("octopus: art of game %s not kept: %r", game, exc)
         gaps = await self._repo.octopus_gaps(game)
         report.stand_ins, report.hltb = gaps["stand_ins"], gaps["hltb"]
         return report
@@ -371,6 +383,9 @@ class OctopusCollector:
             collected = await self._collector.collect_steam_app(
                 str(row["product_id"]), found=("octopus", report.entry), force=force
             )
+        elif row["store"] == "xbox":
+            # A product found by name: its add-ons sold alone (2026-10-27).
+            collected = await self._collector.xbox_product_addons(row, force=force)
         else:
             return []
         report.errors += collected.errors

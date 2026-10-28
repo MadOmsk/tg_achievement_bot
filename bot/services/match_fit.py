@@ -28,11 +28,11 @@ import math
 import random
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from bot.services.advice import ADVISER_SOURCES, ALL_THREE, BOTH
-from bot.services.game_match import CLASSES, DIFFER_SIGNS, probabilities
+from bot.services.game_match import CLASSES, DIFFER_SIGNS, both_ways, probabilities
 
 # What a label teaches, by who gave it (owner, 2026-10-17).
 OPERATOR_WEIGHT = 0.9
@@ -62,12 +62,17 @@ FROZEN = frozenset({"bias"})
 # its namesake, "year unknown" grew to +2 and "other genres" to +0.3, and
 # Valve's Deadlock became LLL games' DeadLock).
 AGAINST_SAME = DIFFER_SIGNS | {
+    "no_shared_word",
+    "two_lists_one_store",
+    "hltb_differs",
+    "publisher_differs",
     "developer_differs",
     "genres_differ",
     "text_differ",
     "years_gap",
 }
-UNKNOWN_SIGNS = frozenset({"year_unknown", "name_unknown"})
+# "list_one"/"list_none" say only how pairs were picked for labelling (#218).
+UNKNOWN_SIGNS = frozenset({"year_unknown", "name_unknown", "list_one", "list_none"})
 # A class with fewer labels than this is pulled to its start that much
 # harder (remake 10, compilation 8, VR 3 labels in October 2026).
 FEW_LABELS = 40
@@ -76,7 +81,8 @@ FEW_LABELS = 40
 LABEL_CLASS = {
     "same": "same",
     "edition": "same",
-    "enhanced_of": "same",  # an enhanced edition is one game (owner, 2026-10-24)
+    # One game, yet a class of its own (owner, 2026-10-27).
+    "enhanced_of": "enhanced_of",
     "demo_of": "same",
     "tool_of": "same",
     "mode_of": "same",
@@ -117,6 +123,13 @@ class Example:
     # What it is about — the games of its two versions: labels sharing one
     # are held out together.
     groups: tuple[object, ...] = field(default_factory=tuple)
+    # The labelled pair `(version_id, other_id)`, for the frozen set.
+    pair: tuple[int, int] | None = None
+    # The pair read from the other side, and whether `features` is not the
+    # side `subject_of` picks (a directed label read from its own): answers
+    # are scored as the linker reads a pair (`predict`, #218).
+    reverse: dict[str, float] | None = None
+    turned: bool = False
 
     @property
     def operator(self) -> bool:
@@ -124,6 +137,14 @@ class Example:
             self.source not in (UNANIMOUS, MAJORITY, GEMINI_WEB)
             and self.source not in ADVISER_SOURCES
         )
+
+
+def predict(e: Example, weights: Weights) -> dict[str, float]:
+    """The example's class probabilities as the linker would see them: from
+    both sides (`game_match.both_ways`), "same" from `subject_of`'s."""
+    if e.turned and e.reverse is not None:
+        return both_ways(e.reverse, e.features, weights)[0]
+    return both_ways(e.features, e.reverse, weights)[0]
 
 
 @dataclass(slots=True)
@@ -140,7 +161,7 @@ def score(examples: list[Example], weights: Weights) -> Score:
         return Score(0.0, 0.0, 0)
     right, loss = 0, 0.0
     for e in examples:
-        probs = probabilities(e.features, weights)
+        probs = predict(e, weights)
         if max(probs, key=probs.__getitem__) == e.label:
             right += 1
         loss -= math.log(max(probs.get(e.label, 0.0), 1e-12))
@@ -151,9 +172,10 @@ def fit(
     examples: list[Example],
     start: Weights,
     *,
-    strength: float = 0.001,
+    strength: float = 0.0001,
     rate: float = 0.5,
-    epochs: int = 800,
+    epochs: int = 3000,
+    tol: float = 1e-4,
     frozen: frozenset[str] = FROZEN,
     strengths: dict[str, float] | None = None,
 ) -> Weights:
@@ -164,7 +186,9 @@ def fit(
     signs, starting at 0, could not show what they are worth). The pull
     is weak: held out, 0.02 → 80%, 0.005 → 83%, 0.001 → 85% right on 677
     labels — the labels, not the start, should speak. `frozen` signs keep
-    their start; `strengths` gives a class its own pull (`class_strengths`)."""
+    their start; `strengths` gives a class its own pull (`class_strengths`).
+    It runs until no weight moves by `tol` in a pass, `epochs` at most
+    (#218: 800 fixed passes stopped short; 1e-3 → 1e-4 gained a point)."""
     signs = sorted(
         {k for e in examples for k in e.features} | {k for c in CLASSES for k in start[c]}
     )
@@ -173,6 +197,7 @@ def fit(
         return w
     n = sum(e.weight for e in examples) or 1.0
     for _ in range(epochs):
+        moved_most = 0.0
         grad = {c: dict.fromkeys(signs, 0.0) for c in CLASSES}
         for e in examples:
             probs = probabilities(e.features, w)
@@ -190,13 +215,54 @@ def fit(
                 if k in frozen:
                     continue
                 moved = w[c][k] - rate * grad[c][k]
-                w[c][k] = (moved + 2 * rate * pull * start[c].get(k, 0.0)) / shrink
+                now = (moved + 2 * rate * pull * start[c].get(k, 0.0)) / shrink
+                moved_most = max(moved_most, abs(now - w[c][k]))
+                w[c][k] = now
         same = w["same"]
         for k in AGAINST_SAME & same.keys():
             same[k] = min(same[k], 0.0)
         for k in UNKNOWN_SIGNS & same.keys():
             same[k] = min(same[k], start["same"].get(k, 0.0))
+        if moved_most < tol:
+            break
     return w
+
+
+def tempered(probs: dict[str, float], t: float) -> dict[str, float]:
+    """Probabilities with their log-odds divided by `t`."""
+    raised = {c: max(p, 1e-300) ** (1.0 / t) for c, p in probs.items()}
+    total = sum(raised.values())
+    return {c: v / total for c, v in raised.items()}
+
+
+def temperature(rows: list[HeldOut]) -> float:
+    """The one temperature that makes the held-out answers mean what they
+    say (#218: p ≥ 0.95 was right 89% of the time): the `t` whose
+    `tempered` probabilities lose least on the labels. It never changes
+    which class is likeliest."""
+
+    def loss(t: float) -> float:
+        return -sum(
+            math.log(max(tempered(r.fitted, t).get(r.example.label, 0.0), 1e-12)) for r in rows
+        )
+
+    grid = [round(0.5 + 0.05 * i, 2) for i in range(71)]  # 0.5 … 4.0
+    return min(grid, key=loss) if rows else 1.0
+
+
+def calibrated(weights: Weights, t: float) -> Weights:
+    """The weights scaled by 1/`t`: every log-odds is a sum of weights, and
+    "other" is 0, so this is `tempered` built in."""
+    return {c: {k: v / t for k, v in w.items()} for c, w in weights.items()}
+
+
+def reliability(rows: list[HeldOut], t: float = 1.0, at: float = 0.95) -> tuple[float, int]:
+    """How often an answer at least `at` sure is right, and how many there are."""
+    sure = [r for r in rows if max((p := tempered(r.fitted, t)).values()) >= at]
+    right = sum(
+        1 for r in sure if max((p := tempered(r.fitted, t)), key=p.__getitem__) == r.example.label
+    )
+    return (right / len(sure) if sure else 0.0), len(sure)
 
 
 def cross_validate(
@@ -214,12 +280,8 @@ def cross_validate(
         fitted = fit(train, start, **kw)  # type: ignore[arg-type]
         held += [(e, fitted) for e in test]
     before = score(order, start)
-    right = sum(
-        1 for e, w in held if max((p := probabilities(e.features, w)), key=p.__getitem__) == e.label
-    )
-    loss = -sum(
-        math.log(max(probabilities(e.features, w).get(e.label, 0.0), 1e-12)) for e, w in held
-    )
+    right = sum(1 for e, w in held if max((p := predict(e, w)), key=p.__getitem__) == e.label)
+    loss = -sum(math.log(max(predict(e, w).get(e.label, 0.0), 1e-12)) for e, w in held)
     after = Score(right / len(held), loss / len(held), len(held)) if held else Score(0, 0, 0)
     return before, after
 
@@ -303,7 +365,7 @@ def held_out(
         ]
         fitted = fit(learn, start, **kw)
         out += [
-            HeldOut(e, probabilities(e.features, start), probabilities(e.features, fitted))
+            HeldOut(e, predict(e, start), predict(e, fitted))
             for e, f in zip(examples, fold, strict=True)
             if f == i
         ]
@@ -318,33 +380,110 @@ def _score(rows: list[tuple[Example, dict[str, float]]]) -> Score:
     return Score(right / len(rows), loss / len(rows), len(rows))
 
 
+# What the gate judges (owner, 2026-10-27): one game, related, or nothing.
+# Which relation a related pair has is the web-searching advisers' to settle
+# (every such answer is rechecked), so a fit is not refused for mixing up a
+# remaster and a remake — only for missing that two are related at all.
+def coarse(label: str) -> str:
+    return label if label in ("same", "other") else "related"
+
+
+def coarse_probs(p: dict[str, float]) -> dict[str, float]:
+    out = {"same": 0.0, "related": 0.0, "other": 0.0}
+    for c, v in p.items():
+        out[coarse(c)] += v
+    return out
+
+
+def _coarse_rows(rows: list[tuple[Example, dict[str, float]]]) -> list[tuple[Example, dict]]:
+    return [(replace(e, label=coarse(e.label)), coarse_probs(p)) for e, p in rows]
+
+
+# A class's recall may not fall by more than this on the yardstick, once it
+# has `RECALL_MIN_N` labels there (fewer: noise, reported only).
+RECALL_SLACK = 0.02
+RECALL_MIN_N = 10
+
+
+def recall(rows: list[tuple[Example, dict[str, float]]]) -> dict[str, tuple[float, int]]:
+    """Each label's class: the share answered right, and how many."""
+    seen: Counter[str] = Counter()
+    right: Counter[str] = Counter()
+    for e, p in rows:
+        seen[e.label] += 1
+        right[e.label] += max(p, key=p.__getitem__) == e.label
+    return {c: (right[c] / seen[c], seen[c]) for c in sorted(seen)}
+
+
+def macro(by_class: dict[str, tuple[float, int]]) -> float:
+    """The classes' recall averaged, each class counting once."""
+    return sum(r for r, _n in by_class.values()) / len(by_class) if by_class else 0.0
+
+
 @dataclass(slots=True)
 class Gate:
-    start: Score  # the operator's held-out labels, the start's answers
+    start: Score  # the yardstick's held-out labels, the start's answers
     fitted: Score  # … the fitted weights'
     by_source: dict[str, tuple[Score, Score]]
+    # On the yardstick: each class's recall, before and after.
+    recall_start: dict[str, tuple[float, int]] = field(default_factory=dict)
+    recall_fitted: dict[str, tuple[float, int]] = field(default_factory=dict)
+    # The operator's own (viewer) labels on the yardstick, before and after.
+    viewer: tuple[Score, Score] | None = None
+    # Which labels it is judged on: the frozen set, or the operator's labels.
+    yardstick: str = "operator"
+    # The same, as one game / related / other (`coarse`): what it is judged by.
+    coarse_start: Score = field(default_factory=lambda: Score(0.0, 0.0, 0))
+    coarse_fitted: Score = field(default_factory=lambda: Score(0.0, 0.0, 0))
+    coarse_recall_start: dict[str, tuple[float, int]] = field(default_factory=dict)
+    coarse_recall_fitted: dict[str, tuple[float, int]] = field(default_factory=dict)
+
+    @property
+    def lost(self) -> list[str]:
+        """Coarse classes whose recall fell by more than the slack."""
+        return [
+            c
+            for c, (was, n) in self.coarse_recall_start.items()
+            if n >= RECALL_MIN_N
+            and self.coarse_recall_fitted.get(c, (0.0, 0))[0] < was - RECALL_SLACK
+        ]
 
     @property
     def passed(self) -> bool:
-        """The fit answers the operator better: a lower log-loss, and no
-        fewer right."""
+        """The fit tells one game, related and other apart better on the
+        yardstick: a lower log-loss, no fewer right, and none of the three
+        recalled less."""
         return (
-            self.fitted.n > 0
-            and self.fitted.log_loss < self.start.log_loss
-            and self.fitted.accuracy >= self.start.accuracy
+            self.coarse_fitted.n > 0
+            and self.coarse_fitted.log_loss < self.coarse_start.log_loss
+            and self.coarse_fitted.accuracy >= self.coarse_start.accuracy
+            and not self.lost
         )
 
 
-def gate(rows: list[HeldOut]) -> Gate:
-    """Whether fitted weights may replace the start: judged on the
-    operator's labels only; every source's scores beside, for reading."""
+def gate(rows: list[HeldOut], frozen: set[tuple[int, int]] | None = None) -> Gate:
+    """Whether fitted weights may replace the start, judged on a yardstick:
+    the frozen set of pairs when one is given (the same pairs fit after fit,
+    their labels as they stand now), else the operator's labels; every
+    source's scores beside, for reading."""
     by: dict[str, list[HeldOut]] = {}
     for r in rows:
         by.setdefault(r.example.source or "?", []).append(r)
-    operator = [r for r in rows if r.example.operator]
+    if frozen is not None:
+        judged = [
+            r
+            for r in rows
+            if r.example.pair is not None
+            and (r.example.pair in frozen or r.example.pair[::-1] in frozen)
+        ]
+    else:
+        judged = [r for r in rows if r.example.operator]
+    viewer = [r for r in judged if r.example.source == "viewer"]
+    start = _coarse_rows([(r.example, r.start) for r in judged])
+    fitted = _coarse_rows([(r.example, r.fitted) for r in judged])
     return Gate(
-        _score([(r.example, r.start) for r in operator]),
-        _score([(r.example, r.fitted) for r in operator]),
+        _score([(r.example, r.start) for r in judged]),
+        _score([(r.example, r.fitted) for r in judged]),
         {
             src: (
                 _score([(r.example, r.start) for r in rs]),
@@ -352,4 +491,15 @@ def gate(rows: list[HeldOut]) -> Gate:
             )
             for src, rs in sorted(by.items())
         },
+        recall([(r.example, r.start) for r in judged]),
+        recall([(r.example, r.fitted) for r in judged]),
+        (
+            _score([(r.example, r.start) for r in viewer]),
+            _score([(r.example, r.fitted) for r in viewer]),
+        ),
+        "frozen" if frozen is not None else "operator",
+        _score(start),
+        _score(fitted),
+        recall(start),
+        recall(fitted),
     )
