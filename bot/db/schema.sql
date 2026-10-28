@@ -1094,6 +1094,10 @@ CREATE TABLE IF NOT EXISTS versions (
                                    -- PSN concept, Steam fullgame
     description_en TEXT,
     description_ru TEXT,
+    -- 138: native (the store's Russian) / llm (our translation of the
+    -- English `description_ru_of` names, a hash); NULL before 138
+    description_source TEXT,
+    description_ru_of  TEXT,
     media        TEXT,             -- JSON: cover, screenshots, videos (links)
     live_service INTEGER NOT NULL DEFAULT 0,
     origin       TEXT NOT NULL DEFAULT 'played',  -- played / store (found, nobody here owns it)

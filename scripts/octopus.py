@@ -20,12 +20,12 @@ import argparse
 import asyncio
 import logging
 import os
-import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
+from bot.db import files
 from bot.db.repo import Database, Repo
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
@@ -41,13 +41,7 @@ def _backup(db_path: Path) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     Path("backups").mkdir(exist_ok=True)
     target = Path("backups") / f"{db_path.stem}-pre-octopus-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 
@@ -84,12 +78,7 @@ async def main() -> int:
         keys_repo = repo
         if args.auth_db:
             # Opened as it is: no schema, no migration of another bot's file.
-            import aiosqlite
-
-            keys_db = Database(Path(args.auth_db))
-            keys_db._conn = await aiosqlite.connect(args.auth_db)
-            keys_db._conn.row_factory = aiosqlite.Row
-            keys_repo = Repo(keys_db)
+            keys_repo = Repo(await files.open_database(args.auth_db))
         collector = StoreCollector(
             repo,
             PsnAuth(keys_repo, cipher),

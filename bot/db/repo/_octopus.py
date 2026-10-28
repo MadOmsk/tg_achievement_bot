@@ -11,6 +11,8 @@ from bot.util import utcnow, utcnow_iso
 # source's own `fetch_state` keeps the error.
 RETRY = timedelta(hours=1)
 TRIES = 3
+# How long a taken entry is held: longer than any one assembly runs.
+HOLD = timedelta(minutes=30)
 
 
 class _OctopusRepo:
@@ -35,6 +37,24 @@ class _OctopusRepo:
             (utcnow_iso(), limit),
         )
         return [(str(r[0]), str(r[1] or "")) for r in await cursor.fetchall()]
+
+    async def octopus_take(self) -> tuple[str, str] | None:
+        """The oldest entry due now, held for `HOLD` so another bot on the
+        shared games database (#229) does not take it too: one statement, so
+        two never get the same entry. A run that dies leaves it due again
+        when the hold runs out."""
+        now = utcnow_iso()
+        held = (utcnow() + HOLD).isoformat(timespec="seconds")
+        cursor = await self._conn.execute(
+            "UPDATE octopus_queue SET due_at = ? WHERE key = ("
+            "  SELECT key FROM octopus_queue WHERE due_at <= ?"
+            "  ORDER BY due_at, created_at, key LIMIT 1)"
+            " RETURNING key, reason",
+            (held, now),
+        )
+        row = await cursor.fetchone()
+        await self._conn.commit()
+        return (str(row[0]), str(row[1] or "")) if row else None
 
     async def octopus_done(self, key: str) -> None:
         await self._conn.execute("DELETE FROM octopus_queue WHERE key = ?", (key,))

@@ -197,6 +197,7 @@ name, or when the tree goes stale.
 │   │   ├── game_series.py        game series proposed from relations, labels, franchise names
 │   │   ├── label_conflicts.py    labels that contradict each other (#218), no DB access
 │   │   ├── game_page.py          the Mini App's game page put together from the catalog (no network)
+│   │   ├── game_descriptions.py  a game's description translated once, the achievements' rule (#230)
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -247,7 +248,9 @@ name, or when the tree goes stale.
 │   └── db/
 │       ├── schema.sql            full DDL for a brand-new database
 │       ├── repo/                 all data access, the only place with SQL; one Repo from mixins
-│       │                         (map in its __init__.py); `_sql.py` holds the shared joins (#52)
+│       │                         (map in its __init__.py); `_sql.py` holds the shared joins (#52);
+│       │                         `_games_db.py`: which tables are the shared games database (#229)
+│       ├── files.py              a database opened by a script, its games file attached (#229)
 │       └── migrations/           one file per schema change, for existing databases only
 │
 ├── scripts/                     one-off operational helpers, outside the running bot
@@ -257,6 +260,7 @@ name, or when the tree goes stale.
 │   ├── reparse_store_payloads.py the store side again from the kept answers, no request (#147)
 │   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
 │   ├── catalog_transfer.py       the games catalog carried whole from one database to another (#147)
+│   ├── games_db.py               the shared games database: split it out, join it, leave it (#229)
 │   ├── fit_match_weights.py      the games matcher's weights fitted to the operator's labels (#147)
 │   ├── advise_pairs.py           the matcher's doubtful pairs to Claude and Gemini and back:
 │   │                             export / import / status / apply / conflicts (#147)
@@ -265,6 +269,7 @@ name, or when the tree goes stale.
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
 │   ├── cache_achievement_icons.py                                   icon pre-caching (#99)
 │   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
+│   ├── collect_x360_addons.py    a 360 game's add-ons searched once, where never searched yet
 │   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
 │                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
@@ -346,6 +351,39 @@ setting it up: `docs/mail-setup.md`).
 
 The canonical schema is `bot/db/schema.sql`; this section describes the model, not
 every column. History: #106.
+
+### One games database for prod and the test server (#229)
+
+- **The catalog is one file both bots attach** (owner, 2026-10-28;
+  `db/repo/_games_db.py`, on the VPS `/srv/unlocked-games/games.db`): every
+  table about games, achievement lists and the stores (`CATALOG_TABLES` — the
+  lists and their achievements, Steam's caches, guides, the games catalog, the
+  HLTB mirror, store answers, `fetch_state`, the octopus's queue) lives in
+  `games`, attached to each bot's own database; people, accounts, what they
+  earned, chats and `app_settings` stay each server's. SQLite finds a table
+  nobody qualified in `main` first, then in `games`, so queries are as before;
+  only what *creates* a table, an index or a trigger of the catalog is placed
+  in `games` (`placed`), for schema.sql, the migrations and the indexes after
+  them. **A database names its games file in `app_settings`** (`games_db_path`),
+  written by `scripts/games_db.py split|join`; one that names none is one file,
+  as before (the dev server). A named file that is missing stops start-up — an
+  empty catalog is never made up. Scripts open a database through
+  `bot/db/files.py` (`connect`, `open_database`, `backup`), which attaches its
+  games file; a copy is made of both, the copy naming its own games copy.
+- **A migration touching the catalog runs once per server against the one
+  file**: it must only add (a table, a column, an index) and be idempotent —
+  an `ADD COLUMN` already there is skipped (`_apply_one`), a backfill must not
+  care that it ran before. The test server runs ahead of prod on the same
+  file, so prod's older code must keep working on a catalog the newer one
+  migrated. **A global rework of the games database** — a migration that
+  rebuilds, renames or drops a catalog table — **cannot be shared: the two
+  databases are parted for its duration** (owner, 2026-10-28; `xbox-deploy
+  games leave`), and once both run the new code one `split`s again and the
+  other `join`s.
+- **One writer for the catalog's background work**: the octopus and the store
+  collection run where `store_collection` is on (the test server); prod reads
+  and adds what its own polls learn. A queue entry is taken by one statement
+  and held (`octopus_take`, half an hour), so two bots never assemble one game.
 
 ### Bring-up and migrations
 
@@ -670,10 +708,11 @@ every column. History: #106.
 - **An Xbox 360 game's art is kept without the console's frame** (owner,
   2026-10-28; `services/x360_frame.py`): the portrait box art loses its header
   (the "XBOX 360" logo, Platinum Hits, Games for Windows LIVE, ARCADE — the top
-  13%), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
+  13%), the store's 720×1080 poster its white "XBOX 360" band (the top 126
+  px), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
   Cut on download — a 360 list's cover (`covers.download(platform=)`) and a
-  poster that stands in from a 360 list's icon (marked `#x360`, so `game_art`
-  cuts it; a fragment is never sent) —; anything else is left as it came, and a
+  poster from a 360 list's icon or its backward-compatible product's store
+  page (marked `#x360`, so `game_art` cuts it; a fragment is never sent) —; anything else is left as it came, and a
   picture cut once is neither shape. What was kept before is cut by
   `scripts/strip_x360_frames.py` (no request, beside a running bot).
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
@@ -786,7 +825,8 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     game's names finds it, kept when it names the game's product as its
     parent (owner, 2026-10-27; `_xbox_addons_alone`, when due) — the only
     way to a **360 game's** add-ons (Gears of War 3's Season Pass), for its
-    list, a modern list and the octopus's store-only Xbox products alike. `9998-12-30` is "not on sale", no date. Each price period is an
+    list, a modern list and the octopus's store-only Xbox products alike
+    (`scripts/collect_x360_addons.py` searches every 360 game not searched yet). `9998-12-30` is "not on sale", no date. Each price period is an
     availability with its own end, so an answer is judged on sale **as of when
     it was given** — a stored one re-read later keeps its time
     (`sold(product, now)`; 2026-10-26: a re-parse read 548 games as off sale,
@@ -1229,11 +1269,8 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   catalog points outside itself only by a list's (platform, title_id), so
   nothing else moves; a list the file lacks keeps its own stand-in, linked
   into a game after. `--tables match_weights` carries a new fit alone.
-  **From the test server to prod** (owner, 2026-10-28; the octopus assembled
-  games on the test server, a one-off): `sudo xbox-deploy catalog [--dry-run]`
-  on the VPS, each run replacing prod's catalog with the test server's as it
-  is then; the dry run rehearses it all on a copy of `bot.db` and touches prod
-  not at all. See Operations → Deploys.
+  Prod and the test server share one catalog (#229, above), so it is no
+  longer carried between them.
 - **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
   `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
   production, the test server and the dev server. A label names its versions by
@@ -1969,6 +2006,16 @@ elsewhere in this file still describe the bot.
   like an icon (1280 px) and keeps it under `data/covers/art/` (named by the
   address's hash); the octopus keeps a game's art as it assembles it. Screenshots
   and trailers stay the stores' links.
+  **Its description follows the achievements' rule** (owner, 2026-10-28;
+  #230, migration 138, `services/game_descriptions.py`): a store's Russian is
+  kept only when it is Russian (Cyrillic, not its English handed back;
+  `_stores.native_ru`) and marked `native`; with none, the English a Russian
+  reader is shown — a version's or HLTB's summary — is translated by Haiku in
+  the background the first time the page is opened in Russian, and kept with a
+  hash of that English (`versions.description_source = 'llm'`,
+  `description_ru_of`; `hltb_entries.summary_ru_of`). A changed English text is
+  translated again; a store's own Russian replaces ours; no key leaves it
+  English.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,
@@ -2812,8 +2859,9 @@ A VPS at Spaceship (Namecheap), Ubuntu 24.04, nginx + systemd, dedicated user
 whose ports are never exposed (`OAUTH_LISTEN_HOST=127.0.0.1`).
 **SSH is keys only, on port 22022** (owner, 2026-10-23: password login
 is off, root by key only). CI's deploy connects on 22022 too, with
-`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches;
-port 22 is to be closed once a deploy over 22022 has gone through.
+`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches.
+Port 22 is closed: `ssh.socket` listens on 22022 alone (its `override.conf`,
+#228); ufw is off, nothing else is exposed.
 
 ```bash
 systemctl {start|stop|restart|status} xbox-bot        # xbox-bot-test for the test server
@@ -2857,21 +2905,20 @@ It:
    taken before the start.
 
 **One run at a time** (`/run/xbox-deploy.lock`): a test deploy, a prod deploy and a
-catalog transfer all stop and start bots on the one box. **A bot the script stopped
+games-database move all stop and start bots on the one box. **A bot the script stopped
 is started again on any failure.** The script reinstalls itself from the checkout,
 but the run that installs it finishes as the old one: a change to it takes effect
 from the next deploy.
 
-**`xbox-deploy catalog [--dry-run]`** carries the games catalog from the test server
-to prod, run by hand on the VPS (no workflow: owner, 2026-10-28, a one-off). It refuses, changing nothing, while
-`test.db` and `bot.db` are at different migrations. Then: the test bot stops for
-the export (`catalog_transfer export --except octopus_queue`: the octopus's queue is
-each server's own work) and starts again; prod stops,
-`catalog_transfer import` (which backs `bot.db` up beside it — the two newest
-`bot-pre-catalog-*.db` are kept) and `catalog_files import` run, and prod starts and
-is verified. The dry run does the import on a copy of `bot.db` in a temporary
-folder — the import's own dry run writes and rolls back inside the live file,
-which would stall the running bot.
+**`xbox-deploy games split|join|leave [--dry-run]`** moves the bots onto the
+shared games database (#229), run by hand on the VPS, each bot it touches
+stopped and verified after (`scripts/games_db.py`, which copies the database
+into `backups/` first): `split` makes the test server's catalog the shared file,
+`join` has prod take it — what only prod knew of its lists is added, a list the
+shared file has no version for keeps its stand-in, linked into a game after —,
+`leave` copies the shared catalog back into both and parts them. The dry run
+does it on copies in a temporary folder. A deploy's backup copies the games file
+too (`<copy>.games.db`, pruned with its copy).
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.

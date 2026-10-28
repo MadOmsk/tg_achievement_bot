@@ -23,6 +23,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from bot.db import files
+
 PLACEHOLDER = "(name IS NULL OR name IN ('', '?') OR name = title_id)"
 
 
@@ -48,7 +50,7 @@ def names_in(path: str) -> dict[tuple[str, str], str]:
             for p, t, n in json.loads(Path(path).read_text("utf-8"))
             if p and n and str(n) not in ("?", str(t))
         }
-    source = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    source = files.connect(path, readonly=True)
     try:
         return names_from(source)
     finally:
@@ -80,14 +82,14 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.dump:
-        source = sqlite3.connect(f"file:{args.dump}?mode=ro", uri=True)
+        source = files.connect(args.dump, readonly=True)
         print(json.dumps([list(r) for r in _rows(source)], ensure_ascii=False))
         source.close()
         return
     if not (args.db and args.source):
         parser.error("--db and --from, or --dump")
     names = names_in(args.source)
-    db = sqlite3.connect(args.db)
+    db = files.connect(args.db)
     done = restore(db, names)
     left = db.execute(
         f"SELECT COUNT(*) FROM achievement_list_connectors WHERE {PLACEHOLDER}"

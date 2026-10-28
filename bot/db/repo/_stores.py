@@ -11,7 +11,18 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from bot.db.repo._sql import platform_is
-from bot.util import utcnow, utcnow_iso
+from bot.util import looks_russian, utcnow, utcnow_iso
+
+
+def native_ru(russian: str | None, english: str | None) -> str | None:
+    """A store's Russian description, when it is one (#230): Cyrillic, and
+    not the English handed back for the Russian request."""
+    if not russian or not looks_russian(russian):
+        return None
+    if english and russian.strip() == english.strip():
+        return None
+    return russian
+
 
 if TYPE_CHECKING:
     from bot.services.stores import StoreDlc, StoreVersion
@@ -188,6 +199,7 @@ class _StoresRepo:
         it; its achievement list is kept once known, never blanked. `found`
         is how it came here and what found it (migration 116), kept from the
         first time."""
+        russian = native_ru(version.description_ru, version.description_en)
         found_how, found_via = found or (None, None)
         now = utcnow_iso()
         if platform and title_id and not version.stand_in:
@@ -218,8 +230,8 @@ class _StoresRepo:
             "INSERT INTO versions (store, product_id, console, platform, title_id, name, name_ru,"
             "  kind, developer, publisher, release_date, genres, also_on, store_group,"
             "  description_en, description_ru, media, live_service, origin, updated_at, stand_in,"
-            "  on_sale, cross_gen_set, found_how, found_via, found_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "  on_sale, cross_gen_set, found_how, found_via, found_at, description_source)"
+            f" VALUES ({', '.join('?' * 27)})"
             " ON CONFLICT(store, product_id, console) DO UPDATE SET"
             # The first list proved stays the version's; another (a
             # regional twin) is kept beside it as an id, never in its place.
@@ -234,7 +246,13 @@ class _StoresRepo:
             "  genres = excluded.genres, also_on = excluded.also_on,"
             "  store_group = COALESCE(excluded.store_group, versions.store_group),"
             "  description_en = COALESCE(excluded.description_en, versions.description_en),"
+            # The store's own Russian replaces anything; with none, our
+            # translation stays (#230).
             "  description_ru = COALESCE(excluded.description_ru, versions.description_ru),"
+            "  description_source = CASE WHEN excluded.description_ru IS NOT NULL"
+            "   THEN 'native' ELSE versions.description_source END,"
+            "  description_ru_of = CASE WHEN excluded.description_ru IS NOT NULL"
+            "   THEN NULL ELSE versions.description_ru_of END,"
             "  media = excluded.media, live_service = excluded.live_service,"
             # A version somebody here plays stays `played` once it is.
             "  origin = CASE WHEN versions.origin = 'played' THEN 'played'"
@@ -262,7 +280,7 @@ class _StoresRepo:
                 json.dumps(version.also_on),
                 version.store_group,
                 version.description_en,
-                version.description_ru,
+                russian,
                 json.dumps(version.media, ensure_ascii=False),
                 1 if version.live_service else 0,
                 origin,
@@ -273,6 +291,7 @@ class _StoresRepo:
                 found_how,
                 found_via,
                 now if found_how else None,
+                "native" if russian else None,
             ),
         )
         cursor = await self._conn.execute(

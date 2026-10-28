@@ -30,6 +30,7 @@ import zlib
 from collections import Counter
 from pathlib import Path
 
+from bot.db import files
 from bot.services.stores import xbox_catalog
 
 XBOX_VERSION = "version_id IN (SELECT version_id FROM versions WHERE store = 'xbox')"
@@ -55,7 +56,7 @@ def _products(conn: sqlite3.Connection):
 
 
 def recompute(db: Path, *, apply: bool) -> None:
-    conn = sqlite3.connect(db)
+    conn = files.connect(db)
     sale: dict[str, int] = {}
     for product_id, at, product in _products(conn):
         # A product seen in several answers is on sale if any said so then.
@@ -80,7 +81,7 @@ def recompute(db: Path, *, apply: bool) -> None:
 
 
 def export(db: Path, out: Path) -> None:
-    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True)
+    conn = files.connect(db, readonly=True)
     rows = {
         "versions": conn.execute(
             "SELECT DISTINCT product_id, on_sale FROM versions WHERE store = 'xbox'"
@@ -101,7 +102,7 @@ def export(db: Path, out: Path) -> None:
 
 def apply_file(db: Path, file: Path) -> None:
     rows = json.loads(file.read_text(encoding="utf-8"))
-    conn = sqlite3.connect(db)
+    conn = files.connect(db)
     changed: Counter[str] = Counter()
     for table, key, where in TABLES:
         for row_key, on_sale in rows.get(table, []):

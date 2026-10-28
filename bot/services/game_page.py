@@ -80,13 +80,19 @@ def store_art(
     for version in versions:
         by_store.setdefault(str(version.get("store")), []).append(version)
 
+    # A 360 game's backward-compatible product: its store poster is framed
+    # like the list's box art (`x360_frame`), whichever console reads it.
+    x360 = {str(v.get("product_id")) for v in by_store.get("xbox", []) if v.get("console") == "360"}
+
     def first(store: str, key: str) -> str | None:
         for version in by_store.get(store, []):
             value = _media(version.get("media")).get(key)
-            if isinstance(value, str) and value:
-                return value
             if isinstance(value, list) and value and isinstance(value[0], str):
-                return value[0]
+                value = value[0]
+            if isinstance(value, str) and value:
+                if str(version.get("product_id")) in x360 and key == "poster":
+                    return x360_frame.mark(https(value), "xbox_360")
+                return value
         return None
 
     steam = by_store.get("steam", [])
@@ -126,28 +132,82 @@ def _plain(text: str | None) -> str:
     return "\n".join(line for line in lines if line).strip()
 
 
+def _version_russian(version: dict[str, Any]) -> str:
+    """A version's Russian description, as far as it can be trusted (#230,
+    the achievements' rule): the store's own, Cyrillic and not its English
+    handed back; or our translation of the English it now has."""
+    ru = _plain(version.get("description_ru"))
+    if not ru or not looks_russian(ru):
+        return ""
+    source = version.get("description_source")
+    if source == "native":
+        return ru
+    if source == "llm":
+        return (
+            ru
+            if version.get("description_ru_of") == text_hash(version.get("description_en"))
+            else ""
+        )
+    en = _plain(version.get("description_en"))
+    return "" if ru == en else ru
+
+
+def text_hash(text: str | None) -> str | None:
+    """What a translation is of (`hltb_page.summary_hash`, one rule)."""
+    from bot.services.stores.hltb_page import summary_hash
+
+    return summary_hash(text)
+
+
+def _texts(
+    versions: list[dict[str, Any]], hltb: dict[str, Any] | None
+) -> tuple[list[str], list[tuple[str, str, int]]]:
+    """Russian texts, and English ones with where each came from."""
+    russian: list[str] = []
+    english: list[tuple[str, str, int]] = []
+    for version in versions:
+        ru = _version_russian(version)
+        en = _plain(version.get("description_en"))
+        if len(ru) >= _MIN_DESCRIPTION:
+            russian.append(ru)
+        if len(en) >= _MIN_DESCRIPTION:
+            english.append((en, "version", int(version["version_id"])))
+    if hltb:
+        # A translation of another English summary is stale (`summary_ru_of`).
+        of = hltb.get("summary_ru_of")
+        if hltb.get("summary_ru") and of in (None, text_hash(hltb.get("summary_en"))):
+            russian.append(_plain(hltb["summary_ru"]))
+        if hltb.get("summary_en") and hltb.get("hltb_id") is not None:
+            english.append((_plain(hltb["summary_en"]), "hltb", int(hltb["hltb_id"])))
+    russian.sort(key=len, reverse=True)
+    english.sort(key=lambda e: len(e[0]), reverse=True)
+    return russian, english
+
+
+def to_translate(
+    versions: list[dict[str, Any]], hltb: dict[str, Any] | None
+) -> tuple[str, int, str] | None:
+    """The English description a Russian reader is shown for want of a
+    Russian one — `(kind, id, raw English)`, kind `version` or `hltb` —, to
+    be translated once (#230); None when a Russian one exists."""
+    russian, english = _texts(versions, hltb)
+    if russian or not english:
+        return None
+    _, kind, key = english[0]
+    if kind == "hltb":
+        return kind, key, str(hltb["summary_en"]) if hltb else ""
+    raw = next(v["description_en"] for v in versions if int(v["version_id"]) == key)
+    return kind, key, str(raw)
+
+
 def description_of(
     versions: list[dict[str, Any]], hltb: dict[str, Any] | None, locale: str
 ) -> dict[str, str] | None:
     """The game's story in the reader's language when any source has it: a
     store's own text (the longest), else HowLongToBeat's summary; the other
     language when that is all there is."""
-    russian: list[str] = []
-    english: list[str] = []
-    for version in versions:
-        ru = _plain(version.get("description_ru"))
-        en = _plain(version.get("description_en"))
-        if len(ru) >= _MIN_DESCRIPTION and looks_russian(ru):
-            russian.append(ru)
-        if len(en) >= _MIN_DESCRIPTION:
-            english.append(en)
-    if hltb:
-        if hltb.get("summary_ru"):
-            russian.append(_plain(hltb["summary_ru"]))
-        if hltb.get("summary_en"):
-            english.append(_plain(hltb["summary_en"]))
-    russian.sort(key=len, reverse=True)
-    english.sort(key=len, reverse=True)
+    russian, found = _texts(versions, hltb)
+    english = [text for text, _, _ in found]
     order = (russian, english) if locale == "ru" else (english, russian)
     for texts, lang in zip(order, ("ru", "en") if locale == "ru" else ("en", "ru"), strict=True):
         if texts:

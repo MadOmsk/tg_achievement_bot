@@ -14,6 +14,7 @@ from typing import Self
 import aiosqlite
 
 from bot.constants import SettingKey
+from bot.db.repo._games_db import GAMES, GAMES_DB_KEY, placed
 from bot.db.repo._tx import TransactionGate
 from bot.util import utcnow_iso
 from bot.version import schema_gap
@@ -92,11 +93,19 @@ class SchemaTooNewError(RuntimeError):
     """The database has migrations this code does not ship (#56)."""
 
 
+class GamesDatabaseMissingError(RuntimeError):
+    """The database names a games file (#229) that is not there."""
+
+
 class Database:
     """Owns the connection and brings the file up to the current schema."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, games: Path | None = None) -> None:
         self._path = path
+        # The games file a *new* database is made with (#229); an existing
+        # one names its own in `app_settings`, and that is the one attached.
+        self._new_games = games
+        self.games_path: Path | None = None
         self._conn: aiosqlite.Connection | None = None
         # Who holds the connection for a block of writes (#167, `_tx.py`).
         self.gate = TransactionGate()
@@ -124,11 +133,17 @@ class Database:
             # see _apply_migrations for why that one bit matters.
             fresh = await self._is_empty()
             await self._refuse_a_newer_database()
+            await self._attach_games(fresh=fresh)
             await self._apply_schema()
             await self._apply_migrations(fresh=fresh)
             for statement in INDEXES_AFTER_MIGRATIONS:
-                await self._conn.execute(statement)
+                await self._conn.execute(self._placed(statement))
             await self._seed_app_settings()
+            if fresh and self.games_path is not None:
+                await self._conn.execute(
+                    "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)",
+                    (GAMES_DB_KEY, str(self.games_path), utcnow_iso()),
+                )
             await self._conn.commit()
         except BaseException:
             # Bring-up failing has to *stop* the process, and until this
@@ -180,8 +195,40 @@ class Database:
         if complaint is not None:
             raise SchemaTooNewError(complaint)
 
+    async def _attach_games(self, *, fresh: bool) -> None:
+        """Attach the games file (#229): the one this database names, or for
+        a new database the one it is made with. Never made up: a database
+        naming a file that is not there stops start-up, rather than going on
+        with an empty catalog."""
+        path = self._new_games if fresh else await self._named_games()
+        if path is None:
+            return
+        if not fresh and not path.exists():
+            raise GamesDatabaseMissingError(f"{self._path} keeps its games in {path}, not found")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await self.conn.execute(f"ATTACH DATABASE ? AS {GAMES}", (str(path),))
+        await self.conn.execute(f"PRAGMA {GAMES}.journal_mode = WAL")
+        await self.conn.execute(f"PRAGMA {GAMES}.synchronous = NORMAL")
+        self.games_path = path
+
+    async def _named_games(self) -> Path | None:
+        cursor = await self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'"
+        )
+        if await cursor.fetchone() is None:
+            return None
+        cursor = await self.conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (GAMES_DB_KEY,)
+        )
+        row = await cursor.fetchone()
+        return Path(row[0]) if row and row[0] else None
+
+    def _placed(self, statement: str) -> str:
+        return placed(statement, self.games_path is not None)
+
     async def _apply_schema(self) -> None:
-        await self.conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        script = SCHEMA_PATH.read_text(encoding="utf-8")
+        await self.conn.executescript("".join(map(self._placed, _statements(script))))
 
     async def _apply_migrations(self, *, fresh: bool = False) -> None:
         """Bring an existing database up to the current schema.
@@ -264,7 +311,7 @@ class Database:
                     added["column"],
                 )
                 continue
-            kept.append(statement)
+            kept.append(self._placed(statement))
         await self.conn.executescript("".join(kept))
 
     async def _has_column(self, table: str, column: str) -> bool:

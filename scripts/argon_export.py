@@ -34,6 +34,7 @@ import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
+from bot.db import files
 from bot.db.repo._sql import OWN_EDITION
 from bot.services.stores import console_label
 
@@ -497,7 +498,7 @@ def main() -> int:
     )
     parser.add_argument("--seed", type=int, default=20261016)
     args = parser.parse_args()
-    conn = sqlite3.connect(f"file:{Path(args.db).as_posix()}?mode=ro", uri=True)
+    conn = files.connect(Path(args.db), readonly=True)
     conn.row_factory = sqlite3.Row
     cards = game_cards(conn)
     relations = relation_questions(conn)

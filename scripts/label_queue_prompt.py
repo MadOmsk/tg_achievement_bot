@@ -26,9 +26,10 @@ import json
 import sqlite3
 from pathlib import Path
 
+from bot.db import files
 from bot.services.advice import RULES, versions_pair_id
 from bot.util import utcnow_iso
-from scripts.advise_pairs import load_facts, open_read_only, read_only_uri
+from scripts.advise_pairs import load_facts, open_read_only
 from scripts.catalog_viewer import label_queue
 
 SEARCH = """For EVERY question, search the web before answering — store pages (Steam,
@@ -50,7 +51,7 @@ def _blind(text: str) -> str:
 
 
 async def build(db: Path, limit: int) -> list[dict]:
-    conn = sqlite3.connect(read_only_uri(db), uri=True)
+    conn = files.connect(db, readonly=True)
     conn.row_factory = sqlite3.Row
     try:
         queue, _answered, _order = label_queue(conn)

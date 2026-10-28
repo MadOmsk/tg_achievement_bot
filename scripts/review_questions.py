@@ -44,8 +44,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from bot.db import files
 from bot.services.advice import DEFINITIONS
-from scripts.advise_pairs import read_only_uri
 from scripts.web_labels import label_of
 
 SHARES = {"relations": 0.1, "hltb": 0.15, "series": 0.3}  # the rest: pairs in one game
@@ -202,7 +202,7 @@ def _known(conn: sqlite3.Connection, n: int, skip: set[frozenset[int]]) -> list[
 def recheck_questions(db: Path, check: int = 0) -> list[dict]:
     """The recheck batch, nameless stand-ins left out, with `check` pairs of
     known answer mixed in at fixed places."""
-    conn = sqlite3.connect(read_only_uri(db), uri=True)
+    conn = files.connect(db, readonly=True)
     conn.row_factory = sqlite3.Row
     out = []
     asked: set[frozenset[int]] = set()
@@ -367,7 +367,7 @@ def score(questions: list[dict], answers: list[dict]) -> tuple[list[str], list[d
 
 
 def build(db: Path, total: int) -> list[dict]:
-    conn = sqlite3.connect(read_only_uri(db), uri=True)
+    conn = files.connect(db, readonly=True)
     conn.row_factory = sqlite3.Row
     labelled = {
         frozenset((int(a), int(b)))

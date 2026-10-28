@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from bot.db import files
 from bot.db.repo import Database, Repo
 
 
@@ -21,13 +21,7 @@ def _backup(db_path: Path) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     Path("backups").mkdir(exist_ok=True)
     target = Path("backups") / f"{db_path.stem}-pre-x360-groups-{stamp}.db"
-    source = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
-    copy = sqlite3.connect(target)
-    try:
-        source.backup(copy)
-    finally:
-        copy.close()
-        source.close()
+    files.backup(db_path, target)
     return target
 
 
