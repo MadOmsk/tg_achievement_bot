@@ -265,6 +265,7 @@ name, or when the tree goes stale.
 │   ├── pull_games_and_achievements.py, reconcile_achievements.py   bulk history syncs
 │   ├── cache_achievement_icons.py                                   icon pre-caching (#99)
 │   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
+│   ├── collect_x360_addons.py    a 360 game's add-ons searched once, where never searched yet
 │   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
 │                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
@@ -670,10 +671,11 @@ every column. History: #106.
 - **An Xbox 360 game's art is kept without the console's frame** (owner,
   2026-10-28; `services/x360_frame.py`): the portrait box art loses its header
   (the "XBOX 360" logo, Platinum Hits, Games for Windows LIVE, ARCADE — the top
-  13%), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
+  13%), the store's 720×1080 poster its white "XBOX 360" band (the top 126
+  px), the 1080 px square tile its green "XBOX 360" bar (the left 190 px).
   Cut on download — a 360 list's cover (`covers.download(platform=)`) and a
-  poster that stands in from a 360 list's icon (marked `#x360`, so `game_art`
-  cuts it; a fragment is never sent) —; anything else is left as it came, and a
+  poster from a 360 list's icon or its backward-compatible product's store
+  page (marked `#x360`, so `game_art` cuts it; a fragment is never sent) —; anything else is left as it came, and a
   picture cut once is neither shape. What was kept before is cut by
   `scripts/strip_x360_frames.py` (no request, beside a running bot).
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
@@ -786,7 +788,8 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     game's names finds it, kept when it names the game's product as its
     parent (owner, 2026-10-27; `_xbox_addons_alone`, when due) — the only
     way to a **360 game's** add-ons (Gears of War 3's Season Pass), for its
-    list, a modern list and the octopus's store-only Xbox products alike. `9998-12-30` is "not on sale", no date. Each price period is an
+    list, a modern list and the octopus's store-only Xbox products alike
+    (`scripts/collect_x360_addons.py` searches every 360 game not searched yet). `9998-12-30` is "not on sale", no date. Each price period is an
     availability with its own end, so an answer is judged on sale **as of when
     it was given** — a stored one re-read later keeps its time
     (`sold(product, now)`; 2026-10-26: a re-parse read 548 games as off sale,

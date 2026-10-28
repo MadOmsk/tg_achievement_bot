@@ -80,13 +80,19 @@ def store_art(
     for version in versions:
         by_store.setdefault(str(version.get("store")), []).append(version)
 
+    # A 360 game's backward-compatible product: its store poster is framed
+    # like the list's box art (`x360_frame`), whichever console reads it.
+    x360 = {str(v.get("product_id")) for v in by_store.get("xbox", []) if v.get("console") == "360"}
+
     def first(store: str, key: str) -> str | None:
         for version in by_store.get(store, []):
             value = _media(version.get("media")).get(key)
-            if isinstance(value, str) and value:
-                return value
             if isinstance(value, list) and value and isinstance(value[0], str):
-                return value[0]
+                value = value[0]
+            if isinstance(value, str) and value:
+                if str(version.get("product_id")) in x360 and key == "poster":
+                    return x360_frame.mark(https(value), "xbox_360")
+                return value
         return None
 
     steam = by_store.get("steam", [])

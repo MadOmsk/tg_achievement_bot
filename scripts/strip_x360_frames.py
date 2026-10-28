@@ -1,10 +1,10 @@
 """Cut the console's frame off the Xbox 360 art already kept (owner,
 2026-10-28; `bot/services/x360_frame.py`): the lists' covers
-(`covers/xbox_360-*`) in place, and each 360 list's poster in `covers/art/`
-kept again under its marked address, from the file already there — no
-request. A picture with no frame, or one cut before, is left alone, so it can
-run again. Beside a running bot: every write is a rename, and the databases
-are only read.
+(`covers/xbox_360-*`) in place, and each 360 game's poster in `covers/art/`
+(its list's icon, or its store product's poster) kept again under its marked
+address, from the file already there — no request. A picture with no frame,
+or one cut before, is left alone, so it can run again. Beside a running bot:
+every write is a rename, and the databases are only read.
 
     .venv/Scripts/python.exe -X utf8 -m scripts.strip_x360_frames --media /srv/unlocked-media \
         --db data/bot.db --apply
@@ -48,6 +48,12 @@ def list_icons(db: Path) -> set[str]:
         rows = conn.execute(
             "SELECT icon_url FROM achievement_list_connectors"
             " WHERE platform = 'xbox_360' AND icon_url IS NOT NULL"
+        ).fetchall()
+        # A 360 game's backward-compatible product: its store poster is
+        # framed too (`game_page.store_art` marks it).
+        rows += conn.execute(
+            "SELECT DISTINCT json_extract(media, '$.poster') FROM versions"
+            " WHERE store = 'xbox' AND console = '360' AND stand_in = 0 AND media IS NOT NULL"
         ).fetchall()
     return {https(row[0]) for row in rows if row[0]}
 

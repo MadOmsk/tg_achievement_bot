@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -36,10 +37,17 @@ def test_the_square_tile_loses_its_green_bar() -> None:
     assert x360_frame.strip(stripped) is stripped
 
 
+def test_the_store_poster_loses_its_white_band() -> None:
+    stripped = x360_frame.strip(_jpeg((720, 1080), corner=(255, 255, 255)))
+    assert _size(stripped) == (720, 954)
+    assert x360_frame.strip(stripped) is stripped  # no longer any frame's shape
+
+
 def test_other_pictures_are_left_as_they_came() -> None:
     for data in (
         _jpeg((150, 150), corner=(60, 200, 40)),  # a small icon, however green
         _jpeg((1080, 1080)),  # a square with no bar
+        _jpeg((720, 1080)),  # a 2:3 poster with no band
         _jpeg((600, 900 * 2)),
         b"not a picture",
     ):
@@ -58,6 +66,18 @@ def test_only_a_360_lists_icon_is_marked() -> None:
             {"platform": "psn", "icon_url": None},
         ]
     ) == [url + x360_frame.MARK, url + "s"]
+
+
+def test_a_360_products_store_poster_is_marked() -> None:
+    poster = "http://store-images.s-microsoft.com/image/apps.6999.1"
+    media = json.dumps({"poster": poster})
+    versions = [
+        {"store": "xbox", "product_id": "BPKD", "console": "one", "media": media},
+        {"store": "xbox", "product_id": "BPKD", "console": "360", "media": media},
+    ]
+    marked = game_page.store_art(versions)["poster"]
+    assert marked == "https://store-images.s-microsoft.com/image/apps.6999.1" + x360_frame.MARK
+    assert game_page.store_art(versions[:1])["poster"] == game_page.https(poster)
 
 
 @pytest.mark.asyncio
