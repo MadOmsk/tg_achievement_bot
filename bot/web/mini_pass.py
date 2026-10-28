@@ -11,6 +11,8 @@ back on, with one's own codes."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import logging
 import time
 from typing import Any
@@ -45,8 +47,19 @@ _BACKGROUND: set[asyncio.Task] = set()
 
 ITEM = r"/api/mini/pass/items/{item_id:\d+}"
 
+# Signs the editor's picture addresses: a draft's picture (or one waiting
+# for the publish) is the super-admin's to see, and an <img> carries no Init
+# Data, so the address itself is the permission.
+_key: bytes | None = None
+
 
 def setup_pass_routes(app: web.Application) -> None:
+    global _key
+    settings: Settings | None = app.get("mini_settings")
+    if settings is not None:
+        _key = hashlib.sha256(
+            b"pass-draft:" + settings.fernet_key.get_secret_value().encode()
+        ).digest()
     app.router.add_get("/api/mini/pass", handle_pass)
     app.router.add_post("/api/mini/pass/claim", handle_claim)
     app.router.add_post(ITEM + "/claim", handle_item_claim)
@@ -69,7 +82,19 @@ def _picture(item_id: int, path: str | None, *, draft: bool = False) -> str | No
     if not path:
         return None
     version = path.rsplit("-", 1)[-1].split(".")[0]
-    return f"/api/mini/pass/items/{item_id}/image?v={version}" + ("&draft=1" if draft else "")
+    url = f"/api/mini/pass/items/{item_id}/image?v={version}"
+    return url + f"&draft=1&s={_sign(item_id, version)}" if draft else url
+
+
+def _sign(item_id: int, version: str) -> str:
+    if _key is None:
+        return ""
+    return hmac.new(_key, f"{item_id}:{version}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _signed(request: web.Request, item_id: int) -> bool:
+    given = request.query.get("s", "")
+    return bool(given) and hmac.compare_digest(given, _sign(item_id, request.query.get("v", "")))
 
 
 async def _cards(repo: Repo, rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
@@ -461,7 +486,12 @@ async def handle_item_remove(request: web.Request) -> web.Response:
 
 async def handle_item_revert(request: web.Request) -> web.Response:
     repo, person_id = await _admin(request)
-    pass_pictures.remove(await repo.revert_pass_item(int(request.match_info["item_id"])))
+    item_id = int(request.match_info["item_id"])
+    # The same bounds as any edit: the month edited, nobody holding it yet.
+    item = await _unclaimed(repo, item_id, await _edit_month(repo, person_id, request))
+    if isinstance(item, web.Response):
+        return item
+    pass_pictures.remove(await repo.revert_pass_item(item_id))
     return await _edited(repo, person_id, request)
 
 
@@ -492,8 +522,13 @@ async def handle_item_image(request: web.Request) -> web.Response:
     item = await repo.pass_item(item_id)
     if item is None:
         raise web.HTTPNotFound(text="no picture")
+    draft = bool(request.query.get("draft"))
+    # A level not yet published, and a picture waiting for the publish, show
+    # only through the editor's signed address.
+    if (draft or item["state"] == "draft") and not _signed(request, item_id):
+        raise web.HTTPNotFound(text="no picture")
     path = item["image_path"]
-    if request.query.get("draft"):
+    if draft:
         # The editor's preview of a picture waiting for the publish.
         editing = next((i for i in await repo.pass_editor_items() if i["item_id"] == item_id), None)
         path = editing["image_path"] if editing else path

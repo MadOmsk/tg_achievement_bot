@@ -2015,7 +2015,7 @@ elsewhere in this file still describe the bot.
   when — never the codes). Home's month card shows the race of friends and, under
   it, the door to the pass. Every month runs the same levels again.
   **The pass is the super-admin's to build** (owner, 2026-10-28; migration
-  132: `pass_items` — a level each, `theme` / `game` / `code`, its points,
+  133: `pass_items` — a level each, `theme` / `game` / `code`, its points,
   `state` draft / live / removed and its waiting changes in `pending` —, and
   `pass_item_codes`; `db/repo/_pass.py`): the app's five themes are written
   once as live levels (`ensure_pass_seeded`), and from then on any level may be

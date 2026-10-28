@@ -257,3 +257,34 @@ def test_a_prize_picture_is_saved_again_as_a_jpeg() -> None:
     with Image.open(io.BytesIO(picture)) as image:
         assert image.format == "JPEG" and max(image.size) == pass_pictures.SIDE
     assert pass_pictures.normalize(b"not a picture") is None
+
+
+async def test_a_draft_picture_shows_only_through_the_editors_address(
+    repo: Repo, settings: Settings, monkeypatch, tmp_path
+) -> None:
+    import io
+
+    from PIL import Image
+
+    from bot.services import pass_pictures
+    from bot.web.mini_pass import _picture
+
+    monkeypatch.chdir(tmp_path)
+    client, _headers = await _client(repo, settings, monkeypatch, 44, {"n": 0})
+    try:
+        item = await repo.add_pass_item({"kind": "code", "title": "Soon", "points": 5}, ["A"], None)
+        raw = io.BytesIO()
+        Image.new("RGB", (64, 64), (10, 20, 30)).save(raw, format="PNG")
+        path = await pass_pictures.store(item, raw.getvalue())
+        await repo.edit_pass_item(item, {"image_path": path}, None)
+
+        signed = _picture(item, path, draft=True)
+        plain = _picture(item, path)
+        assert signed is not None and plain is not None
+        # Nobody guesses a prize before it is published, nor its waiting picture.
+        assert (await client.get(plain)).status == 404
+        assert (await client.get(plain + "&draft=1")).status == 404
+        assert (await client.get(signed.replace("&s=", "&s=0"))).status == 404
+        assert (await client.get(signed)).status == 200
+    finally:
+        await client.close()
