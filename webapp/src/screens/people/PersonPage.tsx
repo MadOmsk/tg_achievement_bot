@@ -13,7 +13,7 @@ import { AchTile } from "../../parts/AchTile";
 import { achOfFeed } from "../../app/views";
 import { AccountChip } from "../../parts/AccountCard";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
-import { Face, faceUrl, knownName } from "../../ui/Face";
+import { Face, faceSrc, knownName } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
 import { BarAction, Confirm, Page, Sheet } from "../../ui/Page";
 import { openImage } from "../../ui/Viewer";
@@ -89,7 +89,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
       }
     >
       <header className="pp-head">
-        <button type="button" className="pp-face" onClick={() => openImage(faceUrl(personId))} aria-label={name}>
+        <button type="button" className="pp-face" onClick={() => void faceSrc(personId).then((src) => src && openImage(src))} aria-label={name}>
           <Face personId={personId} name={name || "?"} size={112} presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
         {name ? <h1 className="pp-name">{name}</h1> : <span className="skel pp-skel-name" />}
