@@ -9,28 +9,16 @@
   text-align: center;
 }
 
+/* A glow of the face's own colours behind the head (the page's scheme is
+   read from the face): no blurred photo, which turned to mud. */
 .pp-backdrop {
   position: absolute;
   inset: 0 0 -24px;
   z-index: -1;
-  overflow: hidden;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--t-slow);
-  -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent);
-  mask-image: linear-gradient(to bottom, #000 35%, transparent);
-}
-
-.pp-backdrop.on {
-  opacity: 0.6;
-}
-
-.pp-backdrop img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: blur(48px) saturate(1.5);
-  transform: scale(1.4);
+  background:
+    radial-gradient(120% 70% at 50% 18%, color-mix(in srgb, var(--primary-container) 85%, transparent), transparent 70%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--primary-container) 35%, transparent), transparent 80%);
 }
 
 .pp-face {
@@ -45,32 +33,25 @@
   overflow-wrap: anywhere;
 }
 
-.pp-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-}
-
 .pp-counts {
   display: flex;
   gap: 3px;
-  margin: 18px 12px 0;
+  margin: 16px 12px 0;
 }
 
+/* A count and its word on one line: a small tile. */
 .pp-counts > * {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
-  gap: 2px;
-  min-height: 64px;
-  padding: 8px;
+  gap: 6px;
+  min-height: 48px;
+  padding: 12px 10px;
   border-radius: 8px;
   background: var(--surface-1);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--on-surface-2);
 }
 
@@ -83,8 +64,17 @@
 }
 
 .pp-counts b {
-  font-size: 22px;
+  font-size: 18px;
   color: var(--on-surface);
+}
+
+/* With the follow button the counts and it are one connected group. */
+.pp-counts:has(+ .pp-follow) > :first-child {
+  border-radius: var(--r-l) 8px 8px 8px;
+}
+
+.pp-counts:has(+ .pp-follow) > :last-child {
+  border-radius: 8px var(--r-l) 8px 8px;
 }
 
 /* A person's game accounts in one short line under the name. */
@@ -196,7 +186,7 @@
 }
 
 .pp-skel .pp-counts > .skel {
-  height: 64px;
+  height: 48px;
   background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
   background-size: 200% 100%;
 }
@@ -204,25 +194,6 @@
 
 .pp-hero {
   margin-top: 6px;
-}
-
-.pp-counts > .pp-count-follow {
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: 12.5px;
-  font-weight: 700;
-}
-
-.pp-counts > .pp-count-follow.pp-count-on {
-  background: var(--secondary-container);
-  color: var(--on-secondary-container);
-}
-
-.pp-follow-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  white-space: nowrap;
 }
 
 /* The follow choice in the bar once the page scrolls: a small pill, filled
@@ -253,10 +224,71 @@
   border-radius: 15px;
 }
 
+.pp-skel-status {
+  display: block;
+  width: 150px;
+  height: 18px;
+  margin: -8px auto 0;
+  border-radius: 9px;
+}
+
+.pp-skel .pp-counts:has(+ .pp-skel-follow) > :first-child {
+  border-radius: var(--r-l) 8px 8px 8px;
+}
+
+.pp-skel .pp-counts:has(+ .pp-skel-follow) > :last-child {
+  border-radius: 8px var(--r-l) 8px 8px;
+}
+
+.pp-skel-follow {
+  align-self: stretch;
+  display: block;
+  height: 48px;
+  margin: -13px 12px 0;
+  border-radius: 8px 8px var(--r-l) var(--r-l);
+}
+
 .pp-skel-chip {
   display: block;
   width: 116px;
   height: 32px;
   margin: 0 auto;
   border-radius: var(--r-full);
+}
+
+.pp-role-note {
+  padding: 0 24px 12px;
+  font-size: 13px;
+  color: var(--on-surface-2);
+}
+
+.pp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-top: -2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface-2);
+}
+
+.pp-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--online);
+}
+
+.pp-dot-play {
+  background: var(--primary);
+}
+
+.pp-follow {
+  margin: 3px 12px 0;
+}
+
+.pp-follow .btn {
+  border-radius: 8px 8px var(--r-l) var(--r-l);
 }

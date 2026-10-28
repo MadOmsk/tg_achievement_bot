@@ -154,11 +154,6 @@ export function Home({ refreshKey }: { refreshKey: number }) {
         <section className="sec">
           <div className="sec-head">
             <h2 className="t-title">{tr("homeRecent")}</h2>
-            {recent.length > 0 && (
-              <button type="button" className="link-btn" onClick={() => open({ kind: "person", personId: me.person_id })}>
-                {tr("seeAll")}
-              </button>
-            )}
           </div>
           {payload && recent.length === 0 ? (
             <Empty icon="trophy" title={tr("emptyTitleNow")} text={tr("emptyHomeHint")} />
@@ -236,7 +231,8 @@ export function Home({ refreshKey }: { refreshKey: number }) {
         <div className="sec-head">
           <h2 className="t-title">{tr("gpFavoritesTitle")}</h2>
         </div>
-        <FavoriteGames games={favs.data?.games ?? []} hint={favs.data ? tr("gpFavoritesEmpty") : undefined} />
+        {/* The hint only while there is nothing to show. */}
+        <FavoriteGames games={favs.data?.games ?? []} hint={favs.data && !favs.data.games.length ? tr("gpFavoritesEmpty") : undefined} />
       </section>
     </div>
   );

@@ -411,7 +411,10 @@
   height: 184px;
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 10px;
   padding: 12px;
   border: 2px dashed var(--outline);
   border-radius: var(--r-l);
@@ -485,16 +488,16 @@
   overflow: hidden;
 }
 
-/* Expressive's shape behind the place, a shade lighter than the card. */
+/* Expressive's shape behind the place, centred on it, a shade lighter than the card. */
 .home-hero-deco {
   position: absolute;
   z-index: -1;
-  right: -56px;
-  top: 34px;
-  width: 230px;
-  height: 230px;
+  right: -66px;
+  top: -36px;
+  width: 280px;
+  height: 280px;
   background: var(--primary-container-2);
-  transform: rotate(18deg);
+  transform: rotate(58deg);
 }
 
 .home-hero-nav {
@@ -692,9 +695,18 @@
   letter-spacing: 0.03em;
 }
 
-.home-hero-num {
+
+/* The month's points, a size down from the display face; by the shown
+   length ("2 230" is 5) a long one smaller still. */
+.home-hero .home-hero-num {
   margin-top: 4px;
+  font-size: 84px;
   color: var(--on-primary-container);
+}
+
+.home-hero .home-hero-num-6,
+.home-hero .home-hero-num-7 {
+  font-size: 68px;
 }
 
 /* The month's figures beside the count: the words quiet, the numbers lit. */
@@ -724,8 +736,8 @@
 }
 
 .home-hero-ghost-num {
-  width: 120px;
-  height: 96px;
+  width: 170px;
+  height: 76px;
   margin-top: 8px;
   border-radius: var(--r-m);
 }
@@ -753,7 +765,7 @@
 }
 
 .home-hero-ghost-line {
-  width: 110px;
+  width: 240px;
   height: 14px;
   margin-top: 10px;
   border-radius: 7px;

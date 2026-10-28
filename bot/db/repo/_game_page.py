@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bot.db.repo._sql import OWNED_BY_PERSON, earned_at
+from bot.db.repo._sql import OWNED_BY_PERSON, earned_at, platform_is
 from bot.services import x360_frame
 from bot.util import utcnow
 
@@ -57,12 +57,14 @@ class _GamePageRepo:
 
     async def game_of_list(self, platform: str, title_id: str) -> int | None:
         """The game an achievement list belongs to, through its versions — the
-        game's own versions before a demo's or a tool's."""
+        game's own versions before a demo's or a tool's. Any Xbox value finds
+        either generation (`platform_is`)."""
+        where, params = platform_is(platform)
         cursor = await self._conn.execute(
             "SELECT game_id FROM versions"
-            " WHERE platform = ? AND title_id = ? AND game_id IS NOT NULL"
+            f" WHERE {where} AND title_id = ? AND game_id IS NOT NULL"
             f" ORDER BY role IN {_PLAYABLE_ROLES} DESC, version_id LIMIT 1",
-            (platform, str(title_id)),
+            (*params, str(title_id)),
         )
         row = await cursor.fetchone()
         if row is None:

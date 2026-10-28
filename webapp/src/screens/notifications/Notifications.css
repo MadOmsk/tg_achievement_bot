@@ -7,8 +7,9 @@
   gap: 12px;
 }
 
+/* A new notice is only tinted: its text keeps the row's own contrast. */
 .nt-unread {
-  background: var(--secondary-container);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface-1));
 }
 
 .nt-cover {

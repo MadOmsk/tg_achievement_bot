@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { clubApi, gameApi } from "../../api";
+import { adminApi, clubApi, gameApi } from "../../api";
+import type { Role } from "../../api/admin/adminApi";
 import { peopleApi, type PersonProfile, type Relation } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
+import { useArtTheme } from "../../app/artTheme";
 import { useLoad } from "../../app/useLoad";
 import { currentMonth } from "../../core/people-utils";
 import { tick } from "../../core/haptic";
-import { num } from "../../i18n";
+import { num, type TranslationKey } from "../../i18n";
 import { FAVORITES_CHANGED, FOLLOWS_CHANGED } from "../../parts/FollowButton";
 import { monthName, recentMonths } from "../../parts/Months";
 import { gameLines, MonthGames } from "../../parts/MonthGames";
@@ -38,7 +40,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
   const [menu, setMenu] = useState(false);
   const [askBlock, setAskBlock] = useState(false);
   const [askUnfollow, setAskUnfollow] = useState(false);
-  const followAt = useRef<HTMLButtonElement>(null);
+  const followAt = useRef<HTMLDivElement>(null);
 
   const c = card.data;
   const rel = relation ?? c?.relation ?? null;
@@ -77,24 +79,53 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
     }
   };
 
+  const [face, setFace] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void faceSrc(personId).then((url) => live && setFace(url));
+    return () => {
+      live = false;
+    };
+  }, [personId]);
+  const faceArt = useArtTheme(face);
+  const [roling, setRoling] = useState(false);
+
   return (
     <Page
       title={name}
       onBack={onClose}
       layer={layer}
       hero
+      // The page takes its colours from the face, as a game's from its art.
+      style={faceArt.style}
       actions={
         self ? (
           <IconButton icon="settings" label={tr("settings")} variant="plain" onClick={() => open({ kind: "settings", pane: "profile" })} />
+        ) : me.role === "superadmin" ? (
+          // The super-admin's own menu on another person: their role.
+          <IconButton icon="more" label={tr("roleTitle")} variant="plain" onClick={() => setRoling(true)} />
         ) : null
       }
     >
       <header className="pp-head">
-        <Backdrop key={personId} personId={personId} />
+        <span className="pp-backdrop" aria-hidden="true" />
         <button type="button" className="pp-face" onClick={() => void faceSrc(personId).then((src) => src && openImage(src))} aria-label={name}>
           <Face personId={personId} name={name || "?"} size={112} thinRing presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
         {name ? <h1 className="pp-name">{name}</h1> : <span className="skel pp-skel-name" />}
+        {/* What they are doing and how they stand to you: one quiet line. */}
+        {(presence?.playing || presence?.state === "Online" || (!rel?.friends && rel?.followed_by) || rel?.blocked) && (
+          <p className="pp-status">
+            {(presence?.playing || presence?.state === "Online") && <span className={`pp-dot${presence?.playing ? " pp-dot-play" : ""}`} />}
+            {[
+              presence?.playing && presence.title_name ? `${tr("playing")} · ${presence.title_name}` : presence?.state === "Online" ? tr("idle") : null,
+              !rel?.friends && rel?.followed_by ? tr("followsYou") : null,
+              rel?.blocked ? tr("stateBlocked") : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        )}
         {!hidden && (c?.activity?.platforms?.length ?? 0) > 0 && (
           <div className="pp-accs">
             {c!.activity!.platforms.map((p) => (
@@ -102,26 +133,18 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
             ))}
           </div>
         )}
-        <div className="pp-tags">
-          {!rel?.friends && rel?.followed_by && <span className="chip chip-outline">{tr("followsYou")}</span>}
-          {rel?.blocked && <span className="chip chip-outline chip-danger">{tr("stateBlocked")}</span>}
-          {presence?.playing && presence.title_name && (
-            <span className="chip chip-outline">
-              {tr("playing")} · {presence.title_name}
-            </span>
-          )}
-          {!presence?.playing && presence?.state === "Online" && <span className="chip chip-outline">{tr("idle")}</span>}
-        </div>
       </header>
 
       {!c && (
         <div className="pp-skel" aria-hidden="true">
+          <span className="skel pp-skel-status" />
           <span className="skel pp-skel-chip" />
           <div className="pp-counts">
-            {[0, 1, 2].map((i) => (
+            {[0, 1].map((i) => (
               <span key={i} className="skel" />
             ))}
           </div>
+          {!self && <span className="skel pp-skel-follow" />}
         </div>
       )}
       {c && (
@@ -134,27 +157,23 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
             <b className="t-num">{num(c.followers, locale)}</b>
             <span>{tr("peopleFollowers")}</span>
           </button>
-          {!self && rel && !rel.blocked && (
-            <button
-              ref={followAt}
-              type="button"
-              className={`pp-count-follow${rel.following ? " pp-count-on" : ""}`}
-              onClick={() => {
-                tick();
-                setMenu(true);
-              }}
-            >
-              <Icon name={rel.following ? "check" : "plus"} size={22} />
-              <span className="pp-follow-label">
-                {rel.friends
-                  ? tr("friendsBtn")
-                  : rel.following
-                    ? tr("followingBtn")
-                    : tr("notFollowing")}
-                <Icon name="down" size={14} />
-              </span>
-            </button>
-          )}
+        </div>
+      )}
+      {/* The page's one action: following — filled to start, tonal once on. */}
+      {c && !self && rel && !rel.blocked && (
+        <div className="pp-follow" ref={followAt}>
+          <Button
+            wide
+            variant={rel.following ? "tonal" : "filled"}
+            icon={rel.following ? "check" : "plus"}
+            onClick={() => {
+              tick();
+              if (rel.following) setMenu(true);
+              else void follow();
+            }}
+          >
+            {rel.friends ? tr("friendsBtn") : rel.following ? tr("followingBtn") : rel.followed_by ? tr("followBack") : tr("follow")}
+          </Button>
         </div>
       )}
       {!self && rel && !rel.blocked && (
@@ -289,24 +308,58 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
           <FavoriteGames games={favs.data!.games} />
         </Section>
       )}
+      {roling && <RoleSheet personId={personId} onClose={() => setRoling(false)} />}
     </Page>
   );
 }
 
-/** The face again behind the head, blurred into a glow of its colours. */
-function Backdrop({ personId }: { personId: number }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [shown, setShown] = useState(false);
+const ROLES: Array<{ role: Role; title: TranslationKey; about: TranslationKey }> = [
+  { role: "user", title: "roleUser", about: "roleUserAbout" },
+  { role: "admin", title: "roleAdmin", about: "roleAdminAbout" },
+  { role: "superadmin", title: "roleSuperadmin", about: "roleSuperadminAbout" },
+];
+
+/** The super-admin gives a person a role (owner, 2026-10-28). */
+function RoleSheet({ personId, onClose }: { personId: number; onClose: () => void }) {
+  const { data, tr, toast } = useApp();
+  const [state, setState] = useState<{ role: Role; fixed: boolean } | null>(null);
   useEffect(() => {
     let live = true;
-    void faceSrc(personId).then((url) => live && setSrc(url));
+    adminApi
+      .fetchRole(data, personId)
+      .then((r) => live && setState({ role: r.role, fixed: r.fixed }))
+      .catch(() => live && toast(tr("somethingWrong"), "error"));
     return () => {
       live = false;
     };
-  }, [personId]);
+  }, [data, personId, toast, tr]);
+  const pick = async (role: Role) => {
+    if (!state || state.fixed || role === state.role) return;
+    tick();
+    try {
+      await adminApi.putRole(data, personId, role);
+      setState({ ...state, role });
+      toast(tr("roleSaved"));
+    } catch {
+      toast(tr("somethingWrong"), "error");
+    }
+  };
   return (
-    <span className={`pp-backdrop${shown ? " on" : ""}`} aria-hidden="true">
-      {src && <img src={src} alt="" onLoad={() => setShown(true)} />}
-    </span>
+    <Sheet title={tr("roleTitle")} onClose={onClose} layer="role">
+      {state?.fixed && <p className="pp-role-note">{tr("roleFixed")}</p>}
+      <div className="group">
+        <div className="group-items">
+          {ROLES.map((r) => (
+            <Row
+              key={r.role}
+              title={tr(r.title)}
+              sub={tr(r.about)}
+              trail={state?.role === r.role ? <Icon name="check" size={20} /> : undefined}
+              onClick={state && !state.fixed ? () => void pick(r.role) : undefined}
+            />
+          ))}
+        </div>
+      </div>
+    </Sheet>
   );
 }

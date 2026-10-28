@@ -10,8 +10,8 @@ import { Face } from "../ui/Face";
 import { Icon } from "../ui/Icon";
 import { MonthSheet } from "./Months";
 
-/** A person's month as one card, by what matters: how many achievements
- * (the points and the games small beside), the place among the people
+/** A person's month as one card, by what matters: the month's points (the
+ * achievements and the games small beside; owner, 2026-10-28), the place among the people
  * followed by the app's own points, and those people in a row — each with
  * their place and how many points the person lacks to pass them (+) or leads
  * them by (−). Home
@@ -66,7 +66,10 @@ export function MonthHero({
       <div className="home-hero-main">
         <div className="home-hero-text">
           {payload ? (
-            <p className="t-display home-hero-num">{num(payload.month.count, locale)}</p>
+            // Points run to five digits and more: the more digits, the smaller.
+            <p className={`t-display home-hero-num home-hero-num-${Math.min(7, num(payload.month.points ?? 0, locale).length)}`}>
+              {num(payload.month.points ?? 0, locale)}
+            </p>
           ) : (
             <span className="home-hero-ghost home-hero-ghost-num" />
           )}
@@ -81,10 +84,10 @@ export function MonthHero({
       </div>
       {payload ? (
         <p className="home-hero-line">
-          <span>{plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}</span>
+          <span>{plural(locale, payload.month.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}</span>
           <span>
-            <b className="t-num">{num(payload.month.points ?? 0, locale)}</b>{" "}
-            {plural(locale, payload.month.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}
+            <b className="t-num">{num(payload.month.count, locale)}</b>{" "}
+            {plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}
           </span>
           <span>
             <b className="t-num">{num(payload.games.length, locale)}</b>{" "}

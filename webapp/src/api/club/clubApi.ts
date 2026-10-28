@@ -31,7 +31,7 @@ export class ClubApi extends BaseApi {
     appid: number,
     gid: string,
     game?: { platform: string; title_id: string },
-  ): Promise<NewsPost & { game: { name: string; icon_url: string | null } | null }> {
+  ): Promise<NewsPost & { game: { name: string; icon_url: string | null; hero?: string | null } | null }> {
     return this.get(initData, CLUB_ROUTES.NEWS_POST, {
       appid,
       gid,

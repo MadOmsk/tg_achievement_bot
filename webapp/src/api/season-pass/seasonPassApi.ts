@@ -22,6 +22,8 @@ export type PassReward = {
   points: number;
   /** A game of ours (its card from the catalog), or a code for something else. */
   kind: "game" | "code";
+  /** Its look, a tier as a theme's; none on a prize made before, read as common. */
+  tier: Look | null;
   game: GameCard | null;
   /** The platform it is for, when said. */
   platform: string | null;
@@ -60,9 +62,11 @@ export type PassEditor = {
   /** The month whose pass is edited, and the months that may be: this one
    * and the ones ahead, each with its levels and the ones waiting to publish. */
   month: string;
-  months: { month: string; levels: number; dirty: number }[];
+  months: { month: string; levels: number; dirty: number; title: string | null }[];
   /** The month's pass's name as the draft has it, and whether it waits to publish. */
   title: string | null;
+  /** The month's cover as the draft has it. */
+  image: string | null;
   title_changed: boolean;
   /** What people score in a month: this month's best so far, last month's
    * best and middle among those who scored. */
@@ -89,6 +93,8 @@ export type PassState = {
   months: string[];
   /** The month's theme, its pass's name: "Хэллоуин". */
   title: string | null;
+  /** The month's cover: the page's colours are read from it, as a game's are. */
+  image: string | null;
 };
 
 /** A level as the editor sends it. */
@@ -158,6 +164,19 @@ export class PassApi extends BaseApi {
     const headers: Record<string, string> = { "Content-Type": image.type || "image/jpeg" };
     if (initData !== WEB_SESSION) headers["X-Telegram-Init-Data"] = initData;
     const response = await fetch(this.buildUrl(`/pass/items/${id}/image${query({ edit })}`), { method: "PUT", headers, body: image });
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+    return (await response.json()) as PassState;
+  }
+
+  /** The edited month's cover: the bytes as they are, saved again by the server; null takes it off. */
+  async seasonImage(initData: string, edit: string | null, image: Blob | null): Promise<PassState> {
+    const headers: Record<string, string> = image ? { "Content-Type": image.type || "image/jpeg" } : {};
+    if (initData !== WEB_SESSION) headers["X-Telegram-Init-Data"] = initData;
+    const response = await fetch(this.buildUrl(`/pass/season/image${query({ edit })}`), {
+      method: image ? "PUT" : "DELETE",
+      headers,
+      body: image ?? undefined,
+    });
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
     return (await response.json()) as PassState;
   }

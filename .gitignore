@@ -51,3 +51,4 @@ backups/
 *backup*.json
 *dump*.json
 *tokens*.json
+webapp/tsconfig.tsbuildinfo
