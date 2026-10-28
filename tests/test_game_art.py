@@ -65,3 +65,20 @@ async def test_a_missing_picture_is_not_asked_for_again_at_once(
     assert await game_art.get(url, root=tmp_path) is None
     assert await game_art.get(url, root=tmp_path) is None
     assert calls == [url]
+
+
+def test_media_dir_moves_every_game_picture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bot.services import achievement_icons, covers, media
+
+    for module, name in (
+        (achievement_icons, "ACHIEVEMENTS_DIR"),
+        (covers, "COVER_DIR"),
+        (game_art, "ART_DIR"),
+    ):
+        monkeypatch.setattr(module, name, getattr(module, name))
+    media.configure(tmp_path)
+    assert achievement_icons.achievements_dir() == tmp_path.resolve() / "achievements"
+    assert covers.cover_dir() == tmp_path.resolve() / "covers"
+    assert game_art.art_dir() == tmp_path.resolve() / "covers" / "art"

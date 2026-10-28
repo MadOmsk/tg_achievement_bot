@@ -170,6 +170,7 @@ name, or when the tree goes stale.
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
 │   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
 │   │   ├── game_art.py           a game's poster, hero and header kept on disk, served signed
+│   │   ├── media.py              where the games database's pictures live (`MEDIA_DIR`)
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
 │   │   ├── message_limits.py     request middleware: nothing exceeds Telegram's length limits (#68)
 │   │   ├── single_message.py     delete-then-send for commands that replace their own last copy
@@ -305,7 +306,7 @@ super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
+`OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller interval settings, and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
@@ -652,6 +653,13 @@ every column. History: #106.
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
   the publisher renders the same list once per chat.
 - **Rarity**: see Lists and tables.
+- **The games database's pictures are one cache for prod and the test server**
+  (owner, 2026-10-28; `services/media.py`): `MEDIA_DIR` (on the VPS
+  `/srv/unlocked-media`, owned by `botsvc`) holds `achievements/` and `covers/`
+  (list covers, `art/`, `editions/`, `hltb/`) — and every picture the catalog
+  adds later; unset, they stay under `data/`. A file's name never depends on the
+  server and every write is a rename, so both bots share it. People's pictures
+  (`data/avatars/`) stay each server's own; the dev server keeps its own cache.
 - **Pictures are downloaded, not linked** (#55): a Telegram `file_id` is useless
   without the bot token and a platform URL can break. Telegram photos
   (`users.photo_*`) and account avatars (`accounts.avatar_url/path/hash`) go to
