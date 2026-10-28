@@ -348,7 +348,15 @@ async def run(settings: Settings) -> None:
 
     # Followers hear of a new post by their own choice (owner, 2026-10-05).
     publisher.on_new_post = notifications.tell_about_post
-    publisher.on_points = notifications.tell_about_pass_levels
+
+    async def on_points(person: int) -> None:
+        # The super-admin takes no prize, so hears of no prize level.
+        tg_id = await repo.tg_id_of(person)
+        await notifications.tell_about_pass_levels(
+            person, prizes=not (tg_id is not None and settings.is_superadmin(tg_id))
+        )
+
+    publisher.on_points = on_points
     steam_extras.on_new_posts = notifications.tell_about_game_news
 
     async def on_xbox_login_dead(person: int) -> None:

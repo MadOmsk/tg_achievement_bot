@@ -59,11 +59,12 @@ Chips are four kinds: `chip-outline` (a fact: a genre, points),
 A game's page takes its scheme from its art, so on it a toggle or a mark
 uses the scheme's roles (`primary-container`), never the shared pink.
 
-**Palettes.** Six, picked in Settings → Appearance («Внешний вид») and kept on the
+**Palettes.** Seven, picked in Settings → Appearance («Внешний вид») and kept on the
 device (`app/env.ts::look`, `localStorage`): **Violet** (the default, the
 logo's lilac with a pink accent), **Mint** (teal with coral), **Amber** (warm
 orange with coral), **Ocean** (blue with gold), **Rose** (pink with blue),
-**Graphite** (neutral grey with cyan). Violet is always open; the others are
+**Graphite** (neutral grey with cyan), **Halloween** (pumpkin orange on a night
+nearly black, with a witch's purple). Violet is always open; the others are
 the season pass's rewards (`core/season-pass.ts`). Each has a dark and a light form; the mode is Auto
 (Telegram's own scheme inside it, the system's elsewhere), Light or Dark. A
 palette is one block of tokens in `tokens.css` under

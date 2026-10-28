@@ -10,7 +10,7 @@ from __future__ import annotations
 
 DEFAULT_PALETTE = "violet"
 # The themes a level can give: every palette but the one everybody has.
-PALETTES = ("graphite", "ocean", "mint", "ember", "rose")
+PALETTES = ("graphite", "ocean", "mint", "ember", "rose", "halloween")
 # A theme level's look on the timeline.
 LOOKS = ("common", "rare", "legendary", "mythic")
 KINDS = ("theme", "game", "code")

@@ -61,6 +61,9 @@ export type PassEditor = {
    * and the ones ahead, each with its levels and the ones waiting to publish. */
   month: string;
   months: { month: string; levels: number; dirty: number }[];
+  /** The month's pass's name as the draft has it, and whether it waits to publish. */
+  title: string | null;
+  title_changed: boolean;
   /** What people score in a month: this month's best so far, last month's
    * best and middle among those who scored. */
   scores: { top: number; last_top: number; last_median: number };
@@ -84,6 +87,8 @@ export type PassState = {
   current: boolean;
   /** The months with a pass, the latest first. */
   months: string[];
+  /** The month's theme, its pass's name: "Хэллоуин". */
+  title: string | null;
 };
 
 /** A level as the editor sends it. */
@@ -155,6 +160,10 @@ export class PassApi extends BaseApi {
     const response = await fetch(this.buildUrl(`/pass/items/${id}/image${query({ edit })}`), { method: "PUT", headers, body: image });
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
     return (await response.json()) as PassState;
+  }
+
+  seasonTitle(initData: string, edit: string | null, title: string): Promise<PassState> {
+    return this.put<PassState>(initData, `/pass/season${query({ edit })}`, { title });
   }
 
   publish(initData: string, edit: string | null, notify: boolean): Promise<PassState & { published: Published }> {

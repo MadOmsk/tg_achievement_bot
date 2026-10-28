@@ -417,3 +417,62 @@
   --glass-shadow: 0 10px 30px rgba(73, 84, 96, 0.16);
   --scrim: rgba(27, 28, 29, 0.4);
 }
+
+/* Halloween (owner, 2026-10-28): a pumpkin's orange on a night nearly black,
+   a witch's purple for the accent. */
+:root[data-palette="halloween"] {
+  --surface: #130e13;
+  --surface-1: #1b151b;
+  --surface-2: #211921;
+  --surface-3: #2b222b;
+  --surface-4: #362c36;
+  --on-surface: #ece0e9;
+  --on-surface-2: #d2c3cf;
+  --on-surface-3: #9a8b97;
+  --outline: #4d424c;
+  --outline-soft: #2b222a;
+  --primary: #ffb77c;
+  --on-primary: #4d2600;
+  --primary-container: #6e3900;
+  --primary-container-2: #864708;
+  --on-primary-container: #ffdcc2;
+  --on-primary-container-2: #f5c19b;
+  --secondary-container: #4a2f52;
+  --on-secondary-container: #f2daf9;
+  --tertiary: #deb7ff;
+  --on-tertiary: #3f1b55;
+  --tertiary-container: #57326d;
+  --on-tertiary-container: #f3daff;
+  --online: #c0743a;
+  --glass: rgba(43, 34, 43, 0.62);
+  --scrim: rgba(10, 6, 10, 0.6);
+}
+:root[data-palette="halloween"][data-theme="light"] {
+  --surface: #fff8f5;
+  --surface-1: #fbf1ec;
+  --surface-2: #f5ebe6;
+  --surface-3: #efe5e0;
+  --surface-4: #e9dfda;
+  --on-surface: #201a17;
+  --on-surface-2: #52443c;
+  --on-surface-3: #85746a;
+  --outline: #d7c2b8;
+  --outline-soft: #eadfd8;
+  --primary: #964400;
+  --on-primary: #ffffff;
+  --primary-container: #ffdcc2;
+  --primary-container-2: #ffc9a2;
+  --on-primary-container: #321200;
+  --on-primary-container-2: #6b3a17;
+  --secondary-container: #f2daf9;
+  --on-secondary-container: #4a2f52;
+  --tertiary: #7b4b98;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #f3daff;
+  --on-tertiary-container: #3f1b55;
+  --online: #ffb77c;
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-line: rgba(150, 68, 0, 0.12);
+  --glass-shadow: 0 10px 30px rgba(110, 57, 0, 0.16);
+  --scrim: rgba(32, 26, 23, 0.4);
+}

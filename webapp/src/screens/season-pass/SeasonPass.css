@@ -23,64 +23,10 @@
   display: flex;
 }
 
-/* The month's sum: the Home card's own shape. */
-
-.pass-sum {
-  margin-top: 8px;
-}
-
 .pass-wait {
-  height: 200px;
-}
-
-.pass-sum-month {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.pass-sum-month span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-weight: 650;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--on-primary-container-2);
-}
-
-.pass-sum-points {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 2px 0 14px;
-}
-
-.pass-sum-points span {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--on-primary-container-2);
-}
-
-/* On the card's own violet the wave is the card's light ink. */
-.pass-sum .wave-on,
-.pass-sum .wave-end {
-  background: var(--on-primary-container);
-}
-
-.pass-sum .wave-off {
-  background: color-mix(in srgb, var(--on-primary-container) 22%, transparent);
-}
-
-.pass-sum-next {
-  margin-top: 10px;
-  font-size: 13.5px;
-  line-height: 1.4;
-  color: var(--on-primary-container-2);
-}
-
-.pass-sum-next b {
-  color: var(--on-primary-container);
+  height: 180px;
+  margin: 12px 12px 0;
+  border-radius: var(--r-l);
 }
 
 /* The season as a timeline: a rail on the left, a node a reward with its
@@ -1025,29 +971,138 @@
   margin: 16px auto;
 }
 
-.pass-sum-month .pass-sum-nav {
-  gap: 2px;
-  margin-left: -6px;
-  font-weight: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: inherit;
+.group.pass-edit-months {
+  margin-top: 8px;
 }
 
-.pass-sum-arrow {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
+/* The season's head: no card, a clover of light behind it (decoration only),
+   the theme wide, the counts a connected group, the wave under them. */
+.pass-season {
+  position: relative;
+  isolation: isolate;
+  margin: 4px 0 0;
+  padding: 8px 12px 0;
+}
+
+.pass-season-deco {
+  position: absolute;
+  z-index: -1;
+  right: -70px;
+  top: -40px;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle at 40% 40%, var(--primary-container-2), transparent 70%);
+  opacity: 0.55;
+  transform: rotate(18deg);
+  pointer-events: none;
+}
+
+.pass-season-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 4px;
+}
+
+.pass-season-kind {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--tertiary);
+}
+
+.pass-season-nav {
+  display: flex;
+  gap: 4px;
+}
+
+.pass-season-nav .ibtn:disabled {
+  opacity: 0.35;
+}
+
+.pass-season-name {
+  margin: 2px 4px 0;
+  font-size: 34px;
+  font-weight: 850;
+  font-stretch: 120%;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.pass-season-counts {
+  display: flex;
+  gap: 3px;
+  margin-top: 16px;
+}
+
+.pass-season-counts > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  gap: 4px;
+  min-height: 72px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-size: 12px;
+  color: var(--on-surface-2);
+  text-align: center;
+}
+
+.pass-season-counts > :first-child {
+  border-radius: var(--r-l) 8px 8px var(--r-l);
+}
+
+.pass-season-counts > :last-child {
+  border-radius: 8px var(--r-l) var(--r-l) 8px;
+}
+
+.pass-season-counts b {
+  font-size: 26px;
+  color: var(--on-surface);
+}
+
+.pass-season-counts b small {
+  font-size: 15px;
+  color: var(--on-surface-3);
+}
+
+/* The month's points: the one number that matters here. */
+.pass-season-counts .pass-season-main {
+  flex: 1.3;
+  background: var(--primary-container);
+  color: var(--on-primary-container-2);
+}
+
+.pass-season-counts .pass-season-main b {
+  font-size: 30px;
   color: var(--on-primary-container);
 }
 
-.pass-sum-arrow:disabled {
-  opacity: 0.3;
+.pass-season-counts svg {
+  color: var(--on-surface);
 }
 
-.group.pass-edit-months {
+.pass-season-wave {
+  margin-top: 16px;
+  padding: 0 4px;
+}
+
+.pass-name-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.pass-tl-admin {
   margin-top: 8px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--on-surface-3);
 }

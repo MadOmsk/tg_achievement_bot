@@ -1691,9 +1691,9 @@ elsewhere in this file still describe the bot.
   the logo's lilac (a pink accent on the search button), shapes that morph
   (faces cut as scalloped "cookies", a flower for rarity), progress as a running
   wave, connected button groups, Roboto Flex whose width is a voice (narrow
-  numbers, wide headlines); dark first, the same scheme light. **Six
+  numbers, wide headlines); dark first, the same scheme light. **Seven
   palettes** — Violet (the default, always open), then Graphite, Ocean, Mint,
-  Amber, Rose, each opened by the season pass — and a mode (auto, light,
+  Amber, Rose, Halloween (owner, 2026-10-28), each opened by the season pass — and a mode (auto, light,
   dark), picked in Settings → Appearance and kept on the device. How to make
   anything new look like the rest is `docs/design-system.md` (its rarity tiers —
   mythic green, legendary orange, rare purple — are the app's Fortnite note).
@@ -2003,7 +2003,13 @@ elsewhere in this file still describe the bot.
   `pass_items.month`): each month's pass is its own levels, **empty until the
   super-admin publishes one**; the editor works on this month or any of the
   eleven ahead (`?edit=`, `EDIT_MONTHS`, picked in a sheet that counts each
-  month's levels), so a pass is built ahead and shown on its 1st. Earlier months
+  month's levels), so a pass is built ahead and shown on its 1st. A month's
+  pass may have a name, its theme («Хэллоуин»; `pass_seasons`, migration 137,
+  `PUT /api/mini/pass/season`), shown on its card and waiting for the
+  month's publish like a level. **The super-admin takes no prize** (owner,
+  2026-10-28): they hand the prizes out, so a claim of a code is refused
+  (`admin`), none counts as waiting for them and no prize level is told;
+  themes they claim as anybody does. Earlier months
   are looked back on (`GET /api/mini/pass?month=`, the arrows by the month's
   name): their points, what was claimed, one's own codes — nothing is taken
   from them. A theme once claimed is kept for good, whatever month. A prize's

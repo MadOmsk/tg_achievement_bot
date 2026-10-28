@@ -909,6 +909,14 @@ CREATE INDEX IF NOT EXISTS idx_pass_item_codes_item ON pass_item_codes (item_id)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pass_item_codes_one_each
     ON pass_item_codes (item_id, person_id) WHERE person_id IS NOT NULL;
 
+-- A month's pass's name, its theme (137): a draft until the month's publish.
+CREATE TABLE IF NOT EXISTS pass_seasons (
+    month       TEXT PRIMARY KEY,
+    title       TEXT,
+    draft       INTEGER NOT NULL DEFAULT 0,
+    draft_title TEXT
+);
+
 -- The pass's levels a person reached, per month (134; owner, 2026-10-28):
 -- each is told once a month.
 CREATE TABLE IF NOT EXISTS pass_reached (

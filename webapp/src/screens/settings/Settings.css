@@ -288,6 +288,10 @@
   background: linear-gradient(135deg, #c3c9d0 0 50%, #a6ecf2 50%);
 }
 
+.swatch-halloween .swatch-dot {
+  background: linear-gradient(135deg, #ffb77c 0 50%, #deb7ff 50%);
+}
+
 .swatch-dot svg {
   color: #1d1b20;
 }

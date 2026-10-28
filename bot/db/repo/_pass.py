@@ -108,6 +108,29 @@ class _PassRepo:
         )
         return [row[0] for row in await cursor.fetchall()]
 
+    async def pass_season(self, month: str) -> dict[str, Any]:
+        """A month's pass's name as shown, and as the editor has it."""
+        cursor = await self._conn.execute(
+            "SELECT title, draft, draft_title FROM pass_seasons WHERE month = ?", (month,)
+        )
+        row = await cursor.fetchone()
+        title = row["title"] if row else None
+        draft = bool(row and row["draft"])
+        return {
+            "title": title,
+            "draft_title": row["draft_title"] if draft else title,
+            "changed": draft,
+        }
+
+    async def set_pass_season_title(self, month: str, title: str | None) -> None:
+        """A month's pass's name changed, waiting for the month's publish."""
+        await self._conn.execute(
+            "INSERT INTO pass_seasons (month, draft, draft_title) VALUES (?, 1, ?)"
+            " ON CONFLICT(month) DO UPDATE SET draft = 1, draft_title = excluded.draft_title",
+            (month, title),
+        )
+        await self._conn.commit()
+
     async def pass_month_counts(self, months: list[str]) -> dict[str, dict[str, int]]:
         """How many levels each month's pass has, and how many wait for its publish."""
         if not months:
@@ -118,10 +141,16 @@ class _PassRepo:
             f" FROM pass_items WHERE state != 'removed' AND month IN ({marks}) GROUP BY month",
             months,
         )
-        return {
+        counts = {
             row[0]: {"levels": int(row[1]), "dirty": int(row[2] or 0)}
             for row in await cursor.fetchall()
         }
+        cursor = await self._conn.execute(
+            f"SELECT month FROM pass_seasons WHERE draft = 1 AND month IN ({marks})", months
+        )
+        for row in await cursor.fetchall():
+            counts.setdefault(row[0], {"levels": 0, "dirty": 0})["dirty"] += 1
+        return counts
 
     async def pass_editor_items(self, month: str | None = None) -> list[dict[str, Any]]:
         """A month's levels not taken down, as the editor shows them: a draft
@@ -270,6 +299,11 @@ class _PassRepo:
                 "UPDATE pass_items SET pending = NULL WHERE (? IS NULL OR month = ?)",
                 (month, month),
             )
+            await self._conn.execute(
+                "UPDATE pass_seasons SET draft = 0, draft_title = NULL"
+                " WHERE (? IS NULL OR month = ?)",
+                (month, month),
+            )
         return pictures
 
     async def publish_pass(self, month: str | None = None) -> dict[str, Any]:
@@ -331,6 +365,13 @@ class _PassRepo:
                 if codes is not None:
                     await self._replace_codes(item_id, codes)
                 changed += 1
+            # The pass's name waiting with the levels.
+            cursor = await self._conn.execute(
+                "UPDATE pass_seasons SET title = draft_title, draft = 0, draft_title = NULL"
+                " WHERE draft = 1 AND (? IS NULL OR month = ?)",
+                (month, month),
+            )
+            changed += cursor.rowcount
         return {
             "added": added,
             "changed": changed,

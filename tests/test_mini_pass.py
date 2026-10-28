@@ -186,6 +186,34 @@ async def test_every_month_has_a_pass_of_its_own(
         await client.close()
 
 
+async def test_a_pass_name_waits_for_the_publish(repo: Repo) -> None:
+    await repo.set_pass_season_title("2026-11", "Halloween")
+    season = await repo.pass_season("2026-11")
+    assert season["title"] is None and season["draft_title"] == "Halloween"
+    assert (await repo.pass_month_counts(["2026-11"]))["2026-11"]["dirty"] == 1
+    await repo.publish_pass("2026-11")
+    assert (await repo.pass_season("2026-11"))["title"] == "Halloween"
+    await repo.set_pass_season_title("2026-11", None)
+    await repo.discard_pass_draft("2026-11")
+    assert (await repo.pass_season("2026-11"))["title"] == "Halloween"
+
+
+async def test_the_super_admin_takes_no_prize(repo: Repo, settings: Settings, monkeypatch) -> None:
+    admin_tg = settings.superadmin_tg_ids[0]
+    client, headers = await _client(repo, settings, monkeypatch, admin_tg, {"n": 10_000})
+    try:
+        state = await (await client.get("/api/mini/pass", headers=headers)).json()
+        item = await repo.add_pass_item(
+            {"kind": "code", "title": "Hades", "points": 0}, ["A"], None, state["month"]
+        )
+        await repo.publish_pass(state["month"])
+        refused = await client.post(f"/api/mini/pass/items/{item}/claim", headers=headers)
+        assert refused.status == 403 and (await refused.json())["error"] == "admin"
+        assert await repo.pass_item_takers(item) == []
+    finally:
+        await client.close()
+
+
 def test_level_notices_carry_every_level_or_only_prizes() -> None:
     assert carries(frozenset(), "pass_level", {"prize": False}, friend=False)
     only = frozenset({"pass_level:prizes"})

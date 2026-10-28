@@ -71,6 +71,11 @@ export async function setEditMonth(initData: string, month: string | null): Prom
   publish(await passApi.fetchPass(initData, { edit: month }));
 }
 
+/** The edited month's pass's name, waiting for its publish; empty clears it. */
+export async function setSeasonTitle(initData: string, title: string): Promise<void> {
+  publish(await passApi.seasonTitle(initData, editMonth, title));
+}
+
 export async function claimReward(initData: string, id: number): Promise<void> {
   publish(await passApi.claimReward(initData, id));
 }
@@ -133,7 +138,8 @@ export function passProgress(state: PassState | null) {
   const waiting = tiers.filter((t) => points >= t.points && !t.claimed);
   const rewards = state?.rewards ?? [];
   // What the door's badge counts: the themes and the rewards to take now.
-  const due = waiting.length + rewards.filter((r) => rewardOpen(r, points)).length;
+  // The super-admin takes no prize (owner, 2026-10-28): none waits for them.
+  const due = waiting.length + (state?.admin ? 0 : rewards.filter((r) => rewardOpen(r, points)).length);
   return { tiers, points, level, next, from, toNext: next ? next.points - points : 0, waiting, rewards, due };
 }
 
@@ -144,4 +150,5 @@ export const PALETTE_NAMES = {
   ocean: "paletteOcean",
   rose: "paletteRose",
   graphite: "paletteGraphite",
+  halloween: "paletteHalloween",
 } as const satisfies Record<Palette, TranslationKey>;

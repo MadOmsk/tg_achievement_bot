@@ -27,6 +27,7 @@ from bot.web.mini_chat import _person_month
 log = logging.getLogger(__name__)
 
 TITLE_MAX = 80
+SEASON_TITLE_MAX = 40
 DESCRIPTION_MAX = 500
 CODES_MAX = 500
 CODE_MAX = 200
@@ -57,6 +58,7 @@ def setup_pass_routes(app: web.Application) -> None:
     app.router.add_put(ITEM + "/image", handle_item_image_put)
     # A level's picture is no secret: an <img> asks for it with no header.
     app.router.add_get(ITEM + "/image", handle_item_image)
+    app.router.add_put("/api/mini/pass/season", handle_season_title)
     app.router.add_post("/api/mini/pass/publish", handle_publish)
     app.router.add_post("/api/mini/pass/discard", handle_discard)
 
@@ -156,6 +158,8 @@ async def _state(
         ],
         "admin": admin,
         "current": month == current,
+        # The month's theme, as published.
+        "title": (await repo.pass_season(month))["title"],
         "months": sorted({current, *await repo.pass_months(current)}, reverse=True),
     }
     if admin:
@@ -170,12 +174,16 @@ async def _editor(repo: Repo, month: str, months: list[str]) -> dict[str, Any]:
     rows = await repo.pass_editor_items(month)
     cards = await _cards(repo, rows)
     counts = await repo.pass_month_counts(months)
+    season = await repo.pass_season(month)
     return {
         "month": month,
+        "title": season["draft_title"],
+        "title_changed": season["changed"],
         # Each month to pick, with how many levels it has and how many wait.
         "months": [{"month": m, **counts.get(m, {"levels": 0, "dirty": 0})} for m in months],
         "scores": await _month_scores(repo),
-        "dirty": sum(1 for r in rows if r["state"] == "draft" or r["changed"] or r["remove"]),
+        "dirty": sum(1 for r in rows if r["state"] == "draft" or r["changed"] or r["remove"])
+        + int(season["changed"]),
         "palettes": list(season_pass.PALETTES),
         "items": [
             {
@@ -395,8 +403,12 @@ async def handle_item_takers(request: web.Request) -> web.Response:
 
 
 async def handle_item_claim(request: web.Request) -> web.Response:
-    """A prize: one of its codes."""
+    """A prize: one of its codes. Never the super-admin's (owner, 2026-10-28):
+    they hand the prizes out and keep the codes already; themes they claim
+    as anybody does."""
     repo, person_id, admin = await _person(request)
+    if admin:
+        return _refuse("admin", 403)
     item = await repo.pass_item(int(request.match_info["item_id"]))
     if item is None or item["state"] != "live" or item["kind"] == "theme":
         raise web.HTTPNotFound(text="no prize")
@@ -501,6 +513,16 @@ async def handle_item_image(request: web.Request) -> web.Response:
         content_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=604800, immutable"},
     )
+
+
+async def handle_season_title(request: web.Request) -> web.Response:
+    """The edited month's pass's name, its theme; empty clears it."""
+    repo, person_id = await _admin(request)
+    title = str((await _body(request)).get("title") or "").strip() or None
+    if title and len(title) > SEASON_TITLE_MAX:
+        return _refuse("invalid")
+    await repo.set_pass_season_title(await _edit_month(repo, person_id, request), title)
+    return await _edited(repo, person_id, request)
 
 
 async def handle_publish(request: web.Request) -> web.Response:
