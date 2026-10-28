@@ -2006,10 +2006,7 @@ elsewhere in this file still describe the bot.
   month's levels), so a pass is built ahead and shown on its 1st. A month's
   pass may have a name, its theme («Хэллоуин»; `pass_seasons`, migration 137,
   `PUT /api/mini/pass/season`), shown on its card and waiting for the
-  month's publish like a level. **The super-admin takes no prize** (owner,
-  2026-10-28): they hand the prizes out, so a claim of a code is refused
-  (`admin`), none counts as waiting for them and no prize level is told;
-  themes they claim as anybody does. Earlier months
+  month's publish like a level. Earlier months
   are looked back on (`GET /api/mini/pass?month=`, the arrows by the month's
   name): their points, what was claimed, one's own codes — nothing is taken
   from them. A theme once claimed is kept for good, whatever month. A prize's

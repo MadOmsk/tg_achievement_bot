@@ -382,11 +382,10 @@ class Notifier:
             except Exception:
                 log.exception("reward notice to person_id=%s failed", person)
 
-    async def tell_about_pass_levels(self, person_id: int, *, prizes: bool = True) -> None:
+    async def tell_about_pass_levels(self, person_id: int) -> None:
         """Tell a person of the pass's levels their month's points just
         reached: one notice, of the highest — `prize` when any of them gives a
-        prize, for a channel set to prizes only. Each level once a month.
-        `prizes` False (the super-admin, who takes none): only themes."""
+        prize, for a channel set to prizes only. Each level once a month."""
         settings = await self._repo.get_user_settings(person_id)
         tz = settings.tz_offset_min if settings else None
         local = utcnow() + timedelta(minutes=tz or 0)
@@ -398,7 +397,7 @@ class Notifier:
         if not fresh:
             return
         items = [await self._repo.pass_item(item_id) for item_id in fresh]
-        items = [item for item in items if item and (prizes or item["kind"] == "theme")]
+        items = [item for item in items if item]
         if not items:
             return
         top = items[-1]

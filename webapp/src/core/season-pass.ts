@@ -138,8 +138,7 @@ export function passProgress(state: PassState | null) {
   const waiting = tiers.filter((t) => points >= t.points && !t.claimed);
   const rewards = state?.rewards ?? [];
   // What the door's badge counts: the themes and the rewards to take now.
-  // The super-admin takes no prize (owner, 2026-10-28): none waits for them.
-  const due = waiting.length + (state?.admin ? 0 : rewards.filter((r) => rewardOpen(r, points)).length);
+  const due = waiting.length + rewards.filter((r) => rewardOpen(r, points)).length;
   return { tiers, points, level, next, from, toNext: next ? next.points - points : 0, waiting, rewards, due };
 }
 

@@ -403,12 +403,8 @@ async def handle_item_takers(request: web.Request) -> web.Response:
 
 
 async def handle_item_claim(request: web.Request) -> web.Response:
-    """A prize: one of its codes. Never the super-admin's (owner, 2026-10-28):
-    they hand the prizes out and keep the codes already; themes they claim
-    as anybody does."""
+    """A prize: one of its codes."""
     repo, person_id, admin = await _person(request)
-    if admin:
-        return _refuse("admin", 403)
     item = await repo.pass_item(int(request.match_info["item_id"]))
     if item is None or item["state"] != "live" or item["kind"] == "theme":
         raise web.HTTPNotFound(text="no prize")

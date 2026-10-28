@@ -123,9 +123,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
     ...p.rewards.map((r) => ({ key: `prize:${r.id}`, kind: "prize" as const, points: r.points, r })),
   ].sort((a, b) => a.points - b.points || (a.kind === b.kind ? 0 : a.kind === "theme" ? -1 : 1));
   const items = editing && editor ? draftItems(editor.items) : live;
-  // The super-admin hands the prizes out and takes none (owner, 2026-10-28).
-  const ready = (i: Item) =>
-    !editing && !lookingBack && (i.kind === "theme" ? !i.t.claimed && points >= i.points : !state?.admin && rewardOpen(i.r, points));
+  const ready = (i: Item) => !editing && !lookingBack && (i.kind === "theme" ? !i.t.claimed && points >= i.points : rewardOpen(i.r, points));
   const have = (i: Item) => !editing && (i.kind === "theme" ? i.t.claimed : Boolean(i.r.code));
   // Where "you are" sits on the timeline: after the last reward the points reach.
   const nowAt = items.filter((i) => points >= i.points).length;
@@ -487,8 +485,6 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
                       >
                         {tr("passClaim")}
                       </Button>
-                    ) : !editing && state.admin && i.kind === "prize" && !own ? (
-                      <span className="pass-tl-admin">{tr("passPrizeNotYours")}</span>
                     ) : null}
                   </span>
                   {i.kind === "prize" && !editing && i.r.total > 0 && (

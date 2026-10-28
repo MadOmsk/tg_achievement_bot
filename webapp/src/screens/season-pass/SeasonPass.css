@@ -1099,10 +1099,3 @@
   gap: 10px;
   padding: 0 12px;
 }
-
-.pass-tl-admin {
-  margin-top: 8px;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--on-surface-3);
-}
