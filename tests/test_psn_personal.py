@@ -216,3 +216,117 @@ async def test_presence_reads_an_account_with_its_own_token(
     await repo._conn.commit()
     await poller.tick()
     assert used == [GOOD, "shared"]
+
+
+class _Bot:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.edited: list[str] = []
+
+    async def send_message(self, chat_id: int, text: str, **_: object) -> None:
+        self.sent.append(text)
+
+    async def edit_message_text(self, text: str, **_: object) -> None:
+        self.edited.append(text)
+
+
+class _Message:
+    def __init__(self, tg_id: int, text: str) -> None:
+        self.from_user = type("U", (), {"id": tg_id, "username": None})()
+        self.text = text
+        self.deleted = False
+
+    async def delete(self) -> None:
+        self.deleted = True
+
+
+class _Fetcher:
+    async def backfill(self, *_: object, **__: object) -> None:
+        return None
+
+    def expect_relink_catch_up(self, *_: object) -> None:
+        pass
+
+
+def _i18n():
+    from bot.i18n import static_i18n
+
+    return static_i18n("psn")
+
+
+async def test_a_pasted_token_is_deleted_and_kept(repo: Repo, sony) -> None:
+    from bot.handlers import awaiting
+    from bot.handlers.psn_token import EXPECT, token_pasted
+    from bot.services.psn.auth import PsnAuth
+
+    person = await _person_with_psn(repo, 7, "111")
+    psn_auth = PsnAuth(repo, TokenCipher(KEY))
+    psn_auth.personal = PsnPersonalAuth(repo, TokenCipher(KEY))
+    awaiting.expect(7, EXPECT + "111")
+    bot, message = _Bot(), _Message(7, GOOD)
+    await token_pasted(message, repo, psn_auth, _Fetcher(), bot, _i18n())  # type: ignore[arg-type]
+    assert message.deleted
+    assert (await repo.psn_token("111")).person_id == person  # type: ignore[union-attr]
+    assert awaiting.expected(7) is None
+    assert GOOD not in " ".join(bot.sent + bot.edited)
+
+
+async def test_a_token_of_another_account_says_whose_it_is(repo: Repo, sony) -> None:
+    from bot.handlers import awaiting
+    from bot.handlers.psn_token import EXPECT, token_pasted
+    from bot.services.psn.auth import PsnAuth
+
+    await _person_with_psn(repo, 7, "111")
+    psn_auth = PsnAuth(repo, TokenCipher(KEY))
+    psn_auth.personal = PsnPersonalAuth(repo, TokenCipher(KEY))
+    awaiting.expect(7, EXPECT + "111")
+    bot = _Bot()
+    await token_pasted(_Message(7, OTHER), repo, psn_auth, _Fetcher(), bot, _i18n())  # type: ignore[arg-type]
+    assert "Them" in bot.sent[-1]
+    assert await repo.psn_token("111") is None
+
+
+async def test_an_account_is_linked_by_its_token(
+    repo: Repo, sony, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The token tells the account; it is linked and the token kept, with no
+    nickname and no trophy-privacy check (its own token reads hidden ones)."""
+    from bot.handlers import awaiting
+    from bot.handlers import psn as psn_handlers
+    from bot.handlers.psn_token import EXPECT, token_pasted
+    from bot.services.psn.auth import PsnAuth
+
+    async def no_backfill(*_: object, **__: object) -> None:
+        return None
+
+    monkeypatch.setattr(psn_handlers, "run_psn", no_backfill)
+    await repo.ensure_user(8, None)
+    psn_auth = PsnAuth(repo, TokenCipher(KEY))
+    psn_auth.personal = PsnPersonalAuth(repo, TokenCipher(KEY))
+    awaiting.expect(8, EXPECT + "new")
+    await token_pasted(_Message(8, GOOD), repo, psn_auth, _Fetcher(), _Bot(), _i18n())  # type: ignore[arg-type]
+    person = await repo.person_id(8)
+    [link] = await repo.platform_links_for(person, Platform.PSN)
+    assert link.external_id == "111"
+    assert (await repo.psn_token("111")).status == "active"  # type: ignore[union-attr]
+
+
+async def test_the_token_screens_render(repo: Repo, sony) -> None:
+    from bot.views.panel import render_account_menu
+    from bot.views.psn_token import render_token
+
+    person = await _person_with_psn(repo, 9, "111")
+    menu = await render_account_menu(repo, 9, Platform.PSN, locale="ru")
+    assert menu is not None and "общий токен" in menu.text
+    none = await render_token(repo, person, "111", locale="ru")
+    assert none is not None and "Что даёт" in none.text
+    auth = _auth(repo)
+    await auth.add(person, "111", GOOD)
+    alive = await render_token(repo, person, "111", locale="en")
+    assert alive is not None and "working" in alive.text
+    await auth.mark_dead("111", "refused")
+    dead = await render_token(repo, person, "111", locale="ru")
+    assert dead is not None and "не работает" in dead.text
+    menu = await render_account_menu(repo, 9, Platform.PSN, locale="ru")
+    assert menu is not None and "⚠️" in str(menu.keyboard)
+    assert await render_token(repo, person, "999", locale="ru") is None

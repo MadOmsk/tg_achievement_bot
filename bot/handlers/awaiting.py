@@ -43,3 +43,8 @@ def is_expecting(tg_id: int, platform: str, text: str | None = None) -> bool:
 
 def clear(tg_id: int) -> None:
     _awaiting.pop(tg_id, None)
+
+
+def expected(tg_id: int) -> str | None:
+    """What this person's next private message is expected to be, if anything."""
+    return _awaiting.get(tg_id)

@@ -125,6 +125,7 @@ name, or when the tree goes stale.
 │   │   │                        API calls, no layout (#63)
 │   │   ├── connect.py            /start, /connect_xbox, /disconnect_xbox
 │   │   ├── steam.py, psn.py      /connect_* and /disconnect_* for Steam and PSN
+│   │   ├── psn_token.py          a player's own PSN token: its screen, pasting, linking by it (#233)
 │   │   ├── awaiting.py           whose next private message is a profile link, for which platform
 │   │   ├── panel.py              the personal panel, "Мои чаты"
 │   │   ├── chat.py               group commands and the group hub
@@ -2229,7 +2230,11 @@ keyboard.
   every chat (#126), language (#48, DMs only), then one row per platform in the
   display order — `[🟢 XBOX ▸, 🔔 posting switch]` (#10), or one wide "🎮 Подключить X"
   (#33). The platform button opens that platform's screen: profile, the switch,
-  unlink, and for PSN every account (up to three) plus adding one. The panel's switch
+  unlink, and for PSN every account (up to three) plus adding one — by nickname
+  or by the account's own token (#233) —, each with «🔑 Токен ✅/➕/⚠️»: that
+  token's screen (what it gives, the safety note, how to get one, paste,
+  replace, remove; agreed on a navigable mockup, 2026-10-29). A pasted token's
+  message is deleted at once and the result replaces the prompt. The panel's switch
   covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
   PSN button carries ❗ while its achievements are hidden (any one PSN account), and
   that platform's screen then says what it means and puts "🔓 Как открыть ачивки"

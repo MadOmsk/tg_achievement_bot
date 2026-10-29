@@ -30,6 +30,7 @@ from bot.handlers import connect as connect_handlers
 from bot.handlers import hltb as hltb_handlers
 from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
+from bot.handlers import psn_token as psn_token_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import PersonMiddleware, UsernameMiddleware
 from bot.i18n import (
@@ -444,6 +445,7 @@ async def run(settings: Settings) -> None:
     dispatcher.include_router(hltb_handlers.router)
     dispatcher.include_router(steam_handlers.router)
     dispatcher.include_router(psn_handlers.router)
+    dispatcher.include_router(psn_token_handlers.router)
     dispatcher.include_router(backfill_handlers.router)
 
     async def startup_catch_up() -> None:
