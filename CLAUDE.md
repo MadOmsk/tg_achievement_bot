@@ -1558,11 +1558,11 @@ History: #108.
   whole minutes (the tick is a minute), PSN's trophy-scan steps beside them. The
   pollers read them on every tick, so a change needs no restart; the
   environment's `presence_interval_*`, `achievement_poll_interval`,
-  `psn_*_poll_interval` and `catchup_idle_threshold_days` only seed them once
-  (`seed_once` at start-up). Steam is asked in one batch for everybody due, so
+  `psn_*_poll_interval` only seed them once (`seed_once` at start-up). A dormant
+  account's presence is asked once an hour, its PSN trophies once a day. Steam is asked in one batch for everybody due, so
   its steps are a minute everywhere. How long an account has been offline is its
   own presence row's (`changed_at`).
-- **Accounts idle more than `dormant_after` days (14) are dormant**
+- **Accounts idle more than `dormant_after` days (7; owner, 2026-10-29) are dormant**
   (`poller/cadence.py::is_dormant`, the platform's setting, from `last_online_at` or
   `linked_at`): their catch-up drops to once a day and PSN scans to the dormant
   step. Coming online (`touch_last_online`) wakes them at once; a fresh link counts

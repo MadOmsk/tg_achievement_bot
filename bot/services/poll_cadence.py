@@ -64,8 +64,9 @@ def group(platform: str) -> str:
 
 # Every step in minutes, `dormant_after` in days. Steam is asked in one batch
 # for everybody due, so a minute everywhere costs it one request a minute
-# (owner, 2026-10-29: D7). "Dormant" is new for presence: an account offline
-# that many days is asked every half hour.
+# (owner, 2026-10-29: D7). "Dormant" is new for presence: an account offline a
+# week is asked once an hour — often enough to see it come back the same hour —
+# and PSN scans its trophies once a day.
 DEFAULTS: dict[str, dict[str, int]] = {
     "xbox": {
         "in_game": 1,
@@ -73,8 +74,8 @@ DEFAULTS: dict[str, dict[str, int]] = {
         "offline": 5,
         "idle": 15,
         "idle_after": 120,
-        "dormant": 30,
-        "dormant_after": 14,
+        "dormant": 60,
+        "dormant_after": 7,
     },
     "steam": {
         "in_game": 1,
@@ -83,7 +84,7 @@ DEFAULTS: dict[str, dict[str, int]] = {
         "idle": 1,
         "idle_after": 120,
         "dormant": 1,
-        "dormant_after": 14,
+        "dormant_after": 7,
     },
     "psn": {
         "in_game": 1,
@@ -91,8 +92,8 @@ DEFAULTS: dict[str, dict[str, int]] = {
         "offline": 5,
         "idle": 15,
         "idle_after": 120,
-        "dormant": 30,
-        "dormant_after": 14,
+        "dormant": 60,
+        "dormant_after": 7,
         "scan_online": 2,
         "scan_offline": 30,
         "scan_dormant": 1440,
@@ -127,7 +128,6 @@ def _seeds(platform: str, settings: Settings) -> dict[str, int]:
     """What the environment said, where it said anything for this platform.
     Steam's presence steps are not seeded: one batch a minute covers all."""
     seeds = dict(DEFAULTS[platform])
-    seeds["dormant_after"] = settings.catchup_idle_threshold_days
     if platform != "steam":
         seeds["in_game"] = _minutes(settings.presence_interval_in_game)
         seeds["online"] = _minutes(settings.presence_interval_online)
