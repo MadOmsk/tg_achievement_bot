@@ -1963,7 +1963,7 @@ elsewhere in this file still describe the bot.
     endpoint** (`mini_notifications.PUSH_HOSTS`: FCM, Mozilla, Apple, Windows; https
     on 443): the server posts to it, and an arbitrary address would make it call
     any host, an internal one included. **Push goes only to the app's own
-    address** (owner, 2026-10-29; `push_subscriptions.origin`, migration 141): a
+    address** (owner, 2026-10-29; `push_subscriptions.origin`, migration 142): a
     browser keeps one subscription per address, and every dev tunnel kept
     getting the same notice; one of another address is forgotten at start-up.
     Push needs `MINI_APP_URL` (where a tap opens) and a
