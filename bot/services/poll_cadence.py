@@ -44,6 +44,9 @@ FIELDS: tuple[Field, ...] = (
     Field("scan_online", "admin-setting-poll-scan-online", 1, 60, psn_only=True),
     Field("scan_offline", "admin-setting-poll-scan-offline", 1, 240, psn_only=True),
     Field("scan_dormant", "admin-setting-poll-scan-dormant", 30, 2880, psn_only=True),
+    # Not minutes: how many times rarer an account without its own token is
+    # asked (#233) — the shared token is the bottleneck.
+    Field("shared_slowdown", "admin-setting-poll-shared-slowdown", 1, 10, psn_only=True),
 )
 
 
@@ -93,6 +96,7 @@ DEFAULTS: dict[str, dict[str, int]] = {
         "scan_online": 2,
         "scan_offline": 30,
         "scan_dormant": 1440,
+        "shared_slowdown": 3,
     },
 }
 
@@ -111,6 +115,8 @@ class Cadence:
     scan_online: int = 0
     scan_offline: int = 0
     scan_dormant: int = 0
+    #: PSN: an account read with the shared token waits this many times longer.
+    shared_slowdown: int = 1
 
 
 def _minutes(seconds: int) -> int:
@@ -166,4 +172,5 @@ async def load(repo: Repo, platform: str) -> Cadence:
         scan_online=minutes.get("scan_online", 0) * 60,
         scan_offline=minutes.get("scan_offline", 0) * 60,
         scan_dormant=minutes.get("scan_dormant", 0) * 60,
+        shared_slowdown=minutes.get("shared_slowdown", 1),
     )

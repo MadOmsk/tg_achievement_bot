@@ -31,7 +31,12 @@ from bot.poller.cadence import is_due, presence_interval
 from bot.services import poll_cadence
 from bot.services.poll_cadence import Cadence
 from bot.services.psn.auth import PsnAuth, PsnNotConfiguredError
-from bot.services.psn.client import PsnApiError, PsnPresenceSnapshot, get_presence
+from bot.services.psn.client import (
+    PsnApiError,
+    PsnPresenceSnapshot,
+    PsnTokenDeadError,
+    get_presence,
+)
 
 log = logging.getLogger(__name__)
 
@@ -51,21 +56,27 @@ class PsnPresencePoller:
         self._psn_fetcher = psn_fetcher
 
     async def tick(self) -> None:
-        try:
-            client = await self._psn_auth.get_client()
-        except PsnNotConfiguredError:
-            return  # PSN not configured on this instance — same silent skip PsnFetcher gets
-        except PsnApiError:
-            return  # dead token etc. — reminded about elsewhere (service_health), not here
-
         cadence = await poll_cadence.load(self._repo, "psn")
+        personal = await self._repo.personal_psn_accounts()
         due = [
-            t for t in await self._repo.psn_presence_pollable_accounts() if self._is_due(cadence, t)
+            t
+            for t in await self._repo.psn_presence_pollable_accounts()
+            if self._is_due(cadence, t, own_token=t.account_id in personal)
         ]
         exit_targets: list[PsnPresenceTarget] = []
         for target in due:
             try:
+                # The account's own token when it has one (#233), else the
+                # shared one; neither set up — nothing to ask with.
+                client, own = await self._psn_auth.client_for(target.account_id)
+            except (PsnNotConfiguredError, PsnApiError):
+                continue
+            try:
                 snapshot = await get_presence(client, target.account_id)
+            except PsnTokenDeadError as exc:
+                await self._psn_auth.refused(target.account_id, own)
+                log.info("psn presence skipped for account_id=%s: %s", target.account_id, exc)
+                continue
             except PsnApiError as exc:
                 log.info("psn presence skipped for account_id=%s: %s", target.account_id, exc)
                 continue  # private profile, not-found, dead token — expected, isolate and move on
@@ -150,8 +161,11 @@ class PsnPresencePoller:
             )
             log.info("psn account %s renamed: %s -> %s", target.account_id, previous, online_id)
 
-    def _is_due(self, cadence: Cadence, target: PsnPresenceTarget) -> bool:
-        return is_due(target.updated_at, self._interval(cadence, target))
+    def _is_due(self, cadence: Cadence, target: PsnPresenceTarget, *, own_token: bool) -> bool:
+        # An account without its own token is read with the shared one, the
+        # bottleneck, so less often (#233).
+        slowdown = 1 if own_token else cadence.shared_slowdown
+        return is_due(target.updated_at, self._interval(cadence, target) * slowdown)
 
     def _interval(self, cadence: Cadence, target: PsnPresenceTarget) -> int:
         # PSN's own steps (#184 stage 0). Each poll costs two requests on a

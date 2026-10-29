@@ -1478,6 +1478,18 @@ for this; psnawp uses the private one the PlayStation App uses.
 - **The design rests on one verified bet**: one admin NPSSO can read the trophies of
   *any* account whose trophy privacy is "Everyone", so nobody else logs in. Do not
   weaken the design without re-verifying it.
+- **Two levels** (owner, 2026-10-29; #233): the shared admin NPSSO reads every
+  account without a token and everything about games (the catalog, the store,
+  trophy groups' names, the Russian client); **a player's own NPSSO**, opt-in, reads
+  its own account (`PsnAuth.client_for`: presence, the trophy scan, groups, the
+  avatar, a resync). An account without one is polled `shared_slowdown` times
+  less often (×3, the PSN group of «Опрос статуса») — the shared token is the
+  bottleneck; what is new and costly (play time, hero stats) is read only with an
+  own token. A refused own token is marked dead (`PsnAuth.refused`), its account
+  falls back to the shared one, its owner is told once (`psn_token_dead`, on until
+  switched off), and the shared token's health is never touched; every live own
+  token is checked once a day (05:10). psnawp's own logger is pinned to WARNING:
+  at DEBUG it logs request headers, bearer token included.
 - **Verify an NPSSO with a real call (`check_alive()`) before saving it** — psnawp's
   token exchange is lazy.
 - **Pacing is psnawp's own limiter, one request every 2 s per client**

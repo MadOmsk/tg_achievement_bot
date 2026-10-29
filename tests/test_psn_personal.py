@@ -173,3 +173,46 @@ async def test_the_token_never_reaches_the_log(
         await auth.add(person, "111", OTHER)
     await auth.check_all()
     assert GOOD not in caplog.text and OTHER not in caplog.text
+
+
+async def test_presence_reads_an_account_with_its_own_token(
+    repo: Repo, sony, settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An account with a live token is asked with it, at its normal step; a
+    refusal marks only that token dead and the next read is the shared one's."""
+    from bot.poller import psn_presence as presence_module
+    from bot.poller.psn_presence import PsnPresencePoller
+    from bot.services.psn.auth import PsnAuth
+    from bot.services.psn.client import PsnPresenceSnapshot
+
+    person = await _person_with_psn(repo, 1, "111")
+    cipher = TokenCipher(KEY)
+    psn_auth = PsnAuth(repo, cipher)
+    psn_auth.personal = PsnPersonalAuth(repo, cipher)
+
+    async def shared() -> str:
+        return "shared"
+
+    monkeypatch.setattr(psn_auth, "get_client", shared)
+    await psn_auth.personal.add(person, "111", GOOD)
+
+    used: list[object] = []
+    refuse = {"own": True}
+
+    async def get_presence(client: object, account_id: str) -> PsnPresenceSnapshot:
+        used.append(client)
+        if client == GOOD and refuse["own"]:
+            raise PsnTokenDeadError("refused")
+        return PsnPresenceSnapshot(
+            state="Offline", title_id=None, title_name=None, online_id="Me", device=None
+        )
+
+    monkeypatch.setattr(presence_module, "get_presence", get_presence)
+    poller = PsnPresencePoller(settings, repo, psn_auth)
+    await poller.tick()
+    assert used == [GOOD]
+    assert await repo.psn_token_counts() == (0, 1)
+    await repo._conn.execute("DELETE FROM psn_presence_state")
+    await repo._conn.commit()
+    await poller.tick()
+    assert used == [GOOD, "shared"]

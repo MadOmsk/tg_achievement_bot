@@ -75,6 +75,7 @@ admin-setting-poll-dormant-after = «Спящий» — после (дней н�
 admin-setting-poll-scan-online = Скан трофеев: в сети (мин)
 admin-setting-poll-scan-offline = Скан трофеев: не в сети (мин)
 admin-setting-poll-scan-dormant = Скан трофеев: спящий (мин)
+admin-setting-poll-shared-slowdown = Без личного токена: реже в (раз)
 admin-group-global-mail = Почта
 admin-group-global-other = Прочее
 admin-group-chat-main = Основное

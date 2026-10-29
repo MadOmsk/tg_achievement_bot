@@ -473,7 +473,7 @@ def value_label(setting: Setting, value: Any, *, locale: str, place: bool = Fals
         if value == post_picture.SIZE_ORIGINAL:
             return _("admin-post-picture-size-original")
         return str(value).replace("x", "×")
-    if setting.key == post_picture.SCALE_KEY:
+    if setting.key in (post_picture.SCALE_KEY, poll_cadence.key("psn", "shared_slowdown")):
         return f"×{value}"
     if setting.key == post_picture.LOW_RES_KEY:
         return _("admin-post-picture-low-res-value", px=str(value))

@@ -79,6 +79,7 @@ from bot.services.notifier import Notifier
 from bot.services.notify import SuperadminNotifier
 from bot.services.octopus import OctopusCollector
 from bot.services.psn.auth import PsnAuth
+from bot.services.psn.personal import PsnPersonalAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
@@ -184,6 +185,10 @@ async def run(settings: Settings) -> None:
     # …and its counterpart (#62): a credential that comes back says so,
     # or the admin is left holding an alarm with no end to it.
     psn_auth.on_alive = lambda: notifier.service_key_alive(Platform.PSN)
+    # Players' own PSN tokens (#233): their account is read with them while
+    # they live; its owner is told when one dies (below, with the notifier).
+    psn_personal = PsnPersonalAuth(repo, cipher)
+    psn_auth.personal = psn_personal
 
     # The Steam key now lives encrypted in app_settings, admin-settable
     # without a restart (#17); the .env value is only a first-run seed
@@ -290,6 +295,7 @@ async def run(settings: Settings) -> None:
         PatchRefresh(repo, steam_extras),
         GuideVideos(repo, youtube_auth),
         OctopusWorker(repo, OctopusCollector(repo, store_collector)),
+        psn_personal=psn_personal,
     )
 
     async def on_linked(
@@ -367,6 +373,19 @@ async def run(settings: Settings) -> None:
         await notifications.notify(person, "xbox_login_dead")
 
     auth.on_token_dead = on_xbox_login_dead
+
+    async def on_psn_token_dead(person: int, account_id: str) -> None:
+        # The account is read with the shared token again; its owner hears of
+        # it in their list, on their devices and in Telegram (#233).
+        names = {
+            link.external_id: link.display_name
+            for link in await repo.platform_links_for(person, Platform.PSN)
+        }
+        await notifications.notify(
+            person, "psn_token_dead", name=names.get(account_id) or account_id
+        )
+
+    psn_personal.on_dead = on_psn_token_dead
 
     async def on_people_merged(keep: int, absorb: int) -> None:
         # The Xbox account and its token may have changed hands (#162).

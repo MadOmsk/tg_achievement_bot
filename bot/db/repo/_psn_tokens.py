@@ -86,6 +86,10 @@ class _PsnTokensRepo:
         )
         return [_row(r) for r in await cursor.fetchall()]
 
+    async def personal_psn_accounts(self) -> set[str]:
+        """The PSN accounts read with their own live token."""
+        return {row.account_id for row in await self.active_psn_tokens()}
+
     async def dead_psn_tokens(self) -> list[PsnTokenRow]:
         cursor = await self._conn.execute(
             f"SELECT t.* FROM psn_tokens t WHERE t.status = 'dead' AND {_HELD}"

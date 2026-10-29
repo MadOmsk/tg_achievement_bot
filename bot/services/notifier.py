@@ -58,7 +58,7 @@ QUALIFIERS = {
 # Kinds a channel carries unless switched off (`<kind>:off`): the super-admin's
 # word to everyone (owner, 2026-10-27), and one's own pass climbing (owner,
 # 2026-10-28) — every other kind is opt-in.
-DEFAULT_ON = frozenset({"pass_reward", "pass_level"})
+DEFAULT_ON = frozenset({"pass_reward", "pass_level", "psn_token_dead"})
 
 
 def channel_token_valid(token: str) -> bool:
@@ -139,6 +139,9 @@ KINDS: dict[str, Kind] = {
     # A new post of the developer of a game the person plays (owner, 2026-10-06).
     "game_news": Kind("notification-game-news", game=True),
     "xbox_login_dead": Kind("notification-xbox-login-dead", telegram=False),
+    # A player's own PSN token stopped working (#233): the account falls back
+    # to the shared token; on until switched off, like the pass's notices.
+    "psn_token_dead": Kind("notification-psn-token-dead"),
     # The super-admin put a reward in the season pass (owner, 2026-10-27).
     "pass_reward": Kind("notification-pass-reward"),
     # The person's month's points reached a level of the pass (owner, 2026-10-28).

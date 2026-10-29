@@ -75,6 +75,7 @@ admin-setting-poll-dormant-after = "Dormant" — after (days offline)
 admin-setting-poll-scan-online = Trophy scan: online (min)
 admin-setting-poll-scan-offline = Trophy scan: offline (min)
 admin-setting-poll-scan-dormant = Trophy scan: dormant (min)
+admin-setting-poll-shared-slowdown = Without a personal token: rarer by (times)
 admin-group-global-mail = Mail
 admin-group-global-other = Other
 admin-group-chat-main = General

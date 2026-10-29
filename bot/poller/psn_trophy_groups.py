@@ -46,16 +46,22 @@ class PsnTrophyGroups:
         )
         if not pending:
             return
-        try:
-            client = await self._psn_auth.get_client()
-        except (PsnNotConfiguredError, PsnApiError):
-            return
         for person_id, account_id, title_id, platforms in pending:
             title = title_ref(title_id, json.loads(platforms) if platforms else None)
             try:
+                # The account's own token when it has one (#233).
+                client, own = await self._psn_auth.client_for(account_id)
+            except (PsnNotConfiguredError, PsnApiError):
+                return
+            try:
                 changed = await regroup_title(self._repo, client, person_id, account_id, title)
             except PsnTokenDeadError:
-                return  # service_health's business; nothing more this tick
+                # The account's own token: it falls back next time. The shared
+                # one: service_health's business; nothing more this tick.
+                if own:
+                    await self._psn_auth.refused(account_id, own)
+                    continue
+                return
             except Exception:
                 log.info("psn groups for %s (%s) unavailable", title_id, account_id, exc_info=True)
                 self._unanswerable.add((account_id, title_id))
