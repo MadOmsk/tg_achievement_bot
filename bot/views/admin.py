@@ -18,6 +18,7 @@ from typing import Literal
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.config import Settings
 from bot.constants import (
     AccountPlatform,
     Platform,
@@ -27,6 +28,7 @@ from bot.constants import (
 )
 from bot.db.repo import AdminUserRow, ChatTarget, PlatformLink, Repo, User
 from bot.i18n import translator
+from bot.services import roles
 from bot.services.admin_actions import ActionView, AdminContext, Confirm, Target
 from bot.services.admin_actions import available as available_actions
 from bot.services.admin_credentials import AdminCredentials
@@ -145,6 +147,8 @@ async def render_user_list(
         # finds one. The bare id stays reachable as the last step, which on
         # this screen is diagnostic rather than a bad label.
         name = person_name(person_id=user.person_id, handle=user.handle)
+        if mark := roles.badge(user.role):
+            name = f"{name} {mark}"
         rows.append(
             _(
                 "admin-users-row",
@@ -398,7 +402,13 @@ async def _psn_admin_block(
 
 
 async def render_user_card(
-    repo: Repo, person: int, *, locale: str, access: Access = FULL
+    repo: Repo,
+    person: int,
+    *,
+    locale: str,
+    access: Access = FULL,
+    settings: Settings | None = None,
+    admin_id: int | None = None,
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
     user = await repo.get_user(person)
@@ -443,6 +453,7 @@ async def render_user_card(
             chats=", ".join(f"«{c}»" for c in chats) if chats else _("admin-nowhere"),
         ),
         _("admin-rarity", mode=await rarity_label(repo, person, locale=locale)),
+        _("admin-role", role=_(f"admin-role-{roles.stored(await repo.person_role(person))}")),
     ]
     text = "\n".join(lines)
     if user.is_excluded:
@@ -451,7 +462,10 @@ async def render_user_card(
     # The actions come from the registry (#176), the Mini App's card lists the
     # same ones.
     builder = InlineKeyboardBuilder()
-    for row in action_rows(await _actions(repo, "user", Target(person=person), locale, access)):
+    views = await _actions(
+        repo, "user", Target(person=person), locale, access, settings=settings, admin_id=admin_id
+    )
+    for row in action_rows(views):
         builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
@@ -472,9 +486,13 @@ async def _actions(
     target: Target,
     locale: str,
     access: Access = FULL,
+    *,
+    settings: Settings | None = None,
+    admin_id: int | None = None,
 ):
-    # Listing needs only the database; running one is the handler's.
-    ctx = AdminContext(repo, None, access=access)  # type: ignore[arg-type]
+    # Listing needs only the database (and, for the roles, who is asking and
+    # who the environment names); running one is the handler's.
+    ctx = AdminContext(repo, settings, access=access, admin_id=admin_id)  # type: ignore[arg-type]
     return await available_actions(ctx, scope, target, locale=locale)
 
 

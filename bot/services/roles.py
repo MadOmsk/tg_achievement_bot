@@ -51,6 +51,14 @@ def gives_roles(role: str | None) -> bool:
     return stored(role) == SUPERADMIN
 
 
+# The mark beside a name in the admins' lists of people.
+BADGES = {SUPERADMIN: "👑", ADMIN: "⭐"}
+
+
+def badge(role: str | None) -> str:
+    return BADGES.get(stored(role), "")
+
+
 @dataclass(frozen=True, slots=True)
 class Access:
     """One person's rights: their app role and the chats they admin."""

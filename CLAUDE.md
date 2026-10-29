@@ -2252,8 +2252,11 @@ keyboard.
 
   - **суперадмин** — one of `SUPERADMIN_TG_IDS` (the old name `ADMIN_TG_IDS`
     is still read) or one a super-admin made (`users.role`); only they give
-    roles — «⋯» on another person's page (`GET|PUT
-    /api/mini/admin/users/p<id>/role`), never to themselves nor to one the
+    roles — one step up or down, confirmed, from a person's card in both
+    panels (actions `make_admin`, `make_superadmin`, `unmake_admin`,
+    `unmake_superadmin`; the lists mark ⭐ an admin, 👑 a super-admin), and
+    «⋯» on a person's page in the Mini App (`GET|PUT
+    /api/mini/admin/users/p<id>/role`) — never to themselves nor to one the
     environment names — and they open any person's page whatever its privacy
     (`repo.can_view_activity`).
   - **админ приложения** (app admin, `users.role = 'admin'`).

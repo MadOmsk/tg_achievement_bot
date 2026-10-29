@@ -395,3 +395,19 @@ admin-chat-admin-you =
 admin-chat-admin-only = Доступно только для администратора чата
 admin-not-allowed = Это не для тебя.
 admin-chats-mine-empty = Ты пока не админ ни одного чата.
+
+## Roles (#232)
+admin-role = Роль: { $role }
+admin-role-user = пользователь
+admin-role-admin = админ приложения
+admin-role-superadmin = суперадмин
+admin-role-make_admin = ⭐ Сделать админом
+admin-role-make_superadmin = 👑 Сделать суперадмином
+admin-role-unmake_admin = Снять админа
+admin-role-unmake_superadmin = Снять суперадмина (оставить админом)
+admin-role-make_admin-confirm = Сделать { $name } админом приложения? Ему откроются люди, чаты, настройки и сезонный пропуск — без ключей и удаления.
+admin-role-make_superadmin-confirm = Сделать { $name } суперадмином? Ему откроется всё: ключи, удаление людей, роли.
+admin-role-unmake_admin-confirm = Снять с { $name } роль админа приложения?
+admin-role-unmake_superadmin-confirm = Снять с { $name } суперадмина? Он останется админом приложения.
+admin-role-confirm-yes = Да
+admin-role-done = Роль: { $role }

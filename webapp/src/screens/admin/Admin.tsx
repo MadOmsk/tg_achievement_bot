@@ -346,7 +346,7 @@ function UsersView() {
           <Row
             key={u.person_id}
             lead={<Face personId={u.person_id} name={u.name} size={40} dim={u.is_excluded} />}
-            title={u.name}
+            title={u.role === "superadmin" ? `${u.name} 👑` : u.role === "admin" ? `${u.name} ⭐` : u.name}
             sub={[
               [u.xbox && "Xbox", u.psn && "PS", u.steam && "Steam"].filter(Boolean).join(" · ") || tr("noPlatformsShort"),
               `${tr("usersToday")} ${u.today} · ${tr("usersMonth")} ${u.month}`,

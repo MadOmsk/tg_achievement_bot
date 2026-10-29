@@ -159,7 +159,7 @@ async def test_the_super_admin_can_take_a_picture_down(
         None,
         None,
         None,
-        SimpleNamespace(),
+        SimpleNamespace(is_superadmin=lambda _tg: False),
         SimpleNamespace(locale="ru"),
         FULL,
     )

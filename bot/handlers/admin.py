@@ -612,7 +612,9 @@ async def _not_found(callback: CallbackQuery, locale: str) -> None:
 
 
 @router.callback_query(F.data.startswith("a:u:"))
-async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access) -> None:
+async def user_card(
+    callback: CallbackQuery, repo: Repo, settings: Settings, i18n: I18nContext, access: Access
+) -> None:
     if not access.app:
         await _refuse(callback, i18n.locale)
         return
@@ -622,7 +624,15 @@ async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext, acce
         await _not_found(callback, i18n.locale)
         return
     await _redraw(
-        callback, *await render_user_card(repo, person, locale=i18n.locale, access=access)
+        callback,
+        *await render_user_card(
+            repo,
+            person,
+            locale=i18n.locale,
+            access=access,
+            settings=settings,
+            admin_id=callback.from_user.id,
+        ),
     )
 
 
@@ -752,6 +762,8 @@ async def admin_action(
             target.person,  # type: ignore[arg-type]
             locale=i18n.locale,
             access=access,
+            settings=settings,
+            admin_id=callback.from_user.id,
         )
     if result.text and result.show == "card":
         text = f"{text}\n\n{result.text}"

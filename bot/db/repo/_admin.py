@@ -69,7 +69,7 @@ class _AdminRepo:
         was nowhere in the panel)."""
         cursor = await self._conn.execute(
             "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
-            "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
+            "       u.last_name, u.is_excluded, u.role, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
             "       ps.achievements_visible AS steam_achievements_visible,"
@@ -89,6 +89,7 @@ class _AdminRepo:
             AdminUserRow(
                 tg_id=row["tg_id"],
                 person_id=row["person_id"],
+                role=row["role"],
                 gamertag=row["gamertag"],
                 username=row["username"],
                 xuid=row["xuid"],

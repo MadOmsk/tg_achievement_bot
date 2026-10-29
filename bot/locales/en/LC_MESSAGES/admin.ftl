@@ -395,3 +395,19 @@ admin-chat-admin-you =
 admin-chat-admin-only = Only for the chat admin
 admin-not-allowed = That's not for you.
 admin-chats-mine-empty = You don't admin any chat yet.
+
+## Roles (#232)
+admin-role = Role: { $role }
+admin-role-user = user
+admin-role-admin = app admin
+admin-role-superadmin = super-admin
+admin-role-make_admin = ⭐ Make an admin
+admin-role-make_superadmin = 👑 Make a super-admin
+admin-role-unmake_admin = Remove the admin role
+admin-role-unmake_superadmin = Remove super-admin (keep admin)
+admin-role-make_admin-confirm = Make { $name } an app admin? They get the people, chats, settings and the season pass — not the keys, not deleting.
+admin-role-make_superadmin-confirm = Make { $name } a super-admin? They get everything: keys, deleting people, roles.
+admin-role-unmake_admin-confirm = Take the app admin role from { $name }?
+admin-role-unmake_superadmin-confirm = Take super-admin from { $name }? They stay an app admin.
+admin-role-confirm-yes = Yes
+admin-role-done = Role: { $role }

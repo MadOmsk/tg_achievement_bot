@@ -32,7 +32,7 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import ChatTarget, PlatformLink, Repo, User
 from bot.i18n import gettext
-from bot.services import admin_cleanup, custom_avatars
+from bot.services import admin_cleanup, custom_avatars, roles
 from bot.services.admin_accounts import AdminAccounts
 from bot.services.admin_cleanup import WIPE_WINDOW_HOURS, Wipe
 from bot.services.admin_settings import TOAST_PREVIEW_MAX_CHARS
@@ -112,6 +112,8 @@ class AdminContext:
     send_picture_samples: Callable[[], Awaitable[int]] | None = None
     # Who is asking (#232): what they may not take is neither listed nor run.
     access: Access = FULL
+    # Their person id, for one who has no Telegram (a role is never one's own).
+    admin_person: int | None = None
 
     def accounts(self) -> AdminAccounts:
         return AdminAccounts(
@@ -324,6 +326,63 @@ class _Delete(_Action):
         return Done(True, _("admin-delete-toast"), gone=True)
 
 
+class _RoleChange(_Action):
+    """Giving a role is the super-admin's (#232): one step up or down at a
+    time, each confirmed once. Never one's own, never somebody
+    `SUPERADMIN_TG_IDS` names (they are super-admins whatever is stored)."""
+
+    scope, confirms, order, needs = "user", 1, 80, "superadmin"
+    current: ClassVar[str]
+    to: ClassVar[str]
+
+    async def available(self, ctx, target, subject):
+        user = subject.user
+        if user is None or ctx.settings is None:
+            return False
+        if user.tg_id is not None and ctx.settings.is_superadmin(user.tg_id):
+            return False
+        if ctx.admin_id is not None and user.tg_id == ctx.admin_id:
+            return False
+        if ctx.admin_person is not None and target.person == ctx.admin_person:
+            return False
+        return roles.stored(await ctx.repo.person_role(target.person)) == self.current  # type: ignore[arg-type]
+
+    def label(self, subject, target, _):
+        return _(f"admin-role-{self.id}")
+
+    def confirm(self, step, subject, target, _):
+        assert subject.user is not None
+        return (
+            _(f"admin-role-{self.id}-confirm", name=person_name_of(subject.user)),
+            _("admin-role-confirm-yes"),
+        )
+
+    async def run(self, ctx, target, subject, locale):
+        await ctx.repo.set_person_role(target.person, None if self.to == roles.USER else self.to)  # type: ignore[arg-type]
+        return Done(
+            True,
+            _translator(locale)(
+                "admin-role-done", role=_translator(locale)(f"admin-role-{self.to}")
+            ),
+        )
+
+
+class _MakeAdmin(_RoleChange):
+    id, current, to = "make_admin", roles.USER, roles.ADMIN
+
+
+class _MakeSuperadmin(_RoleChange):
+    id, current, to, order = "make_superadmin", roles.ADMIN, roles.SUPERADMIN, 81
+
+
+class _UnmakeAdmin(_RoleChange):
+    id, current, to, order = "unmake_admin", roles.ADMIN, roles.USER, 82
+
+
+class _UnmakeSuperadmin(_RoleChange):
+    id, current, to = "unmake_superadmin", roles.SUPERADMIN, roles.ADMIN
+
+
 class _Promo(_Action):
     id, scope, confirms, order = "promo", "chat", 1, 10
     needs = "chat"
@@ -440,6 +499,10 @@ ACTIONS: tuple[_Action, ...] = (
     _Sync(),
     _Reset(),
     _AvatarReset(),
+    _MakeAdmin(),
+    _MakeSuperadmin(),
+    _UnmakeAdmin(),
+    _UnmakeSuperadmin(),
     _Delete(),
     _Promo(),
     _DeleteLast(),

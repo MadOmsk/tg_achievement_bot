@@ -120,3 +120,30 @@ async def test_the_migration_makes_the_adder_the_admin(repo: Repo) -> None:
     await repo._conn.execute(insert)
     assert await repo.chat_admin(CHAT) == ADDER
     assert await repo.chat_admin(OTHER) is None
+
+
+async def test_the_super_admin_gives_app_roles_one_step_at_a_time(repo: Repo) -> None:
+    for tg_id, name in ((ADDER, "boss"), (MEMBER, "member"), (STRANGER, "fixed")):
+        await repo.ensure_user(tg_id, name)
+    member = await repo.person_id(MEMBER)
+    settings = _settings(ADDER, STRANGER)
+    ctx = AdminContext(repo, settings, access=Access(role=roles.SUPERADMIN), admin_id=ADDER)  # type: ignore[arg-type]
+
+    async def ids(person: int, context: AdminContext = ctx) -> set[str]:
+        views = await available(context, "user", Target(person=person), locale="ru")
+        return {v.id for v in views} & {
+            "make_admin",
+            "make_superadmin",
+            "unmake_admin",
+            "unmake_superadmin",
+        }
+
+    assert await ids(member) == {"make_admin"}
+    assert await perform(ctx, "user", Target(person=member), "make_admin", 1, locale="ru")
+    assert await repo.person_role(member) == roles.ADMIN
+    assert await ids(member) == {"make_superadmin", "unmake_admin"}
+    # Never oneself, never one the environment names, never by an app admin.
+    assert await ids(await repo.person_id(ADDER)) == set()
+    assert await ids(await repo.person_id(STRANGER)) == set()
+    app_admin = AdminContext(repo, settings, access=Access(role=roles.ADMIN), admin_id=MEMBER)  # type: ignore[arg-type]
+    assert await ids(await repo.person_id(ADDER), app_admin) == set()

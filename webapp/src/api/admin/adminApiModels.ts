@@ -41,6 +41,8 @@ export type AdminUserRow = {
   first_name: string | null;
   last_name: string | null;
   is_excluded: boolean;
+  /** The app role (#232): the list marks admins. */
+  role?: "user" | "admin" | "superadmin";
   last_online_at: string | null;
   today: number;
   month: number;
