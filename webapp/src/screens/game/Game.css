@@ -554,9 +554,9 @@
   z-index: 1;
   position: absolute;
   right: 18px;
-  bottom: -28px;
-  width: 78px;
-  height: 78px;
+  bottom: -22px;
+  width: 64px;
+  height: 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1332,7 +1332,7 @@
 }
 
 .ap-badge .flower-pts {
-  font-size: 19px;
+  font-size: 16px;
 }
 
 /* On an achievement's page a square picture is the icon alone in the middle
