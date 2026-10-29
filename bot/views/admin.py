@@ -45,6 +45,7 @@ from bot.services.naming import (
     subscriber_names,
     xbox_nickname,
 )
+from bot.services.roles import FULL, Access
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.util import humanize_ago, real_game_name
 from bot.views import Screen
@@ -397,7 +398,7 @@ async def _psn_admin_block(
 
 
 async def render_user_card(
-    repo: Repo, person: int, *, locale: str
+    repo: Repo, person: int, *, locale: str, access: Access = FULL
 ) -> tuple[str, InlineKeyboardMarkup]:
     _ = translator("admin", locale)
     user = await repo.get_user(person)
@@ -450,7 +451,7 @@ async def render_user_card(
     # The actions come from the registry (#176), the Mini App's card lists the
     # same ones.
     builder = InlineKeyboardBuilder()
-    for row in action_rows(await _actions(repo, "user", Target(person=person), locale)):
+    for row in action_rows(await _actions(repo, "user", Target(person=person), locale, access)):
         builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-users"), callback_data="a:users:0"))
     return text, builder.as_markup()
@@ -466,10 +467,15 @@ async def rarity_label(repo: Repo, person: int, *, locale: str) -> str:
 
 
 async def _actions(
-    repo: Repo, scope: Literal["user", "chat", "global"], target: Target, locale: str
+    repo: Repo,
+    scope: Literal["user", "chat", "global"],
+    target: Target,
+    locale: str,
+    access: Access = FULL,
 ):
     # Listing needs only the database; running one is the handler's.
-    return await available_actions(AdminContext(repo, None), scope, target, locale=locale)  # type: ignore[arg-type]
+    ctx = AdminContext(repo, None, access=access)  # type: ignore[arg-type]
+    return await available_actions(ctx, scope, target, locale=locale)
 
 
 # Plain platform names for the confirm prompt's own sentence — distinct
@@ -477,16 +483,21 @@ async def _actions(
 # spliced into "Стереть базу <label> для...".
 
 
-async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+async def render_chat_list(
+    repo: Repo, *, locale: str, access: Access = FULL
+) -> tuple[str, InlineKeyboardMarkup]:
     """Unlike the user list above, this one is buttons only — a chat row is
     two facts wide, and both fit on the button, so there is no separate text
     row to write. It used to call `Listing` with an empty row list to look
     like it shared the text machinery; that rendered nothing, and a keyboard
     list now has machinery of its own to share instead."""
     _ = translator("admin", locale)
-    chats = await repo.admin_chats()
+    # A chat admin sees their own chats, with nothing above them (#232).
+    chats = [chat for chat in await repo.admin_chats() if access.chat(chat.chat_id)]
+    tail = _back_row(locale=locale) if access.app else []
     if not chats:
-        return _("admin-chats-empty"), _back_home(locale=locale)
+        empty = _("admin-chats-empty") if access.app else _("admin-chats-mine-empty")
+        return empty, InlineKeyboardMarkup(inline_keyboard=[tail] if tail else [])
 
     def label(chat: ChatTarget) -> str:
         return _(
@@ -498,13 +509,18 @@ async def render_chat_list(repo: Repo, *, locale: str) -> tuple[str, InlineKeybo
 
     keyboard = InlineListing(
         rows=button_rows(chats, label, lambda chat: f"a:chat:{chat.chat_id}"),
-        tail=_back_row(locale=locale),
+        tail=tail,
     ).markup()
     return _("admin-chats-header"), keyboard
 
 
 async def render_chat_card(
-    repo: Repo, chat_id: int, *, locale: str, section: str | None = None
+    repo: Repo,
+    chat_id: int,
+    *,
+    locale: str,
+    section: str | None = None,
+    access: Access = FULL,
 ) -> tuple[str, InlineKeyboardMarkup]:
     """The chat card. `section` picks which keyboard goes under it: the root
     card, or one of its three sub-screens (2026-09-11, user request — the
@@ -529,6 +545,8 @@ async def render_chat_card(
         "admin-chat-card",
         title=chat.title or chat_id,
         state=_("admin-active") if chat.is_active else _("admin-inactive"),
+        publishing=_("admin-on") if chat.publishing else _("admin-off"),
+        admin=await chat_admin_name(repo, chat_id, locale=locale),
         subscribers=chat.subscribers,
         summary=_("admin-yes") if chat.daily_summary else _("admin-no"),
         time=chat.daily_summary_time,
@@ -557,7 +575,7 @@ async def render_chat_card(
     if section == "messages":
         # One action per row: the wipes are the destructive ones, and a
         # cramped row of four 🗑 buttons made them easy to mistap (2026-09-11).
-        views = await _actions(repo, "chat", Target(chat_id=chat_id), locale)
+        views = await _actions(repo, "chat", Target(chat_id=chat_id), locale, access)
         for row in action_rows(views, "messages"):
             builder.row(*row)
         builder.row(back_to_card)
@@ -577,7 +595,10 @@ async def render_chat_card(
             text=_("admin-chat-messages-menu-button"), callback_data=f"a:mdel:{chat_id}"
         )
     )
-    for row in action_rows(await _actions(repo, "chat", Target(chat_id=chat_id), locale)):
+    builder.row(
+        InlineKeyboardButton(text=_("admin-chat-admin-button"), callback_data=f"a:ca:{chat_id}")
+    )
+    for row in action_rows(await _actions(repo, "chat", Target(chat_id=chat_id), locale, access)):
         builder.row(*row)
     builder.row(InlineKeyboardButton(text=_("admin-back-to-chats"), callback_data="a:chats"))
     return text, builder.as_markup()
@@ -635,6 +656,62 @@ def render_action_confirm(confirm: Confirm, *, yes: str, back: str, locale: str)
     return Screen(confirm.text, builder.as_markup())
 
 
-async def global_actions(repo: Repo, *, locale: str) -> list[ActionView]:
+async def global_actions(repo: Repo, *, locale: str, access: Access = FULL) -> list[ActionView]:
     """The app's own actions; a settings group shows those of its section."""
-    return await _actions(repo, "global", Target(), locale)
+    return await _actions(repo, "global", Target(), locale, access)
+
+
+# ---------------------------------------------------------------- chat admin
+
+
+async def chat_admin_name(repo: Repo, chat_id: int, *, locale: str) -> str:
+    """The chat admin as the cards name them (#232): their nickname, else
+    their Telegram id — a chat admin may never have used the app."""
+    tg_id = await repo.chat_admin(chat_id)
+    if tg_id is None:
+        return translator("admin", locale)("admin-chat-admin-none")
+    return await tg_name(repo, tg_id)
+
+
+async def tg_name(repo: Repo, tg_id: int) -> str:
+    user = await repo.get_user_by_tg(tg_id)
+    if user is None:
+        return f"tg {tg_id}"
+    return person_name(person_id=user.id, handle=user.handle)  # type: ignore[arg-type]
+
+
+async def render_chat_admin_pick(
+    repo: Repo, chat_id: int, *, locale: str, access: Access, me: int
+) -> Screen:
+    """Who the chat admin role goes to: the chat's known members, one a
+    button. An app admin appoints (and may remove); the chat admin hands
+    their own role on."""
+    _ = translator("admin", locale)
+    current = await repo.chat_admin(chat_id)
+    handing_on = not access.app
+    if handing_on:
+        text = _("admin-chat-admin-hand-on")
+    else:
+        text = _("admin-chat-admin-pick", admin=await chat_admin_name(repo, chat_id, locale=locale))
+    candidates = [
+        (tg_id, person, handle)
+        for tg_id, person, handle in await repo.chat_admin_candidates(chat_id)
+        if tg_id not in (current, me if handing_on else None)
+    ]
+    if not candidates:
+        text += "\n\n" + _("admin-chat-admin-nobody")
+    builder = InlineKeyboardBuilder()
+    for tg_id, person, handle in candidates:
+        builder.button(
+            text=person_name(person_id=person, handle=handle),
+            callback_data=f"a:cap:{chat_id}:{tg_id}",
+        )
+    builder.adjust(2)
+    if access.app and current is not None:
+        builder.row(
+            InlineKeyboardButton(
+                text=_("admin-chat-admin-remove"), callback_data=f"a:cax:{chat_id}:0"
+            )
+        )
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data=f"a:chat:{chat_id}"))
+    return Screen(text, builder.as_markup())

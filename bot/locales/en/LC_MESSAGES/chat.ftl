@@ -79,6 +79,7 @@ chat-hub-recent-button = 🕘 Recent
 chat-hub-summary-day-button = 📅 Day summary
 chat-hub-summary-month-button = 📆 Month summary
 chat-hub-settings-button = ⚙️ Settings
+chat-hub-manage-button = 🛠 Manage the chat
 chat-hub-open-app = Open the app
 chat-app-hint = Open in the app:
 chat-app-no-url = The app is not configured yet (no MINI_APP_URL).

@@ -183,9 +183,10 @@ async def test_a_chat_setting_takes_only_its_own_values(repo: Repo) -> None:
 
     await set_value(repo, "chat", "tz_offset_min", 5 * 60 + 45, 1, chat_id=CHAT_ID)
     await set_value(repo, "chat", "daily_summary_time", "21:00", 1, chat_id=CHAT_ID)
-    await set_value(repo, "chat", "is_active", False, 1, chat_id=CHAT_ID)
+    await set_value(repo, "chat", "publishing", False, 1, chat_id=CHAT_ID)
     [chat] = [c for c in await repo.admin_chats() if c.chat_id == CHAT_ID]
-    assert (chat.tz_offset_min, chat.daily_summary_time, chat.is_active) == (345, "21:00", False)
+    assert (chat.tz_offset_min, chat.daily_summary_time, chat.publishing) == (345, "21:00", False)
+    assert chat.is_active  # the bot's own flag, no setting's
 
 
 def test_the_real_offsets_are_hours_and_the_few_that_are_not() -> None:

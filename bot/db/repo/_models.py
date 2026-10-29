@@ -280,6 +280,8 @@ class ChatTarget:
     # Filled in by the admin panel only; the publisher never looks at them.
     is_active: bool = True
     daily_summary: bool = True
+    # The chat admin's switch (#232); the publisher's query reads the column.
+    publishing: bool = True
     subscribers: int = 0
 
 

@@ -215,8 +215,24 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     -- so everything this bot broadcasts into a group needs one shared
     -- answer, set by an admin. A person's DMs follow user_settings.locale
     -- instead.
-    locale                   TEXT    NOT NULL DEFAULT 'ru'
+    locale                   TEXT    NOT NULL DEFAULT 'ru',
+    -- Achievements are posted here (owner, 2026-10-29; #232): the chat
+    -- admin's switch. `chats.is_active` is the bot's own (removed, added
+    -- back); this one nothing resets by itself.
+    publishing               INTEGER NOT NULL DEFAULT 1
 );
+
+-- A chat's admin (owner, 2026-10-29; #232; services/roles.py): one per chat,
+-- by Telegram id — they may never have used the app. Whoever adds the bot is
+-- it; removing the bot clears it; the admin hands it on, an app admin
+-- appoints or removes it.
+CREATE TABLE IF NOT EXISTS chat_admins (
+    chat_id    INTEGER PRIMARY KEY REFERENCES chats(chat_id) ON DELETE CASCADE,
+    tg_id      INTEGER NOT NULL,
+    granted_by INTEGER,
+    granted_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_admins_tg ON chat_admins(tg_id);
 
 -- Global settings the admin turns
 CREATE TABLE IF NOT EXISTS app_settings (

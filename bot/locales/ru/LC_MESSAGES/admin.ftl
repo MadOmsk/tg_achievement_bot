@@ -7,8 +7,8 @@ admin-back = ‹ Назад
 admin-cancel = Отмена
 admin-yes = да
 admin-no = нет
-admin-active = активен
-admin-inactive = отключён
+admin-active = в чате
+admin-inactive = не в чате
 
 # Runtime settings
 admin-setting-summary-rows = Строк в /summary
@@ -49,7 +49,7 @@ admin-post-picture-size-original = Оригинал (без карточки)
 admin-post-picture-off = Как есть
 admin-post-picture-color = Фон цветом иконки
 admin-post-picture-cover = Фон обложкой игры
-admin-setting-chat-active = Чат включён
+admin-setting-chat-publishing = Публикации в чате
 admin-setting-chat-locale = Язык
 admin-setting-chat-tz = Часовой пояс
 admin-setting-digest = Дайджест с
@@ -340,8 +340,10 @@ admin-chat-list-row = { $mark }{ $title } · { $subscribers }
 admin-chat-card =
     💬 { $title }
 
-    Состояние:    { $state }
-    Публикуется:  { $subscribers } чел.
+    Бот:          { $state }
+    Публикации:   { $publishing }
+    Подписано:    { $subscribers } чел.
+    Админ чата:   { $admin }
     Итог дня:     { $summary }, в { $time }
     Часовой пояс: { $offset }
     Антифлуд:     { $flood }
@@ -363,3 +365,32 @@ admin-default-player = Игрок
 admin-note-excluded =   исключён
 admin-note-invalid =   вход протух
 admin-note-revoked =   отписался
+
+## Chat admins (#232)
+admin-on = вкл
+admin-off = выкл
+admin-chat-admin-none = нет
+admin-chat-admin-button = 👤 Админ чата ▸
+admin-chat-admin-pick =
+    👤 Админ чата: { $admin }
+
+    Кому отдать роль? В списке те, кто подписан на чат или писал в нём.
+admin-chat-admin-hand-on =
+    👤 Ты админ этого чата.
+
+    Кому передать роль? Ты её потеряешь. В списке те, кто подписан на чат или писал в нём.
+admin-chat-admin-nobody = Здесь пока никого, кому можно отдать роль: человек должен подписаться на чат или написать в нём.
+admin-chat-admin-remove = ✖️ Снять админа
+admin-chat-admin-confirm = Сделать { $name } админом чата «{ $title }»?
+admin-chat-admin-confirm-hand-on = Передать роль админа чата «{ $title }» пользователю { $name }? Ты её потеряешь.
+admin-chat-admin-confirm-yes = Да
+admin-chat-admin-remove-confirm = Снять { $name } с роли админа чата «{ $title }»?
+admin-chat-admin-set = Админ чата теперь { $name }.
+admin-chat-admin-removed = У чата больше нет админа.
+admin-chat-admin-handed-on = Роль передана: { $name } теперь админ чата «{ $title }».
+admin-chat-admin-you =
+    👤 Ты теперь админ чата «{ $title }».
+
+    Его настройки и сообщения — в /admin, или кнопкой «Управление чатом» в /panel группы.
+admin-not-allowed = Это не для тебя.
+admin-chats-mine-empty = Ты пока не админ ни одного чата.

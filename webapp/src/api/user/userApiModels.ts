@@ -113,6 +113,8 @@ export type MeResponse = {
   is_superadmin: boolean;
   /** Who may run the app (owner, 2026-10-28); only a super-admin gives roles. */
   role?: "user" | "admin" | "superadmin";
+  /** Admins a group chat (#232): the admin panel opens, to their chats only. */
+  chat_admin?: boolean;
   is_excluded: boolean;
   settings: {
     locale: string;

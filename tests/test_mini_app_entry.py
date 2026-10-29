@@ -52,10 +52,10 @@ class _FakeBot:
 
 
 def test_the_hub_gains_an_app_row_only_when_there_is_an_app() -> None:
-    assert len(_buttons(hub_keyboard(BOT, CHAT_ID))) == 11
+    assert len(_buttons(hub_keyboard(BOT, CHAT_ID))) == 12
 
     buttons = _buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url=APP_URL))
-    assert len(buttons) == 12
+    assert len(buttons) == 13
     app_button = buttons[0]
     assert app_button.url == f"https://t.me/{BOT}?startapp=c{CHAT_ID}"
     assert app_button.web_app is None
@@ -64,7 +64,7 @@ def test_the_hub_gains_an_app_row_only_when_there_is_an_app() -> None:
 def test_a_blank_url_is_not_an_app() -> None:
     """`MINI_APP_URL=` in the environment reads as an empty string, not as a
     missing key — a button to nowhere is worse than no button."""
-    assert len(_buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url="   "))) == 11
+    assert len(_buttons(hub_keyboard(BOT, CHAT_ID, mini_app_url="   "))) == 12
 
 
 async def test_panel_command_in_a_group_sends_a_link_not_a_web_app(i18n, repo) -> None:

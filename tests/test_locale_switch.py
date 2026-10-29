@@ -15,6 +15,7 @@ from bot.db.repo import Repo
 from bot.handlers.admin import chat_setting_open, chat_setting_pick
 from bot.handlers.panel import panel_toggle_locale
 from bot.i18n import AVAILABLE_LOCALES, build_i18n_context
+from bot.services.roles import FULL
 from bot.views.admin import render_chat_card
 from bot.views.keyboards import locale_name, next_locale, panel_keyboard
 
@@ -131,7 +132,7 @@ async def test_picking_a_language_sets_the_chats_own(repo: Repo, i18n: I18nConte
     english = AVAILABLE_LOCALES.index("en")
 
     await chat_setting_pick(  # type: ignore[arg-type]
-        _FakeCallback(f"a:csv:{CHAT_ID}:locale:{english}"), repo, i18n
+        _FakeCallback(f"a:csv:{CHAT_ID}:locale:{english}"), repo, i18n, FULL
     )
 
     assert await repo.chat_locale(CHAT_ID) == "en"
@@ -145,7 +146,7 @@ async def test_picking_a_language_sets_the_chats_own(repo: Repo, i18n: I18nConte
 async def test_a_missing_chat_is_said_so(repo: Repo, i18n: I18nContext) -> None:
     callback = _FakeCallback("a:cs:-1:locale")
 
-    await chat_setting_open(callback, repo, i18n)  # type: ignore[arg-type]
+    await chat_setting_open(callback, repo, i18n, FULL)  # type: ignore[arg-type]
 
     assert callback.answers == ["Чат не найден"]
 

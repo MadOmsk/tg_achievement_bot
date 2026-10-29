@@ -98,7 +98,7 @@ function Root() {
       </Group>
       <Group>
         <Row lead={<Lead icon="gift" tone="tertiary" />} title={tr("invites")} sub={tr("invitesSub")} chevron onClick={() => open({ kind: "settings", pane: "invites" })} />
-        {me.is_superadmin && (
+        {(me.is_superadmin || me.chat_admin) && (
           <Row lead={<Lead icon="settings" tone="tertiary" />} title={tr("admin")} chevron onClick={() => open({ kind: "admin", screen: null })} />
         )}
       </Group>

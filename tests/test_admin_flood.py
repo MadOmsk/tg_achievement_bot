@@ -12,6 +12,7 @@ from bot.db.repo import Repo
 from bot.handlers.admin import _awaiting_input, chat_setting_open, setting_number_input
 from bot.services.admin_registry import find, parse
 from bot.services.admin_settings import SettingValueError
+from bot.services.roles import FULL
 from bot.views.admin import render_chat_card
 
 CHAT_ID = -100999
@@ -84,16 +85,16 @@ async def test_chat_card_shows_off_when_flood_limit_is_zero(repo: Repo) -> None:
 
 async def test_a_typed_limit_is_saved_and_a_bad_one_refused(repo: Repo, i18n) -> None:
     await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
-    await chat_setting_open(_FakeCallback(f"a:cs:{CHAT_ID}:flood_limit"), repo, i18n)
+    await chat_setting_open(_FakeCallback(f"a:cs:{CHAT_ID}:flood_limit"), repo, i18n, FULL)
     assert _awaiting_input[1] == ("set:chat:flood_limit", CHAT_ID)
 
     too_many = _FakeMessage("51")
-    await setting_number_input(too_many, repo, i18n)
+    await setting_number_input(too_many, repo, i18n, FULL)
     assert "0" in too_many.answers[0] and "50" in too_many.answers[0]
     assert _awaiting_input[1] == ("set:chat:flood_limit", CHAT_ID)  # still waiting
 
     ok = _FakeMessage("0")
-    await setting_number_input(ok, repo, i18n)
+    await setting_number_input(ok, repo, i18n, FULL)
     assert 1 not in _awaiting_input
     text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     assert "выключен" in text

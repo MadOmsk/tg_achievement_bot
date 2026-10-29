@@ -152,7 +152,7 @@ class _AdminRepo:
 
     async def admin_chats(self) -> list[ChatTarget]:
         cursor = await self._conn.execute(
-            "SELECT c.chat_id, c.title, c.is_active,"
+            "SELECT c.chat_id, c.title, c.is_active, s.publishing,"
             "       s.daily_summary, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
@@ -175,6 +175,7 @@ class _AdminRepo:
                 digest_threshold=row["digest_threshold"],
                 is_active=bool(row["is_active"]),
                 daily_summary=bool(row["daily_summary"]),
+                publishing=bool(row["publishing"]),
                 subscribers=int(row["subs"]),
             )
             for row in await cursor.fetchall()
@@ -188,6 +189,7 @@ class _AdminRepo:
             "flood_limit",
             "flood_window_minutes",
             "locale",
+            "publishing",
         }
         unknown = set(fields) - allowed
         if unknown:

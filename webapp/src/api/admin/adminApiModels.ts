@@ -111,3 +111,12 @@ export type AdminActionStep = {
   confirm?: { text: string; yes: string; step: number };
   done?: AdminActionDone;
 };
+
+/** A chat's one admin (#232) and the chat's members the role may go to. */
+export interface AdminChatAdmin {
+  admin: { tg_id: number; name: string } | null;
+  candidates: Array<{ tg_id: number; person_id: number; name: string }>;
+  /** The chat admin themselves: handing the role on loses it. */
+  hand_on: boolean;
+  can_remove: boolean;
+}

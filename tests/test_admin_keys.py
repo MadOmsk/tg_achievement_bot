@@ -11,6 +11,7 @@ from bot.handlers.admin import _awaiting_input, admin_text_input
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
+from bot.services.roles import FULL
 from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
@@ -93,7 +94,7 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     _awaiting_input[ADMIN_ID] = STEAM_PENDING
     msg = _FakeMessage(KEY)
 
-    await admin_text_input(msg, _credentials(repo, cipher, steam_auth), i18n)
+    await admin_text_input(msg, _credentials(repo, cipher, steam_auth), i18n, FULL)
 
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
@@ -111,7 +112,7 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     _awaiting_input[ADMIN_ID] = STEAM_PENDING
     msg = _FakeMessage("bad-key")
 
-    await admin_text_input(msg, _credentials(repo, cipher, steam_auth), i18n)
+    await admin_text_input(msg, _credentials(repo, cipher, steam_auth), i18n, FULL)
 
     assert await steam_auth.get_key() is None
     assert _awaiting_input.get(ADMIN_ID) == STEAM_PENDING  # still armed for a retry

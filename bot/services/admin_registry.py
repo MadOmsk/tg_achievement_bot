@@ -237,7 +237,7 @@ SETTINGS: tuple[Setting, ...] = (
         for key, spec in NUMERIC_SETTINGS.items()
     ),
     # ---- a chat
-    Setting("is_active", "chat", "main", Kind.BOOL, "admin-setting-chat-active"),
+    Setting("publishing", "chat", "main", Kind.BOOL, "admin-setting-chat-publishing"),
     Setting(
         "locale",
         "chat",
@@ -399,9 +399,7 @@ async def set_value(
         await repo.set_app_setting(key, stored, admin_id)
         return value
     assert chat_id is not None
-    if key == "is_active":
-        await repo.set_chat_active(chat_id, value)
-    elif key == "daily_summary_time":
+    if key == "daily_summary_time":
         await repo.update_chat_settings(chat_id, daily_summary_time=f"{value:02d}:00")
     elif setting.kind is Kind.BOOL:
         await repo.update_chat_settings(chat_id, **{key: 1 if value else 0})

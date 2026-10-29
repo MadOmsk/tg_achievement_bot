@@ -16,7 +16,7 @@ from aiohttp import web
 
 from bot.constants import Platform, TokenStatus
 from bot.db.repo import Repo
-from bot.handlers.delivery import send_picture_samples, send_promo
+from bot.handlers.delivery import send_picture_samples, send_promo, tell_new_chat_admin
 from bot.i18n import translator
 from bot.services import roles
 from bot.services.admin_actions import AdminContext, Confirm, Target, perform
@@ -39,7 +39,7 @@ from bot.services.admin_status import admin_status
 from bot.services.logins import logins_of
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
-from bot.views.admin import login_value, rarity_label
+from bot.views.admin import login_value, rarity_label, tg_name
 from bot.views.admin_home import usage_rows
 
 log = logging.getLogger(__name__)
@@ -287,12 +287,15 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_patch(
         "/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings_patch
     )
+    app.router.add_get("/api/mini/admin/chats/{chat_id}/admin", handle_chat_admin_get)
+    app.router.add_put("/api/mini/admin/chats/{chat_id}/admin", handle_chat_admin_put)
+    app.router.add_delete("/api/mini/admin/chats/{chat_id}/admin", handle_chat_admin_delete)
     app.router.add_get("/api/mini/admin/actions", handle_admin_actions)
     app.router.add_post("/api/mini/admin/actions", handle_admin_action)
 
 
 async def handle_admin_home(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "admin")
     repo: Repo = request.app["mini_repo"]
     payload = await build_admin_home(
         repo,
@@ -303,12 +306,12 @@ async def handle_admin_home(request: web.Request) -> web.Response:
 
 
 async def handle_admin_keys(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "superadmin")
     return web.json_response(await _keys_payload(request, admin))
 
 
 async def handle_admin_key_put(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "superadmin")
     credentials: AdminCredentials = request.app["mini_admin_credentials"]
     name = request.match_info["name"]
     if name not in credentials:
@@ -328,7 +331,7 @@ async def handle_admin_key_put(request: web.Request) -> web.Response:
 
 
 async def handle_admin_key_delete(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "superadmin")
     credentials: AdminCredentials = request.app["mini_admin_credentials"]
     name = request.match_info["name"]
     if name not in credentials:
@@ -338,14 +341,14 @@ async def handle_admin_key_delete(request: web.Request) -> web.Response:
 
 
 async def handle_admin_settings(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "admin")
     repo: Repo = request.app["mini_repo"]
     locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_settings(repo, "global", locale=locale))
 
 
 async def handle_admin_settings_patch(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "admin")
     repo: Repo = request.app["mini_repo"]
     body = await request.json()
     await _set(repo, "global", body, admin.tg_id)
@@ -371,7 +374,7 @@ async def _set(
 
 
 async def handle_admin_users(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
+    await _require(request, "admin")
     repo: Repo = request.app["mini_repo"]
     return web.json_response(await build_admin_users(repo))
 
@@ -391,7 +394,7 @@ async def _person_of(request: web.Request) -> int:
 
 
 async def handle_admin_user(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, _access = await _require(request, "admin")
     repo: Repo = request.app["mini_repo"]
     payload = await build_admin_user(
         repo, await _person_of(request), locale=await repo.user_locale(admin.person_id)
@@ -402,18 +405,21 @@ async def handle_admin_user(request: web.Request) -> web.Response:
 
 
 async def handle_admin_chats(request: web.Request) -> web.Response:
-    await _require_superadmin(request)
+    """Every chat for an app admin; a chat admin's own (#232)."""
+    _admin, access = await _require(request, "chat")
     repo: Repo = request.app["mini_repo"]
-    chats = await repo.admin_chats()
+    chats = [c for c in await repo.admin_chats() if access.chat(c.chat_id)]
     return web.json_response({"chats": [serialize_admin_chat(c) for c in chats]})
 
 
-async def _chat_of(request: web.Request) -> Any:
+async def _chat_of(request: web.Request, access: roles.Access | None = None) -> Any:
     repo: Repo = request.app["mini_repo"]
     try:
         chat_id = int(request.match_info["chat_id"])
     except ValueError as exc:
         raise web.HTTPBadRequest(text="bad chat") from exc
+    if access is not None and not access.chat(chat_id):
+        raise web.HTTPForbidden(text="not your chat")
     chat = next((c for c in await repo.admin_chats() if c.chat_id == chat_id), None)
     if chat is None:
         raise web.HTTPNotFound()
@@ -421,24 +427,24 @@ async def _chat_of(request: web.Request) -> Any:
 
 
 async def handle_admin_chat_settings(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, access = await _require(request, "chat")
     repo: Repo = request.app["mini_repo"]
-    chat = await _chat_of(request)
+    chat = await _chat_of(request, access)
     locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_settings(repo, "chat", locale=locale, chat=chat))
 
 
 async def handle_admin_chat_settings_patch(request: web.Request) -> web.Response:
-    admin = await _require_superadmin(request)
+    admin, access = await _require(request, "chat")
     repo: Repo = request.app["mini_repo"]
-    chat = await _chat_of(request)
+    chat = await _chat_of(request, access)
     await _set(repo, "chat", await request.json(), admin.tg_id, chat_id=chat.chat_id)
     chat = await _chat_of(request)
     locale = await repo.user_locale(admin.person_id)
     return web.json_response(await build_admin_settings(repo, "chat", locale=locale, chat=chat))
 
 
-def _action_context(request: web.Request, admin: Any) -> AdminContext:
+def _action_context(request: web.Request, admin: Any, access: roles.Access) -> AdminContext:
     settings = request.app["mini_settings"]
     bot = request.app.get("mini_bot")
 
@@ -464,6 +470,7 @@ def _action_context(request: web.Request, admin: Any) -> AdminContext:
         admin_id=admin.tg_id,
         send_promo=promo,
         send_picture_samples=samples,
+        access=access,
     )
 
 
@@ -477,7 +484,7 @@ def _action_target(scope: str, raw: str) -> Target:
 async def handle_admin_actions(request: web.Request) -> web.Response:
     """A card's actions, from the registry the bot's card draws
     (`services/admin_actions.py`)."""
-    admin = await _require_superadmin(request)
+    admin, access = await _require(request, "chat")
     scope = request.query.get("scope", "")
     if scope not in ("user", "chat", "global"):
         raise web.HTTPBadRequest(text="bad scope")
@@ -486,7 +493,7 @@ async def handle_admin_actions(request: web.Request) -> web.Response:
     locale = await repo.user_locale(admin.person_id)
     _ = translator("admin", locale)
     views = await available_actions(
-        _action_context(request, admin),
+        _action_context(request, admin, access),
         scope,  # type: ignore[arg-type]
         target,
         locale=locale,
@@ -514,7 +521,7 @@ async def handle_admin_actions(request: web.Request) -> web.Response:
 async def handle_admin_action(request: web.Request) -> web.Response:
     """One step of an action: the next confirmation to ask, or what it did —
     the same steps and words as the bot's."""
-    admin = await _require_superadmin(request)
+    admin, access = await _require(request, "chat")
     body = await request.json()
     scope = str(body.get("scope") or "")
     if scope not in ("user", "account", "chat", "global"):
@@ -526,7 +533,7 @@ async def handle_admin_action(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text="bad step") from exc
     repo: Repo = request.app["mini_repo"]
     result = await perform(
-        _action_context(request, admin),
+        _action_context(request, admin, access),
         scope,  # type: ignore[arg-type]
         target,
         str(body.get("action") or ""),
@@ -563,17 +570,19 @@ async def _keys_payload(request: web.Request, admin: Any) -> dict[str, Any]:
     }
 
 
-async def _require_superadmin(request: web.Request):
-    """The admin panel: a super-admin or an admin (owner, 2026-10-28)."""
+async def _require(request: web.Request, need: roles.Need) -> tuple[Any, roles.Access]:
+    """Who is asking and what they may do (#232). `chat` lets in anybody
+    with a chat to administer; the route checks which chat."""
     from bot.web.mini_api import _require_user
 
     user = await _require_user(request)
-    repo: Repo = request.app["mini_repo"]
-    if not request.app["mini_settings"].is_superadmin(user.tg_id) and not roles.runs_the_app(
-        await repo.person_role(user.person_id)
-    ):
-        raise web.HTTPForbidden(text="admin only")
-    return user
+    access = await roles.access_of_person(
+        request.app["mini_repo"], request.app["mini_settings"], user.person_id, user.tg_id
+    )
+    allowed = access.any if need == "chat" else access.allows(need)
+    if not allowed:
+        raise web.HTTPForbidden(text=f"{need} only")
+    return user, access
 
 
 async def _role_giver(request: web.Request):
@@ -622,3 +631,63 @@ async def handle_role_put(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "fixed"}, status=409)
     await repo.set_person_role(person, None if role == roles.USER else role)
     return web.json_response({"ok": True, "role": role})
+
+
+# ----------------------------------------------------------------- chat admin
+
+# One per chat (#232): an app admin appoints and removes; the chat admin
+# hands their own role on, and loses it. The candidates are the chat's known
+# members — subscribed, or seen writing there — as in the bot.
+
+
+async def _chat_admin_payload(repo: Repo, chat_id: int, access: roles.Access, me: int | None):
+    current = await repo.chat_admin(chat_id)
+    candidates = [
+        {"tg_id": tg_id, "person_id": person, "name": person_name(person_id=person, handle=handle)}
+        for tg_id, person, handle in await repo.chat_admin_candidates(chat_id)
+        if tg_id != current
+    ]
+    return {
+        "admin": None
+        if current is None
+        else {"tg_id": current, "name": await tg_name(repo, current)},
+        "candidates": candidates,
+        # The chat admin themselves hands the role on; an app admin appoints.
+        "hand_on": not access.app,
+        "can_remove": access.app and current is not None,
+    }
+
+
+async def handle_chat_admin_get(request: web.Request) -> web.Response:
+    admin, access = await _require(request, "chat")
+    chat = await _chat_of(request, access)
+    repo: Repo = request.app["mini_repo"]
+    return web.json_response(await _chat_admin_payload(repo, chat.chat_id, access, admin.tg_id))
+
+
+async def handle_chat_admin_put(request: web.Request) -> web.Response:
+    admin, access = await _require(request, "chat")
+    chat = await _chat_of(request, access)
+    repo: Repo = request.app["mini_repo"]
+    try:
+        tg_id = int(((await request.json()) or {}).get("tg_id"))
+    except (TypeError, ValueError) as exc:
+        raise web.HTTPBadRequest(text="bad tg_id") from exc
+    if tg_id not in {row[0] for row in await repo.chat_admin_candidates(chat.chat_id)}:
+        return web.json_response({"ok": False, "error": "not_a_member"}, status=400)
+    await repo.set_chat_admin(chat.chat_id, tg_id, admin.tg_id)
+    bot = request.app.get("mini_bot")
+    if bot is not None:
+        await tell_new_chat_admin(bot, repo, tg_id, chat)
+    after = await roles.access_of_person(
+        repo, request.app["mini_settings"], admin.person_id, admin.tg_id
+    )
+    return web.json_response({"ok": True, "still": after.chat(chat.chat_id)})
+
+
+async def handle_chat_admin_delete(request: web.Request) -> web.Response:
+    admin, access = await _require(request, "admin")
+    chat = await _chat_of(request, access)
+    repo: Repo = request.app["mini_repo"]
+    await repo.set_chat_admin(chat.chat_id, None, admin.tg_id)
+    return web.json_response(await _chat_admin_payload(repo, chat.chat_id, access, admin.tg_id))

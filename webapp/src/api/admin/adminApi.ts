@@ -3,6 +3,7 @@ import { ADMIN_ROUTES, API_BASE_ROUTES } from "../../core/constants/routes";
 import type {
   AdminAction,
   AdminActionStep,
+  AdminChatAdmin,
   AdminChatRow,
   AdminHome,
   AdminKeys,
@@ -93,6 +94,20 @@ export class AdminApi extends BaseApi {
     value: AdminSetting["value"],
   ): Promise<AdminSettings> {
     return this.patch<AdminSettings>(initData, ADMIN_ROUTES.CHAT_SETTINGS(chatId), { key, value });
+  }
+
+  /** A chat's admin and who the role may go to (#232). */
+  fetchChatAdmin(initData: string, chatId: number): Promise<AdminChatAdmin> {
+    return this.get<AdminChatAdmin>(initData, ADMIN_ROUTES.CHAT_ADMIN(chatId));
+  }
+
+  /** Appoints (an app admin) or hands the role on (the chat admin, who loses it: `still` false). */
+  putChatAdmin(initData: string, chatId: number, tgId: number): Promise<{ ok: boolean; still: boolean }> {
+    return this.put<{ ok: boolean; still: boolean }>(initData, ADMIN_ROUTES.CHAT_ADMIN(chatId), { tg_id: tgId });
+  }
+
+  deleteChatAdmin(initData: string, chatId: number): Promise<AdminChatAdmin> {
+    return this.delete<AdminChatAdmin>(initData, ADMIN_ROUTES.CHAT_ADMIN(chatId));
   }
 
 }

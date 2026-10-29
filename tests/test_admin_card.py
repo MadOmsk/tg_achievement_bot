@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from bot.db.repo import AchievementRow, Repo
 from bot.i18n import static_i18n
+from bot.services.roles import FULL
 from bot.util import utcnow
 from bot.views.admin import render_user_card
 
@@ -344,7 +345,7 @@ async def test_the_reset_asks_first_naming_the_account(repo: Repo, settings, mon
     callback = _FakeCallback("a:x:a:p1.psn.acc-1:reset:0")
 
     await admin_handlers.admin_action(  # type: ignore[arg-type]
-        callback, repo, None, None, None, None, settings, static_i18n("admin", "ru")
+        callback, repo, None, None, None, None, settings, static_i18n("admin", "ru"), FULL
     )
 
     assert drawn, "the prompt never rendered"
@@ -413,7 +414,7 @@ async def test_admin_delete_user_flow(repo: Repo, settings, i18n, monkeypatch) -
     async def tap(data: str) -> _FakeCallback:
         callback = _FakeCallback(data)
         await admin_handlers.admin_action(  # type: ignore[arg-type]
-            callback, repo, None, None, None, None, settings, i18n
+            callback, repo, None, None, None, None, settings, i18n, FULL
         )
         return callback
 

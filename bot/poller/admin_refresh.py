@@ -27,6 +27,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.service_health import DEFAULT_KEY_CHECK_INTERVAL_MIN, KEY_CHECK_INTERVAL_KEY
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.admin_credentials import AdminCredentials
+from bot.services.roles import SUPERADMIN
 from bot.util import parse_iso, utcnow
 from bot.views.admin_home import render_admin_home
 
@@ -64,10 +65,14 @@ class AdminPanelRefresh:
     async def _refresh_one(self, row: AdminPanelRefreshRow) -> None:
         # One row per super-admin, so the panel being redrawn always belongs
         # to exactly one known person — rendered in their own language (#48).
+        person = await self._repo.person_id(row.admin_id)
         text, markup = await render_admin_home(
             self._repo,
             self._credentials,
-            locale=await self._repo.user_locale(await self._repo.person_id(row.admin_id)),
+            locale=await self._repo.user_locale(person),
+            # The column holds every super-admin, the environment's included
+            # (written on every start): only theirs shows the keys (#232).
+            keys=person is not None and await self._repo.person_role(person) == SUPERADMIN,
         )
         try:
             await self._bot.edit_message_text(

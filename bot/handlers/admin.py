@@ -1,8 +1,9 @@
 """/admin — the operator's screen (SPEC 6.4). UI only: all data comes from services.
 
-One message that redraws itself, like the user panel. Access is the
-SUPERADMIN_TG_IDS list from the config, checked on the router so that no single
-handler can forget it.
+One message that redraws itself, like the user panel. Who gets in is checked
+on the router (#232, services/roles.py): an app admin or a super-admin, or a
+chat admin — who sees only their chats. The filter hands every handler the
+person's `access`, and each screen checks what it needs of it.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from aiogram_i18n import I18nContext
 
 from bot.config import Settings
 from bot.db.repo import Repo
-from bot.handlers.delivery import send_picture_samples, send_promo
+from bot.handlers.delivery import send_picture_samples, send_promo, tell_new_chat_admin
 from bot.i18n import translator
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
@@ -50,17 +51,20 @@ from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
     SettingValueError,
 )
+from bot.services.roles import Access
 from bot.views import Screen
 from bot.views.admin import (
     _cancel_input_keyboard,
     find_chat,
     global_actions,
     render_action_confirm,
+    render_chat_admin_pick,
     render_chat_card,
     render_chat_list,
     render_keys,
     render_user_card,
     render_user_list,
+    tg_name,
 )
 from bot.views.admin_home import render_admin_home
 from bot.views.admin_settings import (
@@ -76,21 +80,26 @@ log = logging.getLogger(__name__)
 router = Router(name="admin")
 
 
-class IsSuperadmin(BaseFilter):
-    """/admin: a super-admin or an admin (owner, 2026-10-28; services/roles.py)."""
+class AdminAccess(BaseFilter):
+    """Anybody with something to administer (#232): an app admin, a
+    super-admin, a chat admin. Hands the handler their `access`."""
 
-    async def __call__(self, event: TelegramObject, settings: Settings, repo: Repo) -> bool:
+    async def __call__(
+        self, event: TelegramObject, settings: Settings, repo: Repo
+    ) -> bool | dict[str, Any]:
         user = getattr(event, "from_user", None)
         if user is None:
             return False
-        if settings.is_superadmin(user.id):
-            return True
-        person = await repo.person_id(user.id)
-        return person is not None and roles.runs_the_app(await repo.person_role(person))
+        access = await roles.access_of(repo, settings, user.id)
+        return {"access": access} if access.any else False
 
 
-router.message.filter(IsSuperadmin())
-router.callback_query.filter(IsSuperadmin())
+router.message.filter(AdminAccess())
+router.callback_query.filter(AdminAccess())
+
+
+async def _refuse(callback: CallbackQuery, locale: str) -> None:
+    await callback.answer(translator("admin", locale)("admin-not-allowed"), show_alert=True)
 
 
 async def _replace_admin_home(
@@ -101,6 +110,7 @@ async def _replace_admin_home(
     admin_credentials: AdminCredentials,
     admin_id: int,
     prefix: str = "",
+    access: Access = roles.FULL,
 ) -> None:
     """Sends a fresh /admin home screen as a brand-new message, replacing
     whatever this admin had open before, and (re)arms the auto-refresh job
@@ -111,7 +121,9 @@ async def _replace_admin_home(
     # This one knows whose panel it is rebuilding, so it reads the locale
     # itself rather than making every caller carry it (#48).
     locale = await repo.user_locale(await repo.person_id(admin_id))
-    text, markup = await render_admin_home(repo, admin_credentials, locale=locale)
+    text, markup = await render_admin_home(
+        repo, admin_credentials, locale=locale, keys=access.superadmin
+    )
     if prefix:
         text = f"{prefix}\n\n{text}"
     previous = await repo.get_admin_panel_refresh(admin_id)
@@ -132,9 +144,27 @@ async def admin_command(
     steam_fetcher: SteamFetcher,
     admin_credentials: AdminCredentials,
     bot: Bot,
+    access: Access,
+    i18n: I18nContext,
 ) -> None:
     _awaiting_input.pop(message.from_user.id, None)  # a fresh /admin cancels any pending flow
-    await _replace_admin_home(bot, repo, fetcher, steam_fetcher, admin_credentials, message.chat.id)
+    if not access.app:
+        # A chat admin: their chats are the whole panel (#232).
+        await message.answer(*await _chat_admin_home(repo, access, i18n.locale))
+        return
+    await _replace_admin_home(
+        bot, repo, fetcher, steam_fetcher, admin_credentials, message.chat.id, access=access
+    )
+
+
+async def _chat_admin_home(
+    repo: Repo, access: Access, locale: str
+) -> tuple[str, InlineKeyboardMarkup]:
+    """A chat admin's /admin: their one chat's card, or the list of theirs."""
+    if len(access.chats) == 1:
+        (chat_id,) = access.chats
+        return await render_chat_card(repo, chat_id, locale=locale, access=access)
+    return await render_chat_list(repo, locale=locale, access=access)
 
 
 @router.callback_query(F.data == "a:noop")
@@ -153,14 +183,16 @@ async def admin_home(
     steam_fetcher: SteamFetcher,
     admin_credentials: AdminCredentials,
     i18n: I18nContext,
+    access: Access,
 ) -> None:
     _awaiting_input.pop(callback.from_user.id, None)
+    if not access.app:
+        await _redraw(callback, *await _chat_admin_home(repo, access, i18n.locale))
+        return
     await _redraw(
         callback,
         *await render_admin_home(
-            repo,
-            admin_credentials,
-            locale=i18n.locale,
+            repo, admin_credentials, locale=i18n.locale, keys=access.superadmin
         ),
     )
 
@@ -189,16 +221,22 @@ class AwaitingAdminTextInput(BaseFilter):
 
 @router.callback_query(F.data == "a:keys")
 async def keys_menu(
-    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext
+    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
 ) -> None:
+    if not access.superadmin:
+        await _refuse(callback, i18n.locale)
+        return
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(callback, *await render_keys(admin_credentials, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:keyset:"))
 async def keys_set(
-    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext
+    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
 ) -> None:
+    if not access.superadmin:
+        await _refuse(callback, i18n.locale)
+        return
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
     name = callback.data.rsplit(":", 1)[1]
@@ -213,8 +251,11 @@ async def keys_set(
 
 @router.callback_query(F.data.startswith("a:keyclr:"))
 async def keys_clear(
-    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext
+    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
 ) -> None:
+    if not access.superadmin:
+        await _refuse(callback, i18n.locale)
+        return
     assert callback.data is not None
     name = callback.data.rsplit(":", 1)[1]
     if name in admin_credentials:
@@ -231,27 +272,32 @@ async def admin_text_input_cancel(
     steam_fetcher: SteamFetcher,
     admin_credentials: AdminCredentials,
     i18n: I18nContext,
+    access: Access,
 ) -> None:
     """The way out of a still-armed key/NPSSO retry (Follow-up 2026-09-06,
     found live: a stray later message got misread as the next answer once
     nobody explicitly cancelled) — drops back to the admin home screen."""
     _awaiting_input.pop(callback.from_user.id, None)
+    if not access.app:
+        await _redraw(callback, *await _chat_admin_home(repo, access, i18n.locale))
+        return
     await _redraw(
         callback,
         *await render_admin_home(
-            repo,
-            admin_credentials,
-            locale=i18n.locale,
+            repo, admin_credentials, locale=i18n.locale, keys=access.superadmin
         ),
     )
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
 async def admin_text_input(
-    message: Message, admin_credentials: AdminCredentials, i18n: I18nContext
+    message: Message, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
+    if not access.superadmin:
+        _awaiting_input.pop(message.from_user.id, None)
+        return
     pending = _awaiting_input.get(message.from_user.id)
     assert pending is not None
     name = pending[0].removeprefix(_KEY_PENDING)
@@ -292,43 +338,71 @@ _SETTING_PENDING = "set:"
 
 
 @router.callback_query(F.data == "a:set")
-async def settings_home(callback: CallbackQuery, i18n: I18nContext) -> None:
+async def settings_home(callback: CallbackQuery, i18n: I18nContext, access: Access) -> None:
+    if not access.app:
+        await _refuse(callback, i18n.locale)
+        return
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(callback, *render_settings_home(locale=i18n.locale).as_pair())
 
 
 @router.callback_query(F.data.startswith("a:sg:"))
-async def settings_group(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def settings_group(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
     group = callback.data.split(":", 2)[2]
+    if not access.app:
+        await _refuse(callback, i18n.locale)
+        return
     if group not in GROUPS["global"]:
         await callback.answer()
         return
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *(await _global_group(repo, group, locale=i18n.locale)).as_pair())
+    await _redraw(
+        callback, *(await _global_group(repo, group, locale=i18n.locale, access=access)).as_pair()
+    )
 
 
 @router.callback_query(F.data.startswith("a:cg:"))
-async def chat_settings_group(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def chat_settings_group(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
     _prefix, _action, chat_raw, group = callback.data.split(":")
+    if not access.chat(int(chat_raw)):
+        await _refuse(callback, i18n.locale)
+        return
     _awaiting_input.pop(callback.from_user.id, None)
     await _redraw(
-        callback, *await render_chat_card(repo, int(chat_raw), locale=i18n.locale, section=group)
+        callback,
+        *await render_chat_card(
+            repo, int(chat_raw), locale=i18n.locale, section=group, access=access
+        ),
     )
 
 
 @router.callback_query(F.data.startswith("a:s:"))
-async def setting_open(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def setting_open(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
-    await _open_setting(callback, repo, "global", callback.data.split(":", 2)[2], None, i18n)
+    key = callback.data.split(":", 2)[2]
+    await _open_setting(callback, repo, "global", key, None, i18n, access)
 
 
 @router.callback_query(F.data.startswith("a:cs:"))
-async def chat_setting_open(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def chat_setting_open(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
     _prefix, _action, chat_raw, key = callback.data.split(":")
-    await _open_setting(callback, repo, "chat", key, int(chat_raw), i18n)
+    await _open_setting(callback, repo, "chat", key, int(chat_raw), i18n, access)
+
+
+def _may_set(access: Access, scope: Scope, chat_id: int | None) -> bool:
+    """A global setting is an app admin's, a chat's its chat admin's (#232)."""
+    return access.app if scope == "global" else access.chat(chat_id)
 
 
 async def _current(repo: Repo, scope: Scope, chat_id: int | None) -> dict[str, Any] | None:
@@ -345,8 +419,12 @@ async def _open_setting(
     key: str,
     chat_id: int | None,
     i18n: I18nContext,
+    access: Access,
 ) -> None:
     _ = translator("admin", i18n.locale)
+    if not _may_set(access, scope, chat_id):
+        await _refuse(callback, i18n.locale)
+        return
     try:
         setting = find_setting(scope, key)
     except KeyError:
@@ -361,7 +439,7 @@ async def _open_setting(
         await set_setting(
             repo, scope, key, not current[key], callback.from_user.id, chat_id=chat_id
         )
-        await _show_group(callback, repo, setting, chat_id, i18n.locale)
+        await _show_group(callback, repo, setting, chat_id, i18n.locale, access)
         return
     if setting.options():
         screen = render_setting_choices(
@@ -375,17 +453,21 @@ async def _open_setting(
 
 
 @router.callback_query(F.data.startswith("a:sv:"))
-async def setting_pick(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def setting_pick(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
     _prefix, _action, key, index = callback.data.split(":")
-    await _pick(callback, repo, "global", key, int(index), None, i18n)
+    await _pick(callback, repo, "global", key, int(index), None, i18n, access)
 
 
 @router.callback_query(F.data.startswith("a:csv:"))
-async def chat_setting_pick(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def chat_setting_pick(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
     _prefix, _action, chat_raw, key, index = callback.data.split(":")
-    await _pick(callback, repo, "chat", key, int(index), int(chat_raw), i18n)
+    await _pick(callback, repo, "chat", key, int(index), int(chat_raw), i18n, access)
 
 
 async def _pick(
@@ -396,8 +478,12 @@ async def _pick(
     index: int,
     chat_id: int | None,
     i18n: I18nContext,
+    access: Access,
 ) -> None:
     _ = translator("admin", i18n.locale)
+    if not _may_set(access, scope, chat_id):
+        await _refuse(callback, i18n.locale)
+        return
     try:
         setting = find_setting(scope, key)
         option = setting.options()[index]
@@ -405,24 +491,32 @@ async def _pick(
         await callback.answer(_("admin-settings-choice-retry"), show_alert=True)
         return
     await set_setting(repo, scope, key, option, callback.from_user.id, chat_id=chat_id)
-    await _show_group(callback, repo, setting, chat_id, i18n.locale)
+    await _show_group(callback, repo, setting, chat_id, i18n.locale, access)
 
 
 async def _show_group(
-    callback: CallbackQuery, repo: Repo, setting: Setting, chat_id: int | None, locale: str
+    callback: CallbackQuery,
+    repo: Repo,
+    setting: Setting,
+    chat_id: int | None,
+    locale: str,
+    access: Access,
 ) -> None:
     if setting.scope == "global":
-        screen = await _global_group(repo, setting.group, locale=locale)
+        screen = await _global_group(repo, setting.group, locale=locale, access=access)
         await _redraw(callback, *screen.as_pair())
         return
     assert chat_id is not None
     await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=locale, section=setting.group)
+        callback,
+        *await render_chat_card(repo, chat_id, locale=locale, section=setting.group, access=access),
     )
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"))
-async def setting_number_input(message: Message, repo: Repo, i18n: I18nContext) -> None:
+async def setting_number_input(
+    message: Message, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     """A number typed for the setting opened last; anything else stays the
     business of whatever is waiting for it."""
     _ = translator("admin", i18n.locale)
@@ -433,6 +527,9 @@ async def setting_number_input(message: Message, repo: Repo, i18n: I18nContext) 
     scope_raw, _sep, key = pending[0].removeprefix(_SETTING_PENDING).partition(":")
     scope: Scope = "chat" if scope_raw == "chat" else "global"
     chat_id = pending[1]
+    if not _may_set(access, scope, chat_id):
+        del _awaiting_input[message.from_user.id]
+        return
     setting = find_setting(scope, key)
     try:
         value = await set_setting(
@@ -448,12 +545,14 @@ async def setting_number_input(message: Message, repo: Repo, i18n: I18nContext) 
         value=value_label(setting, value, locale=i18n.locale),
     )
     if scope == "global":
-        screen = await _global_group(repo, setting.group, locale=i18n.locale, prefix=saved)
+        screen = await _global_group(
+            repo, setting.group, locale=i18n.locale, prefix=saved, access=access
+        )
         text, markup = screen.as_pair()
     else:
         assert chat_id is not None
         card, markup = await render_chat_card(
-            repo, chat_id, locale=i18n.locale, section=setting.group
+            repo, chat_id, locale=i18n.locale, section=setting.group, access=access
         )
         text = f"{saved}\n\n{card}"
     await message.answer(text, reply_markup=markup)
@@ -468,11 +567,19 @@ def _retry_text(exc: SettingValueError, _: Callable[..., str]) -> str:
 
 
 @router.callback_query(F.data.startswith("a:mdel:"))
-async def chat_messages_menu(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def chat_messages_menu(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.split(":")[2])
+    if not access.chat(chat_id):
+        await _refuse(callback, i18n.locale)
+        return
     await _redraw(
-        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, section="messages")
+        callback,
+        *await render_chat_card(
+            repo, chat_id, locale=i18n.locale, section="messages", access=access
+        ),
     )
 
 
@@ -480,7 +587,12 @@ async def chat_messages_menu(callback: CallbackQuery, repo: Repo, i18n: I18nCont
 
 
 @router.callback_query(F.data.startswith("a:users:"))
-async def users_page(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def users_page(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
+    if not access.app:
+        await _refuse(callback, i18n.locale)
+        return
     assert callback.data is not None
     page = int(callback.data.rsplit(":", 1)[1])
     await _redraw(callback, *await render_user_list(repo, page, locale=i18n.locale))
@@ -500,28 +612,40 @@ async def _not_found(callback: CallbackQuery, locale: str) -> None:
 
 
 @router.callback_query(F.data.startswith("a:u:"))
-async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def user_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access) -> None:
+    if not access.app:
+        await _refuse(callback, i18n.locale)
+        return
     assert callback.data is not None
     person = await _subject(repo, callback.data.rsplit(":", 1)[1])
     if person is None:
         await _not_found(callback, i18n.locale)
         return
-    await _redraw(callback, *await render_user_card(repo, person, locale=i18n.locale))
+    await _redraw(
+        callback, *await render_user_card(repo, person, locale=i18n.locale, access=access)
+    )
 
 
 # --------------------------------------------------------------------- chats
 
 
 @router.callback_query(F.data == "a:chats")
-async def chats_list(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    await _redraw(callback, *await render_chat_list(repo, locale=i18n.locale))
+async def chats_list(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
+    await _redraw(callback, *await render_chat_list(repo, locale=i18n.locale, access=access))
 
 
 @router.callback_query(F.data.startswith("a:chat:"))
-async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
+async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access) -> None:
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
-    await _redraw(callback, *await render_chat_card(repo, chat_id, locale=i18n.locale))
+    if not access.chat(chat_id):
+        await _refuse(callback, i18n.locale)
+        return
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, access=access)
+    )
 
 
 # ------------------------------------------------------------------- actions
@@ -534,14 +658,16 @@ async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> N
 _SCOPES: dict[str, ActionScope] = {"u": "user", "a": "account", "c": "chat", "g": "global"}
 
 
-async def _global_group(repo: Repo, group: str, *, locale: str, prefix: str = "") -> Screen:
+async def _global_group(
+    repo: Repo, group: str, *, locale: str, prefix: str = "", access: Access = roles.FULL
+) -> Screen:
     """A global settings group, with the app's actions that sit in it."""
     return render_settings_group(
         group,
         await registry_values(repo, "global"),
         locale=locale,
         prefix=prefix,
-        actions=await global_actions(repo, locale=locale),
+        actions=await global_actions(repo, locale=locale, access=access),
     )
 
 
@@ -555,6 +681,7 @@ async def admin_action(
     psn_fetcher: PsnFetcher,
     settings: Settings,
     i18n: I18nContext,
+    access: Access,
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert callback.data is not None
@@ -585,6 +712,7 @@ async def admin_action(
         admin_id=callback.from_user.id,
         send_promo=promo,
         send_picture_samples=samples,
+        access=access,
     )
     section = "messages" if action_id != "promo" and scope == "chat" else None
     if scope == "global":
@@ -606,7 +734,9 @@ async def admin_action(
         await _redraw(callback, *await render_user_list(repo, 0, locale=i18n.locale))
         return
     if scope == "global":
-        screen = await _global_group(repo, _global_section(action_id), locale=i18n.locale)
+        screen = await _global_group(
+            repo, _global_section(action_id), locale=i18n.locale, access=access
+        )
         text, markup = screen.as_pair()
     elif scope == "chat":
         text, markup = await render_chat_card(
@@ -614,12 +744,137 @@ async def admin_action(
             target.chat_id,
             locale=i18n.locale,
             section=section,  # type: ignore[arg-type]
+            access=access,
         )
     else:
-        text, markup = await render_user_card(repo, target.person, locale=i18n.locale)  # type: ignore[arg-type]
+        text, markup = await render_user_card(
+            repo,
+            target.person,  # type: ignore[arg-type]
+            locale=i18n.locale,
+            access=access,
+        )
     if result.text and result.show == "card":
         text = f"{text}\n\n{result.text}"
     await _redraw(callback, text, markup)
+
+
+# -------------------------------------------------------------- chat admins
+
+# `a:ca:<chat>` lists who the role may go to; `a:cap:<chat>:<tg>` asks
+# whether; `a:cay:<chat>:<tg>` does it; `a:cax:<chat>:<step>` removes it.
+# An app admin appoints and removes; the chat admin hands their own role on
+# and loses it (#232).
+
+
+@router.callback_query(F.data.startswith("a:ca:"))
+async def chat_admin_pick(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
+    assert callback.data is not None
+    chat_id = int(callback.data.split(":")[2])
+    if not access.chat(chat_id):
+        await _refuse(callback, i18n.locale)
+        return
+    screen = await render_chat_admin_pick(
+        repo, chat_id, locale=i18n.locale, access=access, me=callback.from_user.id
+    )
+    await _redraw(callback, *screen.as_pair())
+
+
+@router.callback_query(F.data.startswith("a:cap:"))
+async def chat_admin_ask(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
+    _ = translator("admin", i18n.locale)
+    assert callback.data is not None
+    _prefix, _action, chat_raw, tg_raw = callback.data.split(":")
+    chat_id, tg_id = int(chat_raw), int(tg_raw)
+    chat = await find_chat(repo, chat_id)
+    if chat is None or not access.chat(chat_id):
+        await _refuse(callback, i18n.locale)
+        return
+    key = "admin-chat-admin-confirm" if access.app else "admin-chat-admin-confirm-hand-on"
+    text = _(key, name=await tg_name(repo, tg_id), title=chat.title or chat_id)
+    screen = render_action_confirm(
+        Confirm(text, _("admin-chat-admin-confirm-yes"), 1),
+        yes=f"a:cay:{chat_id}:{tg_id}",
+        back=f"a:ca:{chat_id}",
+        locale=i18n.locale,
+    )
+    await _redraw(callback, *screen.as_pair())
+
+
+@router.callback_query(F.data.startswith("a:cay:"))
+async def chat_admin_set(
+    callback: CallbackQuery,
+    repo: Repo,
+    bot: Bot,
+    settings: Settings,
+    i18n: I18nContext,
+    access: Access,
+) -> None:
+    _ = translator("admin", i18n.locale)
+    assert callback.data is not None
+    _prefix, _action, chat_raw, tg_raw = callback.data.split(":")
+    chat_id, tg_id = int(chat_raw), int(tg_raw)
+    chat = await find_chat(repo, chat_id)
+    if chat is None or not access.chat(chat_id):
+        await _refuse(callback, i18n.locale)
+        return
+    candidates = {row[0] for row in await repo.chat_admin_candidates(chat_id)}
+    if tg_id not in candidates:
+        await _refuse(callback, i18n.locale)
+        return
+    await repo.set_chat_admin(chat_id, tg_id, callback.from_user.id)
+    name = await tg_name(repo, tg_id)
+    await tell_new_chat_admin(bot, repo, tg_id, chat)
+    if access.app:
+        await callback.answer(_("admin-chat-admin-set", name=name))
+        text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale, access=access)
+        await _redraw(callback, text, markup)
+        return
+    # The role was handed on: whoever held it sees no card of that chat now.
+    after = await roles.access_of(repo, settings, callback.from_user.id)
+    done = _("admin-chat-admin-handed-on", name=name, title=chat.title or chat_id)
+    if after.any:
+        text, markup = await _chat_admin_home(repo, after, i18n.locale)
+        await _redraw(callback, f"{done}\n\n{text}", markup)
+    else:
+        await _redraw(callback, done, InlineKeyboardMarkup(inline_keyboard=[]))
+
+
+@router.callback_query(F.data.startswith("a:cax:"))
+async def chat_admin_remove(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
+    _ = translator("admin", i18n.locale)
+    assert callback.data is not None
+    _prefix, _action, chat_raw, step = callback.data.split(":")
+    chat_id = int(chat_raw)
+    chat = await find_chat(repo, chat_id)
+    current = await repo.chat_admin(chat_id)
+    if chat is None or not access.app:
+        await _refuse(callback, i18n.locale)
+        return
+    if current is not None and step == "0":
+        text = _(
+            "admin-chat-admin-remove-confirm",
+            name=await tg_name(repo, current),
+            title=chat.title or chat_id,
+        )
+        screen = render_action_confirm(
+            Confirm(text, _("admin-chat-admin-confirm-yes"), 1),
+            yes=f"a:cax:{chat_id}:1",
+            back=f"a:ca:{chat_id}",
+            locale=i18n.locale,
+        )
+        await _redraw(callback, *screen.as_pair())
+        return
+    await repo.set_chat_admin(chat_id, None, callback.from_user.id)
+    await callback.answer(_("admin-chat-admin-removed"))
+    await _redraw(
+        callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, access=access)
+    )
 
 
 async def _redraw(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup) -> None:

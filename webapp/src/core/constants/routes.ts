@@ -51,5 +51,7 @@ export const ADMIN_ROUTES = {
   ROLE: (personId: number) => `/users/p${personId}/role`,
   CHATS: "/chats",
   CHAT_SETTINGS: (chatId: number) => `/chats/${chatId}/settings`,
+  /** A chat's one admin (#232). */
+  CHAT_ADMIN: (chatId: number) => `/chats/${chatId}/admin`,
   ACTIONS: "/actions",
 } as const;
