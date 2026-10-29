@@ -392,5 +392,6 @@ admin-chat-admin-you =
     👤 Ты теперь админ чата «{ $title }».
 
     Его настройки и сообщения — в /admin, или кнопкой «Управление чатом» в /panel группы.
+admin-chat-admin-only = Доступно только для администратора чата
 admin-not-allowed = Это не для тебя.
 admin-chats-mine-empty = Ты пока не админ ни одного чата.

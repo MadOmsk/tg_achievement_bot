@@ -392,5 +392,6 @@ admin-chat-admin-you =
     👤 You are now the admin of «{ $title }».
 
     Its settings and messages are in /admin, or under «Manage the chat» in the group's /panel.
+admin-chat-admin-only = Only for the chat admin
 admin-not-allowed = That's not for you.
 admin-chats-mine-empty = You don't admin any chat yet.

@@ -586,7 +586,7 @@ async def _open_chat_admin(
         return
     access = await roles.access_of(repo, settings, tg_id)
     if not access.chat(chat_id):
-        await message.answer(gettext("admin", "admin-not-allowed", locale=i18n.locale))
+        await message.answer(gettext("admin", "admin-chat-admin-only", locale=i18n.locale))
         return
     text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale, access=access)
     await message.answer(text, reply_markup=markup)

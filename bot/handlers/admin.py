@@ -98,8 +98,8 @@ router.message.filter(AdminAccess())
 router.callback_query.filter(AdminAccess())
 
 
-async def _refuse(callback: CallbackQuery, locale: str) -> None:
-    await callback.answer(translator("admin", locale)("admin-not-allowed"), show_alert=True)
+async def _refuse(callback: CallbackQuery, locale: str, key: str = "admin-not-allowed") -> None:
+    await callback.answer(translator("admin", locale)(key), show_alert=True)
 
 
 async def _replace_admin_home(
@@ -573,7 +573,7 @@ async def chat_messages_menu(
     assert callback.data is not None
     chat_id = int(callback.data.split(":")[2])
     if not access.chat(chat_id):
-        await _refuse(callback, i18n.locale)
+        await _refuse(callback, i18n.locale, "admin-chat-admin-only")
         return
     await _redraw(
         callback,
@@ -641,7 +641,7 @@ async def chat_card(callback: CallbackQuery, repo: Repo, i18n: I18nContext, acce
     assert callback.data is not None
     chat_id = int(callback.data.rsplit(":", 1)[1])
     if not access.chat(chat_id):
-        await _refuse(callback, i18n.locale)
+        await _refuse(callback, i18n.locale, "admin-chat-admin-only")
         return
     await _redraw(
         callback, *await render_chat_card(repo, chat_id, locale=i18n.locale, access=access)
@@ -773,7 +773,7 @@ async def chat_admin_pick(
     assert callback.data is not None
     chat_id = int(callback.data.split(":")[2])
     if not access.chat(chat_id):
-        await _refuse(callback, i18n.locale)
+        await _refuse(callback, i18n.locale, "admin-chat-admin-only")
         return
     screen = await render_chat_admin_pick(
         repo, chat_id, locale=i18n.locale, access=access, me=callback.from_user.id
@@ -791,7 +791,7 @@ async def chat_admin_ask(
     chat_id, tg_id = int(chat_raw), int(tg_raw)
     chat = await find_chat(repo, chat_id)
     if chat is None or not access.chat(chat_id):
-        await _refuse(callback, i18n.locale)
+        await _refuse(callback, i18n.locale, "admin-chat-admin-only")
         return
     key = "admin-chat-admin-confirm" if access.app else "admin-chat-admin-confirm-hand-on"
     text = _(key, name=await tg_name(repo, tg_id), title=chat.title or chat_id)
@@ -819,7 +819,7 @@ async def chat_admin_set(
     chat_id, tg_id = int(chat_raw), int(tg_raw)
     chat = await find_chat(repo, chat_id)
     if chat is None or not access.chat(chat_id):
-        await _refuse(callback, i18n.locale)
+        await _refuse(callback, i18n.locale, "admin-chat-admin-only")
         return
     candidates = {row[0] for row in await repo.chat_admin_candidates(chat_id)}
     if tg_id not in candidates:
