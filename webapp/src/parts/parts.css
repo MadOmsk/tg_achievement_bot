@@ -1135,6 +1135,8 @@
   flex: 0 0 auto;
   width: 0.42em;
   height: 0.42em;
+  /* The sparkle's own margin in its box (2 of 24) taken back: its tip on the card's edge. */
+  margin-left: -0.035em;
   fill: var(--tertiary);
   transform: translateY(-0.04em);
 }
@@ -1234,4 +1236,49 @@
 
 .ach-kicker.mark-mythic {
   color: var(--tier-mythic);
+}
+
+/* Home's card stands on the season's cover, blurred, in its own colours:
+   only darkened a little so everything on it still reads. */
+.home-hero-cover {
+  position: absolute;
+  inset: -40px;
+  z-index: -2;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  max-width: none;
+  object-fit: cover;
+  filter: blur(8px) saturate(1.2) brightness(0.6);
+}
+
+/* A neutral shade over it, never a colour of ours. */
+.home-hero-art::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.home-hero-art .home-hero-deco {
+  display: none;
+}
+
+/* The season's name under the month, as the pass's head says it. */
+.home-hero-season {
+  margin: -4px 0 4px;
+  font-size: 22px;
+  font-weight: 800;
+  font-stretch: 112%;
+  line-height: 1.15;
+}
+
+/* Under the cover, and while the season is not known yet: a neutral ground. */
+.home-hero-art,
+.home-hero-wait {
+  background: var(--surface-3);
+}
+
+.home-hero-wait .home-hero-deco {
+  display: none;
 }

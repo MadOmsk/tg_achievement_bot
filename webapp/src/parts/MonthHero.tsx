@@ -2,6 +2,9 @@ import { useState } from "react";
 import { clubApi, type PersonPayload } from "../api";
 import { useLoad } from "../app/useLoad";
 import { PassStrip } from "../screens/season-pass/SeasonPassCard";
+import { usePass } from "../core/season-pass";
+import { passApi } from "../api/season-pass/seasonPassApi";
+import { useArtTheme } from "../app/artTheme";
 import { useApp } from "../app/context";
 import { tick } from "../core/haptic";
 import { formatMonth, currentMonth } from "../core/people-utils";
@@ -50,8 +53,24 @@ export function MonthHero({
   const label = formatMonth(month, locale, "sheet");
   // The pass is this month's: another month shows its race.
   const pass = season && month === currentMonth();
+  const passState = usePass(data);
+  // An earlier month's season, as the arrows switch to it.
+  const pastSeason = useLoad(season && !pass ? `hero-season:${month}` : null, () => passApi.fetchPass(data, { month }));
+  const shownSeason = !season ? null : pass ? passState : (pastSeason.data ?? null);
+  // The shown month's season cover, blurred under the card, and its name
+  // (Home's only). This month's is remembered on the device, so a visit
+  // draws it at once instead of the violet card first.
+  const remembered = pass && !passState ? recallSeason(month) : null;
+  if (pass && passState) rememberSeason(month, passState.image, passState.title);
+  const art = shownSeason?.image ?? remembered?.image ?? null;
+  const seasonTitle = shownSeason?.title ?? remembered?.title ?? null;
+  // Not known yet, nothing remembered: a quiet ground, never violet first.
+  const waiting = Boolean(season) && !art && (pass ? !passState : pastSeason.loading);
+  // …and its colours taken from that cover, as the pass page's are.
+  const artTheme = useArtTheme(art);
   return (
-    <section className="home-hero">
+    <section className={`home-hero${art ? " home-hero-art" : ""}${waiting ? " home-hero-wait" : ""}`} style={art ? artTheme.style : undefined}>
+      {art && <img src={art} alt="" className="home-hero-cover" aria-hidden="true" />}
       <span className="home-hero-deco shape-clover4" aria-hidden="true" />
       {onMonth ? (
         <div className="home-hero-nav">
@@ -63,6 +82,7 @@ export function MonthHero({
       ) : (
         <p className="home-hero-month">{label.split(" ")[0].toUpperCase()}</p>
       )}
+      {seasonTitle && <p className="home-hero-season clamp-1">{seasonTitle}</p>}
       {pick && onMonth && <MonthSheet months={list} value={month} onChange={onMonth} onClose={() => setPick(false)} />}
       <div className="home-hero-main">
         <div className="home-hero-text">
@@ -151,4 +171,23 @@ export function MonthHero({
       {pass && <PassStrip />}
     </section>
   );
+}
+
+const SEASON_KEY = "home-season";
+
+function recallSeason(month: string): { image: string | null; title: string | null } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SEASON_KEY) ?? "null");
+    return saved && saved.month === month ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberSeason(month: string, image: string | null, title: string | null): void {
+  try {
+    localStorage.setItem(SEASON_KEY, JSON.stringify({ month, image, title }));
+  } catch {
+    // A private window keeps nothing: the card waits for the server then.
+  }
 }
