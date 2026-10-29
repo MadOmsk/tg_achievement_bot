@@ -135,20 +135,28 @@ class XboxProfileSnapshot:
 
 
 class XboxClient:
-    def __init__(self, auth: XboxAuthService, limiter: RateLimiter | None = None) -> None:
+    def __init__(self, auth: XboxAuthService) -> None:
         self._auth = auth
-        self._limiter = limiter or RateLimiter(RATE_WINDOWS)
+        # One limiter per person (owner, 2026-10-29; #233): Microsoft's
+        # 300 / 5 min is each person's own budget, spent with their own
+        # token, so one busy player must not hold everybody else back.
+        self._limiters: dict[int, RateLimiter] = {}
 
     async def _acquire(self, person_id: int) -> None:
-        """A slot under the shared limiter, noted against the person whose
-        token the request rides on: Microsoft's budget is each person's."""
-        await self._limiter.acquire()
+        """A slot under the person's own limiter, noted against them."""
+        limiter = self._limiters.get(person_id)
+        if limiter is None:
+            limiter = self._limiters[person_id] = RateLimiter(RATE_WINDOWS)
+        await limiter.acquire()
         api_usage.record(api_usage.XBOX, person_id)
 
     def rate_limit_usage(self) -> list[tuple[int, int, float]]:
-        """(used, limit, window_seconds) for each achievements-service window
-        this client shares across every user (SPEC 4, 6.4)."""
-        return self._limiter.usage()
+        """(used, limit, window_seconds) for each window of the busiest
+        person's limiter — the one closest to Microsoft's limit."""
+        usages = [limiter.usage() for limiter in self._limiters.values()]
+        if not usages:
+            return [(0, limit, span) for limit, span in RATE_WINDOWS]
+        return max(usages, key=lambda usage: max(used / limit for used, limit, _ in usage))
 
     # ----------------------------------------------------------- presence
 

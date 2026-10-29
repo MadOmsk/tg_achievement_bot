@@ -254,3 +254,20 @@ async def test_every_achievements_answer_is_kept_whole() -> None:
     ((subject, source, payload),) = kept
     assert source == "xbox_achievements" and payload == MODERN_PAYLOAD
     assert ":c6:" in subject and "titleId=111" in subject
+
+
+async def test_each_person_has_their_own_rate_limit() -> None:
+    """Microsoft's 300 / 5 min is each person's (#233): one player's
+    requests never use up another's."""
+    client = _client(StubSession({}))
+    for _ in range(3):
+        await client._acquire(1)
+    await client._acquire(2)
+    assert client._limiters[1].usage()[0][0] == 3
+    assert client._limiters[2].usage()[0][0] == 1
+    assert client.rate_limit_usage()[0][0] == 3
+
+
+def test_rate_limit_usage_with_nobody_polled_yet() -> None:
+    client = _client(StubSession({}))
+    assert [used for used, _, _ in client.rate_limit_usage()] == [0, 0]
