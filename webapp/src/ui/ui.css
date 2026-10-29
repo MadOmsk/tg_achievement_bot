@@ -1596,3 +1596,21 @@ img:not([data-in]) {
   z-index: -1;
   border-radius: 0;
 }
+
+.detail-kicker {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--on-surface-3);
+}
+
+.detail-kicker.mark-rare {
+  color: var(--tier-epic);
+}
+
+.detail-kicker.mark-legendary {
+  color: var(--tier-legendary);
+}
+
+.detail-kicker.mark-mythic {
+  color: var(--tier-mythic);
+}

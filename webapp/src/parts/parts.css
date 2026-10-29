@@ -369,26 +369,19 @@
   border-radius: 6px;
 }
 
+/* What a developer's post is, as a word in its colour — as a post's kicker. */
 .kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
-  padding: 0 10px 0 8px;
-  border-radius: 12px;
-  font-size: 12.5px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
 .kind-patch {
-  background: var(--secondary-container);
-  color: var(--on-secondary-container);
+  color: var(--secondary);
 }
 
 .kind-news {
-  background: var(--tertiary-container);
-  color: var(--on-tertiary-container);
+  color: var(--tertiary);
 }
 
 .favs {

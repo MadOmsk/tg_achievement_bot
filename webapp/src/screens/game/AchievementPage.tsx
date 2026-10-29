@@ -71,8 +71,8 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
 
       <div className="detail">
         <div className="detail-meta">
-          <span className={`chip ${rare ? `chip-tier chip-tier-${rare}` : "chip-secondary"}`}>
-            {rare ? <span className="rare-mark shape-flower6" /> : <Icon name="trophy" size={14} />}
+          {/* The tier as a word in its colour, as a post's kicker is. */}
+          <span className={`detail-kicker${rare ? ` mark-${rare}` : ""}`}>
             {capital(tr(TIER_NAME[rare ?? "common"]))}
             {ach.rarity != null && ` · ${pct(ach.rarity, locale)}`}
           </span>
