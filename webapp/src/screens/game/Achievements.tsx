@@ -6,7 +6,7 @@ import { useLoad } from "../../app/useLoad";
 import { achOfList, pointsOf } from "../../app/views";
 import { groupLabel } from "../../core/game-utils";
 import { recall, remember } from "../../core/game-cache";
-import { dayLabel, num, plural } from "../../i18n";
+import { whenLabel } from "../../i18n";
 import { AchRow } from "../../parts/AchRow";
 import { PlatformPicker } from "../../parts/PlatformPicker";
 import { DoneMark } from "../../parts/DoneMark";
@@ -18,7 +18,9 @@ import { Cover } from "../../ui/Pic";
 import { Hero } from "../../ui/Hero";
 import { WaveRing } from "../../ui/WaveRing";
 import { GuideVideo } from "../../parts/GuideVideo";
+import { cleanName } from "./names";
 import "./Game.css";
+import { PointsCoin } from "../../parts/AchRow";
 
 type Filter = "earned" | "left";
 
@@ -119,7 +121,7 @@ export function Achievements({
         <AchRow
           ach={ach}
           plain
-          date={!theirs && a.is_unlocked && a.unlocked_at ? dayLabel(a.unlocked_at, locale) : null}
+          when={!theirs && a.is_unlocked && a.unlocked_at ? whenLabel(a.unlocked_at, locale, true) : null}
           extra={
             theirs || hasTip || hasVideo ? (
               <span className="list-extra">
@@ -144,7 +146,6 @@ export function Achievements({
   };
 
   const done = Boolean(d && d.achievements_total > 0 && d.achievements_unlocked >= d.achievements_total);
-  const share = d && d.achievements_total ? Math.round((d.achievements_unlocked / d.achievements_total) * 100) : null;
 
   const theme = useArtTheme(gameArtOf(`${platform}:${titleId}`, gameName) ?? d?.icon_url ?? cover);
   return (
@@ -156,15 +157,10 @@ export function Achievements({
           </WaveRing>
           {done && <DoneMark size={52} className="list-done" />}
         </span>
-        <p className="list-name t-title clamp-2">{gameName}</p>
-        {(theirs || (lists && lists.length > 1)) && (
+        <p className="list-name t-title clamp-2">{cleanName(gameName)}</p>
+        {theirs && <p className="list-whose">{tr("listProgressOf").replace("{name}", theirs.name)}</p>}
+        {lists && lists.length > 1 && (
           <span className="list-who">
-            {theirs && (
-              <span className="list-owner">
-                <Face personId={theirs.id} name={theirs.name} size={22} />
-                {theirs.name}
-              </span>
-            )}
             {lists && lists.length > 1 && (
             <PlatformPicker
               className="list-plat"
@@ -193,11 +189,11 @@ export function Achievements({
               {d.achievements_unlocked}
               <small>/{d.achievements_total}</small>
             </b>
-            {share != null && !done && <span className="list-pct">{`${share} %`}</span>}
             {score && score.allPts > 0 && (
-              <span className="list-gs">
-                {num(score.pts, locale)} / {num(score.allPts, locale)} {plural(locale, score.allPts, ["ptsOne", "ptsFew", "ptsMany"])}
-              </span>
+              <>
+                <span className="list-stats-sep" aria-hidden="true" />
+                <PointsCoin points={score.pts} total={score.allPts} className="list-coin" />
+              </>
             )}
           </span>
         )}
@@ -241,7 +237,12 @@ export function Achievements({
       )}
       {!d && list.error ? <Empty icon="refresh" title={tr("loadFailed")} action={<Button variant="tonal" onClick={list.reload}>{tr("retry")}</Button>} /> : null}
       {d && d.achievements.length === 0 && <Empty icon="trophy" title={tr("gameEmpty")} />}
-      {d && d.achievements.length > 0 && rows.length === 0 && <Empty icon="check" title={tr("emptyFilter")} />}
+      {d && d.achievements.length > 0 && rows.length === 0 &&
+        (shown === "left" ? (
+          <Empty icon="check" title={tr("allEarnedTitle")} text={tr("allEarnedText")} />
+        ) : (
+          <Empty icon="trophy" title={tr("noneEarnedTitle")} text={tr("noneEarnedText")} />
+        ))}
 
       <div className="list-body">
         {groups

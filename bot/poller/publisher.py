@@ -193,6 +193,7 @@ class Publisher:
         *,
         person_id: int | None = None,
         game: tuple[str, str] | None = None,
+        achievement: str | None = None,
     ) -> InlineKeyboardMarkup | None:
         if not self._settings or not (self._settings.mini_app_url or "").strip():
             return None
@@ -209,6 +210,7 @@ class Publisher:
             person_id=person_id,
             game=game,
             in_group=in_group,
+            achievement=achievement,
         )
 
     async def _person_label(self, person_id: int) -> str:
@@ -367,7 +369,14 @@ class Publisher:
                         ),
                         gallery=_gallery([item]),
                         items=[(xuid, item.title_id, item.achievement_id)],
-                        reply_markup=markup,
+                        # A single post's button opens that very achievement.
+                        reply_markup=await self._markup_for(
+                            chat.chat_id,
+                            chat.locale,
+                            person_id=person_id,
+                            game=game_ref,
+                            achievement=item.achievement_id,
+                        ),
                         backups=await self._backups(item),
                         art=await self._art([item]),
                     )

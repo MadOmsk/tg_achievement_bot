@@ -120,9 +120,9 @@ async def test_publisher_attaches_mini_app_markup_to_single_achievement(repo) ->
     assert job.reply_markup is not None
     button = job.reply_markup.inline_keyboard[0][0]
     assert button.text == "Открыть Mini App"
-    encoded_game = (
-        base64.urlsafe_b64encode(f"{item.platform}:{item.title_id}".encode()).decode().rstrip("=")
-    )
+    # A single post's button opens that very achievement.
+    raw = f"{item.platform}:{item.title_id}:{item.achievement_id}"
+    encoded_game = base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
     person = await repo.person_id(tg_id)
     assert button.url == f"https://t.me/testbot?startapp=c{chat_id}p{person}g{encoded_game}"
 

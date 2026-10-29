@@ -161,17 +161,34 @@ class _GamePageRepo:
             " ORDER BY e.edition_id",
             (game_id,),
         )
-        return [dict(row) for row in await cursor.fetchall()]
+        editions = [dict(row) for row in await cursor.fetchall()]
+        if not editions:
+            return editions
+        marks = ",".join("?" * len(editions))
+        cursor = await self._conn.execute(
+            "SELECT edition_id, name, item_kind, is_primary FROM edition_items"
+            f" WHERE edition_id IN ({marks}) ORDER BY is_primary DESC, rowid",
+            [e["edition_id"] for e in editions],
+        )
+        items: dict[int, list[dict[str, Any]]] = {}
+        for row in await cursor.fetchall():
+            items.setdefault(int(row["edition_id"]), []).append(dict(row))
+        for edition in editions:
+            edition["items"] = items.get(int(edition["edition_id"]), [])
+        return editions
 
     async def game_page_dlcs(self, game_id: int) -> list[dict[str, Any]]:
         """Every DLC of every version, with its console and its HLTB entry's
         main-story time when it has one."""
         cursor = await self._conn.execute(
             "SELECT d.dlc_id, d.name, d.name_ru, d.kind, d.release_date, d.image_url,"
-            "  d.on_sale, d.store_id, d.trophy_group_id, v.console, v.store,"
-            "  (SELECT e.comp_main FROM dlc_hltb dh JOIN hltb_entries e ON e.hltb_id = dh.hltb_id"
-            "    WHERE dh.dlc_id = d.dlc_id AND dh.source <> 'rejected' LIMIT 1) AS comp_main"
+            "  d.on_sale, d.store_id, d.trophy_group_id, d.description_en, v.console, v.store,"
+            "  e.hltb_id, e.comp_main, e.comp_plus, e.comp_100, e.review_score,"
+            "  e.rating_esrb, e.rating_pegi, e.comp_lvl_co, e.comp_lvl_mp"
             " FROM dlcs d JOIN versions v ON v.version_id = d.version_id"
+            " LEFT JOIN hltb_entries e ON e.hltb_id = ("
+            "   SELECT dh.hltb_id FROM dlc_hltb dh"
+            "   WHERE dh.dlc_id = d.dlc_id AND dh.source <> 'rejected' LIMIT 1)"
             " WHERE v.game_id = ?"
             " ORDER BY d.release_date IS NULL, d.release_date, d.dlc_id",
             (game_id,),

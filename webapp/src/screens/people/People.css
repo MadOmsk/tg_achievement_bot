@@ -292,3 +292,227 @@
 .pp-follow .btn {
   border-radius: 8px 8px var(--r-l) var(--r-l);
 }
+
+/* The head stands on their own picture, blurred and darkened, fading into
+   the page — as a post's head does. */
+.pp-backdrop {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+.pp-backdrop img {
+  position: absolute;
+  inset: -40px;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  object-fit: cover;
+  filter: blur(40px) saturate(1.5) brightness(0.55);
+  opacity: 0.9;
+}
+
+/* The counts as two figures and the follow button beside them: one row. */
+.pp-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px var(--gutter) 0;
+}
+
+.pp-figs {
+  flex: 1;
+  display: flex;
+  justify-content: space-around;
+  min-width: 0;
+}
+
+.pp-row:not(:has(.pp-follow)) .pp-figs {
+  justify-content: center;
+  gap: 48px;
+}
+
+.pp-figs > button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: inherit;
+}
+
+.pp-figs b {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.pp-figs span {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--on-surface-2);
+}
+
+.pp-row .pp-follow {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.pp-row .pp-follow .btn {
+  min-width: 0;
+  border-radius: var(--r-full);
+}
+
+.pp-skel-row {
+  align-self: stretch;
+}
+
+.pp-skel-fig {
+  display: block;
+  width: 72px;
+  height: 44px;
+  border-radius: var(--r-s);
+}
+
+.pp-skel-btn {
+  display: block;
+  width: 164px;
+  height: 48px;
+  border-radius: var(--r-full);
+}
+
+.pp-face {
+  position: relative;
+}
+
+/* The platforms' marks, overlapping the face's foot. */
+.pp-marks {
+  position: absolute;
+  left: 50%;
+  bottom: -10px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+}
+
+.pp-marks .acc-mark {
+  font-size: 11px;
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.pp-face + .pp-name {
+  margin-top: 8px;
+}
+
+.acc-row {
+  gap: 12px;
+}
+
+.acc-row-score {
+  flex: 0 0 auto;
+  font-size: 15px;
+}
+
+/* A person's page headed as a game's: the picture across the top, the face
+   on its lower edge, the name and the accounts beside it. */
+.pp-banner {
+  height: calc(220px + var(--safe-top));
+  border-radius: 0 0 44px 44px;
+  overflow: hidden;
+  background: var(--surface-3);
+}
+
+.pp-banner img,
+.pp-banner-empty {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pp-banner-face {
+  transform: scale(1.3);
+  filter: blur(24px) saturate(1.4) brightness(0.6);
+}
+
+.pp-head2 {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 0 var(--gutter);
+  margin-top: -40px;
+}
+
+.pp-head2 .pp-face {
+  flex: 0 0 auto;
+}
+
+/* The name, what they do and their accounts stay beside the face, no lower. */
+.pp-titles {
+  flex: 1;
+  min-width: 0;
+  padding-top: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.pp-name2 {
+  font-size: 24px;
+  font-weight: 800;
+  font-stretch: 112%;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.pp-titles .pp-status {
+  margin: 0;
+  max-width: 100%;
+}
+
+.pp-accs2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 2px;
+}
+
+/* The accounts as plain marks and numbers, no ground: quiet facts. */
+.pp-accs2 {
+  gap: 4px 14px;
+}
+
+.pp-accs2 .acc-chip {
+  height: 24px;
+  padding: 0;
+  gap: 6px;
+  background: none;
+  font-size: 13px;
+  color: var(--on-surface-2);
+}
+
+.pp-titles .pp-status {
+  font-size: 13px;
+}
+
+.pp-row {
+  margin-top: 16px;
+}
+
+.pp-skel-line {
+  display: block;
+  width: 110px;
+  height: 14px;
+  margin: 4px 0;
+  border-radius: 7px;
+}
+
+.pp-skel-acc {
+  display: block;
+  width: 96px;
+  height: 26px;
+  border-radius: var(--r-full);
+}
+
+.pp-titles .pp-skel-name {
+  margin: 0;
+}

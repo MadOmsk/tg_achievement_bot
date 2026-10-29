@@ -14,6 +14,7 @@ import { gameLines, MonthGames } from "../../parts/MonthGames";
 import { AchTile } from "../../parts/AchTile";
 import { achOfFeed } from "../../app/views";
 import { AccountChip } from "../../parts/AccountCard";
+import { gameArtOf } from "../../app/artTheme";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
 import { Face, faceSrc, knownName } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
@@ -88,6 +89,28 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
     };
   }, [personId]);
   const faceArt = useArtTheme(face);
+  // The banner: the art of the game of their latest achievement.
+  const latest = a?.feed?.[0];
+  const latestGame = useLoad(latest ? `pp-banner:${latest.platform}:${latest.title_id}` : null, () =>
+    gameApi.fetchGamePage(data, { platform: latest!.platform, titleId: latest!.title_id }),
+  );
+  // One picture, chosen once the game's page has answered and kept for this
+  // person: never one picture first and another a moment later.
+  const chosen =
+    latest && !latestGame.loading
+      ? latestGame.data?.art.hero ||
+        latestGame.data?.art.header ||
+        latestGame.data?.art.poster ||
+        gameArtOf(`${latest.platform}:${latest.title_id}`, latest.game) ||
+        latest.game_icon_url ||
+        null
+      : null;
+  const kept = useRef<{ person: number; src: string | null } | null>(null);
+  if (kept.current?.person !== personId) kept.current = null;
+  if (!kept.current && a && (!latest || !latestGame.loading)) kept.current = { person: personId, src: chosen };
+  const banner = kept.current?.src ?? null;
+  // Their own picture stands in only once it is known there is no game's art.
+  const bannerKnown = kept.current != null;
   const [roling, setRoling] = useState(false);
 
   return (
@@ -107,73 +130,99 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
         ) : null
       }
     >
-      <header className="pp-head">
-        <span className="pp-backdrop" aria-hidden="true" />
+      {/* Headed as a game is (owner, 2026-10-29): a picture across the top —
+          the art of the game of their latest achievement, else their own
+          picture blurred —, the face where a game's poster sits, the name
+          and the accounts beside it. */}
+      <div className="pp-banner">
+        {banner ? (
+          <img src={banner} alt="" />
+        ) : bannerKnown && face ? (
+          <img src={face} alt="" className="pp-banner-face" />
+        ) : (
+          <span className="pp-banner-empty" />
+        )}
+      </div>
+      <header className="pp-head2">
         <button type="button" className="pp-face" onClick={() => void faceSrc(personId).then((src) => src && openImage(src))} aria-label={name}>
-          <Face personId={personId} name={name || "?"} size={112} thinRing presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
+          <Face personId={personId} name={name || "?"} size={128} thinRing presence={presence?.playing ? "playing" : presence?.state === "Online" ? "online" : null} />
         </button>
-        {name ? <h1 className="pp-name">{name}</h1> : <span className="skel pp-skel-name" />}
-        {/* What they are doing and how they stand to you: one quiet line. */}
-        {(presence?.playing || presence?.state === "Online" || (!rel?.friends && rel?.followed_by) || rel?.blocked) && (
-          <p className="pp-status">
-            {(presence?.playing || presence?.state === "Online") && <span className={`pp-dot${presence?.playing ? " pp-dot-play" : ""}`} />}
-            {[
-              presence?.playing && presence.title_name ? `${tr("playing")} · ${presence.title_name}` : presence?.state === "Online" ? tr("idle") : null,
-              !rel?.friends && rel?.followed_by ? tr("followsYou") : null,
-              rel?.blocked ? tr("stateBlocked") : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        )}
-        {!hidden && (c?.activity?.platforms?.length ?? 0) > 0 && (
-          <div className="pp-accs">
-            {c!.activity!.platforms.map((p) => (
-              <AccountChip key={`${p.platform}:${p.name}`} p={p} />
-            ))}
-          </div>
-        )}
+        <div className="pp-titles">
+          {name ? <h1 className="pp-name2 clamp-2">{name}</h1> : <span className="skel pp-skel-name" />}
+          {!c && (
+            <>
+              <span className="skel pp-skel-line" />
+              <span className="pp-accs2">
+                <span className="skel pp-skel-acc" />
+                <span className="skel pp-skel-acc" />
+              </span>
+            </>
+          )}
+          {/* What they are doing and how they stand to you: one quiet line. */}
+          {(presence?.playing || presence?.state === "Online" || (!rel?.friends && rel?.followed_by) || rel?.blocked) && (
+            <p className="pp-status">
+              {(presence?.playing || presence?.state === "Online") && <span className={`pp-dot${presence?.playing ? " pp-dot-play" : ""}`} />}
+              <span className="clamp-1">
+                {[
+                  presence?.playing && presence.title_name ? `${tr("playing")} · ${presence.title_name}` : presence?.state === "Online" ? tr("idle") : null,
+                  !rel?.friends && rel?.followed_by ? tr("followsYou") : null,
+                  rel?.blocked ? tr("stateBlocked") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </p>
+          )}
+          {!hidden && (c?.activity?.platforms?.length ?? 0) > 0 && (
+            <div className="pp-accs2">
+              {c!.activity!.platforms.map((p) => (
+                <AccountChip key={`${p.platform}:${p.name}`} p={p} />
+              ))}
+            </div>
+          )}
+        </div>
       </header>
 
       {!c && (
         <div className="pp-skel" aria-hidden="true">
-          <span className="skel pp-skel-status" />
-          <span className="skel pp-skel-chip" />
-          <div className="pp-counts">
-            {[0, 1].map((i) => (
-              <span key={i} className="skel" />
-            ))}
+          <div className="pp-row pp-skel-row">
+            <div className="pp-figs">
+              {[0, 1].map((i) => (
+                <span key={i} className="skel pp-skel-fig" />
+              ))}
+            </div>
+            {!self && <span className="skel pp-skel-btn" />}
           </div>
-          {!self && <span className="skel pp-skel-follow" />}
         </div>
       )}
       {c && (
-        <div className="pp-counts">
-          <button type="button" onClick={() => (c.can_view || self) && open({ kind: "follows", personId: self ? null : personId, which: "following" })}>
-            <b className="t-num">{num(c.following, locale)}</b>
-            <span>{tr("peopleFollowing")}</span>
-          </button>
-          <button type="button" onClick={() => (c.can_view || self) && open({ kind: "follows", personId: self ? null : personId, which: "followers" })}>
-            <b className="t-num">{num(c.followers, locale)}</b>
-            <span>{tr("peopleFollowers")}</span>
-          </button>
-        </div>
-      )}
-      {/* The page's one action: following — filled to start, tonal once on. */}
-      {c && !self && rel && !rel.blocked && (
-        <div className="pp-follow" ref={followAt}>
-          <Button
-            wide
-            variant={rel.following ? "tonal" : "filled"}
-            icon={rel.following ? "check" : "plus"}
-            onClick={() => {
-              tick();
-              if (rel.following) setMenu(true);
-              else void follow();
-            }}
-          >
-            {rel.friends ? tr("friendsBtn") : rel.following ? tr("followingBtn") : rel.followed_by ? tr("followBack") : tr("follow")}
-          </Button>
+        <div className="pp-row">
+          <div className="pp-figs">
+            <button type="button" onClick={() => (c.can_view || self) && open({ kind: "follows", personId: self ? null : personId, which: "following" })}>
+              <b className="t-num">{num(c.following, locale)}</b>
+              <span>{tr("peopleFollowing")}</span>
+            </button>
+            <button type="button" onClick={() => (c.can_view || self) && open({ kind: "follows", personId: self ? null : personId, which: "followers" })}>
+              <b className="t-num">{num(c.followers, locale)}</b>
+              <span>{tr("peopleFollowers")}</span>
+            </button>
+          </div>
+          {/* The page's one action: following — filled to start, tonal once on. */}
+          {!self && rel && !rel.blocked && (
+            <div className="pp-follow" ref={followAt}>
+              <Button
+              variant={rel.following ? "tonal" : "filled"}
+              icon={rel.following ? "check" : "plus"}
+              onClick={() => {
+                tick();
+                if (rel.following) setMenu(true);
+                else void follow();
+              }}
+            >
+              {rel.friends ? tr("friendsBtn") : rel.following ? tr("followingBtn") : rel.followed_by ? tr("followBack") : tr("follow")}
+            </Button>
+            </div>
+          )}
         </div>
       )}
       {!self && rel && !rel.blocked && (

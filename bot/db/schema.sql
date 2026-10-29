@@ -1028,7 +1028,9 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
     user_agent  TEXT,
     created_at  TEXT NOT NULL,
     last_ok_at  TEXT,
-    failures    INTEGER NOT NULL DEFAULT 0
+    failures    INTEGER NOT NULL DEFAULT 0,
+    -- The app's address push was allowed on (141); NULL before it was kept.
+    origin      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_person ON push_subscriptions (person_id);
 

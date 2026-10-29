@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
+from difflib import SequenceMatcher
 from typing import Any
 
 from bot.services import game_art, x360_frame
@@ -278,13 +280,28 @@ def platforms_of(versions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+_STORE_ORDER = {"steam": 0, "xbox": 1, "psn": 2}
+
+
+def _newest_first(versions: list[dict[str, Any]], order: dict[str, int]) -> list[dict[str, Any]]:
+    """Versions the latest released first (owner, 2026-10-29: the gallery's
+    newest pictures lead — the stores date no single picture, a version's day
+    is the nearest date there is), the stores in `order` within a day."""
+    by_store = sorted(versions, key=lambda v: order.get(str(v.get("store")), 9))
+    dated = sorted(
+        (v for v in by_store if v.get("release_date")),
+        key=lambda v: str(v["release_date"]),
+        reverse=True,
+    )
+    return dated + [v for v in by_store if not v.get("release_date")]
+
+
 def screenshots_of(versions: list[dict[str, Any]]) -> list[str]:
-    """Pictures of the game being played, Steam's (the widest) first, each once."""
+    """Pictures of the game being played, the newest release's first (Steam's,
+    the widest, first within it), each once."""
     shots: list[str] = []
-    for store in ("steam", "xbox", "psn"):
-        for version in versions:
-            if version.get("store") != store:
-                continue
+    for version in _newest_first(versions, _STORE_ORDER):
+        if version.get("store") in _STORE_ORDER:
             for shot in _media(version.get("media")).get("screenshots") or []:
                 url = https(shot) if isinstance(shot, str) else None
                 if url and url not in shots:
@@ -296,13 +313,12 @@ def videos_of(versions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The trailers the stores keep links to (owner, 2026-10-26: the game
     page's gallery plays them): a file where the store has one (PSN's mp4),
     else its HLS stream, with the picture shown before it plays; each once,
-    Xbox's first (they come with a poster), then Steam's, then PSN's."""
+    the newest release's first, Xbox's first within it (they come with a
+    poster), then Steam's, then PSN's."""
     videos: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for store in ("xbox", "steam", "psn"):
-        for version in versions:
-            if version.get("store") != store:
-                continue
+    for version in _newest_first(versions, {"xbox": 0, "steam": 1, "psn": 2}):
+        if version.get("store") in ("xbox", "steam", "psn"):
             for raw in _media(version.get("media")).get("videos") or []:
                 if not isinstance(raw, dict):
                     continue
@@ -338,10 +354,24 @@ def _dlc_key(name: str, game: str) -> str:
     return key or _DLC_NOISE.sub(" ", name.lower()).strip()
 
 
+def dlc_store_url(store: str | None, product: str | None) -> str | None:
+    """A DLC's own page on its store; none for a PSN trophy group (no product)."""
+    if not product:
+        return None
+    if store == "xbox":
+        return f"https://www.xbox.com/games/store/x/{product}"
+    if store == "steam":
+        return f"https://store.steampowered.com/app/{product}"
+    if store == "psn":
+        return f"https://store.playstation.com/product/{product}"
+    return None
+
+
 def dlcs_of(dlcs: list[dict[str, Any]], game: str) -> list[dict[str, Any]]:
     """The game's DLC, each once across consoles: its picture, day, kind, its
-    HLTB hours and the consoles it is on. A PlayStation trophy group with no
-    store product is a DLC too, named by its group."""
+    HLTB hours, what its store says of it, and where it is sold — one entry a
+    console, with its store page. A PlayStation trophy group with no store
+    product is a DLC too, named by its group."""
     cards: dict[str, dict[str, Any]] = {}
     for dlc in dlcs:
         name = str(dlc.get("name") or "").strip()
@@ -357,6 +387,9 @@ def dlcs_of(dlcs: list[dict[str, Any]], game: str) -> list[dict[str, Any]]:
                 "kind": dlc.get("kind"),
                 "hours": round(dlc["comp_main"] / 3600, 1) if dlc.get("comp_main") else None,
                 "consoles": [],
+                "description": None,
+                "stores": [],
+                "hltb": hltb_of(dlc) if dlc.get("hltb_id") else None,
             }
         card["image"] = card["image"] or https(dlc.get("image_url"))
         if dlc.get("release_date") and (
@@ -365,16 +398,45 @@ def dlcs_of(dlcs: list[dict[str, Any]], game: str) -> list[dict[str, Any]]:
             card["release_date"] = dlc["release_date"]
         if not card["hours"] and dlc.get("comp_main"):
             card["hours"] = round(dlc["comp_main"] / 3600, 1)
+        if not card["hltb"] and dlc.get("hltb_id"):
+            card["hltb"] = hltb_of(dlc)
         console = str(dlc.get("console") or "")
         if console and console not in card["consoles"]:
             card["consoles"].append(console)
+        if not card["description"]:
+            card["description"] = (dlc.get("description_en") or "").strip() or None
+        store = dlc.get("store")
+        seen = any(s["console"] == console and s["store"] == store for s in card["stores"])
+        if console and not seen:
+            card["stores"].append(
+                {
+                    "console": console,
+                    "store": store,
+                    "url": dlc_store_url(store, dlc.get("store_id")),
+                    "on_sale": dlc.get("on_sale"),
+                }
+            )
     # By the day it came out (owner, 2026-10-26), those with no day last.
     return sorted(cards.values(), key=lambda c: (c["release_date"] or "9999", c["name"]))
 
 
+def edition_store_url(store: str | None, product: str | None) -> str | None:
+    """An edition's own page on its store: Xbox's product, Steam's package,
+    PlayStation's product."""
+    if not product:
+        return None
+    if store == "xbox":
+        return f"https://www.xbox.com/games/store/x/{product}"
+    if store == "steam":
+        return f"https://store.steampowered.com/sub/{product}"
+    if store == "psn":
+        return f"https://store.playstation.com/product/{product}"
+    return None
+
+
 def editions_of(editions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The editions the stores sell, each name once, those with a picture
-    first."""
+    first; each with what it holds (the games first) and its stores."""
     shown: dict[str, dict[str, Any]] = {}
     for edition in editions:
         name = str(edition.get("name") or "").strip()
@@ -383,16 +445,36 @@ def editions_of(editions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         media = _media(edition.get("media"))
         cover = https(media.get("cover") or media.get("poster") or media.get("header"))
         key = name.lower()
-        if key in shown:
-            shown[key]["cover"] = shown[key]["cover"] or cover
-            continue
-        shown[key] = {
-            "name": name,
-            "kind": edition.get("kind"),
+        store = {
             "store": edition.get("store"),
+            "url": edition_store_url(edition.get("store"), edition.get("store_id")),
             "on_sale": edition.get("on_sale"),
-            "cover": cover,
         }
+        # The store's wide art, mostly with no title on it: the page's head.
+        hero = https(media.get("background"))
+        if key in shown:
+            card = shown[key]
+            card["cover"] = card["cover"] or cover
+            card["hero"] = card["hero"] or hero
+            # One button a store: the same edition sold as two products there
+            # (one per console) is one shop to go to.
+            if all(s["store"] != store["store"] for s in card["stores"]):
+                card["stores"].append(store)
+        else:
+            card = shown[key] = {
+                "name": name,
+                "kind": edition.get("kind"),
+                "store": edition.get("store"),
+                "on_sale": edition.get("on_sale"),
+                "cover": cover,
+                "hero": hero,
+                "stores": [store],
+                "items": [],
+            }
+        for item in edition.get("items") or []:
+            item_name = str(item.get("name") or "").strip()
+            if item_name and all(i["name"].lower() != item_name.lower() for i in card["items"]):
+                card["items"].append({"name": item_name, "kind": item.get("item_kind")})
     # The shortest name first (owner, 2026-10-26): the plain edition leads,
     # the bundles of everything follow.
     return sorted(shown.values(), key=lambda e: (len(e["name"]), e["name"]))
@@ -440,6 +522,9 @@ def hltb_of(entry: dict[str, Any] | None) -> dict[str, Any] | None:
         "score": entry.get("review_score") or None,
         "rating": entry.get("rating_esrb") or entry.get("rating_pegi") or None,
         "url": f"https://howlongtobeat.com/game/{entry['hltb_id']}",
+        # The modes HLTB keeps times for: it is played together, or against.
+        "coop": bool(entry.get("comp_lvl_co")),
+        "multi": bool(entry.get("comp_lvl_mp")),
     }
 
 
@@ -447,33 +532,109 @@ _SEARCH_NOISE = re.compile(r"[^\w]+", re.UNICODE)
 # Dots inside a word and apostrophes are part of it: "S.T.A.L.K.E.R." is
 # found as "stalker", "Assassin's" as "assassins" (owner, 2026-10-27).
 _SEARCH_JOINED = re.compile(r"(?<=\w)[.'’](?=\w)", re.UNICODE)
+# Words a name is written with or without (owner, 2026-10-29): «the witcher»
+# and «witcher» are one search.
+_ARTICLES = frozenset({"the", "a", "an"})
+# A sequel is written either way: «Mafia 2» finds «Mafia II».
+_ROMAN = {
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+}
 
 
 def search_key(text: str) -> str:
-    folded = _SEARCH_JOINED.sub("", text.casefold().replace("ё", "е"))
-    return _SEARCH_NOISE.sub(" ", folded).strip()
+    folded = unicodedata.normalize("NFKD", text.casefold().replace("ё", "е"))
+    # Accents go («Pokémon» is «pokemon»), Cyrillic «й» keeps its breve.
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch) or ch == "\u0306")
+    folded = unicodedata.normalize("NFC", folded).replace("&", " and ")
+    words = _SEARCH_NOISE.sub(" ", _SEARCH_JOINED.sub("", folded)).split()
+    words = [_ROMAN.get(w, w) for w in words if w not in _ARTICLES] or words
+    return " ".join(words)
+
+
+def _joined(words: list[str], flat: str) -> bool:
+    """`flat` is words of the name written together («spiderman»: «spider»
+    «man»), the last of them begun by three letters at least."""
+    if " " in flat or len(flat) < 4:
+        return False
+    for i in range(len(words)):
+        run = ""
+        for word in words[i:]:
+            if len(run) >= len(flat):
+                break
+            rest = flat[len(run) :]
+            if rest == word or (rest.startswith(word) and len(rest) > len(word)):
+                run += word
+                if run == flat:
+                    return run != words[i]
+                continue
+            if word.startswith(rest) and len(rest) >= 3 and run:
+                return True
+            break
+    return False
+
+
+def _initials(words: list[str], query: str) -> bool:
+    """A short query of a name's first letters: «gta» is «Grand Theft Auto»,
+    a sequel's number kept («gta 5»)."""
+    head = query.split()
+    if not 2 <= len(head[0]) <= 5 or len(head) > 2:
+        return False
+    letters = [w for w in words if not w.isdigit()]
+    initials = "".join(w[0] for w in letters[: len(head[0])])
+    if initials != head[0] or len(letters) < len(head[0]):
+        return False
+    return len(head) == 1 or head[1] in words
+
+
+def _close(word: str, other: str) -> bool:
+    """One typo apart: a letter missing, added, changed or two swapped — for
+    words long enough that one letter is a slip, not another word."""
+    if min(len(word), len(other)) < 4 or abs(len(word) - len(other)) > 1:
+        return False
+    return SequenceMatcher(None, word, other).ratio() >= (0.8 if len(word) < 7 else 0.85)
 
 
 def rank_search(names: list[tuple[int, str]], query: str) -> list[tuple[int, int, int]]:
-    """The games whose names match a query, as `(game_id, rank, length)`: rank
+    """The games whose names match a query, as `(game_id, rank, length)`, each
+    game by its best name (owner, 2026-10-29: found the way people type):
     0 a name equal to it, 1 one starting with it, 2 one with a word starting
-    with it, 3 one containing it — each game by its best name."""
+    with it, 3 every word of it starting a word of the name, in any order
+    («wild witcher»), 4 one containing it, its spaces and hyphens aside
+    («spiderman» is «Spider-Man»), 5 every word of it in the name with one typo
+    at most («witchr»), 6 the name's first letters («gta»)."""
     wanted = search_key(query)
     if not wanted:
         return []
+    wanted_words = wanted.split()
+    wanted_flat = wanted.replace(" ", "")
     best: dict[int, tuple[int, int]] = {}
     for game_id, name in names:
         key = search_key(name)
         if not key:
             continue
+        words = key.split()
         if key == wanted:
             rank = 0
         elif key.startswith(wanted):
             rank = 1
         elif f" {wanted}" in f" {key}":
             rank = 2
-        elif wanted in key:
+        elif all(any(w.startswith(q) for w in words) for q in wanted_words):
             rank = 3
+        elif wanted in key or _joined(words, wanted_flat):
+            rank = 4
+        elif all(any(w.startswith(q) or _close(q, w) for w in words) for q in wanted_words):
+            rank = 5
+        elif _initials(words, wanted):
+            rank = 6
         else:
             continue
         score = (rank, len(key))

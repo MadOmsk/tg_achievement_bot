@@ -31,6 +31,7 @@ import { useArtTheme } from "../../app/artTheme";
 import { CodeSheet, ItemEditor, platformName, PrizePlatformMark, shrink, TakersSheet } from "./SeasonPassRewards";
 import "../settings/Settings.css";
 import "./SeasonPass.css";
+import { PointsCoin } from "../../parts/AchRow";
 
 export function RewardArt({ t, size = 56 }: { t: { palette: string }; size?: number }) {
   return (
@@ -262,9 +263,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
       <div className="pass-tl-here">
         {next ? (
           <span className="clamp-2">
-            <b className="t-num">
-              {tr("passNextShort")} {num(next.points - points, locale)} {plural(locale, next.points - points, ["ptsOne", "ptsFew", "ptsMany"])}
-            </b>{" "}
+            {tr("passNextShort")} <PointsCoin points={next.points - points} />{" "}
             {tr("passNextTo")} «{nameOf(next)}»
           </span>
         ) : (
@@ -626,7 +625,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
                   </span>
                   {own && i.kind === "theme" && (
                     <span className="pass-tl-done">
-                      <Icon name="check" size={16} />
+                      <Icon name="check" size={26} />
                     </span>
                   )}
                   {i.kind === "prize" && !editing && i.r.total > 0 && (

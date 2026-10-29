@@ -595,7 +595,10 @@ class _GamesRepo:
                 " LEFT JOIN hltb_entries h ON h.hltb_id = (SELECT MIN(vh.hltb_id)"
                 "  FROM version_hltb vh WHERE vh.version_id = v.version_id"
                 "  AND vh.source <> 'rejected')"
-                " WHERE v.game_id = ?",
+                # A fixed order: two versions of one year must not trade the
+                # studio from one rebuild to the next.
+                " WHERE v.game_id = ? ORDER BY v.release_date IS NULL, v.release_date,"
+                " v.version_id",
                 (game_id,),
             )
             rows = [dict(row) for row in await cursor.fetchall()]

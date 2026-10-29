@@ -41,6 +41,9 @@ export type GameListPlayed = {
   platform: string;
   title_id: string;
   total: number | null;
+  /** Which version the list is (Xbox One, Xbox PC): two lists of one platform tell apart. */
+  console?: string | null;
+  store?: string | null;
 };
 
 export type GameNews = {
@@ -54,6 +57,20 @@ export type GameNews = {
   url: string;
 };
 
+/** What HowLongToBeat's players took, its score and its age rating. */
+export type GameHltb = {
+  hltb_id: number;
+  main: number | null;
+  extra: number | null;
+  completionist: number | null;
+  score: number | null;
+  rating: string | null;
+  url: string;
+  /** It is played together / against others (HLTB keeps times for it). */
+  coop?: boolean;
+  multi?: boolean;
+};
+
 export type GameDlc = {
   name: string;
   image: string | null;
@@ -61,6 +78,11 @@ export type GameDlc = {
   kind: string | null;
   hours: number | null;
   consoles: string[];
+  /** What its store says of it, in English. */
+  description?: string | null;
+  /** Where it is sold: a console each, its own store page. */
+  stores?: { console: string; store: string; url: string | null; on_sale: number | null }[];
+  hltb?: GameHltb | null;
 };
 
 export type GameEdition = {
@@ -69,6 +91,12 @@ export type GameEdition = {
   store: string;
   on_sale: number | null;
   cover: string | null;
+  /** The store's wide art, mostly with no title on it. */
+  hero?: string | null;
+  /** Each store that sells it, its own page. */
+  stores?: { store: string; url: string | null; on_sale: number | null }[];
+  /** What it holds, the games first. */
+  items?: { name: string; kind: string | null }[];
 };
 
 export type GamePage = {
@@ -92,15 +120,7 @@ export type GamePage = {
   screenshots: string[];
   /** The stores' trailers: a file or an HLS stream, with a picture. */
   videos?: { name: string | null; mp4: string | null; hls: string | null; poster: string | null }[];
-  hltb: {
-    hltb_id: number;
-    main: number | null;
-    extra: number | null;
-    completionist: number | null;
-    score: number | null;
-    rating: string | null;
-    url: string;
-  } | null;
+  hltb: GameHltb | null;
   lists: { platform: string; title_id: string; name: string; total: number | null; icon_url: string | null }[];
   /** Whether the progress below is the viewer's own. */
   viewed_is_me: boolean;

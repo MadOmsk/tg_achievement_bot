@@ -9,6 +9,7 @@ import { num, plural } from "../i18n";
 import { Face } from "../ui/Face";
 import { Icon } from "../ui/Icon";
 import { MonthSheet } from "./Months";
+import { Spark } from "./AchRow";
 
 /** A person's month as one card, by what matters: the month's points (the
  * achievements and the games small beside; owner, 2026-10-28), the place among the people
@@ -68,6 +69,7 @@ export function MonthHero({
           {payload ? (
             // Points run to five digits and more: the more digits, the smaller.
             <p className={`t-display home-hero-num home-hero-num-${Math.min(7, num(payload.month.points ?? 0, locale).length)}`}>
+              <Spark className="home-hero-spark" />
               {num(payload.month.points ?? 0, locale)}
             </p>
           ) : (
@@ -84,7 +86,6 @@ export function MonthHero({
       </div>
       {payload ? (
         <p className="home-hero-line">
-          <span>{plural(locale, payload.month.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}</span>
           <span>
             <b className="t-num">{num(payload.month.count, locale)}</b>{" "}
             {plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}

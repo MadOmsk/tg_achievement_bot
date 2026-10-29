@@ -19,7 +19,11 @@ it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
 badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
-`any` icon that Android draws on its launch splash. The sign-in screens write
+`any` icon that Android draws on its launch splash (the maskable one is
+only 192 px, so a browser that draws its largest icon there — Edge — draws
+the bare U, not the square tile); an iPhone's launch screen is
+`public/splash/apple-splash-*.png`, the bare U on the app's night with a
+violet glow, one a screen size (`index.html`). The sign-in screens write
 the name as one word — the logo's U with its sparkle, no tile, then "nlocked" in Nunito ExtraBold, its seven
 letters kept in `public/fonts`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
@@ -1745,8 +1749,9 @@ elsewhere in this file still describe the bot.
   anything new look like the rest is `docs/design-system.md` (its rarity tiers —
   mythic green, legendary orange, rare purple — are the app's Fortnite note).
   **The app counts its own points, not G** (owner, 2026-10-27): an
-  achievement is worth 10, 20 (≤10 %), 30 (≤1 %) or 50 (an Xbox Mythic, a
-  PSN platinum) on every platform (`_sql.points`, `views.POINTS`); the
+  achievement is worth 10, 20 (≤10 %), 30 (≤1 %) or 100 (an Xbox Mythic, a
+  PSN platinum — owner, 2026-10-29: far harder to get) on every platform
+  (`_sql.points`, `views.POINTS`); the
   Ranking, Home's month card and the race count them. The bot's chat
   messages keep G. A game's page
   takes a muted tonal scheme from its own art (`app/artTheme.ts`; stores whose
@@ -1776,7 +1781,10 @@ elsewhere in this file still describe the bot.
   `subscriptions`, chat id 0). Chats only help to find people to follow. Search
   is of our own catalog (owner, 2026-10-25: never the internet;
   `/api/mini/game-search`, from two letters; a dotted or apostrophed name
-  reads as one word — «stalker» finds S.T.A.L.K.E.R.) and of people by nickname (from
+  reads as one word — «stalker» finds S.T.A.L.K.E.R.; owner, 2026-10-29: found
+  the way people type — «the» and accents aside, «2» for «II», words in any
+  order, words written together («spiderman»), one typo («witchr»), the
+  first letters («gta»); `game_page.rank_search`) and of people by nickname (from
   three). A person's card is `/api/mini/people/{id}`; whom somebody follows and
   who follows them, `/api/mini/people/{id}/following|followers`, only to a viewer
   `can_view_activity` lets in. No chat is needed to use the app.
@@ -1951,7 +1959,11 @@ elsewhere in this file still describe the bot.
     refusing after five tries. **Only a known push service is stored as an
     endpoint** (`mini_notifications.PUSH_HOSTS`: FCM, Mozilla, Apple, Windows; https
     on 443): the server posts to it, and an arbitrary address would make it call
-    any host, an internal one included. Push needs `MINI_APP_URL` (where a tap opens) and a
+    any host, an internal one included. **Push goes only to the app's own
+    address** (owner, 2026-10-29; `push_subscriptions.origin`, migration 141): a
+    browser keeps one subscription per address, and every dev tunnel kept
+    getting the same notice; one of another address is forgotten at start-up.
+    Push needs `MINI_APP_URL` (where a tap opens) and a
     contact for the push services (`SMTP_FROM`, else the app's https address).
   - Routes: `GET /api/mini/notifications`, `POST …/read`; `GET /api/mini/push/key`,
     `POST|DELETE /api/mini/push/subscription`; the switches through
@@ -1999,7 +2011,11 @@ elsewhere in this file still describe the bot.
   `GET /api/mini/game?game_id=` or `?platform=&title_id=`, `web/mini_game.py`,
   `services/game_page.py`): a tap on a game anywhere opens it. One game whole,
   read from the catalog with no network (`docs/mini-app-spec.md` lists its
-  parts). DLC by the day they came out, editions the shortest name first, a
+  parts). DLC the newest first — three on the page, all of them on a page of
+  their own with a search (a game may have a thousand), each named without
+  the game's name it opens with, and each opening a page of its own (its
+  picture, kind and day, what its store says, its hours, its store pages;
+  owner, 2026-10-29) —, editions the shortest name first, a
   series its newest game first; a game of a series opens in place and back
   steps back through them. A list in no game yet becomes a game of its own on
   its first visit (`repo.adopt_list_as_game`); the linker places it later.

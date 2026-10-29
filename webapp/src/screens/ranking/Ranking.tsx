@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { clubApi, type FeedItem, type SummaryMember } from "../../api";
+import { clubApi, type FeedItem } from "../../api";
 import { useApp } from "../../app/context";
 import { useLoad } from "../../app/useLoad";
 import { achOfFeed } from "../../app/views";
@@ -11,10 +11,11 @@ import { Sheet } from "../../ui/Page";
 import { Pull } from "../../parts/Pull";
 import { Button, Empty, Section, Segmented } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
-import { WaveRing } from "../../ui/WaveRing";
+import { TrendMark } from "../../parts/TrendMark";
 import { GameTile } from "../../parts/GameTile";
 import { AchTile } from "../../parts/AchTile";
 import "./Ranking.css";
+import { PointsCoin } from "../../parts/AchRow";
 
 type Board = "day" | "month" | "year";
 
@@ -33,7 +34,6 @@ function hunts(items: FeedItem[], min = 2): Hunt[] {
   return [...map.values()].filter((h) => h.people.length >= min).sort((a, b) => b.people.length - a.people.length);
 }
 
-const sum = (rows: SummaryMember[] | undefined) => (rows ?? []).reduce((n, r) => n + (r.points ?? 0), 0);
 
 /** The months of the last three years up to this one, newest first. */
 function lastMonths(now: string): string[] {
@@ -59,8 +59,6 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
   const together = useMemo(() => hunts(s?.recent ?? []), [s]);
   const rows = (board === "day" ? s?.day : board === "year" ? s?.year : s?.month) ?? [];
   const leaders = [...rows].sort((a, b) => (b.points ?? 0) - (a.points ?? 0) || b.count - a.count);
-  const total = sum(rows);
-  const mine = rows.find((r) => r.person_id === me.person_id)?.points ?? 0;
   const podium = leaders.filter((r) => r.count > 0).slice(0, 3);
   const rest = leaders.slice(podium.length);
 
@@ -113,20 +111,6 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
         </Sheet>
       )}
 
-      <section className="rank-hero">
-        <WaveRing value={mine} total={total || 1} size={116}>
-          <span className="rank-ring-pct t-num">{total ? Math.round((mine / total) * 100) : 0}%</span>
-        </WaveRing>
-        <div className="rank-hero-text">
-          <p className="rank-hero-kick">{tr("rankYourShare")}</p>
-          <p className="rank-hero-num t-num">
-            {s ? num(mine, locale) : "–"}
-            <small>/{s ? num(total, locale) : "–"}</small>
-          </p>
-          <p className="rank-hero-line">{tr("rankShareLine")}</p>
-        </div>
-      </section>
-
       <Section
         title={tr("leaders")}
       >
@@ -152,7 +136,7 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
                   </span>
                   <span className="podium-name clamp-1">{r.person_id === me.person_id ? tr("you") : r.name}</span>
                   <span className="podium-block">
-                    <b className="t-num">{num(r.points ?? 0, locale)}</b>
+                    <PointsCoin points={r.points ?? 0} className="podium-coin" />
                   </span>
                 </button>
               );
@@ -184,10 +168,7 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
                     {r.rare > 0 && ` · ${tr("factRare").toLowerCase()} ${r.rare}`}
                   </span>
                 </span>
-                <span className="leader-count">
-                  <b className="t-num">{num(r.points ?? 0, locale)}</b>
-                  <span>{plural(locale, r.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}</span>
-                </span>
+                <PointsCoin points={r.points ?? 0} className="pts-coin-m" />
               </button>
               );
             })}
@@ -197,18 +178,15 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
 
       {(s?.games.length ?? 0) > 0 && (
         <Section title={tr("trending")}>
-          <div className="rail month-games">
+          <div className="rail favs">
             {s!.games.map((g) => (
               <GameTile
                 key={`${g.platform}:${g.title_id}`}
                 cover={g.icon_url}
                 name={g.name ?? ""}
+                mark={<TrendMark count={g.count} />}
                 onOpen={() => open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
-              >
-                <span className="trend-meta">
-                  {num(g.count, locale)} {plural(locale, g.count, ["achOne", "achFew", "achMany"])}
-                </span>
-              </GameTile>
+              />
             ))}
           </div>
         </Section>

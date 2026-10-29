@@ -221,6 +221,26 @@
   font-size: 16px;
 }
 
+/* The points inside the line: its size and colour, on its baseline. */
+.pass-tl-here .pts-coin {
+  display: inline;
+  margin: 0 2px;
+  font-size: 16px;
+  color: var(--on-primary-container);
+}
+
+.pass-tl-here .pts-coin b {
+  font-size: inherit;
+}
+
+.pass-tl-here .pts-coin-spark {
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: -0.08em;
+  transform: none;
+}
+
+
 .pass-tl-here-done {
   display: inline-flex;
   align-items: center;
@@ -1128,11 +1148,13 @@
   opacity: 0.35;
 }
 
+/* The size of a prize's codes badge, so the right column lines up. */
 .pass-tl-done {
   flex: 0 0 auto;
   align-self: center;
-  width: 32px;
-  height: 32px;
+  width: 56px;
+  height: 56px;
+  margin: 0 2px;
   display: flex;
   align-items: center;
   justify-content: center;

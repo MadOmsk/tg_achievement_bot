@@ -2,12 +2,12 @@ import type { AchView } from "../app/layers";
 import { useApp } from "../app/context";
 import { isVeiled, pointsOf, rareLevel, TIER_NAME } from "../app/views";
 import { tick } from "../core/haptic";
-import { num, pct, plural } from "../i18n";
+import { pct } from "../i18n";
 import { Face } from "../ui/Face";
 import { AchPic } from "../ui/Pic";
 import { isWideArt } from "./AchRow";
 import { capital } from "./Months";
-import { Icon } from "../ui/Icon";
+import { Spark } from "./AchRow";
 
 /** One achievement as a card of a rail — Home's latest, the hunts, the rare
  * finds: its picture with its rarity on the corner, name, game, then who got
@@ -46,16 +46,19 @@ export function AchTile({
           veiled={veiled}
           className={isWideArt(ach.platform) ? "tile-pic" : "tile-pic tile-pic-sq"}
         />
-        {badge && (ach.rarity != null || level) && (
+        {/* What it is worth on the flower, in its tier's colour; how rare beside the tier's word. */}
+        {badge && (
           <span className={`tile-badge shape-flower6 tile-badge-${level ?? "plain"}`}>
-            {ach.rarity != null ? <b className="t-num">{pct(ach.rarity, locale)}</b> : <Icon name="trophy" size={20} />}
+            <b className="t-num flower-pts">
+              <Spark className="flower-spark" />
+              {pointsOf(ach.rarity, ach)}</b>
           </span>
         )}
       </span>
       <span className="tile-kicker">
-        <span className={level ? `mark-${level}` : ""}>{capital(tr(TIER_NAME[level ?? "common"]))}</span>
-        <span className="tile-worth">
-          {num(pointsOf(ach.rarity, ach), locale)} {plural(locale, pointsOf(ach.rarity, ach), ["ptsOne", "ptsFew", "ptsMany"])}
+        <span className={level ? `mark-${level}` : ""}>
+          {capital(tr(TIER_NAME[level ?? "common"]))}
+          {ach.rarity != null && ` · ${pct(ach.rarity, locale)}`}
         </span>
       </span>
       <span className="tile-name clamp-2">{veiled ? tr("secretAchievement") : ach.name}</span>

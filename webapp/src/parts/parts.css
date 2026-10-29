@@ -492,10 +492,10 @@
 .home-hero-deco {
   position: absolute;
   z-index: -1;
-  right: -66px;
-  top: -36px;
-  width: 280px;
-  height: 280px;
+  right: -52px;
+  top: -14px;
+  width: 252px;
+  height: 252px;
   background: var(--primary-container-2);
   transform: rotate(58deg);
 }
@@ -828,9 +828,9 @@
 .tile-badge {
   position: absolute;
   right: -6px;
-  bottom: -12px;
-  width: 54px;
-  height: 54px;
+  bottom: -10px;
+  width: 46px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -969,10 +969,14 @@
   border-radius: var(--r-l);
 }
 
+/* On the cover's corner, as the done mark is. */
 .game-tile-art .fav-heart {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: -6px;
+  bottom: -8px;
+  width: 34px;
+  height: 34px;
+  box-shadow: 0 0 0 4px var(--surface);
 }
 
 .game-tile-art .done-mark {
@@ -1047,4 +1051,194 @@
 .plat-pick-on .row-title,
 .plat-pick-on .row-trail {
   color: var(--primary);
+}
+
+/* A trending game's count, on its cover's corner as a rarity flower is. */
+.game-tile-art .trend-mark {
+  position: absolute;
+  right: -8px;
+  bottom: -12px;
+  width: 58px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-1);
+}
+
+.trend-mark b {
+  font-size: 17px;
+}
+
+.trend-mark small {
+  margin-top: 1px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ach-side {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+/* The app's points: the logo's sparkle, the number beside it — the app's own
+   currency, not a word after a number. */
+.pts-coin {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--on-surface);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pts-coin b {
+  line-height: 1;
+}
+
+/* Digits stand on the baseline with no descender: their middle is above the
+   line box's, and the sparkle is set level with them. */
+.pts-coin-spark {
+  flex: 0 0 auto;
+  width: 0.95em;
+  height: 0.95em;
+  fill: var(--tertiary);
+  transform: translateY(-0.07em);
+}
+
+.marks .pts-coin {
+  font-size: 14px;
+}
+
+
+.pts-coin small {
+  font-size: 0.85em;
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+/* A coin on its own in a page's meta line or a list's head. */
+.pts-coin-m {
+  font-size: 15px;
+}
+
+
+.home-hero-num {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home-hero-spark {
+  flex: 0 0 auto;
+  width: 0.42em;
+  height: 0.42em;
+  fill: var(--tertiary);
+  transform: translateY(-0.04em);
+}
+
+/* Points on a tier's flower: the sparkle, then the number. */
+.flower-pts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  font-size: 13.5px;
+}
+
+.flower-spark {
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: -1px;
+  fill: currentColor;
+  transform: translateY(-0.05em);
+}
+
+/* On top of the step, as the number alone was. */
+.podium-coin {
+  align-self: flex-start;
+  font-size: 26px;
+  color: inherit;
+}
+
+.podium-coin .pts-coin-spark {
+  width: 0.7em;
+  height: 0.7em;
+}
+
+.rank-hero-num {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rank-hero-spark {
+  flex: 0 0 auto;
+  width: 0.5em;
+  height: 0.5em;
+  fill: var(--tertiary);
+  transform: translateY(-0.04em);
+}
+
+.rank-hero-line .pts-coin {
+  vertical-align: -1px;
+  color: inherit;
+}
+
+.ach-pic-wrap {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 8px 8px 0;
+}
+
+.ach-flower {
+  position: absolute;
+  right: -10px;
+  bottom: -10px;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ach-flower .flower-pts {
+  font-size: 12px;
+}
+
+/* In a game's list every picture is a square, as a news or DLC row's is;
+   a wide one is cut to fit. */
+.ach-pic-wrap .ach-pic-wide,
+.ach-pic-wrap .ach-pic-square {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--r-s);
+}
+
+.ach-kicker {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--on-surface-3);
+}
+
+.ach-kicker.mark-rare {
+  color: var(--tier-epic);
+}
+
+.ach-kicker.mark-legendary {
+  color: var(--tier-legendary);
+}
+
+.ach-kicker.mark-mythic {
+  color: var(--tier-mythic);
 }

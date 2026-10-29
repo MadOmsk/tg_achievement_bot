@@ -105,18 +105,25 @@ class _NotificationsRepo:
     # ------------------------------------------------------------------ push
 
     async def save_push_subscription(
-        self, person_id: int, endpoint: str, p256dh: str, auth: str, user_agent: str | None
+        self,
+        person_id: int,
+        endpoint: str,
+        p256dh: str,
+        auth: str,
+        user_agent: str | None,
+        origin: str | None = None,
     ) -> None:
-        """A browser allowed push. The same browser signing in as somebody else
-        moves its subscription to them: one browser, one person."""
+        """A browser allowed push, on the app's address `origin`. The same
+        browser signing in as somebody else moves its subscription to them: one
+        browser, one person."""
         await self._conn.execute(
             "INSERT INTO push_subscriptions"
-            " (endpoint, person_id, p256dh, auth, user_agent, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)"
+            " (endpoint, person_id, p256dh, auth, user_agent, created_at, origin)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(endpoint) DO UPDATE SET person_id = excluded.person_id,"
             "   p256dh = excluded.p256dh, auth = excluded.auth,"
-            "   user_agent = excluded.user_agent, failures = 0",
-            (endpoint, person_id, p256dh, auth, user_agent, utcnow_iso()),
+            "   user_agent = excluded.user_agent, failures = 0, origin = excluded.origin",
+            (endpoint, person_id, p256dh, auth, user_agent, utcnow_iso(), origin),
         )
         await self._conn.commit()
 
@@ -132,11 +139,23 @@ class _NotificationsRepo:
             )
         await self._conn.commit()
 
-    async def push_subscriptions_of(self, person_id: int) -> list[PushSubscription]:
-        cursor = await self._conn.execute(
-            "SELECT endpoint, person_id, p256dh, auth FROM push_subscriptions WHERE person_id = ?",
-            (person_id,),
-        )
+    async def push_subscriptions_of(
+        self, person_id: int, origin: str | None = None
+    ) -> list[PushSubscription]:
+        """A person's browsers; with `origin`, only those on that address of the
+        app (and those stored before an address was kept)."""
+        if origin is None:
+            cursor = await self._conn.execute(
+                "SELECT endpoint, person_id, p256dh, auth FROM push_subscriptions"
+                " WHERE person_id = ?",
+                (person_id,),
+            )
+        else:
+            cursor = await self._conn.execute(
+                "SELECT endpoint, person_id, p256dh, auth FROM push_subscriptions"
+                " WHERE person_id = ? AND (origin IS NULL OR origin = ?)",
+                (person_id, origin),
+            )
         return [
             PushSubscription(
                 endpoint=row["endpoint"],
@@ -146,6 +165,15 @@ class _NotificationsRepo:
             )
             for row in await cursor.fetchall()
         ]
+
+    async def forget_push_elsewhere(self, origin: str) -> int:
+        """Browsers subscribed on another address of the app (an old dev
+        tunnel) are forgotten: nothing is pushed there any more."""
+        cursor = await self._conn.execute(
+            "DELETE FROM push_subscriptions WHERE origin IS NOT NULL AND origin != ?", (origin,)
+        )
+        await self._conn.commit()
+        return cursor.rowcount
 
     async def push_delivered(self, endpoint: str) -> None:
         await self._conn.execute(

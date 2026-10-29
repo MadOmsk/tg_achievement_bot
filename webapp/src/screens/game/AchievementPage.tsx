@@ -6,9 +6,8 @@ import { openExternal } from "../../app/env";
 import type { AchView } from "../../app/layers";
 import { useLoad } from "../../app/useLoad";
 import { isVeiled, pointsOf, rareLevel, revealed, TIER_NAME } from "../../app/views";
-import { clockOf } from "../../core/post-text";
 import { tick } from "../../core/haptic";
-import { dayLabel, num, pct, plural } from "../../i18n";
+import { pct, whenLabel } from "../../i18n";
 import { isWideArt } from "../../parts/AchRow";
 import { GameLink } from "../../parts/GameLink";
 import { capital } from "../../parts/Months";
@@ -23,6 +22,7 @@ import { openImage } from "../../ui/Viewer";
 import { GuideVideo } from "../../parts/GuideVideo";
 import { LinkCard } from "../../ui/LinkCard";
 import "./Game.css";
+import { Spark } from "../../parts/AchRow";
 
 
 function at(url: string, start: number): string {
@@ -61,11 +61,12 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
         <Hero full={isWideArt(ach.platform)} ground={veiled ? null : ach.icon} onOpen={!veiled && ach.icon ? () => openImage(ach.icon!) : undefined}>
           <AchPic src={ach.icon} veiled={veiled} className={isWideArt(ach.platform) ? "hero-ach" : "hero-ach hero-ach-sq"} />
         </Hero>
-        {(ach.rarity != null || rare) && (
-          <span className={`ap-badge shape-flower6 ap-badge-${rare ?? "plain"}`}>
-            {ach.rarity != null ? <b>{pct(ach.rarity, locale)}</b> : <Icon name="trophy" size={24} />}
-          </span>
-        )}
+        <span className={`ap-badge shape-flower6 ap-badge-${rare ?? "plain"}`}>
+          <b className="t-num flower-pts">
+            <Spark className="flower-spark" />
+            {pointsOf(ach.rarity, ach)}
+          </b>
+        </span>
       </div>
 
       <div className="detail">
@@ -73,9 +74,7 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
           <span className={`chip ${rare ? `chip-tier chip-tier-${rare}` : "chip-secondary"}`}>
             {rare ? <span className="rare-mark shape-flower6" /> : <Icon name="trophy" size={14} />}
             {capital(tr(TIER_NAME[rare ?? "common"]))}
-          </span>
-          <span className="chip chip-outline">
-            {num(pointsOf(ach.rarity, ach), locale)} {plural(locale, pointsOf(ach.rarity, ach), ["ptsOne", "ptsFew", "ptsMany"])}
+            {ach.rarity != null && ` · ${pct(ach.rarity, locale)}`}
           </span>
           {!ach.unlockedAt && <span>{tr("achNotEarned")}</span>}
         </div>
@@ -122,7 +121,7 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
                 title={p.id === me.person_id || !p.id ? tr("you") : p.name}
                 sub={
                   p.at
-                    ? `${tr("achEarned")} · ${dayLabel(p.at, locale).toLowerCase()}${clockOf(p.at, locale) ? `, ${clockOf(p.at, locale)}` : ""}`
+                    ? `${tr("achEarned")} · ${whenLabel(p.at, locale)}`
                     : tr("achEarned")
                 }
                 onOpen={p.id ? () => open({ kind: "person", personId: p.id! }) : undefined}

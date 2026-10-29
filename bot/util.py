@@ -2,6 +2,7 @@
 
 import re
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 from bot.i18n import translator
 
@@ -18,6 +19,16 @@ def real_game_name(name: str | None) -> str | None:
     nobody anything; no name is better than that one."""
     text = (name or "").strip()
     return text if text and not text.isdigit() else None
+
+
+def origin_of(url: str | None) -> str | None:
+    """`scheme://host[:port]` of an address, lower-cased; None for none."""
+    if not url:
+        return None
+    parts = urlsplit(url.strip())
+    if not parts.scheme or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}".lower()
 
 
 def utcnow() -> datetime:

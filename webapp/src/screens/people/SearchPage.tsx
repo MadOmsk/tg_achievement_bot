@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clubApi, gameApi } from "../../api";
 import { currentMonth } from "../../core/people-utils";
-import { num, plural } from "../../i18n";
 import { peopleApi } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
 import { useLoad } from "../../app/useLoad";
@@ -11,6 +10,8 @@ import { Icon } from "../../ui/Icon";
 import { Page } from "../../ui/Page";
 import { Cover } from "../../ui/Pic";
 import { PersonLine } from "./FollowsPage";
+import { GameTile } from "../../parts/GameTile";
+import { TrendMark } from "../../parts/TrendMark";
 import "../game/Game.css";
 import "./People.css";
 
@@ -71,39 +72,30 @@ export function SearchPage({ onClose, layer }: { onClose: () => void; layer: str
           </Group>
           {!summary.data && summary.loading && (
             <Section title={tr("trending")}>
-              <div className="group" aria-hidden="true">
-                <div className="group-items">
-                  {[0, 1, 2].map((i) => (
-                    <span key={i} className="row skel" style={{ height: 72 }} />
-                  ))}
-                </div>
+              <div className="rail favs" aria-hidden="true">
+                {[0, 1, 2].map((i) => (
+                  <span key={i} className="game-tile">
+                    <span className="game-tile-art">
+                      <span className="game-tile-cover skel" style={{ display: "block" }} />
+                    </span>
+                    <span className="skel skel-line" style={{ width: "70%" }} />
+                  </span>
+                ))}
               </div>
             </Section>
           )}
           {trending.length > 0 && (
             <Section title={tr("trending")}>
-              <div className="group">
-                <div className="group-items">
-                  {trending.map((g) => (
-                    <button
-                      key={`${g.platform}:${g.title_id}`}
-                      type="button"
-                      className="row row-tap"
-                      onClick={() => {
-                        tick();
-                        open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } });
-                      }}
-                    >
-                      <Cover src={g.icon_url} className="gp-rel-cover" />
-                      <span className="row-text">
-                        <span className="row-title clamp-2">{g.name}</span>
-                        <span className="row-sub">
-                          {num(g.count, locale)} {plural(locale, g.count, ["achOne", "achFew", "achMany"])}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
+              <div className="rail favs">
+                {trending.map((g) => (
+                  <GameTile
+                    key={`${g.platform}:${g.title_id}`}
+                    cover={g.icon_url}
+                    name={g.name ?? ""}
+                    mark={<TrendMark count={g.count} />}
+                    onOpen={() => open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
+                  />
+                ))}
               </div>
             </Section>
           )}

@@ -111,8 +111,8 @@
   position: absolute;
   right: -6px;
   bottom: -14px;
-  width: 58px;
-  height: 58px;
+  width: 60px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -228,6 +228,7 @@
 
 .mag-time {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .mag-more {
@@ -265,3 +266,7 @@
   display: none;
 }
 
+
+.mag-badge .flower-pts {
+  font-size: 16px;
+}

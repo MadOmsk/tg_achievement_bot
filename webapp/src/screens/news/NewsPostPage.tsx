@@ -5,8 +5,7 @@ import { KindChip } from "../../parts/KindChip";
 import { openExternal } from "../../app/env";
 import { useLoad } from "../../app/useLoad";
 import { GameLink } from "../../parts/GameLink";
-import { clockOf } from "../../core/post-text";
-import { dayLabel } from "../../i18n";
+import { whenLabel } from "../../i18n";
 import { Button, Empty } from "../../ui/Controls";
 import { Page } from "../../ui/Page";
 import { Cover } from "../../ui/Pic";
@@ -71,8 +70,7 @@ export function NewsPostPage({
             <div className="detail-meta">
               <KindChip kind={post.kind} />
               <span>
-                {dayLabel(post.date, locale)}
-                {clockOf(post.date, locale) && `, ${clockOf(post.date, locale)}`}
+                {whenLabel(post.date, locale)}
               </span>
             </div>
             <h1 className="detail-title">{post.title}</h1>

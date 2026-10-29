@@ -19,7 +19,9 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from bot.db.repo import Repo
+from bot.db.repo._sql import pick_name
 from bot.services.notifier import KINDS, UNKNOWN, Notifier, listed, wording
+from bot.util import origin_of
 from bot.web.mini_auth import MiniAppUser
 
 RequireUser = Callable[[web.Request], Awaitable[MiniAppUser]]
@@ -79,14 +81,38 @@ def register(app: web.Application, require_user: RequireUser) -> None:
 
         items = []
         covers: dict[tuple[str, str], str | None] = {}
+        games: dict[tuple[str, str], tuple[str | None, str | None]] = {}
+
+        async def _in_locale(data: dict) -> dict:
+            """A notice's game and achievement named in the reader's language,
+            as the catalog has them now (a notice keeps the names it was made
+            with)."""
+            platform, title_id = data.get("platform"), data.get("title_id")
+            if not platform or not title_id:
+                return data
+            out = dict(data)
+            key = (str(platform), str(title_id))
+            if data.get("game"):
+                if key not in games:
+                    games[key] = (await repo.title_names([key])).get(key, (None, None))
+                ru, en = games[key]
+                out["game"] = pick_name(locale, ru, en, data["game"]) or data["game"]
+            if data.get("achievement") and data.get("achievement_id"):
+                achievement_id = str(data["achievement_id"])
+                ru, en = await repo.achievement_name_pair(key[0], key[1], achievement_id)
+                stored = data["achievement"]
+                out["achievement"] = pick_name(locale, ru, en, stored) or stored
+            return out
+
         for row in rows:
+            row_data = await _in_locale(row.data)
             spec = KINDS.get(row.kind, UNKNOWN)
             field = spec.person_field
             game = (
                 {
                     "platform": row.data["platform"],
                     "title_id": row.data["title_id"],
-                    "name": row.data.get("game"),
+                    "name": row_data.get("game"),
                 }
                 if spec.game and row.data.get("platform") and row.data.get("title_id")
                 else None
@@ -95,8 +121,8 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                 {
                     "id": row.id,
                     "kind": row.kind,
-                    "text": wording(row.kind, row.data, locale),
-                    **listed(row.kind, row.data, locale),
+                    "text": wording(row.kind, row_data, locale),
+                    **listed(row.kind, row_data, locale),
                     "created_at": row.created_at,
                     "read": row.read_at is not None,
                     # Whom a tap opens, when the notice is about somebody.
@@ -152,7 +178,12 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         if not p256dh or not auth:
             raise web.HTTPBadRequest(text="bad keys")
         await repo.save_push_subscription(
-            user.person_id, endpoint, p256dh, auth, request.headers.get("User-Agent")
+            user.person_id,
+            endpoint,
+            p256dh,
+            auth,
+            request.headers.get("User-Agent"),
+            origin_of(request.headers.get("Origin") or request.headers.get("Referer")),
         )
         return web.json_response({"ok": True})
 

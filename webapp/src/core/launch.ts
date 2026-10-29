@@ -101,6 +101,16 @@ export function launchContext(): {
     tab ??= parsed[4] ?? null;
     game ??= parsed[5] ? decodeGameToken(parsed[5]) : null;
   }
+  // A group post's token may carry its achievement as a third part
+  // (`platform:titleId:achievementId`, bot/services/mini_app.py).
+  let tokenAch: string | null = null;
+  if (game && parsed?.[5]) {
+    const parts = game.split(":");
+    if (parts.length >= 3) {
+      tokenAch = parts.slice(2).join(":");
+      game = `${parts[0]}:${parts[1]}`;
+    }
+  }
   // Split on the first ":" only — a title_id is never expected to hold one,
   // but nothing stops it from someday.
   const colon = game?.indexOf(":") ?? -1;
@@ -142,6 +152,6 @@ export function launchContext(): {
     // head — not the game page under it, which took the phone's first back.
     news: newsMatch ? { appid: Number(newsMatch[1]), gid: newsMatch[2], game: gameRef } : null,
     game: newsMatch ? null : gameRef,
-    achievement: gameRef ? q.get("a") : null,
+    achievement: gameRef ? (q.get("a") ?? tokenAch) : null,
   };
 }
