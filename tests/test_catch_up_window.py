@@ -195,7 +195,7 @@ async def test_dormant_xbox_account_uses_idle_interval(repo: Repo, cipher) -> No
 
     poller = CatchUpPoller(_settings(), repo, _FakeFetcher())  # type: ignore[arg-type]
     [target] = await repo.pollable_users()
-    assert poller._target_interval(target) == 1440 * 60  # 24 hours
+    assert poller._target_interval(target, 14) == 1440 * 60  # 24 hours
 
     now_iso = utcnow().isoformat()
     await repo._conn.execute(
@@ -203,4 +203,4 @@ async def test_dormant_xbox_account_uses_idle_interval(repo: Repo, cipher) -> No
     )
     await repo._conn.commit()
     [target] = await repo.pollable_users()
-    assert poller._target_interval(target) == 60 * 60  # 1 hour
+    assert poller._target_interval(target, 14) == 60 * 60  # 1 hour

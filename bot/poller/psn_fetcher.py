@@ -2,11 +2,8 @@
 counterpart of poller/steam_fetcher.py. No presence poller alongside it,
 unlike Xbox/Steam: PSN trophy sync has no signal to key off (M-PSN-2's own
 "ключевое отличие" paragraph) — `tick()` just scans every linked account
-directly, debounced the same way Xbox/Steam debounce their own achievement
-polls (`achievement_poll_interval`, poller/cadence.py), reused rather than
-a PSN-specific setting: this is a "don't ask too often" politeness, not a
-budget constraint, the same reasoning that already applies on both other
-platforms (SPEC 5.2).
+directly, on the super-admin's trophy-scan steps (`services/poll_cadence.py`:
+online, offline, dormant).
 
 The scan/persist itself (and the ordering that makes an interrupted scan
 safe) lives in services/psn/achievements.py::sync_account — this module only
@@ -26,6 +23,7 @@ from bot.db.repo import AchievementRow, Repo
 from bot.i18n import translator
 from bot.poller.cadence import debounce_passed, is_dormant
 from bot.poller.publisher import Publisher
+from bot.services import poll_cadence
 from bot.services.hltb import ensure_title_match
 from bot.services.models import Progress
 from bot.services.psn.achievements import sync_account
@@ -83,6 +81,7 @@ class PsnFetcher:
     async def tick(self) -> None:
         if await self._psn_auth.status() == STATUS_NOT_CONFIGURED:
             return  # PSN not set up on this instance — same early-out as service_health
+        cadence = await poll_cadence.load(self._repo, "psn")
         for target in await self._repo.psn_pollable_users():
             if not target.backfill_done:
                 # #21: this account's first-ever backfill is still running
@@ -93,16 +92,14 @@ class PsnFetcher:
                 continue
             if target.presence_state == "Offline":
                 interval = (
-                    self._settings.psn_dormant_poll_interval
+                    cadence.scan_dormant
                     if is_dormant(
-                        target.last_online_at,
-                        target.linked_at,
-                        self._settings.catchup_idle_threshold_days,
+                        target.last_online_at, target.linked_at, cadence.dormant_after_days
                     )
-                    else self._settings.psn_offline_poll_interval
+                    else cadence.scan_offline
                 )
             else:
-                interval = self._settings.achievement_poll_interval
+                interval = cadence.scan_online
             if not debounce_passed(target.last_polled_at, interval):
                 continue
             try:

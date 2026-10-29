@@ -18,6 +18,8 @@ from bot.db.repo import PollTarget, Repo
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.cadence import debounce_passed, is_due, presence_interval
 from bot.poller.fetcher import Fetcher
+from bot.services import poll_cadence
+from bot.services.poll_cadence import Cadence
 from bot.services.xbox.auth import NotConnectedError, TokenDeadError, TokenRefreshError
 from bot.services.xbox.client import PresenceSnapshot, XboxApiError, XboxClient
 
@@ -34,8 +36,9 @@ class PresencePoller:
         self._fetcher = fetcher
 
     async def tick(self) -> None:
+        cadence = await poll_cadence.load(self._repo, "xbox")
         for target in await self._repo.pollable_users():
-            if not self._is_due(target):
+            if not self._is_due(cadence, target):
                 continue
             try:
                 await self._handle(target)
@@ -121,18 +124,15 @@ class PresencePoller:
     def _debounce_passed(self, target: PollTarget) -> bool:
         return debounce_passed(target.last_ach_poll_at, self._settings.achievement_poll_interval)
 
-    def _is_due(self, target: PollTarget) -> bool:
-        return is_due(target.updated_at, self._interval(target))
+    def _is_due(self, cadence: Cadence, target: PollTarget) -> bool:
+        return is_due(target.updated_at, self._interval(cadence, target))
 
-    def _interval(self, target: PollTarget) -> int:
+    def _interval(self, cadence: Cadence, target: PollTarget) -> int:
         return presence_interval(
             online=target.state == PresenceState.ONLINE,
             in_game=bool(target.title_id),
             changed_at=target.changed_at,
-            interval_in_game=self._settings.presence_interval_in_game,
-            interval_online=self._settings.presence_interval_online,
-            interval_offline=self._settings.presence_interval_offline,
-            interval_idle=self._settings.presence_interval_idle,
+            cadence=cadence,
         )
 
     async def _gamertag(self, person_id: int) -> str:

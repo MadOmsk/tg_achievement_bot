@@ -28,6 +28,8 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import PsnPresenceTarget, Repo
 from bot.poller.cadence import is_due, presence_interval
+from bot.services import poll_cadence
+from bot.services.poll_cadence import Cadence
 from bot.services.psn.auth import PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import PsnApiError, PsnPresenceSnapshot, get_presence
 
@@ -56,7 +58,10 @@ class PsnPresencePoller:
         except PsnApiError:
             return  # dead token etc. — reminded about elsewhere (service_health), not here
 
-        due = [t for t in await self._repo.psn_presence_pollable_accounts() if self._is_due(t)]
+        cadence = await poll_cadence.load(self._repo, "psn")
+        due = [
+            t for t in await self._repo.psn_presence_pollable_accounts() if self._is_due(cadence, t)
+        ]
         exit_targets: list[PsnPresenceTarget] = []
         for target in due:
             try:
@@ -145,20 +150,15 @@ class PsnPresencePoller:
             )
             log.info("psn account %s renamed: %s -> %s", target.account_id, previous, online_id)
 
-    def _is_due(self, target: PsnPresenceTarget) -> bool:
-        return is_due(target.updated_at, self._interval(target))
+    def _is_due(self, cadence: Cadence, target: PsnPresenceTarget) -> bool:
+        return is_due(target.updated_at, self._interval(cadence, target))
 
-    def _interval(self, target: PsnPresenceTarget) -> int:
-        # Same politeness-driven cadence Xbox/Steam presence already use
-        # (poller/cadence.py) — PSN's own rate limit is undocumented but
-        # nowhere near a constraint either (services/psn/client.py's
-        # RATE_WINDOWS is a runaway-bug guard, not a real budget).
+    def _interval(self, cadence: Cadence, target: PsnPresenceTarget) -> int:
+        # PSN's own steps (#184 stage 0). Each poll costs two requests on a
+        # client paced at one every two seconds, shared with the trophy scan.
         return presence_interval(
             online=target.state == "Online",
             in_game=bool(target.title_id),
             changed_at=target.changed_at,
-            interval_in_game=self._settings.presence_interval_in_game,
-            interval_online=self._settings.presence_interval_online,
-            interval_offline=self._settings.presence_interval_offline,
-            interval_idle=self._settings.presence_interval_idle,
+            cadence=cadence,
         )

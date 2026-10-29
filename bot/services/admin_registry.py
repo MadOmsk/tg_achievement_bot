@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from bot.constants import DIGEST_CHOICES, DIGEST_NEVER, RarityMode
 from bot.i18n import AVAILABLE_LOCALES, LOCALE_NAMES, gettext
-from bot.services import post_picture
+from bot.services import poll_cadence, post_picture
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
@@ -126,7 +126,16 @@ _NUMERIC_GROUPS = {
 }
 
 GROUPS: dict[Scope, tuple[str, ...]] = {
-    "global": ("rules", "newcomers", "lists", "hltb", "timers", "mail", "other"),
+    "global": (
+        "rules",
+        "newcomers",
+        "lists",
+        "hltb",
+        "timers",
+        *(poll_cadence.group(p) for p in poll_cadence.PLATFORMS),
+        "mail",
+        "other",
+    ),
     "chat": ("main", "summary", "flood"),
 }
 
@@ -235,6 +244,21 @@ SETTINGS: tuple[Setting, ...] = (
             zero_label=spec.zero_label if spec.min == 0 else None,
         )
         for key, spec in NUMERIC_SETTINGS.items()
+    ),
+    # ---- global: how often each platform is asked (#184 stage 0)
+    *(
+        Setting(
+            poll_cadence.key(platform, field.name),
+            "global",
+            poll_cadence.group(platform),
+            Kind.INT,
+            field.label,
+            default=poll_cadence.DEFAULTS[platform][field.name],
+            min=field.min,
+            max=field.max,
+        )
+        for platform in poll_cadence.PLATFORMS
+        for field in poll_cadence.fields_of(platform)
     ),
     # ---- a chat
     Setting("publishing", "chat", "main", Kind.BOOL, "admin-setting-chat-publishing"),

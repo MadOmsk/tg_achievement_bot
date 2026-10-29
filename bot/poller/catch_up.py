@@ -28,6 +28,7 @@ from bot.db.repo import PollTarget, Repo
 from bot.i18n import DEFAULT_LOCALE, gettext
 from bot.poller.cadence import is_dormant
 from bot.poller.fetcher import Fetcher, catch_up_since
+from bot.services import poll_cadence
 
 log = logging.getLogger(__name__)
 
@@ -92,12 +93,10 @@ class CatchUpPoller:
                 published,
             )
 
-    def _target_interval(self, target: PollTarget) -> int:
+    def _target_interval(self, target: PollTarget, dormant_after: int) -> int:
         if self._settings.catchup_interval_minutes == 0:
             return 0
-        if is_dormant(
-            target.last_online_at, target.linked_at, self._settings.catchup_idle_threshold_days
-        ):
+        if is_dormant(target.last_online_at, target.linked_at, dormant_after):
             return self._settings.catchup_idle_interval_minutes * 60
         return self._settings.catchup_interval_minutes * 60
 
@@ -108,11 +107,13 @@ class CatchUpPoller:
         account cannot keep jumping the queue ahead of somebody who has been
         waiting since the last sweep.
         """
+        dormant_after = (await poll_cadence.load(self._repo, "xbox")).dormant_after_days
         now = time.monotonic()
         overdue = [
             target
             for target in await self._repo.pollable_users()
-            if now - self._last.get(target.xuid, self._started) >= self._target_interval(target)
+            if now - self._last.get(target.xuid, self._started)
+            >= self._target_interval(target, dormant_after)
         ]
         if not overdue:
             return None

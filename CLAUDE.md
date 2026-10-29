@@ -152,6 +152,7 @@ name, or when the tree goes stale.
 │   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
 │   │   ├── admin_actions.py      every super-admin action, described once, for both panels (#176)
 │   │   ├── roles.py              who may do what: four roles, one table, `Access` (#232)
+│   │   ├── poll_cadence.py       how often each platform is asked: the admin's steps (#184)
 │   │   ├── admin_accounts.py     refresh / reset one person's game account (an action's work)
 │   │   ├── admin_cleanup.py      wiping the bot's messages from a chat (an action's work)
 │   │   ├── connect.py            one-time OAuth state, finishing a login
@@ -317,7 +318,8 @@ super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
-App entry points), the poller interval settings, and the mail server for email sign-in
+App entry points), the poller intervals (a first-run seed: the polling steps are
+`app_settings` since #184 stage 0, see Polling model), and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
 setting it up: `docs/mail-setup.md`).
@@ -1485,9 +1487,9 @@ for this; psnawp uses the private one the PlayStation App uses.
 - **Presence and trophies** (#90): presence is one `get_presence()` per account, on
   the shared politeness cadence. Going Online → Offline fires an exit poll
   (`psn_fetcher.poll_account`), since trophies often sync when a session ends. Trophy
-  titles are scanned every 120s while online, 30 min while offline and active, 24h
-  when dormant (settings `psn_poll_interval`, `psn_offline_poll_interval`,
-  `psn_dormant_poll_interval`); a title whose progress grew is fetched in full.
+  titles are scanned every 2 min while online, 30 min while offline and active, 24h
+  when dormant (the PSN group of «Опрос статуса», `services/poll_cadence.py`);
+  a title whose progress grew is fetched in full.
 - **The scan persists one game at a time, trophies before the progress cache**
   (#26) — the other order silently lost trophies when a scan failed partway. An
   unmapped error on one game is logged and skipped.
@@ -1530,12 +1532,23 @@ for this; psnawp uses the private one the PlayStation App uses.
 The scheduler ticks every minute; each poller decides whether a target is due.
 History: #108.
 
-- **Presence cadence** (Xbox, Steam) is state-based — fastest in a game, then online,
-  then offline, slowest for someone long absent — for politeness, not quota.
-- **Accounts idle more than 14 days are dormant** (`poller/cadence.py::is_dormant`,
-  `catchup_idle_threshold_days`, from `last_online_at` or `linked_at`): their
-  catch-up and PSN scans drop to once a day. Coming online (`touch_last_online`)
-  wakes them at once; a fresh link counts as active.
+- **Presence cadence** is state-based — fastest in a game, then online, then
+  offline, slower for someone offline a while (`idle_after`), slowest for a
+  dormant account — **the super-admin's settings, per platform** (owner,
+  2026-10-29; #184 stage 0; `services/poll_cadence.py`): /admin → Настройки →
+  «Опрос статуса: Xbox / Steam / PlayStation», in both panels from the registry,
+  whole minutes (the tick is a minute), PSN's trophy-scan steps beside them. The
+  pollers read them on every tick, so a change needs no restart; the
+  environment's `presence_interval_*`, `achievement_poll_interval`,
+  `psn_*_poll_interval` and `catchup_idle_threshold_days` only seed them once
+  (`seed_once` at start-up). Steam is asked in one batch for everybody due, so
+  its steps are a minute everywhere. How long an account has been offline is its
+  own presence row's (`changed_at`).
+- **Accounts idle more than `dormant_after` days (14) are dormant**
+  (`poller/cadence.py::is_dormant`, the platform's setting, from `last_online_at` or
+  `linked_at`): their catch-up drops to once a day and PSN scans to the dormant
+  step. Coming online (`touch_last_online`) wakes them at once; a fresh link counts
+  as active.
 - **Achievement polling and exit polls**: while in a game, poll that game on the
   achievement debounce. On leaving it or going offline, one exit poll catches the
   last unlocks — immediately on Xbox, after 180s on Steam, on Online → Offline for

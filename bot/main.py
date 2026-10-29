@@ -68,7 +68,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
-from bot.services import achievement_icons, media, raw_answers
+from bot.services import achievement_icons, media, poll_cadence, raw_answers
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -150,6 +150,9 @@ async def run(settings: Settings) -> None:
     # later without touching .env. The value from the environment only seeds it.
     if await repo.get_app_setting("timezone") is None:
         await repo.set_app_setting("timezone", settings.tz)
+    # How often each platform is asked: the panel's from now on, the
+    # environment's values only seed it (#184 stage 0).
+    await poll_cadence.seed_once(repo, settings)
 
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
     auth = XboxAuthService(settings, repo, cipher)
