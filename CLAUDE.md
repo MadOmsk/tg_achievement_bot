@@ -211,7 +211,8 @@ name, or when the tree goes stale.
 │   │   │                         backoff), models.py (pydantic responses)
 │   │   ├── steam/                auth.py (the admin-settable key, #17), client.py, achievements.py
 │   │   │                         (fetch_unlocked + schema/rarity cache)
-│   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
+│   │   ├── psn/                  auth.py (the shared NPSSO, PsnAuth), personal.py (a player's own
+│   │   │                         NPSSO, #233), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
 │   │   ├── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
 │   │   │                         client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
@@ -1354,7 +1355,12 @@ hand an answer to `raw_answers.keep`; the bot's assembly points it at
 
 `tokens` stores encrypted Xbox refresh tokens only (access/XSTS tokens stay in
 memory); status is active / invalid / revoked. Shared credentials (PSN NPSSO, Steam
-key, Anthropic key, YouTube key) are encrypted in `app_settings`.
+key, Anthropic key, YouTube key) are encrypted in `app_settings`. **A player's own
+PSN token** (owner, 2026-10-29; #233; migration 142, `psn_tokens`,
+`services/psn/personal.py`) is kept by PSN account, encrypted, active or dead,
+and counts only while its person holds the account (`_psn_tokens._HELD`): an
+unlink deletes it, a takeover leaves it unread and the daily check forgets it,
+a merge moves it with the person.
 
 ## Platform integrations
 

@@ -132,6 +132,9 @@ def setup_logging(level: str) -> None:
     # production: the key had been sitting in plain text in journalctl since
     # M-Steam-1. WARNING still surfaces httpx's own connection/TLS errors.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    # psnawp logs every request's headers at DEBUG — the bearer token of a
+    # player's own PSN token included (#233).
+    logging.getLogger("psnawp").setLevel(logging.WARNING)
 
 
 async def run(settings: Settings) -> None:

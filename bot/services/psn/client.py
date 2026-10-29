@@ -320,6 +320,24 @@ async def check_alive(client: PSNAWP, *, unreachable_is_alive: bool = False) -> 
     return True
 
 
+async def own_profile(client: PSNAWP) -> PsnProfile:
+    """Whose token this client was built from (#233): `me().account_id` is a
+    real request (the constructor and `me()` make none), so it proves the
+    token works and says which account it opens, in one."""
+    try:
+        me = client.me()
+        account_id = await _call(lambda: me.account_id)
+        online_id = await _call(lambda: me.online_id)
+    except PSNAWPAuthenticationError:
+        raise PsnTokenDeadError("the token was refused") from None
+    except OSError as exc:
+        raise PsnApiError(f"PSN unreachable: {type(exc).__name__}") from None
+    except Exception as exc:
+        # Never str(exc): a library's error may carry what was sent.
+        raise PsnApiError(f"could not read the token's account: {type(exc).__name__}") from None
+    return PsnProfile(account_id=str(account_id), online_id=str(online_id))
+
+
 async def resolve_profile(client: PSNAWP, online_id: str) -> PsnProfile:
     try:
         user = await _call(client.user, online_id=online_id)

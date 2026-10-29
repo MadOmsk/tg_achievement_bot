@@ -139,6 +139,7 @@ from bot.db.repo._pass import _PassRepo
 from bot.db.repo._passkeys import PasskeyRow, _PasskeysRepo
 from bot.db.repo._platform_links import _PlatformLinksRepo
 from bot.db.repo._polling import _PollingRepo
+from bot.db.repo._psn_tokens import PsnTokenRow, _PsnTokensRepo
 from bot.db.repo._series import _SeriesRepo
 from bot.db.repo._sessions import _SessionsRepo
 from bot.db.repo._stats import _StatsRepo
@@ -190,6 +191,7 @@ __all__ = [
     "PsnPollTarget",
     "PsnPresenceRow",
     "PsnPresenceTarget",
+    "PsnTokenRow",
     "PushSubscription",
     "RecentAchievement",
     "Repo",
@@ -241,6 +243,7 @@ class Repo(
     _GamePageRepo,
     _SeriesRepo,
     _PassRepo,
+    _PsnTokensRepo,
 ):
     """Every query in the project. Services call these; handlers call services."""
 
