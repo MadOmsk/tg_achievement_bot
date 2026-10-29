@@ -74,6 +74,8 @@ export type Layer =
   | { kind: "search" }
   | { kind: "settings"; pane: SettingsPaneName }
   | { kind: "connect"; platform: "steam" | "psn" }
+  /** A PSN account's own token (#233); `accountId` null links a new account by one. */
+  | { kind: "psn-token"; accountId: string | null }
   | { kind: "admin"; screen: AdminScreen | null };
 
 export type Tab = "home" | "feed" | "summary";

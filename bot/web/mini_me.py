@@ -253,6 +253,8 @@ async def _psn_block(
     # account fields the first one linked; `accounts` lists them all.
     accounts = []
     for item in links:
+        # The account's own token, if it has one (#233): its state only.
+        token = await repo.psn_token(item.external_id)
         accounts.append(
             {
                 "account_id": item.external_id,
@@ -267,6 +269,10 @@ async def _psn_block(
                 "visibility": visibility_status_text(item, locale),
                 "achievements_visible": item.achievements_visible,
                 "profile_url": psn_profile_url(item.display_name) if item.display_name else None,
+                "token": token.status if token else None,
+                "token_since": token.verified_at if token else None,
+                "token_checked_at": token.checked_at if token else None,
+                "token_dead_at": token.dead_at if token else None,
             }
         )
     return {

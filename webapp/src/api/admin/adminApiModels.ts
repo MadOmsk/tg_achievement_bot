@@ -28,9 +28,25 @@ export type AdminCredential = {
   /** "active" / "invalid" where a health check watches it, else null. */
   status: string | null;
   checked_at: string | null;
+  /** Its load, worded as the bot's key screen words it (#233). */
+  usage?: string | null;
 };
 
-export type AdminKeys = { keys: AdminCredential[] };
+/** A player's own PSN token (#233): whose, which account, its state — never the token. */
+export type AdminPsnToken = {
+  account_id: string;
+  name: string;
+  person_id: number;
+  who: string;
+  status: "active" | "dead";
+  checked_at: string | null;
+  dead_at: string | null;
+};
+
+export type AdminKeys = {
+  keys: AdminCredential[];
+  psn_tokens?: { alive: number; dead: number; shared: number; accounts: AdminPsnToken[] };
+};
 
 export type AdminUserRow = {
   person_id: number;

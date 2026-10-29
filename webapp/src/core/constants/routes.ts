@@ -19,6 +19,8 @@ export const USER_ROUTES = {
   DISCONNECT_STEAM: "/disconnect/steam",
   CONNECT_PSN: "/connect/psn",
   DISCONNECT_PSN: "/disconnect/psn",
+  PSN_TOKEN: "/psn/token",
+  CONNECT_PSN_TOKEN: "/connect/psn-token",
   SYNC_XBOX: "/sync/xbox",
   CHAT: (chatId: number) => `/chats/${chatId}`,
   ACCOUNT: (platform: string) => `/accounts/${platform}`,

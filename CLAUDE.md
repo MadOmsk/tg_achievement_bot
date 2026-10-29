@@ -2234,7 +2234,12 @@ keyboard.
   or by the account's own token (#233) —, each with «🔑 Токен ✅/➕/⚠️»: that
   token's screen (what it gives, the safety note, how to get one, paste,
   replace, remove; agreed on a navigable mockup, 2026-10-29). A pasted token's
-  message is deleted at once and the result replaces the prompt. The panel's switch
+  message is deleted at once and the result replaces the prompt. The Mini App has the
+  same (#233): Settings → Аккаунты → PlayStation → «Личный токен» opens its page
+  (`screens/settings/PsnToken.tsx`; `PUT|DELETE /api/mini/psn/token`), «Или по
+  токену» on the PSN connect page links one (`POST /api/mini/connect/psn-token`,
+  `web/mini_psn_token.py`); `/me` says each account's `token` state, never the
+  token; the admin's «Ключи» list the players' tokens beside the keys. The panel's switch
   covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
   PSN button carries ❗ while its achievements are hidden (any one PSN account), and
   that platform's screen then says what it means and puts "🔓 Как открыть ачивки"

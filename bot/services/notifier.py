@@ -54,6 +54,7 @@ QUALIFIERS = {
     "pass_reward": ("off",),
     # `prizes`: only a level that gives a prize (a game, a code), not a theme.
     "pass_level": ("off", "prizes"),
+    "psn_token_dead": ("off",),
 }
 # Kinds a channel carries unless switched off (`<kind>:off`): the super-admin's
 # word to everyone (owner, 2026-10-27), and one's own pass climbing (owner,
