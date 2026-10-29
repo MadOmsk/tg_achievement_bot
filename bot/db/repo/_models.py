@@ -280,6 +280,8 @@ class ChatTarget:
     # Filled in by the admin panel only; the publisher never looks at them.
     is_active: bool = True
     daily_summary: bool = True
+    # The chat admin's switch (#232); the publisher's query reads the column.
+    publishing: bool = True
     subscribers: int = 0
 
 
@@ -378,6 +380,8 @@ class AdminUserRow:
     psn_achievements_visible: bool | None = None
     # The person's own id (#156): the admin's buttons name them by it.
     person_id: int | None = None
+    # `users.role` (#232): the lists mark admins.
+    role: str | None = None
 
 
 @dataclass(slots=True)

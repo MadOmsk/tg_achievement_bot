@@ -39,6 +39,8 @@ INJECTABLE = {
     "admin_credentials",
     # PersonMiddleware (handlers/chat.py, #156)
     "person_id",
+    # admin.py's AdminAccess filter hands its handlers who is asking (#232)
+    "access",
     # merging two people, shared with the Mini App (#162)
     "merge",
     # aiogram's own

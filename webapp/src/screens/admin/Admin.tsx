@@ -44,7 +44,13 @@ export function AdminPage({ screen, onClose, layer }: { screen: AdminScreen | nu
 }
 
 function AdminHomeView() {
-  const { data, tr, open, locale } = useApp();
+  const { me } = useApp();
+  // A chat admin's panel is their chats alone (#232).
+  return me.is_superadmin ? <AppAdminHomeView /> : <ChatsView />;
+}
+
+function AppAdminHomeView() {
+  const { data, tr, open, locale, me } = useApp();
   const home = useLoad("admin-home", () => adminApi.fetchHome(data));
   const h = home.data;
   return (
@@ -69,7 +75,9 @@ function AdminHomeView() {
       )}
       {!h && home.loading && <span className="adm-skel skel" />}
       <Group>
-        <Row lead={<Icon name="key" />} title={tr("adminKeys")} sub={tr("adminKeysSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.KEYS } })} />
+        {me.role === "superadmin" && (
+          <Row lead={<Icon name="key" />} title={tr("adminKeys")} sub={tr("adminKeysSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.KEYS } })} />
+        )}
         <Row lead={<Icon name="settings" />} title={tr("adminSettings")} sub={tr("adminSettingsSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.SETTINGS } })} />
         <Row lead={<Icon name="people" />} title={tr("adminUsers")} sub={tr("adminUsersSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.USERS } })} />
         <Row lead={<Icon name="share" />} title={tr("adminChats")} sub={tr("adminChatsSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.CHATS } })} />
@@ -338,7 +346,7 @@ function UsersView() {
           <Row
             key={u.person_id}
             lead={<Face personId={u.person_id} name={u.name} size={40} dim={u.is_excluded} />}
-            title={u.name}
+            title={u.role === "superadmin" ? `${u.name} 👑` : u.role === "admin" ? `${u.name} ⭐` : u.name}
             sub={[
               [u.xbox && "Xbox", u.psn && "PS", u.steam && "Steam"].filter(Boolean).join(" · ") || tr("noPlatformsShort"),
               `${tr("usersToday")} ${u.today} · ${tr("usersMonth")} ${u.month}`,
@@ -439,7 +447,95 @@ function ChatView({ chatId, onGone }: { chatId: number; onGone: () => void }) {
           }}
         />
       )}
+      <ChatAdminGroup chatId={chatId} onGone={onGone} />
       {actions.data && <Actions actions={actions.data.actions} onGone={onGone} />}
+    </>
+  );
+}
+
+/** The chat's one admin (#232): an app admin appoints or removes; the chat admin hands the role on. */
+function ChatAdminGroup({ chatId, onGone }: { chatId: number; onGone: () => void }) {
+  const { data, tr, toast } = useApp();
+  const state = useLoad(`admin-chat-admin:${chatId}`, () => adminApi.fetchChatAdmin(data, chatId));
+  const [picking, setPicking] = useState(false);
+  const [ask, setAsk] = useState<{ tgId: number; name: string } | null>(null);
+  const [remove, setRemove] = useState(false);
+  const s = state.data;
+  if (!s) return null;
+  const give = async (tgId: number) => {
+    try {
+      const res = await adminApi.putChatAdmin(data, chatId, tgId);
+      toast(tr("chatAdminDone"));
+      if (!res.still) onGone();
+      else state.reload();
+    } catch {
+      toast(tr("somethingWrong"), "error");
+    }
+  };
+  return (
+    <>
+      <Group title={tr("chatAdmin")}>
+        <Row lead={<Icon name="people" />} title={s.admin?.name ?? tr("chatAdminNone")} />
+        <Row
+          title={s.hand_on ? tr("chatAdminHandOn") : tr("chatAdminAppoint")}
+          sub={s.hand_on ? tr("chatAdminHandOnSub") : undefined}
+          chevron
+          onClick={() => setPicking(true)}
+        />
+        {s.can_remove && <Row title={tr("chatAdminRemove")} danger onClick={() => setRemove(true)} />}
+      </Group>
+      {picking && (
+        <Sheet title={tr("chatAdminPick")} onClose={() => setPicking(false)} layer="chat-admin">
+          {s.candidates.length === 0 ? (
+            <Empty title={tr("chatAdminNobody")} />
+          ) : (
+            <Group>
+              {s.candidates.map((c) => (
+                <Row
+                  key={c.tg_id}
+                  lead={<Face personId={c.person_id} name={c.name} size={36} />}
+                  title={c.name}
+                  onClick={() => {
+                    setPicking(false);
+                    setAsk({ tgId: c.tg_id, name: c.name });
+                  }}
+                />
+              ))}
+            </Group>
+          )}
+        </Sheet>
+      )}
+      {ask && (
+        <Confirm
+          text={(s.hand_on ? tr("chatAdminConfirmHandOn") : tr("chatAdminConfirm")).replace("{name}", ask.name)}
+          yes={tr("yes")}
+          no={tr("cancel")}
+          danger={s.hand_on}
+          onYes={() => {
+            const a = ask;
+            setAsk(null);
+            void give(a.tgId);
+          }}
+          onNo={() => setAsk(null)}
+        />
+      )}
+      {remove && (
+        <Confirm
+          text={tr("chatAdminConfirmRemove")}
+          yes={tr("yes")}
+          no={tr("cancel")}
+          danger
+          onYes={async () => {
+            setRemove(false);
+            try {
+              state.set(await adminApi.deleteChatAdmin(data, chatId));
+            } catch {
+              toast(tr("somethingWrong"), "error");
+            }
+          }}
+          onNo={() => setRemove(false)}
+        />
+      )}
     </>
   );
 }

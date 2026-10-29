@@ -69,7 +69,7 @@ class _AdminRepo:
         was nowhere in the panel)."""
         cursor = await self._conn.execute(
             "SELECT u.tg_id, u.id AS person_id, u.username, u.first_name, " + HANDLE_SHOWN + ","
-            "       u.last_name, u.is_excluded, " + XBOX_COLUMNS + ","
+            "       u.last_name, u.is_excluded, u.role, " + XBOX_COLUMNS + ","
             "       u.last_online_at, t.status, t.last_refresh_at,"
             "       ps.external_id AS steam_id, ps.display_name AS steam_name,"
             "       ps.achievements_visible AS steam_achievements_visible,"
@@ -89,6 +89,7 @@ class _AdminRepo:
             AdminUserRow(
                 tg_id=row["tg_id"],
                 person_id=row["person_id"],
+                role=row["role"],
                 gamertag=row["gamertag"],
                 username=row["username"],
                 xuid=row["xuid"],
@@ -152,7 +153,7 @@ class _AdminRepo:
 
     async def admin_chats(self) -> list[ChatTarget]:
         cursor = await self._conn.execute(
-            "SELECT c.chat_id, c.title, c.is_active,"
+            "SELECT c.chat_id, c.title, c.is_active, s.publishing,"
             "       s.daily_summary, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
             "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
@@ -175,6 +176,7 @@ class _AdminRepo:
                 digest_threshold=row["digest_threshold"],
                 is_active=bool(row["is_active"]),
                 daily_summary=bool(row["daily_summary"]),
+                publishing=bool(row["publishing"]),
                 subscribers=int(row["subs"]),
             )
             for row in await cursor.fetchall()
@@ -188,6 +190,7 @@ class _AdminRepo:
             "flood_limit",
             "flood_window_minutes",
             "locale",
+            "publishing",
         }
         unknown = set(fields) - allowed
         if unknown:

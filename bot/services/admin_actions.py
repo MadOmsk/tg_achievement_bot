@@ -13,6 +13,12 @@ checks are the same.
 
 A new action is one class here and its `admin.ftl` strings. A new way to
 confirm or a new kind of input is added once, for both panels.
+
+Each action says who may take it (`needs`, services/roles.py, #232): a
+chat's actions its chat admin, a person's an app admin, deleting a person
+and resetting an account the super-admin alone. Both panels list and run
+actions through `AdminContext.access`, so a button nobody may press is
+never drawn and a request for it is refused.
 """
 
 from __future__ import annotations
@@ -26,11 +32,12 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import ChatTarget, PlatformLink, Repo, User
 from bot.i18n import gettext
-from bot.services import admin_cleanup, custom_avatars
+from bot.services import admin_cleanup, custom_avatars, roles
 from bot.services.admin_accounts import AdminAccounts
 from bot.services.admin_cleanup import WIPE_WINDOW_HOURS, Wipe
 from bot.services.admin_settings import TOAST_PREVIEW_MAX_CHARS
 from bot.services.naming import link_nickname, person_name_of
+from bot.services.roles import FULL, Access, Need
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +110,10 @@ class AdminContext:
     # style, to the super-admin's own DM — the caller's too (it is
     # Telegram's); answers how many posts went.
     send_picture_samples: Callable[[], Awaitable[int]] | None = None
+    # Who is asking (#232): what they may not take is neither listed nor run.
+    access: Access = FULL
+    # Their person id, for one who has no Telegram (a role is never one's own).
+    admin_person: int | None = None
 
     def accounts(self) -> AdminAccounts:
         return AdminAccounts(
@@ -162,6 +173,7 @@ class _Action:
     confirms: ClassVar[int] = 0
     section: ClassVar[str | None] = None
     order: ClassVar[int] = 50
+    needs: ClassVar[Need] = "admin"
 
     async def available(self, ctx: AdminContext, target: Target, subject: _Subject) -> bool:
         return True
@@ -224,6 +236,7 @@ class _Sync(_Action):
 
 class _Reset(_Action):
     id, scope, danger, confirms, order = "reset", "account", True, 1, 21
+    needs = "superadmin"
 
     def label(self, subject, target, _):
         return _account_label(subject, target, _, "reset")
@@ -290,6 +303,7 @@ class _NotificationTest(_Action):
 
 class _Delete(_Action):
     id, scope, danger, confirms, order = "delete", "user", True, 2, 90
+    needs = "superadmin"
 
     def label(self, subject, target, _):
         return _("admin-delete-user")
@@ -312,8 +326,66 @@ class _Delete(_Action):
         return Done(True, _("admin-delete-toast"), gone=True)
 
 
+class _RoleChange(_Action):
+    """Giving a role is the super-admin's (#232): one step up or down at a
+    time, each confirmed once. Never one's own, never somebody
+    `SUPERADMIN_TG_IDS` names (they are super-admins whatever is stored)."""
+
+    scope, confirms, order, needs = "user", 1, 80, "superadmin"
+    current: ClassVar[str]
+    to: ClassVar[str]
+
+    async def available(self, ctx, target, subject):
+        user = subject.user
+        if user is None or ctx.settings is None:
+            return False
+        if user.tg_id is not None and ctx.settings.is_superadmin(user.tg_id):
+            return False
+        if ctx.admin_id is not None and user.tg_id == ctx.admin_id:
+            return False
+        if ctx.admin_person is not None and target.person == ctx.admin_person:
+            return False
+        return roles.stored(await ctx.repo.person_role(target.person)) == self.current  # type: ignore[arg-type]
+
+    def label(self, subject, target, _):
+        return _(f"admin-role-{self.id}")
+
+    def confirm(self, step, subject, target, _):
+        assert subject.user is not None
+        return (
+            _(f"admin-role-{self.id}-confirm", name=person_name_of(subject.user)),
+            _("admin-role-confirm-yes"),
+        )
+
+    async def run(self, ctx, target, subject, locale):
+        await ctx.repo.set_person_role(target.person, None if self.to == roles.USER else self.to)  # type: ignore[arg-type]
+        return Done(
+            True,
+            _translator(locale)(
+                "admin-role-done", role=_translator(locale)(f"admin-role-{self.to}")
+            ),
+        )
+
+
+class _MakeAdmin(_RoleChange):
+    id, current, to = "make_admin", roles.USER, roles.ADMIN
+
+
+class _MakeSuperadmin(_RoleChange):
+    id, current, to, order = "make_superadmin", roles.ADMIN, roles.SUPERADMIN, 81
+
+
+class _UnmakeAdmin(_RoleChange):
+    id, current, to, order = "unmake_admin", roles.ADMIN, roles.USER, 82
+
+
+class _UnmakeSuperadmin(_RoleChange):
+    id, current, to = "unmake_superadmin", roles.SUPERADMIN, roles.ADMIN
+
+
 class _Promo(_Action):
     id, scope, confirms, order = "promo", "chat", 1, 10
+    needs = "chat"
 
     def label(self, subject, target, _):
         return _("admin-send-promo-to-chat")
@@ -340,6 +412,7 @@ class _Promo(_Action):
 
 class _DeleteLast(_Action):
     id, scope, section, order = "delete_last", "chat", "messages", 20
+    needs = "chat"
 
     def label(self, subject, target, _):
         return _("admin-delete-last")
@@ -360,6 +433,7 @@ class _DeleteLast(_Action):
 
 class _Wipe(_Action):
     scope, danger, confirms, section = "chat", True, 1, "messages"
+    needs = "chat"
     kind: ClassVar[Wipe]
     label_key: ClassVar[str]
     prompt_key: ClassVar[str]
@@ -425,6 +499,10 @@ ACTIONS: tuple[_Action, ...] = (
     _Sync(),
     _Reset(),
     _AvatarReset(),
+    _MakeAdmin(),
+    _MakeSuperadmin(),
+    _UnmakeAdmin(),
+    _UnmakeSuperadmin(),
     _Delete(),
     _Promo(),
     _DeleteLast(),
@@ -456,6 +534,8 @@ async def available(
         for action in ACTIONS:
             if action.scope != action_scope:
                 continue
+            if not ctx.access.allows(action.needs, action_target.chat_id):
+                continue
             if not await action.available(ctx, action_target, subject):
                 continue
             encoded = action_target.encode()
@@ -486,6 +566,8 @@ async def perform(
     action = _BY_ID.get((scope, action_id))
     if action is None:
         return Done(False, _("admin-action-unknown"))
+    if not ctx.access.allows(action.needs, target.chat_id):
+        return Done(False, _("admin-not-allowed"))
     subject = await _subject(ctx, scope, target)
     if subject is None or not await action.available(ctx, target, subject):
         return Done(False, _("admin-action-unknown"))

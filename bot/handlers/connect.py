@@ -25,6 +25,8 @@ from bot.handlers.delivery import safe_edit
 from bot.handlers.panel import send_panel
 from bot.handlers.psn import prompt_for_link as prompt_for_psn_link
 from bot.handlers.steam import prompt_for_link
+from bot.i18n import gettext
+from bot.services import roles
 from bot.services.connect import ConnectService
 from bot.services.merge import PeopleMerge
 from bot.services.naming import person_name_of, xbox_nickname
@@ -32,6 +34,8 @@ from bot.services.notify import SuperadminNotifier
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 from bot.util import parse_utc_offset
+from bot.views.admin import render_chat_card
+from bot.views.chat import CHAT_ADMIN_PAYLOAD
 from bot.views.keyboards import (
     PANEL_TZ,
     TZ_MANUAL,
@@ -96,6 +100,9 @@ async def start_with_payload(
         return
     if command.args == "panel":
         await send_panel(bot, repo, tg_id, i18n)
+        return
+    if (command.args or "").startswith(CHAT_ADMIN_PAYLOAD):
+        await _open_chat_admin(message, repo, settings, i18n, tg_id, command.args or "")
         return
     if command.args == "connectsteam":
         # Same prompt-and-wait as every other door into this flow
@@ -566,6 +573,23 @@ async def link_merge_answer(
         text = i18n.get("connect-link-merge-cancelled")
     await safe_edit(callback, text, None)
     await callback.answer()
+
+
+async def _open_chat_admin(
+    message: Message, repo: Repo, settings: Settings, i18n: I18nContext, tg_id: int, args: str
+) -> None:
+    """The group hub's «Управление чатом» (#232): that chat's admin card, for
+    its chat admin or an app admin; anybody else is told it is not theirs."""
+    try:
+        chat_id = int(args.removeprefix(CHAT_ADMIN_PAYLOAD))
+    except ValueError:
+        return
+    access = await roles.access_of(repo, settings, tg_id)
+    if not access.chat(chat_id):
+        await message.answer(gettext("admin", "admin-chat-admin-only", locale=i18n.locale))
+        return
+    text, markup = await render_chat_card(repo, chat_id, locale=i18n.locale, access=access)
+    await message.answer(text, reply_markup=markup)
 
 
 def _parse_connect_payload(args: str) -> tuple[bool, int | None]:

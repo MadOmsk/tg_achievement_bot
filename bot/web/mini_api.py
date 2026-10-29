@@ -249,6 +249,8 @@ async def handle_me(request: web.Request) -> web.Response:
         is_superadmin=roles.runs_the_app(role),
     )
     payload["role"] = roles.stored(role)
+    # A chat admin opens the admin panel too, to their chats only (#232).
+    payload["chat_admin"] = user.tg_id is not None and bool(await repo.chats_admined_by(user.tg_id))
     # Ask once for an email, the main way in (owner, 2026-10-05) — only where
     # one can be added at all.
     payload["email_prompt"] = request.app.get("mini_email_login") is not None and (

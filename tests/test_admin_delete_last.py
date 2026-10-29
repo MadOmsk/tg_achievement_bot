@@ -11,6 +11,7 @@ from bot.db.repo import Repo
 from bot.handlers.admin import admin_action
 from bot.services.admin_actions import toast_preview
 from bot.services.admin_settings import TOAST_PREVIEW_MAX_CHARS
+from bot.services.roles import FULL
 from bot.views.admin import render_chat_card
 
 CHAT_ID = -100888
@@ -43,7 +44,7 @@ class _FakeCallback:
 
 
 async def _tap(callback, repo, bot, settings, i18n) -> None:
-    await admin_action(callback, repo, bot, None, None, None, settings, i18n)  # type: ignore[arg-type]
+    await admin_action(callback, repo, bot, None, None, None, settings, i18n, FULL)  # type: ignore[arg-type]
 
 
 def test_toast_preview_passes_a_short_preview_through_unchanged() -> None:

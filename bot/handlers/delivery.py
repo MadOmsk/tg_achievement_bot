@@ -15,7 +15,7 @@ from aiogram import Bot
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from bot.config import Settings
-from bot.db.repo import AchievementRow, Repo
+from bot.db.repo import AchievementRow, ChatTarget, Repo
 from bot.i18n import gettext
 from bot.services import post_picture
 from bot.services.message_log import stats_category
@@ -144,3 +144,14 @@ async def send_picture_samples(
                 log.info("a picture sample (%s) did not go through: %r", style, exc)
             await asyncio.sleep(0.3)
     return sent
+
+
+async def tell_new_chat_admin(bot: Bot, repo: Repo, tg_id: int, chat: ChatTarget) -> None:
+    """A DM to a new chat admin (#232) — only if they ever wrote to the bot;
+    Telegram refuses otherwise, and that is no failure of the change."""
+    locale = await repo.user_locale(await repo.person_id(tg_id))
+    text = gettext("admin", "admin-chat-admin-you", locale=locale, title=chat.title or chat.chat_id)
+    try:
+        await bot.send_message(tg_id, text)
+    except Exception as exc:
+        log.info("chat admin %s not told of chat %s: %r", tg_id, chat.chat_id, exc)

@@ -7,8 +7,8 @@ admin-back = ‹ Back
 admin-cancel = Cancel
 admin-yes = yes
 admin-no = no
-admin-active = active
-admin-inactive = disabled
+admin-active = in the chat
+admin-inactive = not in the chat
 
 # Runtime settings
 admin-setting-summary-rows = Rows in /summary
@@ -49,7 +49,7 @@ admin-post-picture-size-original = Original (no card)
 admin-post-picture-off = As it is
 admin-post-picture-color = On the icon's colour
 admin-post-picture-cover = On the game's cover
-admin-setting-chat-active = Chat on
+admin-setting-chat-publishing = Publishing in the chat
 admin-setting-chat-locale = Language
 admin-setting-chat-tz = Time zone
 admin-setting-digest = Digest from
@@ -340,8 +340,10 @@ admin-chat-list-row = { $mark }{ $title } · { $subscribers }
 admin-chat-card =
     💬 { $title }
 
-    State:         { $state }
-    Publishing:    { $subscribers } people
+    Bot:           { $state }
+    Publishing:    { $publishing }
+    Subscribed:    { $subscribers } people
+    Chat admin:    { $admin }
     Daily summary: { $summary }, at { $time }
     Timezone:      { $offset }
     Anti-flood:    { $flood }
@@ -363,3 +365,49 @@ admin-default-player = Player
 admin-note-excluded =   excluded
 admin-note-invalid =   login expired
 admin-note-revoked =   unsubscribed
+
+## Chat admins (#232)
+admin-on = on
+admin-off = off
+admin-chat-admin-none = none
+admin-chat-admin-button = 👤 Chat admin ▸
+admin-chat-admin-pick =
+    👤 Chat admin: { $admin }
+
+    Who gets the role? Listed are those subscribed to the chat or who wrote in it.
+admin-chat-admin-hand-on =
+    👤 You are this chat's admin.
+
+    Who gets the role? You will lose it. Listed are those subscribed to the chat or who wrote in it.
+admin-chat-admin-nobody = Nobody to give the role to yet: a person has to subscribe to the chat or write in it.
+admin-chat-admin-remove = ✖️ Remove the admin
+admin-chat-admin-confirm = Make { $name } the admin of «{ $title }»?
+admin-chat-admin-confirm-hand-on = Hand the admin role of «{ $title }» to { $name }? You will lose it.
+admin-chat-admin-confirm-yes = Yes
+admin-chat-admin-remove-confirm = Take the chat admin role of «{ $title }» from { $name }?
+admin-chat-admin-set = The chat admin is now { $name }.
+admin-chat-admin-removed = The chat has no admin now.
+admin-chat-admin-handed-on = Done: { $name } is now the admin of «{ $title }».
+admin-chat-admin-you =
+    👤 You are now the admin of «{ $title }».
+
+    Its settings and messages are in /admin, or under «Manage the chat» in the group's /panel.
+admin-chat-admin-only = Only for the chat admin
+admin-not-allowed = That's not for you.
+admin-chats-mine-empty = You don't admin any chat yet.
+
+## Roles (#232)
+admin-role = Role: { $role }
+admin-role-user = user
+admin-role-admin = app admin
+admin-role-superadmin = super-admin
+admin-role-make_admin = ⭐ Make an admin
+admin-role-make_superadmin = 👑 Make a super-admin
+admin-role-unmake_admin = Remove the admin role
+admin-role-unmake_superadmin = Remove super-admin (keep admin)
+admin-role-make_admin-confirm = Make { $name } an app admin? They get the people, chats, settings and the season pass — not the keys, not deleting.
+admin-role-make_superadmin-confirm = Make { $name } a super-admin? They get everything: keys, deleting people, roles.
+admin-role-unmake_admin-confirm = Take the app admin role from { $name }?
+admin-role-unmake_superadmin-confirm = Take super-admin from { $name }? They stay an app admin.
+admin-role-confirm-yes = Yes
+admin-role-done = Role: { $role }

@@ -13,6 +13,7 @@ from PIL import Image
 
 from bot.db.repo import Repo
 from bot.services import avatars, custom_avatars
+from bot.services.roles import FULL
 from bot.web.mini_api import cors_middleware, setup_mini_api
 from tests.test_mini_delete import _signed_init_data
 
@@ -152,7 +153,15 @@ async def test_the_super_admin_can_take_a_picture_down(
         data="a:x:u:p1:avatar_reset:0", answer=answer, from_user=SimpleNamespace(id=1)
     )
     await admin_handlers.admin_action(  # type: ignore[arg-type]
-        callback, repo, None, None, None, None, SimpleNamespace(), SimpleNamespace(locale="ru")
+        callback,
+        repo,
+        None,
+        None,
+        None,
+        None,
+        SimpleNamespace(is_superadmin=lambda _tg: False),
+        SimpleNamespace(locale="ru"),
+        FULL,
     )
     assert await repo.custom_avatar_path(await repo.person_id(7)) is None
     assert answered and redrawn

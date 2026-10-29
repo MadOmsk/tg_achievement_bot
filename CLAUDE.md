@@ -155,6 +155,7 @@ name, or when the tree goes stale.
 │   │   ├── admin_status.py       what the super-admin's home shows, for both panels (#176)
 │   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
 │   │   ├── admin_actions.py      every super-admin action, described once, for both panels (#176)
+│   │   ├── roles.py              who may do what: four roles, one table, `Access` (#232)
 │   │   ├── admin_accounts.py     refresh / reset one person's game account (an action's work)
 │   │   ├── admin_cleanup.py      wiping the bot's messages from a chat (an action's work)
 │   │   ├── connect.py            one-time OAuth state, finishing a login
@@ -469,8 +470,10 @@ every column. History: #106.
   in without asking. Offers and `link_` tokens live in memory for ten minutes. The
   merge defers foreign keys to commit (`chat_seen` points at `users.tg_id`, which
   moves between the two rows).
-  **Roles** (owner, 2026-10-28; `users.role`, migration 140,
-  `services/roles.py`): `superadmin`, `admin`, or none (an ordinary person).
+  **Roles** (owner, 2026-10-28/29; `users.role`, migration 140,
+  `services/roles.py`, #232): `superadmin`, `admin` (the app admin), or none
+  (an ordinary person); a chat's admin is not a person's role but the chat's
+  (`chat_admins`, see Admin).
   The super-admins `SUPERADMIN_TG_IDS` names are always super-admins — written
   into the column on every start and on `/me`, never changed from the app —
   and must always keep a Telegram id: nothing (removing Telegram, a merge) may
@@ -1566,8 +1569,8 @@ History: #108.
 
 History: #108.
 
-An achievement is published to a chat only if every check passes: the person is
-subscribed there; not admin-excluded; the account's posting switch is on (#20); the
+An achievement is published to a chat only if every check passes: the chat's
+publishing switch is on (#232); the person is subscribed there; not admin-excluded; the account's posting switch is on (#20); the
 person's `rarity_mode` isn't `hidden`; in
 `rare` mode a
 known rarity is at or below the rarity threshold (Xbox 360 included since #121;
@@ -2246,21 +2249,49 @@ keyboard.
   **except an achievement notification**, single or digest, which it never takes
   (#101; `bot_messages.is_achievement`, set under the publisher's
   `achievement_category()`). The admin panel's and the Mini App's "delete last" share
-  the query. It quotes the first lines of what it deleted, and that confirmation is a
+  the query. The chat's admin and the app's admins may use it (#232). It quotes the first lines of what it deleted, and that confirmation is a
   system message the cleanup job removes later.
 
 ### Admin
 
-- **Three roles** (owner, 2026-10-28; `services/roles.py`, `users.role`): the
-  **суперадмин** (super-admin) does everything and gives the roles; the
-  **админ** (admin) does everything but give them — `/admin`, the Mini App's
-  admin, the pass's editor (`roles.runs_the_app`); everybody else is an
-  ordinary person. A super-admin is one of `SUPERADMIN_TG_IDS` (the old name
-  `ADMIN_TG_IDS` is still read) or one a super-admin made; only they give
-  roles — «⋯» on another person's page (`GET|PUT /api/mini/admin/users/p<id>/role`),
-  never to themselves nor to one the environment names — and they open any
-  person's page whatever its privacy (`repo.can_view_activity`). `/me` says
-  `role`; its `is_superadmin` is the admin door, an admin's too.
+- **Four roles, one table** (owner, 2026-10-28/29; #232; `services/roles.py`):
+
+  | | user | chat admin | app admin | super-admin |
+  |---|---|---|---|---|
+  | own things, feed, games, pass, invites, group commands, `/promo` | ✅ | ✅ | ✅ | ✅ |
+  | a chat's settings, «Сообщения» (`/delete_last`, wipes), promo | — | own chat | all | all |
+  | hand the chat admin role on (losing it) | — | ✅ | — | — |
+  | appoint / remove a chat admin | — | — | ✅ | ✅ |
+  | people: cards, exclude, avatar, refresh an account | — | — | ✅ | ✅ |
+  | season pass editor, global settings | — | — | ✅ | ✅ |
+  | keys, delete a person, reset an account, roles | — | — | — | ✅ |
+
+  - **суперадмин** — one of `SUPERADMIN_TG_IDS` (the old name `ADMIN_TG_IDS`
+    is still read) or one a super-admin made (`users.role`); only they give
+    roles — one step up or down, confirmed, from a person's card in both
+    panels (actions `make_admin`, `make_superadmin`, `unmake_admin`,
+    `unmake_superadmin`; the lists mark ⭐ an admin, 👑 a super-admin), and
+    «⋯» on a person's page in the Mini App (`GET|PUT
+    /api/mini/admin/users/p<id>/role`) — never to themselves nor to one the
+    environment names — and they open any person's page whatever its privacy
+    (`repo.can_view_activity`).
+  - **админ приложения** (app admin, `users.role = 'admin'`).
+  - **админ чата** (chat admin): **one per chat, by Telegram id**
+    (`chat_admins`, migration 141) — they may never have used the app.
+    Whoever adds the bot to a group becomes it; removing the bot (or a 403)
+    clears it (`repo.deactivate_chat`), and adding it again appoints the
+    adder again, so a group fixes a stuck bot by itself. Existing chats took
+    `chats.added_by`. They hand it on to a known member of the chat
+    (subscribed or seen writing, `repo.chat_admin_candidates`) and lose it;
+    an app admin appoints or removes; the new one is told in a DM when the
+    bot may write to them. They reach their chat by `/admin` (their chats
+    only) or the group hub's «🛠 Управление чатом» (`?start=chatadm<id>`).
+
+  **Every action and screen says what it needs** (`roles.Need`: `chat`,
+  `admin`, `superadmin`; an action's `needs`, a setting's by its scope) and
+  `Access.allows` is the one answer: a button nobody may press is never
+  drawn and a request for it is refused, in both panels. `/me` says `role`,
+  `is_superadmin` (the app admin door, an admin's too) and `chat_admin`.
 - **One source for both admin panels** (#176; owner, 2026-10-08: a new admin
   setting appears in the bot and the Mini App at once). Both only render what
   these services answer:
@@ -2333,11 +2364,15 @@ keyboard.
   mode they start with · Списки · HLTB · Таймеры · Почта · Прочее), `0` worded
   by what it means; the user list; the chat list and
   per-chat cards; exclusion; bot-message cleanup.
-- **The per-chat card** opens the registry's chat groups — Основное (on, language,
-  time zone) · Итоги дня (on, the hour) · Антифлуд (limit, window) — and «Сообщения» (the wipes), each redrawing in place
+- **The per-chat card** opens the registry's chat groups — Основное (publishing,
+  language, time zone) · Итоги дня (on, the hour) · Антифлуд (limit, window) — and «Сообщения» (the wipes), each redrawing in place
   with the card's text above. There is no minimum gamerscore
   (owner, 2026-10-08: it held back every Steam and PSN achievement; the column
-  `chat_settings.min_gamerscore` is left unread).
+  `chat_settings.min_gamerscore` is left unread). **Publishing** (owner,
+  2026-10-29; `chat_settings.publishing`, migration 141) is the chat admin's
+  switch for posts there; `chats.is_active` is the bot's own (removed, added
+  back) and no setting — a manual "off" was undone by the next `/subscribe`.
+  The card names the chat admin, and «👤 Админ чата» appoints or hands it on.
 - **The per-user card**: the person (chain 1) and their id, then **every way they
   sign in** (owner, 2026-10-07; `services/logins.py`, the same list the Mini App's
   admin card shows): Telegram (`@username`, its id passed to Fluent as a string,
