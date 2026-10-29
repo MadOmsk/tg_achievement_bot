@@ -151,7 +151,6 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
           {name ? <h1 className="pp-name2 clamp-2">{name}</h1> : <span className="skel pp-skel-name" />}
           {!c && (
             <>
-              <span className="skel pp-skel-line" />
               <span className="pp-accs2">
                 <span className="skel pp-skel-acc" />
                 <span className="skel pp-skel-acc" />

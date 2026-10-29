@@ -177,7 +177,6 @@
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding-top: 14px;
 }
 
 .pp-skel .pp-counts {
@@ -509,10 +508,11 @@
 .pp-skel-acc {
   display: block;
   width: 96px;
-  height: 26px;
+  height: 24px;
   border-radius: var(--r-full);
 }
 
 .pp-titles .pp-skel-name {
+  height: 29px;
   margin: 0;
 }
