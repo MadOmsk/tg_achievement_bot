@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from bot.db.repo._sql import HANDLE_SHOWN
 from bot.util import utcnow_iso
 
 # The token counts only while its person holds the account.
@@ -89,6 +90,28 @@ class _PsnTokensRepo:
     async def personal_psn_accounts(self) -> set[str]:
         """The PSN accounts read with their own live token."""
         return {row.account_id for row in await self.active_psn_tokens()}
+
+    async def psn_token_overview(self) -> list[dict]:
+        """Every token of an account still held, for the admin's list (#233):
+        the account, its holder, the state — never the token."""
+        cursor = await self._conn.execute(
+            "SELECT t.account_id, t.person_id, t.status, t.checked_at, t.dead_at,"
+            f" a.display_name, {HANDLE_SHOWN}"
+            " FROM psn_tokens t"
+            " LEFT JOIN accounts a ON a.platform = 'psn' AND a.external_id = t.account_id"
+            " LEFT JOIN users u ON u.id = t.person_id"
+            f" WHERE {_HELD} ORDER BY t.status, a.display_name"
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+    async def psn_accounts_without_token(self) -> int:
+        """Linked PSN accounts read with the shared token."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) FROM account_links l WHERE l.platform = 'psn' AND l.is_active = 1"
+            " AND NOT EXISTS (SELECT 1 FROM psn_tokens t WHERE t.account_id = l.external_id"
+            " AND t.person_id = l.person_id AND t.status = 'active')"
+        )
+        return int((await cursor.fetchone())[0])
 
     async def dead_psn_tokens(self) -> list[PsnTokenRow]:
         cursor = await self._conn.execute(

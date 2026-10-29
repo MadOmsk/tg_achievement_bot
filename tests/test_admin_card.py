@@ -159,8 +159,10 @@ async def test_psn_block_shows_trophies_wording_and_level(repo: Repo) -> None:
     block = _block(text, "PSN:")
     assert "PsnPerson" in block[0]
     assert block[1] == "account_id acc-1"
-    assert len(block) == 5  # PSN now has its own "last online" line too (issue #1)
-    achievements_line = block[3]
+    # Its own "last online" line (issue #1) and which token reads it (#233).
+    assert len(block) == 6
+    assert block[3].startswith("Токен:")
+    achievements_line = block[4]
     assert "1 трофей" in achievements_line
     assert "сегодня 1" in achievements_line
     assert "уровень 42" in achievements_line
@@ -175,7 +177,7 @@ async def test_psn_block_shows_last_online_from_the_presence_poller(repo: Repo) 
 
     text, _markup = await render_user_card(repo, await repo.person_id(1), locale="ru")
 
-    online_line = _block(text, "PSN:")[4]
+    online_line = _block(text, "PSN:")[5]
     assert "Rust" in online_line
 
 

@@ -115,6 +115,24 @@ admin-tz-place-p720 = Kamchatka
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
 admin-keys-title = 🔑 Platform keys
+admin-keys-tap = Tap a key: its state, check, load and actions are inside.
+admin-keys-personal-button = 👥 Personal PSN tokens · { $alive } ✅ · { $dead } ⚠️
+admin-keys-back = ‹ Keys
+admin-key-title = 🔑 <b>{ $label }</b>
+admin-key-status-alive = Status: ✅ working
+admin-key-status-dead = Status: ⚠️ not working
+admin-key-status-unset = Status: ⚪️ not set
+admin-key-checked = Checked: { $ago }
+admin-key-usage = Requests: { $usage }
+admin-key-psn-reads = Reads: { $shared } accounts without a personal token and the games catalog · personal tokens: { $alive } ✅ · { $dead } ⚠️
+admin-psntok-title = 👥 <b>Personal PSN tokens</b>
+admin-psntok-alive = ✅ <b>{ $name }</b> — { $who }, checked { $ago }
+admin-psntok-dead = ⚠️ <b>{ $name }</b> — { $who }, not working { $ago }, the owner was told
+admin-psntok-none = Nobody has added a personal token yet.
+admin-psntok-note = The tokens themselves are shown to nobody. Without a personal token: { $shared } accounts (polled less often — see «Status polling: PlayStation»).
+admin-psn-token-shared = Token: shared (polled less often)
+admin-psn-token-alive = Token: 🔑 personal ✅ (checked { $ago })
+admin-psn-token-dead = Token: 🔑 personal ⚠️ not working ({ $ago })
 admin-keys-line = { $label }: { $state }
 admin-keys-psn-label = PSN
 admin-keys-steam-label = Steam

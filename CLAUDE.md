@@ -2375,9 +2375,13 @@ keyboard.
   `admin_registry.py`, its drawing in `views/admin_settings.py` and in
   the Mini App's admin — and from then on every setting of
   that kind appears in both panels by itself.
-- **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
-  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
-  mail login (#17) — a key is
+- **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" —
+  one button per credential with its state as an icon (✅ / ⚠️ / ⚪️; #233, agreed
+  on a mockup 2026-10-29), each opening its own screen: state, last check, load,
+  where to get it, set / change / clear the Steam key, PSN NPSSO, Anthropic and
+  YouTube keys and the mail login (#17); beside them «👥 Личные токены PSN»,
+  whose own token reads which account and whether it works, and the user card's
+  PSN block says which token reads each account — a key or token is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
   rarity threshold, the digest size, profile links, the post picture, its card, scale and small-icon limit · Новые пользователи: the

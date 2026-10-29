@@ -115,6 +115,24 @@ admin-tz-place-p720 = Камчатка
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
 admin-keys-title = 🔑 Ключи платформ
+admin-keys-tap = Нажми на ключ — внутри статус, проверка, нагрузка и действия.
+admin-keys-personal-button = 👥 Личные токены PSN · { $alive } ✅ · { $dead } ⚠️
+admin-keys-back = ‹ Ключи
+admin-key-title = 🔑 <b>{ $label }</b>
+admin-key-status-alive = Статус: ✅ работает
+admin-key-status-dead = Статус: ⚠️ не работает
+admin-key-status-unset = Статус: ⚪️ не задан
+admin-key-checked = Проверен: { $ago }
+admin-key-usage = Запросы: { $usage }
+admin-key-psn-reads = Читает: { $shared } акк. без личного токена и каталог игр · личных токенов: { $alive } ✅ · { $dead } ⚠️
+admin-psntok-title = 👥 <b>Личные токены PSN</b>
+admin-psntok-alive = ✅ <b>{ $name }</b> — { $who }, проверен { $ago }
+admin-psntok-dead = ⚠️ <b>{ $name }</b> — { $who }, не работает { $ago }, владельцу написано
+admin-psntok-none = Пока никто не добавил личный токен.
+admin-psntok-note = Сами токены не показываются никому. Без личного токена: { $shared } акк. (опрос реже — настройка в «Опрос статуса: PlayStation»).
+admin-psn-token-shared = Токен: общий (опрос реже)
+admin-psn-token-alive = Токен: 🔑 личный ✅ (проверен { $ago })
+admin-psn-token-dead = Токен: 🔑 личный ⚠️ не работает ({ $ago })
 admin-keys-line = { $label }: { $state }
 admin-keys-psn-label = PSN
 admin-keys-steam-label = Steam
