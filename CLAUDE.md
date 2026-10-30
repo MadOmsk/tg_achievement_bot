@@ -119,6 +119,7 @@ name, or when the tree goes stale.
 │   ├── main.py                  entry point, assembly, router registration
 │   ├── config.py                settings from the environment (pydantic-settings)
 │   ├── lock.py                  "one process per .env" guard
+│   ├── moved.py                 the old bot after a move: points DMs and groups to the new one (#238)
 │   ├── util.py                  small helpers (UTC time, secret masking)
 │   ├── constants.py             shared enums: platforms, badges, setting keys
 │   ├── version.py               A.B.C.D and the "database newer than code" refusal (#56)
