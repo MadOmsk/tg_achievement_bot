@@ -68,7 +68,7 @@ from bot.web import (
     mini_session,
 )
 from bot.web.mini_admin import setup_admin_routes
-from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data
+from bot.web.mini_auth import InitDataError, MiniAppUser, validate_init_data_any
 from bot.web.mini_avatars import forget_avatar, image_mime, load_avatar_bytes
 from bot.web.mini_chat import (
     _https_url,
@@ -1326,7 +1326,7 @@ async def _require_user(request: web.Request) -> MiniAppUser:
         raise
     settings: Settings = request.app["mini_settings"]
     try:
-        user = validate_init_data(init_data, settings.bot_token.get_secret_value())
+        user = validate_init_data_any(init_data, settings.mini_app_tokens())
     except InitDataError as exc:
         log.info("mini initData rejected: %s (len=%s)", exc, len(init_data))
         raise web.HTTPUnauthorized(text="invalid initData") from exc
