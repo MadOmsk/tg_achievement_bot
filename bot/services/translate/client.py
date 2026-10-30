@@ -23,7 +23,7 @@ ANTHROPIC_VERSION = "2023-06-01"
 # description — this is bulk, cache-forever, translate-once work, never a
 # live per-message call (CLAUDE.md's own "no recurring paid LLM usage
 # without explicit rate limits" rule for exactly this class of feature).
-HAIKU_MODEL = "claude-haiku-4-5-20251001"
+HAIKU_MODEL = "claude-haiku-5-5"
 
 _CONNECT_TIMEOUT_SECONDS = 10.0
 _READ_TIMEOUT_SECONDS = 30.0
