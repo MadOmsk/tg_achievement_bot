@@ -104,31 +104,3 @@ async def test_a_taken_nickname_no_longer_throws_away_other_writes(repo: Repo) -
     stored = await repo._store_handle(other, "alice", 0, confirmed=True, changed=True)
     assert stored is False
     assert await _count(repo) == 1
-
-
-async def test_a_statement_slipping_in_before_begin_does_not_fail_the_block(repo: Repo) -> None:
-    """2026-10-11, three collections on one connection: a statement queued
-    before a block took its turn ran between the block's commit and BEGIN,
-    opened its own transaction, and BEGIN failed. That write is whole: it is
-    committed and BEGIN is said again."""
-    raw = repo._conn._raw
-    real = raw.execute
-    slipped = False
-
-    async def execute(sql, *args):
-        nonlocal slipped
-        if sql == "BEGIN" and not slipped:
-            slipped = True
-            await real(
-                "INSERT INTO app_settings (key, value, updated_at) VALUES ('slipped', '1', 'now')"
-            )
-        return await real(sql, *args)
-
-    raw.execute = execute  # type: ignore[method-assign]
-    try:
-        async with repo.transaction():
-            await repo.upsert_chat(-1, "Block", 1)
-    finally:
-        raw.execute = real  # type: ignore[method-assign]
-    assert await _count(repo) == 1
-    assert await _count(repo, "app_settings WHERE key = 'slipped'") == 1

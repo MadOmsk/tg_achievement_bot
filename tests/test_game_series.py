@@ -339,7 +339,8 @@ async def test_a_series_a_rule_names_is_kept_by_its_key_and_never_merged(repo: R
     await SeriesBuilder(repo).rebuild()  # again: the same series, not new ones
 
     cursor = await repo._conn.execute(
-        "SELECT s.name, s.rule_key, s.anchor_game_id, string_agg(gs.game_id::text, ',') FROM series s"
+        "SELECT s.name, s.rule_key, s.anchor_game_id, string_agg(gs.game_id::text, ',') FROM"
+        " series s"
         " JOIN game_series gs ON gs.series_id = s.series_id WHERE s.rule_key IS NOT NULL"
         " GROUP BY s.series_id"
     )

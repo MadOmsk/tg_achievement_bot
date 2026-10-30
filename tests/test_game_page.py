@@ -238,8 +238,13 @@ async def test_a_favorite_whose_id_is_gone_is_found_by_its_anchor(repo: Repo) ->
     await repo._conn.execute("UPDATE versions SET game_id = NULL WHERE game_id = ?", (game,))
     await repo._conn.execute("DELETE FROM games WHERE game_id = ?", (game,))
     await repo._conn.commit()
-    # The old id now names another game.
-    assert await repo.create_game("Some Other Game", None) == game
+    # The old id now names another game (written with it: PostgreSQL, unlike
+    # SQLite's rowid, never hands an id out twice by itself).
+    await repo._conn.execute(
+        "INSERT INTO games (game_id, name, created_at, updated_at)"
+        " VALUES (?, 'Some Other Game', 'now', 'now')",
+        (game,),
+    )
     again = await repo.adopt_list_as_game("steam", "620")
     assert again is not None and again != game
     assert await repo.favorite_game_ids(person) == [again]

@@ -4,10 +4,9 @@ and per-account writes touch only their account."""
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
+from bot.db.postgres import IntegrityError
 from bot.db.repo import Repo
 from bot.db.repo._sql import PERSON_BY_TG
 
@@ -46,7 +45,7 @@ async def test_the_index_still_holds_one_account_for_steam(repo: Repo) -> None:
     await repo.link_platform_account(await repo.person_id(TG), "steam", "1", "A")
     await repo._ensure_account("steam", "2")
 
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(IntegrityError):
         await repo._conn.execute(
             "INSERT INTO account_links (person_id, platform, external_id, is_active, linked_at)"
             " VALUES (" + PERSON_BY_TG + ", 'steam', '2', 1, '2026-09-25')",

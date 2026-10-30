@@ -164,6 +164,14 @@ async def database(tmp_path: Path, _db_template: str) -> AsyncIterator[Database]
     try:
         yield db
     finally:
+        # A background task a test left (a backfill, a notice) must not be
+        # waiting on the connection as it closes: Windows' selector loop fails
+        # on a socket closed under it.
+        current = asyncio.current_task()
+        leftover = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+        for task in leftover:
+            task.cancel()
+        await asyncio.gather(*leftover, return_exceptions=True)
         await db.close()
 
 
