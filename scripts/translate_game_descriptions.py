@@ -4,9 +4,9 @@ Russian, done for the whole catalog in one run — the same choice of text
 (`game_page.to_translate`), the same call and the same storage, so the page
 and this script never translate one text twice.
 
-Safe beside a running bot: each translation is one short write to the games
-database. `--dry-run` only counts. The key is the bot's own (`app_settings`,
-the admin's «Ключи»), read with the environment's FERNET_KEY.
+Safe beside a running bot: each translation is one short write to the catalog.
+`--dry-run` only counts. The key is the bot's own (`app_settings`, the admin's
+«Ключи»), read with the environment's FERNET_KEY.
 
 Usage (the test server: BOT_ENV_FILE=.env.test …):
     .venv/bin/python -m scripts.translate_game_descriptions --dry-run
@@ -21,7 +21,7 @@ import logging
 import time
 
 from bot.config import get_settings
-from bot.db.files import open_database
+from bot.db import tools
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.game_page import text_hash, to_translate
@@ -48,9 +48,9 @@ async def targets(repo: Repo) -> list[tuple[str, int, str]]:
     return [(kind, key, english) for (kind, key), english in found.items()]
 
 
-async def run(db: str | None, limit: int | None, workers: int, dry_run: bool) -> None:
+async def run(schema: str | None, limit: int | None, workers: int, dry_run: bool) -> None:
     settings = get_settings()
-    database = await open_database(db or settings.db_path)
+    database = await tools.open_database(schema=schema)
     try:
         repo = Repo(database)
         todo = await targets(repo)
@@ -93,13 +93,13 @@ async def run(db: str | None, limit: int | None, workers: int, dry_run: bool) ->
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", help="the bot's database (default: the environment's DB_PATH)")
+    tools.add_arguments(parser)
     parser.add_argument("--dry-run", action="store_true", help="count only")
     parser.add_argument("--limit", type=int, help="translate at most this many")
     parser.add_argument("--workers", type=int, default=4, help="calls at once (default 4)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING)
-    asyncio.run(run(args.db, args.limit, args.workers, args.dry_run))
+    tools.run(run(args.schema, args.limit, args.workers, args.dry_run))
 
 
 if __name__ == "__main__":

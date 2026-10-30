@@ -1,34 +1,39 @@
 """One-glance summary of the database, for `manage.ps1 status`.
 
-Read-only and dependency-free on purpose: it must work while the bot is down.
+Read-only on purpose: it must work while the bot is down.
 """
 
 from __future__ import annotations
 
-import sqlite3
+import argparse
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
-from bot.db import files
+import psycopg
 
-ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DB_PATH = ROOT / "data" / "bot.db"
+from bot.db import tools
 
 
-def scalar(conn: sqlite3.Connection, query: str) -> object:
+def scalar(conn: tools.Connection, query: str) -> object:
     row = conn.execute(query).fetchone()
     return row[0] if row else None
 
 
 def main() -> int:
-    db_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DB_PATH
-    if not db_path.exists():
-        print("Database not created yet.")
-        return 0
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    # manage.ps1 still passes the old database path: nothing is read from it.
+    parser.add_argument("db_path", nargs="?", help=argparse.SUPPRESS)
+    tools.add_arguments(parser)
+    args = parser.parse_args()
 
     # read-only: the running bot must not be disturbed by a status check
-    conn = files.connect(db_path, readonly=True)
+    try:
+        conn = tools.connect(schema=args.schema, readonly=True)
+    except psycopg.OperationalError as exc:
+        print(
+            "Database not created yet." if "does not exist" in str(exc) else "Database not running."
+        )
+        return 0
     try:
         # People with at least one active platform link (#52) — users.xuid
         # no longer exists; the account lives on accounts/account_links.
@@ -37,7 +42,7 @@ def main() -> int:
                 conn,
                 "SELECT COUNT(DISTINCT person_id) FROM account_links WHERE is_active = 1",
             )
-        except sqlite3.OperationalError:
+        except psycopg.errors.UndefinedTable:
             print(
                 "Database schema is outdated (missing account_links). "
                 "Start the bot once to migrate."
@@ -53,7 +58,8 @@ def main() -> int:
         today = scalar(
             conn,
             "SELECT COUNT(*) FROM seen_achievements "
-            "WHERE unlocked_at >= date('now') AND is_backfill = 0",
+            "WHERE unlocked_at >= to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD') "
+            "AND is_backfill = 0",
         )
     finally:
         conn.close()

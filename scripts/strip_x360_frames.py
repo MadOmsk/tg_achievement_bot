@@ -7,7 +7,7 @@ or one cut before, is left alone, so it can run again. Beside a running bot:
 every write is a rename, and the databases are only read.
 
     .venv/Scripts/python.exe -X utf8 -m scripts.strip_x360_frames --media /srv/unlocked-media \
-        --db data/bot.db --apply
+        --schema prod --apply
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from bot.db import files
+from bot.db import tools
 from bot.services import covers, game_art, media, x360_frame
 from bot.services.achievement_icons import detect_mime
 from bot.services.game_page import https
@@ -42,9 +42,9 @@ def strip_covers(apply: bool) -> tuple[int, int]:
     return seen, cut
 
 
-def list_icons(db: Path) -> set[str]:
+def list_icons(schema: str) -> set[str]:
     # Read-only: the database may belong to a running bot.
-    with files.connect(db, readonly=True) as conn:
+    with tools.connect(schema=schema, readonly=True) as conn:
         rows = conn.execute(
             "SELECT icon_url FROM achievement_list_connectors"
             " WHERE platform = 'xbox_360' AND icon_url IS NOT NULL"
@@ -52,7 +52,7 @@ def list_icons(db: Path) -> set[str]:
         # A 360 game's backward-compatible product: its store poster is
         # framed too (`game_page.store_art` marks it).
         rows += conn.execute(
-            "SELECT DISTINCT json_extract(media, '$.poster') FROM versions"
+            "SELECT DISTINCT media::jsonb->>'poster' FROM versions"
             " WHERE store = 'xbox' AND console = '360' AND stand_in = 0 AND media IS NOT NULL"
         ).fetchall()
     return {https(row[0]) for row in rows if row[0]}
@@ -80,7 +80,7 @@ def strip_posters(urls: set[str], apply: bool) -> tuple[int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--media", type=Path, default=None, help="MEDIA_DIR; data/ when unset")
-    parser.add_argument("--db", type=Path, action="append", default=[], help="a bot's database")
+    parser.add_argument("--schema", action="append", default=[], help="a bot's schema")
     parser.add_argument("--apply", action="store_true", help="write; a dry run without it")
     args = parser.parse_args()
     media.configure(args.media)
@@ -88,8 +88,8 @@ def main() -> int:
     seen, cut = strip_covers(args.apply)
     print(f"covers: {seen} 360 covers, {cut} with a frame")
     urls: set[str] = set()
-    for db in args.db:
-        urls |= list_icons(db)
+    for schema in args.schema:
+        urls |= list_icons(schema)
     found, cut = strip_posters(urls, args.apply)
     print(f"posters: {len(urls)} 360 list icons, {found} to keep marked, {cut} of them framed")
     if not args.apply:

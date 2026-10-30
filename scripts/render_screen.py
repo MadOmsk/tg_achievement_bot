@@ -13,9 +13,8 @@ all.
     python scripts/render_screen.py achievement --locale en --send
 
 Nothing here writes: it reads the database the .env points at and, with
---send, posts to the first id in SUPERADMIN_TG_IDS. Point DB_PATH at a copy when
-rendering against production data — and keep that copy in backups/, which is
-the one place a database copy may live (see CLAUDE.md's Operations).
+--send, posts to the first id in SUPERADMIN_TG_IDS. Point DATABASE_SCHEMA at a
+copy when rendering against production data.
 
 A copy rendered with a *different* FERNET_KEY than the one that filled it
 degrades honestly rather than failing: the shared credentials come back as
@@ -26,7 +25,6 @@ about a secret it cannot open.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -42,7 +40,8 @@ from aiogram.types import InputMediaPhoto
 
 from bot.config import Settings
 from bot.constants import Platform
-from bot.db.repo import AchievementRow, Database, Repo, TitleProgress
+from bot.db import tools
+from bot.db.repo import AchievementRow, Repo, TitleProgress
 from bot.i18n import i18n_for
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.admin_registry import find as find_setting
@@ -441,7 +440,7 @@ async def main() -> int:
         parser.error(f"unknown screen(s): {', '.join(unknown)}")
 
     settings = Settings()
-    database = await Database(Path(settings.db_path)).connect()
+    database = await tools.open_database(settings.database_url, schema=settings.database_schema)
     try:
         repo = Repo(database)
         admin_id = settings.superadmin_tg_ids[0]
@@ -484,4 +483,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

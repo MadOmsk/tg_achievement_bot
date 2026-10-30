@@ -16,10 +16,9 @@ import argparse
 import asyncio
 import logging
 import sys
-from pathlib import Path
 
-from bot.config import get_settings
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services import achievement_icons
 
 logging.basicConfig(
@@ -53,21 +52,10 @@ async def run() -> None:
         action="store_true",
         help="Only scan and report counts without downloading",
     )
-    parser.add_argument(
-        "--db",
-        type=str,
-        default=None,
-        help="Custom SQLite db path",
-    )
+    tools.add_arguments(parser)
     args = parser.parse_args()
 
-    settings = get_settings()
-    db_path = Path(args.db) if args.db else settings.db_path
-    if not db_path.is_file():
-        log.error("Database not found at %s", db_path)
-        sys.exit(1)
-
-    database = await Database(db_path).connect()
+    database = await tools.open_database(schema=args.schema)
     repo = Repo(database)
 
     try:
@@ -89,7 +77,7 @@ async def run() -> None:
                 UNION
                 SELECT platform, title_id, achievement_id, icon_url
                 FROM seen_achievements {where_sa}
-            )
+            ) AS icons
         """
         params = params_ta + params_sa
         cursor = await repo._conn.execute(query, tuple(params))
@@ -149,7 +137,7 @@ async def run() -> None:
 
 
 def main() -> None:
-    asyncio.run(run())
+    tools.run(run())
 
 
 if __name__ == "__main__":

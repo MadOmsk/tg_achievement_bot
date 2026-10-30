@@ -10,7 +10,7 @@ closes that gap going forward, but everyone already connected is still
 carrying the old gap until their *next* reconnect. This script closes it now,
 once, instead of waiting.
 
-Adds only what is missing — `insert_new_achievements` is `INSERT OR IGNORE`
+Adds only what is missing — `insert_new_achievements` skips what is there,
 keyed on (xuid, title_id, achievement_id) — and never publishes: every row
 goes in with is_backfill=True. Run it again after a backfill fix (#121: Xbox
 360 unlocks, and the history window) to fill what the old one missed.
@@ -26,13 +26,13 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from aiogram import Bot
 
 from bot.config import get_settings
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.poller.fetcher import Fetcher
 from bot.poller.publisher import Publisher
 from bot.services.crypto import TokenCipher
@@ -46,7 +46,7 @@ log = logging.getLogger("reconcile")
 
 async def main() -> None:
     settings = get_settings()
-    database = await Database(settings.db_path).connect()
+    database = await tools.open_database()
     repo = Repo(database)
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
     auth = XboxAuthService(settings, repo, cipher)
@@ -74,8 +74,8 @@ async def main() -> None:
         for user in users:
             await _reconcile(repo, fetcher, user)
     finally:
-        # A connection left open keeps aiosqlite's thread alive and the
-        # process hangs instead of exiting (CLAUDE.md, bring-up).
+        # A connection left open keeps the process from exiting cleanly
+        # (CLAUDE.md, bring-up).
         await auth.close()
         await bot.session.close()
         await database.close()
@@ -85,7 +85,7 @@ async def _reconcile(repo: Repo, fetcher: Fetcher, user) -> None:
     name = user.gamertag or f"id{user.tg_id}"
     try:
         _, before_score = await repo.achievement_counts(user.xuid, None)
-        total = await fetcher.backfill(user.id, user.xuid)
+        total = await fetcher.backfill(user.person_id, user.xuid)
         _, after_score = await repo.achievement_counts(user.xuid, None)
     except (XboxApiError, TokenRefreshError) as exc:
         # TokenRefreshError is not an XboxApiError: a network blip during a
@@ -103,4 +103,4 @@ async def _reconcile(repo: Repo, fetcher: Fetcher, user) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    tools.run(main())

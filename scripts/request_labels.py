@@ -7,25 +7,24 @@ Read-only on the database (the requests are kept in the advice store beside
 it, `label_requests.json`), safe beside the viewer.
 
 Usage:
-    … -m scripts.request_labels --db data/games.db 605:9745 1099:5884
+    … -m scripts.request_labels --schema dev 605:9745 1099:5884
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
-from pathlib import Path
 
+from bot.config import get_settings
+from bot.db import tools
 from bot.db.repo import Repo
 from bot.services.advice import AdviceStore
 from bot.services.game_link import load_candidates
 from bot.services.game_match import compare
-from scripts.advise_pairs import open_read_only
 
 
-async def verdicts(db: Path, pairs: list[tuple[int, int]]) -> list[dict]:
-    database = await open_read_only(db)
+async def verdicts(schema: str | None, pairs: list[tuple[int, int]]) -> list[dict]:
+    database = await tools.open_database(schema=schema)
     try:
         cands = await load_candidates(Repo(database), sorted({v for p in pairs for v in p}))
     finally:
@@ -51,12 +50,12 @@ async def verdicts(db: Path, pairs: list[tuple[int, int]]) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("pairs", nargs="+", help="version:version")
     args = parser.parse_args()
     pairs = [tuple(int(x) for x in p.split(":")) for p in args.pairs]
-    rows = asyncio.run(verdicts(Path(args.db), pairs))  # type: ignore[arg-type]
-    store = AdviceStore.for_db(Path(args.db))
+    rows = tools.run(verdicts(args.schema, pairs))  # type: ignore[arg-type]
+    store = AdviceStore.for_db(get_settings().db_path)
     store.save_label_requests(store.label_requests() + rows)
     print(f"{len(rows)} pairs asked for")
 
