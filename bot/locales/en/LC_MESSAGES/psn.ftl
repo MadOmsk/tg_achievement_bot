@@ -74,6 +74,7 @@ psn-token-error-format = ❌ That does not look like a token: 64 letters and dig
 psn-token-error-refused = ❌ Sony refused this token — it is old or was not copied whole. Get a fresh one: sign in at playstation.com and open the link from the steps again.
 psn-token-error-mismatch = ❌ This token opens <b>{ $other }</b>, not <b>{ $name }</b>. Not saved. Sign in at playstation.com as { $name } and get the token again.
 psn-token-error-unavailable = ❌ Could not reach PlayStation Network — try again in a couple of minutes. Not saved.
+psn-token-error-too_soon = ❌ Too many tries — try again in ten minutes or so. Not saved.
 psn-token-error-not_linked = ❌ This PSN account is not linked to you any more.
 psn-token-error-invalid = ❌ The token did not work.
 psn-token-delete-confirm =

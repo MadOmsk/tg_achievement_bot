@@ -27,7 +27,7 @@ from bot.poller.fetcher import Fetcher
 from bot.poller.service_health import DEFAULT_KEY_CHECK_INTERVAL_MIN, KEY_CHECK_INTERVAL_KEY
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.services.admin_credentials import AdminCredentials
-from bot.services.roles import SUPERADMIN
+from bot.services.roles import ADMIN, SUPERADMIN
 from bot.util import parse_iso, utcnow
 from bot.views.admin_home import render_admin_home
 
@@ -66,13 +66,19 @@ class AdminPanelRefresh:
         # One row per super-admin, so the panel being redrawn always belongs
         # to exactly one known person — rendered in their own language (#48).
         person = await self._repo.person_id(row.admin_id)
+        # The column holds every super-admin, the environment's included
+        # (written on every start): only theirs shows the keys (#232).
+        role = await self._repo.person_role(person) if person is not None else None
+        if role not in (ADMIN, SUPERADMIN):
+            # Demoted since it was opened: the home stops redrawing for them.
+            log.info("admin panel auto-refresh: %s is no admin now, stopping", row.admin_id)
+            await self._repo.delete_admin_panel_refresh(row.admin_id)
+            return
         text, markup = await render_admin_home(
             self._repo,
             self._credentials,
             locale=await self._repo.user_locale(person),
-            # The column holds every super-admin, the environment's included
-            # (written on every start): only theirs shows the keys (#232).
-            keys=person is not None and await self._repo.person_role(person) == SUPERADMIN,
+            keys=role == SUPERADMIN,
         )
         try:
             await self._bot.edit_message_text(

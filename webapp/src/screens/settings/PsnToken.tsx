@@ -15,6 +15,8 @@ const ERRORS: Record<string, TranslationKey> = {
   mismatch: "psnTokenErrMismatch",
   unavailable: "psnTokenErrUnavailable",
   not_linked: "psnTokenErrNotLinked",
+  too_soon: "psnTokenErrTooSoon",
+  not_configured: "connectNotConfigured",
   limit: "connectLimit",
   cooldown: "connectCooldown",
 };

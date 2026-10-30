@@ -9,7 +9,12 @@ from types import SimpleNamespace
 import pytest
 
 from bot.db.repo import Repo
-from bot.handlers.admin import _awaiting_input, chat_setting_open, setting_number_input
+from bot.handlers.admin import (
+    AwaitingSettingInput,
+    _awaiting_input,
+    chat_setting_open,
+    setting_number_input,
+)
 from bot.services.admin_registry import find, parse
 from bot.services.admin_settings import SettingValueError
 from bot.services.roles import FULL
@@ -99,3 +104,14 @@ async def test_a_typed_limit_is_saved_and_a_bad_one_refused(repo: Repo, i18n) ->
     text, _markup = await render_chat_card(repo, CHAT_ID, locale="ru")
     assert "выключен" in text
     assert ok.answers[0].startswith("✅")
+
+
+async def test_a_bare_number_with_no_setting_open_is_left_to_others(repo: Repo, i18n) -> None:
+    """A chat admin's SteamID64 or a game called "1942" is not the admin's
+    (#232): the number handler takes a message only while a setting waits."""
+    _awaiting_input.pop(1, None)
+    assert not await AwaitingSettingInput()(_FakeMessage("76561198000000000"))
+    await repo.upsert_chat(CHAT_ID, "Гейминг-чат", 1)
+    await chat_setting_open(_FakeCallback(f"a:cs:{CHAT_ID}:flood_limit"), repo, i18n, FULL)
+    assert await AwaitingSettingInput()(_FakeMessage("5"))
+    _awaiting_input.pop(1, None)

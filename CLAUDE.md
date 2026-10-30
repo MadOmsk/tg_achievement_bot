@@ -141,7 +141,8 @@ name, or when the tree goes stale.
 │   │   │                        database and renders a `Screen` (text, keyboard, photo/gallery), never
 │   │   │                        sends and never decides when it is shown
 │   │   ├── panel.py, chat.py, admin.py, admin_home.py, online.py, summary.py,
-│   │   │   notification.py, hltb.py      one per screen (admin_home and online are redrawn on timers)
+│   │   │   notification.py, hltb.py, psn_token.py   one per screen (admin_home and online are
+│   │   │                                 redrawn on timers)
 │   │   ├── keyboards.py          every inline keyboard, the close button, format_* helpers
 │   │   ├── parts.py              shared vocabulary: badges, platform palette, counted nouns,
 │   │   │                         per-platform header rows, value brackets
@@ -1365,7 +1366,11 @@ PSN token** (owner, 2026-10-29; #233; migration 142, `psn_tokens`,
 `services/psn/personal.py`) is kept by PSN account, encrypted, active or dead,
 and counts only while its person holds the account (`_psn_tokens._HELD`): an
 unlink deletes it, a takeover leaves it unread and the daily check forgets it,
-a merge moves it with the person.
+a merge moves it with the person. **A token pasted where a nickname is asked**
+(the bot's prompt, `/connect_psn`, the Mini App's field) is recognised by its
+form (`personal.looks_like_token`), deleted from the chat and linked as a
+token — never logged, sent to Sony's search or quoted back. A person has
+Sony check at most five tokens in ten minutes (`too_soon`).
 
 ## Platform integrations
 
@@ -1557,7 +1562,7 @@ History: #108.
 
 - **Presence cadence** is state-based — fastest in a game, then online, then
   offline, slower for someone offline a while (`idle_after`), slowest for a
-  dormant account — **the super-admin's settings, per platform** (owner,
+  dormant account — **global admin settings, per platform** (owner,
   2026-10-29; #184 stage 0; `services/poll_cadence.py`): /admin → Настройки →
   «Опрос статуса: Xbox / Steam / PlayStation», in both panels from the registry,
   whole minutes (the tick is a minute), PSN's trophy-scan steps beside them. The
@@ -1995,7 +2000,7 @@ elsewhere in this file still describe the bot.
     endpoint** (`mini_notifications.PUSH_HOSTS`: FCM, Mozilla, Apple, Windows; https
     on 443): the server posts to it, and an arbitrary address would make it call
     any host, an internal one included. **Push goes only to the app's own
-    address** (owner, 2026-10-29; `push_subscriptions.origin`, migration 142): a
+    address** (owner, 2026-10-29; `push_subscriptions.origin`, migration 143): a
     browser keeps one subscription per address, and every dev tunnel kept
     getting the same notice; one of another address is forgotten at start-up.
     Push needs `MINI_APP_URL` (where a tap opens) and a
@@ -2312,9 +2317,11 @@ keyboard.
     roles — one step up or down, confirmed, from a person's card in both
     panels (actions `make_admin`, `make_superadmin`, `unmake_admin`,
     `unmake_superadmin`; the lists mark ⭐ an admin, 👑 a super-admin), and
-    «⋯» on a person's page in the Mini App (`GET|PUT
-    /api/mini/admin/users/p<id>/role`) — never to themselves nor to one the
-    environment names — and they open any person's page whatever its privacy
+    «⋯» on a person's page in the Mini App (the role from `GET
+    /api/mini/admin/users/p<id>/role`, the step by the same actions) — never
+    to themselves nor to one the environment names; one the environment
+    stops naming loses the role at the next start (`ensure_superadmins`) —
+    and they open any person's page whatever its privacy
     (`repo.can_view_activity`).
   - **админ приложения** (app admin, `users.role = 'admin'`).
   - **админ чата** (chat admin): **one per chat, by Telegram id**

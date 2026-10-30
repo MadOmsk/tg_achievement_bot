@@ -43,6 +43,7 @@ from bot.services.psn.client import (
     is_trophy_visible,
     resolve_profile,
 )
+from bot.services.psn.personal import looks_like_token
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import (
     SteamApiError,
@@ -456,6 +457,10 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     raw = str(body.get("online_id") or body.get("identity") or "").strip()
     if not raw:
         return web.json_response({"ok": False, "error": "missing_identity"}, status=400)
+    if looks_like_token(raw):
+        from bot.web.mini_psn_token import link_by_token
+
+        return await link_by_token(request, user, raw)
 
     # Up to MAX_PSN_ACCOUNTS accounts (#10); the limit is checked again
     # below once the Online ID is resolved, since relinking one already held
@@ -470,7 +475,7 @@ async def handle_connect_psn(request: web.Request) -> web.Response:
     except PsnTokenDeadError:
         return web.json_response({"ok": False, "error": "service_dead"}, status=503)
     except PsnApiError as exc:
-        log.info("mini connect_psn: resolve failed tg_id=%s raw=%r: %s", user.tg_id, raw, exc)
+        log.info("mini connect_psn: resolve failed tg_id=%s: %s", user.tg_id, exc)
         return web.json_response({"ok": False, "error": "not_found"}, status=404)
 
     if not await is_trophy_visible(client, profile.account_id):

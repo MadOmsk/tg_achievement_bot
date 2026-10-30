@@ -25,10 +25,6 @@ export class AdminApi extends BaseApi {
     return this.get<{ role: Role; fixed: boolean }>(initData, ADMIN_ROUTES.ROLE(personId));
   }
 
-  putRole(initData: string, personId: number, role: Role): Promise<{ role: Role }> {
-    return this.put<{ role: Role }>(initData, ADMIN_ROUTES.ROLE(personId), { role });
-  }
-
   fetchHome(initData: string): Promise<AdminHome> {
     return this.get<AdminHome>(initData, ADMIN_ROUTES.HOME);
   }

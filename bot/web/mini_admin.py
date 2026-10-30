@@ -290,7 +290,6 @@ def setup_admin_routes(app: web.Application) -> None:
     app.router.add_get("/api/mini/admin/users", handle_admin_users)
     app.router.add_get("/api/mini/admin/users/{ref}", handle_admin_user)
     app.router.add_get("/api/mini/admin/users/{ref}/role", handle_role_get)
-    app.router.add_put("/api/mini/admin/users/{ref}/role", handle_role_put)
     app.router.add_get("/api/mini/admin/chats", handle_admin_chats)
     app.router.add_get("/api/mini/admin/chats/{chat_id}/settings", handle_admin_chat_settings)
     app.router.add_patch(
@@ -632,7 +631,7 @@ async def _role_giver(request: web.Request):
 
 
 async def handle_role_get(request: web.Request) -> web.Response:
-    await _role_giver(request)
+    user = await _role_giver(request)
     repo: Repo = request.app["mini_repo"]
     person = await _person_of(request)
     settings = request.app["mini_settings"]
@@ -641,29 +640,11 @@ async def handle_role_get(request: web.Request) -> web.Response:
         {
             "ok": True,
             "role": roles.stored(await repo.person_role(person)),
-            # Named in SUPERADMIN_TG_IDS: a super-admin whatever the app says.
-            "fixed": settings.is_superadmin(tg_id),
+            # Named in SUPERADMIN_TG_IDS (a super-admin whatever the app
+            # says), or oneself: the role actions are not offered for them.
+            "fixed": settings.is_superadmin(tg_id) or person == user.person_id,
         }
     )
-
-
-async def handle_role_put(request: web.Request) -> web.Response:
-    user = await _role_giver(request)
-    repo: Repo = request.app["mini_repo"]
-    person = await _person_of(request)
-    settings = request.app["mini_settings"]
-    try:
-        body = await request.json()
-    except ValueError:
-        raise web.HTTPBadRequest(text="bad json") from None
-    role = str((body or {}).get("role") or "")
-    if role not in roles.ROLES:
-        return web.json_response({"ok": False, "error": "invalid"}, status=400)
-    if settings.is_superadmin(await repo.tg_id_of(person)) or person == user.person_id:
-        # The environment's super-admins, and oneself, keep what they are.
-        return web.json_response({"ok": False, "error": "fixed"}, status=409)
-    await repo.set_person_role(person, None if role == roles.USER else role)
-    return web.json_response({"ok": True, "role": role})
 
 
 # ----------------------------------------------------------------- chat admin

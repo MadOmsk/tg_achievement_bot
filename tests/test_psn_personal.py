@@ -12,6 +12,7 @@ from bot.constants import Platform
 from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.psn import personal
+from bot.services.psn.auth import PsnAuth
 from bot.services.psn.client import PsnApiError, PsnProfile, PsnTokenDeadError
 from bot.services.psn.personal import (
     PsnPersonalAuth,
@@ -25,6 +26,10 @@ from bot.services.psn.personal import (
 GOOD = "A" * 64
 OTHER = "B" * 64
 KEY = "jDzMk1H4D8_uG2bZqv0O1c0JxQb5ZQ0w6m3pX1Yf4kE="
+
+
+async def _shared_set(self: object) -> str:
+    return "active"
 
 
 @pytest.fixture
@@ -54,6 +59,8 @@ def sony(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     monkeypatch.setattr(personal, "build_client", build_client)
     monkeypatch.setattr(personal, "own_profile", own_profile)
     monkeypatch.setattr(personal, "check_alive", check_alive)
+    # A shared token is set: linking by a token needs the poller to run.
+    monkeypatch.setattr(PsnAuth, "status", _shared_set)
     return state
 
 
@@ -330,3 +337,51 @@ async def test_the_token_screens_render(repo: Repo, sony) -> None:
     menu = await render_account_menu(repo, 9, Platform.PSN, locale="ru")
     assert menu is not None and "⚠️" in str(menu.keyboard)
     assert await render_token(repo, person, "999", locale="ru") is None
+
+
+async def test_a_token_in_the_nickname_prompt_is_linked_as_a_token(
+    repo: Repo, sony, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The token's button sits under the nickname prompt: a token pasted
+    there is deleted and linked as a token, never searched, logged or echoed."""
+    from bot.handlers import awaiting
+    from bot.handlers import psn as psn_handlers
+    from bot.services.psn.auth import PsnAuth
+
+    async def no_backfill(*_: object, **__: object) -> None:
+        return None
+
+    async def searched(*_: object) -> None:
+        raise AssertionError("a token went to Sony's search")
+
+    monkeypatch.setattr(psn_handlers, "run_psn", no_backfill)
+    monkeypatch.setattr(psn_handlers, "resolve_profile", searched)
+    await repo.ensure_user(9, None)
+    psn_auth = PsnAuth(repo, TokenCipher(KEY))
+    psn_auth.personal = PsnPersonalAuth(repo, TokenCipher(KEY))
+    awaiting.expect(9, "psn")
+    message, bot = _Message(9, f'{{"npsso":"{GOOD}"}}'), _Bot()
+    with caplog.at_level(logging.DEBUG):
+        await psn_handlers.psn_link_provided(
+            message,
+            repo,
+            psn_auth,
+            _Fetcher(),
+            bot,
+            _i18n(),  # type: ignore[arg-type]
+        )
+    assert message.deleted
+    [link] = await repo.platform_links_for(await repo.person_id(9), Platform.PSN)
+    assert link.external_id == "111"
+    assert GOOD not in caplog.text
+    assert all(GOOD not in text for text in bot.sent + bot.edited)
+
+
+async def test_tokens_tried_too_often_are_refused(repo: Repo, sony) -> None:
+    auth = PsnPersonalAuth(repo, TokenCipher(KEY))
+    for _ in range(personal.ATTEMPTS_PER_WINDOW):
+        await auth.identify(GOOD, 5)
+    with pytest.raises(personal.TokenTooOften):
+        await auth.identify(GOOD, 5)
+    await auth.identify(GOOD, 6)  # another person's tries are their own
+    assert personal.looks_like_token(GOOD) and not personal.looks_like_token("RideTheSun")

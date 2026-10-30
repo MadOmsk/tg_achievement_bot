@@ -74,6 +74,7 @@ psn-token-error-format = ❌ Это не похоже на токен: нужн�
 psn-token-error-refused = ❌ Sony не принял этот токен — он устарел или скопирован не целиком. Возьми свежий: войди на playstation.com и снова открой ссылку из инструкции.
 psn-token-error-mismatch = ❌ Этот токен от аккаунта <b>{ $other }</b>, а не от <b>{ $name }</b>. Токен не сохранён. Войди на playstation.com именно в { $name } и возьми токен заново.
 psn-token-error-unavailable = ❌ Не смог достучаться до PlayStation Network — попробуй через пару минут. Токен не сохранён.
+psn-token-error-too_soon = ❌ Слишком много попыток — попробуй снова минут через десять. Токен не сохранён.
 psn-token-error-not_linked = ❌ Этот аккаунт PSN больше не привязан к тебе.
 psn-token-error-invalid = ❌ Токен не подошёл.
 psn-token-delete-confirm =

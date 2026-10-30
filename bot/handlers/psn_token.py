@@ -26,7 +26,7 @@ from bot.handlers.delivery import safe_edit
 from bot.i18n import StaticI18nContext
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.services.naming import link_nickname
-from bot.services.psn.auth import PsnAuth
+from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth
 from bot.services.psn.personal import PsnTokenError
 from bot.views import Screen
 from bot.views.panel import render_account_menu, render_panel
@@ -238,13 +238,17 @@ async def link_by_token(
 ) -> None:
     """Links the PSN account a token opens, then keeps the token for it (#233).
     The account's trophies may be hidden: its own token reads them."""
-    from bot.handlers.psn import link_profile
+    from bot.handlers.psn import NOT_CONFIGURED_KEY, link_profile
 
     if user is None or psn_auth.personal is None:
         return
+    if await psn_auth.status() == STATUS_NOT_CONFIGURED:
+        # No shared token: the poller reads nobody, a linked account included.
+        await bot.send_message(user.id, i18n.get(NOT_CONFIGURED_KEY))
+        return
     personal = psn_auth.personal
     try:
-        npsso, profile = await personal.identify(raw)
+        npsso, profile = await personal.identify(raw, ("tg", user.id))
     except PsnTokenError as exc:
         await _answer(
             bot, user.id, render_result(exc.code, name=None, account_id=None, locale=i18n.locale)

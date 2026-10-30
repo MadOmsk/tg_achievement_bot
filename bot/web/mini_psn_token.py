@@ -15,8 +15,9 @@ from aiohttp import web
 from bot.constants import MAX_PSN_ACCOUNTS, Platform
 from bot.db.repo import Repo
 from bot.poller.psn_fetcher import PsnFetcher
-from bot.services.psn.auth import PsnAuth
+from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth
 from bot.services.psn.personal import PsnPersonalAuth, PsnTokenError
+from bot.web.mini_auth import MiniAppUser
 
 log = logging.getLogger(__name__)
 
@@ -70,17 +71,29 @@ async def handle_connect_by_token(request: web.Request) -> web.Response:
     """Links the PSN account a token opens and keeps the token for it: its
     trophies may be hidden, its own token reads them. The same limit and
     cooldown as linking by nickname."""
-    from bot.web.mini_api import _json_body, _psn_backfill, _require_user
+    from bot.web.mini_api import _json_body, _require_user
 
     user = await _require_user(request)
+    body = await _json_body(request)
+    return await link_by_token(request, user, str(body.get("token") or ""))
+
+
+async def link_by_token(request: web.Request, user: MiniAppUser, raw: str) -> web.Response:
+    """Linking by a token, whichever field it was pasted into: the token's
+    own route, or the nickname's (`handle_connect_psn`), where it must never
+    be logged or sent to Sony's search."""
+    from bot.web.mini_api import _psn_backfill
+
     personal = _personal(request)
     repo: Repo = request.app["mini_repo"]
     psn_fetcher: PsnFetcher | None = request.app["mini_psn_fetcher"]
     if psn_fetcher is None:
         raise web.HTTPServiceUnavailable(text="psn unavailable")
-    body = await _json_body(request)
+    if await request.app["mini_psn_auth"].status() == STATUS_NOT_CONFIGURED:
+        # No shared token: the poller reads nobody, a linked account included.
+        return web.json_response({"ok": False, "error": "not_configured"}, status=400)
     try:
-        npsso, profile = await personal.identify(str(body.get("token") or ""))
+        npsso, profile = await personal.identify(raw, user.person_id)
     except PsnTokenError as exc:
         return _refused(exc)
 

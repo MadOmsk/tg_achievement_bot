@@ -367,10 +367,20 @@ const ROLES: Array<{ role: Role; title: TranslationKey; about: TranslationKey }>
   { role: "superadmin", title: "roleSuperadmin", about: "roleSuperadminAbout" },
 ];
 
+/** One step up or down, as the bot's card does (#232): the registry's role
+ * actions, so the server says whether a step is allowed and asks first. */
+const STEPS: Partial<Record<`${Role}>${Role}`, string>> = {
+  "user>admin": "make_admin",
+  "admin>superadmin": "make_superadmin",
+  "admin>user": "unmake_admin",
+  "superadmin>admin": "unmake_superadmin",
+};
+
 /** The super-admin gives a person a role (owner, 2026-10-28). */
 function RoleSheet({ personId, onClose }: { personId: number; onClose: () => void }) {
   const { data, tr, toast } = useApp();
   const [state, setState] = useState<{ role: Role; fixed: boolean } | null>(null);
+  const [ask, setAsk] = useState<{ action: string; to: Role; text: string; yes: string; step: number } | null>(null);
   useEffect(() => {
     let live = true;
     adminApi
@@ -381,16 +391,29 @@ function RoleSheet({ personId, onClose }: { personId: number; onClose: () => voi
       live = false;
     };
   }, [data, personId, toast, tr]);
-  const pick = async (role: Role) => {
-    if (!state || state.fixed || role === state.role) return;
-    tick();
+  const stepTo = (role: Role) => (state && !state.fixed ? STEPS[`${state.role}>${role}`] : undefined);
+  const run = async (action: string, to: Role, step: number) => {
     try {
-      await adminApi.putRole(data, personId, role);
-      setState({ ...state, role });
-      toast(tr("roleSaved"));
+      const res = await adminApi.postAction(data, { scope: "user", target: `p${personId}`, action, step });
+      if (res.confirm) {
+        setAsk({ action, to, text: res.confirm.text, yes: res.confirm.yes, step: res.confirm.step });
+        return;
+      }
+      if (res.done?.ok && state) {
+        setState({ ...state, role: to });
+        toast(tr("roleSaved"));
+      } else if (res.done?.text) {
+        toast(res.done.text, "error");
+      }
     } catch {
       toast(tr("somethingWrong"), "error");
     }
+  };
+  const pick = (role: Role) => {
+    const action = stepTo(role);
+    if (!action) return;
+    tick();
+    void run(action, role, 0);
   };
   return (
     <Sheet title={tr("roleTitle")} onClose={onClose} layer="role">
@@ -403,11 +426,24 @@ function RoleSheet({ personId, onClose }: { personId: number; onClose: () => voi
               title={tr(r.title)}
               sub={tr(r.about)}
               trail={state?.role === r.role ? <Icon name="check" size={20} /> : undefined}
-              onClick={state && !state.fixed ? () => void pick(r.role) : undefined}
+              onClick={stepTo(r.role) ? () => pick(r.role) : undefined}
             />
           ))}
         </div>
       </div>
+      {ask && (
+        <Confirm
+          text={ask.text}
+          yes={ask.yes}
+          no={tr("cancel")}
+          onYes={() => {
+            const a = ask;
+            setAsk(null);
+            void run(a.action, a.to, a.step);
+          }}
+          onNo={() => setAsk(null)}
+        />
+      )}
     </Sheet>
   );
 }

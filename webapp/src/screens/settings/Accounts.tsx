@@ -256,4 +256,9 @@ const CONNECT_ERRORS: Record<string, TranslationKey> = {
   cooldown: "connectCooldown",
   service_dead: "connectServiceDead",
   limit: "connectLimit",
+  // A token pasted into the nickname field is linked as a token (#233).
+  format: "psnTokenErrFormat",
+  refused: "psnTokenErrRefused",
+  unavailable: "psnTokenErrUnavailable",
+  too_soon: "psnTokenErrTooSoon",
 };

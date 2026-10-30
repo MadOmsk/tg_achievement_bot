@@ -22,6 +22,10 @@ OTHER = "B" * 64
 KEY = "jDzMk1H4D8_uG2bZqv0O1c0JxQb5ZQ0w6m3pX1Yf4kE="
 
 
+async def _shared_set(self: object) -> str:
+    return "active"
+
+
 @pytest.fixture
 def sony(monkeypatch: pytest.MonkeyPatch) -> None:
     accounts = {GOOD: PsnProfile("111", "Me"), OTHER: PsnProfile("222", "Them")}
@@ -34,6 +38,8 @@ def sony(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(personal, "build_client", build_client)
     monkeypatch.setattr(personal, "own_profile", own_profile)
+    # A shared token is set: linking by a token needs the poller to run.
+    monkeypatch.setattr(PsnAuth, "status", _shared_set)
 
 
 async def _client(repo: Repo, person: int, tg_id: int, monkeypatch) -> TestClient:
@@ -55,6 +61,7 @@ async def _client(repo: Repo, person: int, tg_id: int, monkeypatch) -> TestClien
     app["mini_psn_auth"] = psn_auth
     app["mini_psn_fetcher"] = object()
     mini_psn_token.setup(app)
+    app.router.add_post("/api/mini/connect/psn", mini_api.handle_connect_psn)
     client = TestClient(TestServer(app))
     await client.start_server()
     return client
@@ -92,4 +99,23 @@ async def test_link_by_token(repo: Repo, sony, monkeypatch) -> None:
         await client.close()
     [link] = await repo.platform_links_for(person, Platform.PSN)
     assert link.external_id == "111"
+    assert (await repo.psn_token("111")).status == "active"  # type: ignore[union-attr]
+
+
+async def test_a_token_in_the_nickname_field_is_linked_as_a_token(
+    repo: Repo, sony, monkeypatch
+) -> None:
+    from bot.web import mini_api
+
+    async def searched(*_: object) -> None:
+        raise AssertionError("a token went to Sony's search")
+
+    monkeypatch.setattr(mini_api, "resolve_profile", searched)
+    person = await repo.ensure_user(7, None)
+    client = await _client(repo, person, 7, monkeypatch)
+    try:
+        res = await client.post("/api/mini/connect/psn", json={"online_id": GOOD})
+        assert (await res.json())["online_id"] == "Me"
+    finally:
+        await client.close()
     assert (await repo.psn_token("111")).status == "active"  # type: ignore[union-attr]

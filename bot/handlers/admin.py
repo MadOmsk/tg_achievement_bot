@@ -221,6 +221,18 @@ class AwaitingAdminTextInput(BaseFilter):
         return pending is not None and pending[0].startswith(_KEY_PENDING)
 
 
+class AwaitingSettingInput(BaseFilter):
+    """A setting opened for typing (#232): without one, a bare number is a
+    chat admin's SteamID64 or a game called "1942", for another handler."""
+
+    async def __call__(self, event: TelegramObject) -> bool:
+        user = getattr(event, "from_user", None)
+        if user is None:
+            return False
+        pending = _awaiting_input.get(user.id)
+        return pending is not None and pending[0].startswith(_SETTING_PENDING)
+
+
 @router.callback_query(F.data == "a:keys")
 async def keys_menu(
     callback: CallbackQuery,
@@ -561,17 +573,16 @@ async def _show_group(
     )
 
 
-@router.message(F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"))
+@router.message(
+    F.chat.type == ChatType.PRIVATE, F.text.regexp(r"^\d+([.,]\d+)?$"), AwaitingSettingInput()
+)
 async def setting_number_input(
     message: Message, repo: Repo, i18n: I18nContext, access: Access
 ) -> None:
-    """A number typed for the setting opened last; anything else stays the
-    business of whatever is waiting for it."""
+    """A number typed for the setting opened last (`AwaitingSettingInput`)."""
     _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
-    pending = _awaiting_input.get(message.from_user.id)
-    if pending is None or not pending[0].startswith(_SETTING_PENDING):
-        return  # a plain number from an admin who isn't in this flow — ignore
+    pending = _awaiting_input[message.from_user.id]
     scope_raw, _sep, key = pending[0].removeprefix(_SETTING_PENDING).partition(":")
     scope: Scope = "chat" if scope_raw == "chat" else "global"
     chat_id = pending[1]

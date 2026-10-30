@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 
 from psnawp_api import PSNAWP
@@ -37,6 +38,10 @@ log = logging.getLogger(__name__)
 
 # What Sony's ssocookie page hands out: 64 letters and digits.
 NPSSO_FORMAT = re.compile(r"[A-Za-z0-9]{64}")
+# Tokens one person may have checked by Sony in a window: each check is a
+# login on Sony's side and a client of its own.
+ATTEMPTS_PER_WINDOW = 5
+ATTEMPTS_WINDOW_SECONDS = 600
 
 
 class PsnTokenError(Exception):
@@ -67,6 +72,12 @@ class TokenUnavailable(PsnTokenError):
     code = "unavailable"
 
 
+class TokenTooOften(PsnTokenError):
+    """More tokens tried than `ATTEMPTS_PER_WINDOW` in the window."""
+
+    code = "too_soon"
+
+
 class TokenMismatch(PsnTokenError):
     """It opens another PSN account than the one it is being added to."""
 
@@ -89,19 +100,38 @@ def clean(raw: str) -> str:
     return text.strip().strip('"').strip()
 
 
+def looks_like_token(raw: str) -> bool:
+    """A token pasted where a nickname was asked (the token's button sits
+    under that prompt): it must be neither logged nor echoed back."""
+    return bool(NPSSO_FORMAT.fullmatch(clean(raw))) or '"npsso"' in raw
+
+
 class PsnPersonalAuth:
     def __init__(self, repo: Repo, cipher: TokenCipher) -> None:
         self._repo = repo
         self._cipher = cipher
         self._clients: dict[str, PSNAWP] = {}
+        # Who tried a token when, in memory: a restart starts it over.
+        self._attempts: dict[object, list[float]] = {}
         # Fired once when a live token is found dead (main.py: the notice).
         self.on_dead: Callable[[int, str], Awaitable[None]] | None = None
 
-    async def identify(self, raw: str) -> tuple[str, PsnProfile]:
-        """The token cleaned and the account it opens; raises PsnTokenError."""
+    def _attempt(self, who: object) -> None:
+        now = time.monotonic()
+        recent = [t for t in self._attempts.get(who, []) if now - t < ATTEMPTS_WINDOW_SECONDS]
+        if len(recent) >= ATTEMPTS_PER_WINDOW:
+            self._attempts[who] = recent
+            raise TokenTooOften
+        self._attempts[who] = [*recent, now]
+
+    async def identify(self, raw: str, who: object = None) -> tuple[str, PsnProfile]:
+        """The token cleaned and the account it opens; raises PsnTokenError.
+        `who` (a person, a Telegram id) rations the checks Sony is asked."""
         npsso = clean(raw)
         if not NPSSO_FORMAT.fullmatch(npsso):
             raise TokenFormatInvalid
+        if who is not None:
+            self._attempt(who)
         try:
             client = await build_client(npsso)
             profile = await own_profile(client)
@@ -120,7 +150,7 @@ class PsnPersonalAuth:
         }
         if account_id not in held:
             raise TokenNotLinked
-        npsso, profile = await self.identify(raw)
+        npsso, profile = await self.identify(raw, person_id)
         if profile.account_id != account_id:
             log.info("psn token for account %s opens another account", account_id)
             raise TokenMismatch(profile.online_id)
@@ -161,8 +191,13 @@ class PsnPersonalAuth:
             return None
         try:
             client = await build_client(npsso)
-        except PsnApiError:
-            log.info("psn personal client for account %s not built", account_id, exc_info=True)
+        except PsnApiError as exc:
+            # The class only: a library's message is no place to trust with a token.
+            log.info(
+                "psn personal client for account %s not built: %s",
+                account_id,
+                type(exc).__name__,
+            )
             return None
         self._clients[account_id] = client
         return client

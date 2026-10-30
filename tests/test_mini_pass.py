@@ -323,21 +323,41 @@ async def test_roles_open_the_editor_and_only_a_superadmin_gives_them(
         # An ordinary person edits nothing and gives nothing.
         state = await (await client.get("/api/mini/pass", headers=helper_headers)).json()
         assert not state["admin"]
-        put = await client.put(
-            f"/api/mini/admin/users/p{helper}/role", json={"role": "admin"}, headers=helper_headers
+
+        def step(target: int, action: str, n: int) -> dict:
+            return {"scope": "user", "target": f"p{target}", "action": action, "step": n}
+
+        res = await client.post(
+            "/api/mini/admin/actions", json=step(helper, "make_admin", 0), headers=helper_headers
         )
-        assert put.status == 403
-        # The super-admin makes them an admin: the editor opens, roles stay shut.
-        put = await client.put(
-            f"/api/mini/admin/users/p{helper}/role", json={"role": "admin"}, headers=headers
+        assert res.status == 403
+        # The super-admin makes them an admin, one step and confirmed, as the
+        # bot's card does: the editor opens, roles stay shut.
+        res = await client.post(
+            "/api/mini/admin/actions", json=step(helper, "make_admin", 0), headers=headers
         )
-        assert put.status == 200
+        confirm = (await res.json())["confirm"]
+        res = await client.post(
+            "/api/mini/admin/actions",
+            json=step(helper, "make_admin", confirm["step"]),
+            headers=headers,
+        )
+        assert (await res.json())["done"]["ok"]
+        assert await repo.person_role(helper) == "admin"
         state = await (await client.get("/api/mini/pass", headers=helper_headers)).json()
         assert state["admin"]
+        # No jump past a step: user → super-admin is no action at all.
+        role = await (
+            await client.get(f"/api/mini/admin/users/p{helper}/role", headers=headers)
+        ).json()
+        assert role["role"] == "admin"
         me_id = await repo.person_id(admin_tg)
-        put = await client.put(
-            f"/api/mini/admin/users/p{me_id}/role", json={"role": "user"}, headers=helper_headers
+        res = await client.post(
+            "/api/mini/admin/actions",
+            json=step(me_id, "unmake_superadmin", 1),
+            headers=helper_headers,
         )
-        assert put.status == 403
+        assert res.status == 403 or not (await res.json())["done"]["ok"]
+        assert await repo.person_role(me_id) == "superadmin"
     finally:
         await client.close()

@@ -45,6 +45,7 @@ from bot.services.psn.client import (
     is_trophy_visible,
     resolve_profile,
 )
+from bot.services.psn.personal import looks_like_token
 from bot.views.keyboards import deep_link_keyboard, switch_keyboard, switch_prompt
 from bot.views.panel import render_account_menu, render_panel
 from bot.views.parts import platform_label
@@ -250,8 +251,32 @@ async def connect_psn(
     if not raw:
         await prompt_for_link(bot, repo, psn_auth, message.chat.id, i18n)
         return
+    if await _token_instead(message, repo, psn_auth, psn_fetcher, bot, raw, i18n):
+        return
     username = message.from_user.username if message.from_user else None
     await _connect(bot, repo, psn_auth, psn_fetcher, message.chat.id, username, raw, i18n)
+
+
+async def _token_instead(
+    message: Message,
+    repo: Repo,
+    psn_auth: PsnAuth,
+    psn_fetcher: PsnFetcher,
+    bot: Bot,
+    raw: str,
+    i18n: I18nContext,
+) -> bool:
+    """A token pasted where a nickname was asked: out of the chat at once,
+    and linked by it, as its own button would (#233) — never logged, never
+    sent to Sony's search, never quoted back."""
+    if not looks_like_token(raw):
+        return False
+    from bot.handlers.psn_token import link_by_token
+
+    with contextlib.suppress(Exception):
+        await message.delete()
+    await link_by_token(bot, repo, psn_auth, psn_fetcher, message.from_user, raw, i18n)
+    return True
 
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingPsnLink())
@@ -264,6 +289,9 @@ async def psn_link_provided(
     i18n: I18nContext,
 ) -> None:
     awaiting.clear(message.from_user.id)
+    raw = (message.text or "").strip()
+    if await _token_instead(message, repo, psn_auth, psn_fetcher, bot, raw, i18n):
+        return
     username = message.from_user.username if message.from_user else None
     await _connect(
         bot,
@@ -308,7 +336,7 @@ async def _connect(
         await bot.send_message(tg_id, i18n.get("psn-service-token-dead"))
         return
     except PsnApiError as exc:
-        log.info("connect_psn: could not resolve tg_id=%s raw=%r: %s", tg_id, raw, exc)
+        log.info("connect_psn: could not resolve tg_id=%s: %s", tg_id, exc)
         await bot.send_message(tg_id, i18n.get("psn-profile-not-found", raw=raw))
         return
 

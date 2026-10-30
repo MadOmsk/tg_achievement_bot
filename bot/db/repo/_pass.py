@@ -25,6 +25,9 @@ FIELDS = (
     "platform",
 )
 SEEDED = "pass_seeded"
+# The super-admins the environment named at the last start (#232).
+_ENV_SUPERADMINS = "env_superadmin_tg_ids"
+
 _TAKEN = (
     "(SELECT COUNT(*) FROM pass_item_codes c WHERE c.item_id = i.item_id"
     " AND c.claimed_at IS NOT NULL)"
@@ -505,15 +508,30 @@ class _PassRepo:
         await self._conn.commit()
 
     async def ensure_superadmins(self, tg_ids: Iterable[int]) -> None:
-        """The super-admins the environment names are super-admins here too."""
-        ids = list(tg_ids)
-        if not ids:
-            return
-        marks = ",".join("?" * len(ids))
-        await self._conn.execute(
-            f"UPDATE users SET role = 'superadmin' WHERE tg_id IN ({marks})", ids
-        )
-        await self._conn.commit()
+        """The super-admins the environment names are super-admins here too;
+        one it named last start and names no more is one no longer (its
+        role was the environment's, never given in the app: a named one
+        cannot be given or taken one). The names are kept in `app_settings`."""
+        ids = sorted(set(tg_ids))
+        before = {
+            int(t)
+            for t in json.loads(await self.get_app_setting(_ENV_SUPERADMINS) or "[]")  # type: ignore[attr-defined]
+        }
+        async with self.transaction():  # type: ignore[attr-defined]
+            dropped = sorted(before - set(ids))
+            if dropped:
+                marks = ",".join("?" * len(dropped))
+                await self._conn.execute(
+                    "UPDATE users SET role = NULL"
+                    f" WHERE role = 'superadmin' AND tg_id IN ({marks})",
+                    dropped,
+                )
+            if ids:
+                marks = ",".join("?" * len(ids))
+                await self._conn.execute(
+                    f"UPDATE users SET role = 'superadmin' WHERE tg_id IN ({marks})", ids
+                )
+            await self.set_app_setting(_ENV_SUPERADMINS, json.dumps(ids))  # type: ignore[attr-defined]
 
     async def all_person_ids(self) -> list[int]:
         cursor = await self._conn.execute("SELECT id FROM users ORDER BY id")

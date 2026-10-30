@@ -1,11 +1,12 @@
 """How often each platform's presence (and PSN's trophy scan) is asked
-(owner, 2026-10-29; #184 stage 0): the super-admin's settings, one group
+(owner, 2026-10-29; #184 stage 0): global admin settings, one group
 per platform in both admin panels, read by the pollers on every tick so a
 change needs no restart.
 
-The environment's old `presence_interval_*`, `psn_*_poll_interval` and
-`catchup_idle_threshold_days` seed them once (`seed_once`); from then on
-the panel owns them. Steps are whole minutes: the scheduler ticks once a
+The environment's old `presence_interval_*` and `psn_*_poll_interval`
+seed them once (`seed_once`); from then on the panel owns them. Dormancy
+starts at its default, 7 days (owner, 2026-10-29), whatever
+`catchup_idle_threshold_days` says. Steps are whole minutes: the scheduler ticks once a
 minute, so nothing finer could be kept anyway.
 """
 
