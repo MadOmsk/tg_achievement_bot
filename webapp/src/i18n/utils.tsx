@@ -1,6 +1,5 @@
 import { ru, type TranslationKey } from "./locales/ru";
 import { en } from "./locales/en";
-import type { TimezoneOption } from "../core/constants/timezones";
 import { RARITY_MODES } from "../core/constants/rarity";
 
 export type Locale = "ru" | "en";
@@ -50,15 +49,6 @@ export function formatOffset(minutes: number | null | undefined, locale: string)
   const h = Math.floor(abs / 60);
   const m = abs % 60;
   return m ? `UTC${sign}${h}:${String(m).padStart(2, "0")}` : `UTC${sign}${h}`;
-}
-
-// A known offset (TIMEZONES) names its city through a locale key; a custom
-// offset a chat/person typed in has no city, only the UTC±H:MM itself.
-export function timezoneLabel(
-  entry: TimezoneOption | { min: number; label: string },
-  locale: string,
-): string {
-  return "key" in entry ? t(locale, entry.key) : entry.label;
 }
 
 export function rarityLabel(mode: string | null, locale: string): string {

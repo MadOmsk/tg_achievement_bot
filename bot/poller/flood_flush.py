@@ -96,5 +96,5 @@ def _five_minutes_before_summary(chat: ChatTarget) -> bool:
     about to read the buffer's absence anyway."""
     if not chat.is_active or not chat.daily_summary:
         return False
-    now_local = local_now(chat.tz_offset_min)
+    now_local = local_now(chat.tz)
     return (now_local + timedelta(minutes=5)).strftime("%H:%M") == chat.daily_summary_time

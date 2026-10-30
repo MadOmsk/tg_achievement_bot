@@ -642,7 +642,7 @@ async def render_chat_card(
         return _("admin-chat-not-found-period"), _back_home(locale=locale)
 
     names = subscriber_names(await repo.chat_subscribers(chat_id))
-    zone_label = format_offset(chat.tz_offset_min)
+    zone_label = format_offset(chat.tz, None)
     flood_label = (
         _("admin-chat-flood-value", limit=chat.flood_limit, window=chat.flood_window_minutes)
         if chat.flood_limit > 0

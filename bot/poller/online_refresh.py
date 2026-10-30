@@ -80,7 +80,7 @@ class OnlineAutoRefresh:
             await self._repo.delete_online_auto_refresh(row.chat_id)
             return
         settings_row = await self._repo.get_chat_daily_settings(row.chat_id)
-        updated_label = local_now(settings_row.tz_offset_min).strftime("%H:%M")
+        updated_label = local_now(settings_row.tz).strftime("%H:%M")
         text = render_online_table(rows, updated_label, settings_row.locale)
         try:
             with stats_category():

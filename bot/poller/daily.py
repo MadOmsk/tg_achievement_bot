@@ -58,7 +58,7 @@ class DailySummary:
             if not chat.is_active or not chat.daily_summary:
                 continue
 
-            now_local = local_now(chat.tz_offset_min, now=now)
+            now_local = local_now(chat.tz, now=now)
             if now_local.strftime("%H:%M") == chat.daily_summary_time:
                 report_date = now_local.date()
                 marker = report_date.isoformat()
@@ -86,14 +86,14 @@ class DailySummary:
     async def _send_scheduled(
         self, chat, marker: str, *, target_date: date | None = None, window: str
     ) -> None:
-        target = target_date or local_now(chat.tz_offset_min).date()
+        target = target_date or local_now(chat.tz).date()
         built = await build_summary(
             self._repo,
             chat.chat_id,
             chat.rare_threshold_percent,
             target,
             locale=chat.locale,
-            tz_offset_min=chat.tz_offset_min,
+            tz_offset_min=chat.tz,
             window=window,
         )
         if built is None:

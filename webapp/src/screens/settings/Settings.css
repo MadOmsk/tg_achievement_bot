@@ -310,3 +310,29 @@
   font-weight: 750;
   color: var(--on-surface-3);
 }
+
+.set-pick-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-pick-sub {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--on-surface-2);
+}
+
+.set-pick-on .set-pick-sub {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.set-tz-search {
+  padding: 0 12px 12px;
+}
+
+.set-tz-device {
+  margin-bottom: 12px;
+}
+

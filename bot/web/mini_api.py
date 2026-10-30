@@ -26,7 +26,15 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars, custom_avatars, game_art, game_page, roles
+from bot.services import (
+    achievement_icons,
+    avatars,
+    custom_avatars,
+    game_art,
+    game_page,
+    roles,
+    time_zones,
+)
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -172,6 +180,7 @@ def setup_mini_api(
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
+    app.router.add_get("/api/mini/time-zones", handle_time_zones)
     app.router.add_put("/api/mini/me/handle", handle_put_handle)
     app.router.add_post("/api/mini/me/handle/confirm", handle_confirm_handle)
     app.router.add_put("/api/mini/me/avatar", handle_put_avatar)
@@ -299,6 +308,27 @@ async def handle_confirm_handle(request: web.Request) -> web.Response:
     return await handle_me(request)
 
 
+async def handle_time_zones(request: web.Request) -> web.Response:
+    """The places the time zone picker offers, by their offset now, named in
+    `?locale=`; `?device=` (the phone's own zone) is added when not among
+    them, so it can be picked in one tap."""
+    await _require_user(request)
+    locale = normalize_locale(request.query.get("locale", "ru"))
+    zones = time_zones.choices(locale)
+    device = time_zones.current_name(request.query.get("device", "").strip())
+    if time_zones.valid(device) and not device.startswith("Etc/"):
+        known = next((z for z in zones if z["id"] == device), None)
+        if known is None:
+            known = {
+                "id": device,
+                "name": time_zones.place(device, locale),
+                "offset": time_zones.offset_minutes(device),
+                "label": time_zones.label(device, locale),
+            }
+        return web.json_response({"ok": True, "zones": zones, "device": known})
+    return web.json_response({"ok": True, "zones": zones, "device": None})
+
+
 async def handle_patch_settings(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
@@ -319,6 +349,14 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 fields["tz_offset_min"] = int(raw)
             except (TypeError, ValueError) as exc:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
+    if "tz_name" in body:
+        # A zone by place (owner, 2026-10-30): any the server knows, a
+        # phone's own included; the offset beside it is today's, for show.
+        name = time_zones.current_name(str(body["tz_name"] or "").strip())
+        if not time_zones.valid(name):
+            raise web.HTTPBadRequest(text="bad tz_name")
+        fields["tz_name"] = name
+        fields["tz_offset_min"] = time_zones.offset_minutes(name)
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
     for switch in ("notify_push", "notify_telegram"):
@@ -685,7 +723,7 @@ async def _following_scope(request: web.Request) -> tuple[Any, Repo, list[int], 
     if person is None:
         raise web.HTTPNotFound(text="no person")
     settings_row = await repo.get_user_settings(user.person_id)
-    tz = settings_row.tz_offset_min if settings_row else None
+    tz = settings_row.tz if settings_row else None
     return user, repo, await repo.following_members(person), tz
 
 

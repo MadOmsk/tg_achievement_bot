@@ -182,7 +182,7 @@ async def render_panel(repo: Repo, tg_id: int, *, locale: str | None = None) -> 
 
     token = await repo.get_token(person) if connected else None
     needs_reconnect = token is not None and token.status == TokenStatus.INVALID
-    tz_offset = settings_row.tz_offset_min if settings_row else None
+    tz_offset = settings_row.tz if settings_row else None
     keyboard = panel_keyboard(
         tz_offset,
         i18n,

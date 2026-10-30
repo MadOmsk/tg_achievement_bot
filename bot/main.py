@@ -348,7 +348,7 @@ async def run(settings: Settings) -> None:
                 await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
 
         settings_row = await repo.get_user_settings(person)
-        if settings_row is None or settings_row.tz_offset_min is None:
+        if settings_row is None or settings_row.tz is None:
             link_i18n = await build_i18n_context(locale)
             await bot.send_message(
                 tg_id,

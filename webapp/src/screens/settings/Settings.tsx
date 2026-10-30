@@ -6,10 +6,9 @@ import { inTelegram, look, PALETTES, setLook } from "../../app/env";
 import { PALETTE_NAMES, paletteLevel, paletteOpen, usePass } from "../../core/season-pass";
 import type { SettingsPaneName } from "../../app/layers";
 import { useLoad } from "../../app/useLoad";
-import { TIMEZONES } from "../../core/constants";
 import { disablePush, enablePush, pushState, quickPushState, type PushState } from "../../core/push";
-import { formatOffset, timezoneLabel, type TranslationKey } from "../../i18n";
-import { Group, Row, Segmented, Toggle } from "../../ui/Controls";
+import { formatOffset, type TranslationKey } from "../../i18n";
+import { Field, Group, Row, Segmented, Toggle } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
 import { Icon, type IconName } from "../../ui/Icon";
 import { Confirm, Page, Sheet } from "../../ui/Page";
@@ -85,22 +84,24 @@ function Root() {
         </span>
         <Icon name="forward" size={20} />
       </button>
+      {/* By how often one comes here: the accounts and what one hears first, how
+          the app looks, where posts go; then the rarer; then the extras. */}
       <Group>
         <Row lead={<Lead icon="gamepad" tone="primary" />} title={tr("accounts")} sub={accounts || tr("noPlatforms")} chevron onClick={() => open({ kind: "settings", pane: "accounts" })} />
-        <Row lead={<Lead icon="share" />} title={tr("publishing")} sub={tr("publishingSub")} chevron onClick={() => open({ kind: "settings", pane: "publishing" })} />
         <Row lead={<Lead icon="bell" />} title={tr("notifications")} sub={tr("notificationsSub")} chevron onClick={() => open({ kind: "settings", pane: "notifications" })} />
+        <Row lead={<Lead icon="palette" />} title={tr("appearance")} sub={tr("appearanceSub")} chevron onClick={() => open({ kind: "settings", pane: "appearance" })} />
+        <Row lead={<Lead icon="share" />} title={tr("publishing")} sub={tr("publishingSub")} chevron onClick={() => open({ kind: "settings", pane: "publishing" })} />
       </Group>
       <Group>
+        <Row lead={<Lead icon="globe" />} title={tr("general")} sub={tr("generalSub")} chevron onClick={() => open({ kind: "settings", pane: "general" })} />
         <Row lead={<Lead icon="shield" />} title={tr("privacy")} sub={tr("privacySub")} chevron onClick={() => open({ kind: "settings", pane: "privacy" })} />
         <Row lead={<Lead icon="key" />} title={tr("logins")} sub={tr("loginsSub")} chevron onClick={() => open({ kind: "settings", pane: "logins" })} />
-        <Row lead={<Lead icon="palette" />} title={tr("appearance")} sub={tr("appearanceSub")} chevron onClick={() => open({ kind: "settings", pane: "appearance" })} />
-        <Row lead={<Lead icon="globe" />} title={tr("general")} sub={tr("generalSub")} chevron onClick={() => open({ kind: "settings", pane: "general" })} />
       </Group>
       <Group>
-        <Row lead={<Lead icon="gift" tone="tertiary" />} title={tr("invites")} sub={tr("invitesSub")} chevron onClick={() => open({ kind: "settings", pane: "invites" })} />
         {(me.is_superadmin || me.chat_admin) && (
           <Row lead={<Lead icon="settings" tone="tertiary" />} title={tr("admin")} chevron onClick={() => open({ kind: "admin", screen: null })} />
         )}
+        <Row lead={<Lead icon="gift" tone="tertiary" />} title={tr("invites")} sub={tr("invitesSub")} chevron onClick={() => open({ kind: "settings", pane: "invites" })} />
       </Group>
       <Group>
         {!inTelegram() && (
@@ -198,8 +199,6 @@ function GeneralPane() {
   const { me, tr, locale } = useApp();
   const save = useSettings();
   const [tz, setTz] = useState(false);
-  const offset = me.settings.tz_offset_min;
-  const known = TIMEZONES.find((z) => z.min === offset);
   return (
     <>
       <Group title={tr("language")}>
@@ -218,7 +217,7 @@ function GeneralPane() {
         <Row
           lead={<Icon name="clock" />}
           title={tr("timezone")}
-          sub={known ? timezoneLabel(known, locale) : formatOffset(offset, locale)}
+          sub={me.settings.tz_label ?? formatOffset(me.settings.tz_offset_min, locale)}
           chevron
           onClick={() => setTz(true)}
         />
@@ -230,26 +229,60 @@ function GeneralPane() {
         />
       </Group>
       {tz && (
-        <Sheet title={tr("timezone")} onClose={() => setTz(false)} layer="tz">
-          <div className="set-list">
-            {TIMEZONES.map((z) => (
-              <button
-                key={z.min}
-                type="button"
-                className={`set-pick${z.min === offset ? " set-pick-on" : ""}`}
-                onClick={() => {
-                  setTz(false);
-                  void save({ tz_offset_min: z.min });
-                }}
-              >
-                {timezoneLabel(z, locale)}
-                {z.min === offset && <Icon name="check" size={20} />}
-              </button>
-            ))}
-          </div>
-        </Sheet>
+        <TimeZoneSheet
+          current={me.settings.tz_name ?? null}
+          onPick={(id) => {
+            setTz(false);
+            void save({ tz_name: id });
+          }}
+          onClose={() => setTz(false)}
+        />
       )}
     </>
+  );
+}
+
+/** The phone's own time zone, as the browser knows it. */
+function deviceZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Time zones by place (owner, 2026-10-30): a summer clock change follows by
+ * itself. The phone's own first, then a search over the places offered. */
+function TimeZoneSheet({ current, onPick, onClose }: { current: string | null; onPick: (id: string) => void; onClose: () => void }) {
+  const { data, tr, locale } = useApp();
+  const [q, setQ] = useState("");
+  const list = useLoad(`time-zones:${locale}`, () => userApi.timeZones(data, locale, deviceZone()));
+  const needle = q.trim().toLowerCase();
+  const zones = (list.data?.zones ?? []).filter(
+    (z) => !needle || z.label.toLowerCase().includes(needle) || z.id.toLowerCase().includes(needle),
+  );
+  const device = list.data?.device;
+  const pick = (id: string, label: string, sub?: string) => (
+    <button key={id} type="button" className={`set-pick${id === current ? " set-pick-on" : ""}`} onClick={() => onPick(id)}>
+      <span className="set-pick-text">
+        {label}
+        {sub && <span className="set-pick-sub">{sub}</span>}
+      </span>
+      {id === current && <Icon name="check" size={20} />}
+    </button>
+  );
+  return (
+    <Sheet title={tr("timezone")} onClose={onClose} layer="tz">
+      <div className="set-tz-search">
+        <Field icon="search" placeholder={tr("timezoneFind")} value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      {device && !needle && <div className="set-list set-tz-device">{pick(device.id, device.label, tr("timezoneDevice"))}</div>}
+      {list.loading && !list.data ? (
+        <div className="set-list">{[0, 1, 2, 3].map((i) => <span key={i} className="set-pick skel" />)}</div>
+      ) : (
+        <div className="set-list">{zones.map((z) => pick(z.id, z.label))}</div>
+      )}
+    </Sheet>
   );
 }
 
@@ -359,8 +392,9 @@ function PublishingPane() {
   );
 }
 
-const POST_CHOICES = ["off", "friends", "following"] as const;
-const NEWS_CHOICES = ["off", "all", "patch", "news", "favorites"] as const;
+// The widest first, «Не присылать» always last.
+const POST_CHOICES = ["following", "friends", "off"] as const;
+const NEWS_CHOICES = ["all", "favorites", "patch", "news", "off"] as const;
 const LEVEL_CHOICES = ["all", "prizes", "off"] as const;
 
 /** A channel's kinds as the server keeps them: `new_post:friends`,
@@ -465,6 +499,7 @@ function ChannelChoices({ tokens, push, onSave }: { tokens: string[] | undefined
   const { tr } = useApp();
   const c = readChannel(tokens);
   const set = (patch: Partial<typeof c>) => onSave(writeChannel({ ...c, ...patch }, push));
+  const [picking, setPicking] = useState<"post" | "news" | "level" | null>(null);
   const postLabel: Record<string, TranslationKey> = { off: "notifyOff", friends: "notifyPostsFriends", following: "notifyPostsFollowing" };
   const newsLabel: Record<string, TranslationKey> = {
     off: "notifyOff",
@@ -476,30 +511,11 @@ function ChannelChoices({ tokens, push, onSave }: { tokens: string[] | undefined
   const levelLabel: Record<string, TranslationKey> = { all: "notifyPassLevelsAll", prizes: "notifyPassLevelsPrizes", off: "notifyOff" };
   return (
     <div className="set-choices">
-      <p className="set-label">{tr("notifyPosts")}</p>
-      <div className="set-chips">
-        {POST_CHOICES.map((v) => (
-          <button key={v} type="button" className={`set-chip${c.post === v ? " on" : ""}`} onClick={() => set({ post: v })}>
-            {tr(postLabel[v])}
-          </button>
-        ))}
-      </div>
-      <p className="set-label">{tr("notifyGameNews")}</p>
-      <div className="set-chips">
-        {NEWS_CHOICES.map((v) => (
-          <button key={v} type="button" className={`set-chip${c.news === v ? " on" : ""}`} onClick={() => set({ news: v })}>
-            {tr(newsLabel[v])}
-          </button>
-        ))}
-      </div>
-      <p className="set-label">{tr("notifyPassLevels")}</p>
-      <div className="set-chips">
-        {LEVEL_CHOICES.map((v) => (
-          <button key={v} type="button" className={`set-chip${c.level === v ? " on" : ""}`} onClick={() => set({ level: v })}>
-            {tr(levelLabel[v])}
-          </button>
-        ))}
-      </div>
+      <Group>
+        <Row title={tr("notifyPosts")} sub={tr(postLabel[c.post])} chevron onClick={() => setPicking("post")} />
+        <Row title={tr("notifyGameNews")} sub={tr(newsLabel[c.news])} chevron onClick={() => setPicking("news")} />
+        <Row title={tr("notifyPassLevels")} sub={tr(levelLabel[c.level])} chevron onClick={() => setPicking("level")} />
+      </Group>
       <Group>
         <Row title={tr("notifyFollowers")} trail={<Toggle checked={c.follower} label={tr("notifyFollowers")} onChange={(v) => set({ follower: v })} />} />
         <Row title={tr("notifyFriends")} trail={<Toggle checked={c.friend} label={tr("notifyFriends")} onChange={(v) => set({ friend: v })} />} />
@@ -507,6 +523,47 @@ function ChannelChoices({ tokens, push, onSave }: { tokens: string[] | undefined
         <Row title={tr("notifyPassRewards")} trail={<Toggle checked={c.reward} label={tr("notifyPassRewards")} onChange={(v) => set({ reward: v })} />} />
         <Row title={tr("notifyPsnToken")} trail={<Toggle checked={c.psnToken} label={tr("notifyPsnToken")} onChange={(v) => set({ psnToken: v })} />} />
       </Group>
+      {picking === "post" && (
+        <ChoiceSheet title={tr("notifyPosts")} layer={`notify-post:${push}`} choices={POST_CHOICES} value={c.post} label={(v) => tr(postLabel[v])} onPick={(v) => set({ post: v })} onClose={() => setPicking(null)} />
+      )}
+      {picking === "news" && (
+        <ChoiceSheet title={tr("notifyGameNews")} layer={`notify-news:${push}`} choices={NEWS_CHOICES} value={c.news} label={(v) => tr(newsLabel[v])} onPick={(v) => set({ news: v })} onClose={() => setPicking(null)} />
+      )}
+      {picking === "level" && (
+        <ChoiceSheet title={tr("notifyPassLevels")} layer={`notify-level:${push}`} choices={LEVEL_CHOICES} value={c.level} label={(v) => tr(levelLabel[v])} onPick={(v) => set({ level: v })} onClose={() => setPicking(null)} />
+      )}
     </div>
+  );
+}
+
+/** One of a few values, picked in a sheet (the design system's choice). */
+function ChoiceSheet({ title, layer, choices, value, label, onPick, onClose }: {
+  title: string;
+  layer: string;
+  choices: readonly string[];
+  value: string;
+  label: (v: string) => string;
+  onPick: (v: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet title={title} onClose={onClose} layer={layer}>
+      <div className="set-list">
+        {choices.map((v) => (
+          <button
+            key={v}
+            type="button"
+            className={`set-pick${v === value ? " set-pick-on" : ""}`}
+            onClick={() => {
+              onClose();
+              onPick(v);
+            }}
+          >
+            {label(v)}
+            {v === value && <Icon name="check" size={20} />}
+          </button>
+        ))}
+      </div>
+    </Sheet>
   );
 }

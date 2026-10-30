@@ -91,6 +91,12 @@ class UserSettings:
     # The kinds of notice switched on for push and for Telegram (087), none by default.
     notify_push_on: frozenset[str] = frozenset()
     notify_telegram_on: frozenset[str] = frozenset()
+    # The zone by place (145); before it, the offset (`time_zones.Tz`).
+    tz_name: str | None = None
+
+    @property
+    def tz(self) -> int | str | None:
+        return self.tz_name or self.tz_offset_min
 
 
 @dataclass(slots=True)
@@ -283,6 +289,12 @@ class ChatTarget:
     # The chat admin's switch (#232); the publisher's query reads the column.
     publishing: bool = True
     subscribers: int = 0
+    # The zone by place (145); before it, the offset (`time_zones.Tz`).
+    tz_name: str | None = None
+
+    @property
+    def tz(self) -> int | str | None:
+        return self.tz_name or self.tz_offset_min
 
 
 @dataclass(slots=True)
@@ -298,6 +310,12 @@ class ChatDailySettings:
     # which needs the chat's language for the same render (#48) — fetching it
     # here keeps that one query, and keeps the locale impossible to forget.
     locale: str = "ru"
+    # The zone by place (145); before it, the offset (`time_zones.Tz`).
+    tz_name: str | None = None
+
+    @property
+    def tz(self) -> int | str | None:
+        return self.tz_name or self.tz_offset_min
 
 
 @dataclass(slots=True)
@@ -771,6 +789,7 @@ def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
     return UserSettings(
         tg_id=row["tg_id"],
         tz_offset_min=row["tz_offset_min"],
+        tz_name=row["tz_name"] if "tz_name" in keys else None,
         show_profile_links=bool(row["show_profile_links"]),
         show_secrets=bool(row["show_secrets"]) if "show_secrets" in keys else False,
         locale=row["locale"],

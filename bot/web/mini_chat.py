@@ -20,11 +20,12 @@ from bot.db.repo import (
 )
 from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.i18n import translator
-from bot.services import game_page
+from bot.services import game_page, time_zones
 from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.presence_view import pick_presence
 from bot.services.stats import counters_for, month_window_utc, week_cutoff_utc
+from bot.services.time_zones import Tz
 from bot.util import utcnow
 from bot.views.notification import _group_label
 from bot.views.online import presence_display_name, presence_text
@@ -72,8 +73,8 @@ def parse_month_key(value: str) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2))
 
 
-def _calendar_month_key(tz_offset_min: int | None) -> str:
-    local = utcnow() + timedelta(minutes=tz_offset_min or 0)
+def _calendar_month_key(tz: Tz) -> str:
+    local = time_zones.local_now(tz)
     return f"{local.year:04d}-{local.month:02d}"
 
 
@@ -83,10 +84,10 @@ def _month_label(month_num: int, locale: str) -> str:
 
 
 async def _club_month(
-    repo: Repo, chat_id: int, month: str | None, *, tz_of: int | None = None, scoped: bool = False
+    repo: Repo, chat_id: int, month: str | None, *, tz_of: Tz = None, scoped: bool = False
 ) -> tuple[str, datetime, datetime, str, int]:
     # A hand-picked scope has no chat settings: it reads in the viewer's timezone.
-    tz = tz_of if scoped else (await repo.get_chat_daily_settings(chat_id)).tz_offset_min
+    tz = tz_of if scoped else (await repo.get_chat_daily_settings(chat_id)).tz
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
     if parsed is None:
@@ -113,7 +114,7 @@ async def _person_month(
 ) -> tuple[str, datetime, datetime, str, int]:
     """Calendar month in this person's timezone (not a chat's)."""
     settings_row = await repo.get_user_settings(person_id)
-    tz = settings_row.tz_offset_min if settings_row else None
+    tz = settings_row.tz if settings_row else None
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
     if parsed is None:
@@ -141,7 +142,7 @@ async def build_feed_payload(
     limit: int = FEED_DEFAULT,
     month: str | None = None,
     members: list[int] | None = None,
-    tz_of: int | None = None,
+    tz_of: Tz = None,
 ) -> dict[str, Any]:
     limit = max(1, min(limit, FEED_MAX))
     key, since, until, current, _month_num = await _club_month(
@@ -182,7 +183,7 @@ async def build_summary_payload(
     locale: str,
     month: str | None = None,
     members: list[int] | None = None,
-    tz_of: int | None = None,
+    tz_of: Tz = None,
 ) -> dict[str, Any]:
     scoped = members is not None
     if scoped:
@@ -192,7 +193,7 @@ async def build_summary_payload(
     else:
         settings = await repo.get_chat_daily_settings(chat_id)
         threshold = settings.rare_threshold_percent
-        tz = settings.tz_offset_min
+        tz = settings.tz
     key, since, until, current, month_num = await _club_month(
         repo, chat_id, month, tz_of=tz_of, scoped=scoped
     )

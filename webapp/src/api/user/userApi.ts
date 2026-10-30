@@ -10,6 +10,7 @@ import type {
   MergePreview,
   MeResponse,
   UserSettingsPatch,
+  TimeZoneChoice,
   PasskeysResponse,
 } from "./userApiModels";
 
@@ -166,6 +167,16 @@ export class UserApi extends BaseApi {
 
   deleteAccount(initData: string): Promise<{ ok: boolean }> {
     return this.delete<{ ok: boolean }>(initData, USER_ROUTES.DELETE_ME);
+  }
+
+  /** The places the time zone picker offers; `device` (the phone's own zone)
+   * comes back apart, ready to be picked in one tap. */
+  timeZones(
+    initData: string,
+    locale: string,
+    device: string | null,
+  ): Promise<{ zones: TimeZoneChoice[]; device: TimeZoneChoice | null }> {
+    return this.get(initData, "/time-zones", { locale, device });
   }
 
   patchSettings(initData: string, body: UserSettingsPatch): Promise<MeResponse> {

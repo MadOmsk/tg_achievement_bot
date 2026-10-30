@@ -156,7 +156,8 @@ class _AdminRepo:
             "SELECT c.chat_id, c.title, c.is_active, s.publishing,"
             "       s.daily_summary, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
-            "       s.daily_summary_time, s.tz_offset_min, s.flood_limit, s.flood_window_minutes,"
+            "       s.daily_summary_time, s.tz_offset_min, s.tz_name,"
+            "       s.flood_limit, s.flood_window_minutes,"
             f"       s.locale, {GLOBAL_DIGEST_THRESHOLD} AS digest_threshold,"
             "       (SELECT COUNT(*) FROM subscriptions WHERE chat_id = c.chat_id) AS subs "
             "FROM chats c JOIN chat_settings s ON s.chat_id = c.chat_id "
@@ -170,6 +171,7 @@ class _AdminRepo:
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],
                 tz_offset_min=row["tz_offset_min"],
+                tz_name=row["tz_name"],
                 flood_limit=row["flood_limit"],
                 flood_window_minutes=row["flood_window_minutes"],
                 locale=row["locale"],
@@ -187,6 +189,7 @@ class _AdminRepo:
             "daily_summary",
             "daily_summary_time",
             "tz_offset_min",
+            "tz_name",
             "flood_limit",
             "flood_window_minutes",
             "locale",
@@ -197,6 +200,9 @@ class _AdminRepo:
             raise ValueError(f"unknown chat_settings fields: {sorted(unknown)}")
         if not fields:
             return
+        # An offset set alone replaces the zone by place it would hide behind.
+        if "tz_offset_min" in fields and "tz_name" not in fields:
+            fields = {**fields, "tz_name": None}
         assignments = ", ".join(f"{name} = ?" for name in fields)
         await self._conn.execute(
             f"UPDATE chat_settings SET {assignments} WHERE chat_id = ?",

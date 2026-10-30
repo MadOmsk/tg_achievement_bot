@@ -13,7 +13,7 @@ from bot.constants import (
     TokenStatus,
 )
 from bot.db.repo import PlatformLink, Repo, User
-from bot.services import game_page, post_picture
+from bot.services import game_page, post_picture, time_zones
 from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
 from bot.services.handles import CHANGE_COOLDOWN_DAYS
 from bot.services.naming import link_nickname
@@ -72,6 +72,8 @@ async def build_me_payload(
 
     locale = (settings_row.locale if settings_row else None) or "ru"
     tz_offset = settings_row.tz_offset_min if settings_row else None
+    tz_name = settings_row.tz_name if settings_row else None
+    zone = settings_row.tz if settings_row else None
     # The admin's switch for everybody (owner, 2026-09-29), no longer a person's.
     show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
     show_secrets = bool(settings_row and settings_row.show_secrets)
@@ -106,6 +108,9 @@ async def build_me_payload(
         "settings": {
             "locale": locale,
             "tz_offset_min": tz_offset,
+            # The zone by place (owner, 2026-10-30), and how it reads now.
+            "tz_name": tz_name,
+            "tz_label": time_zones.label(zone, locale) if zone is not None else None,
             "show_profile_links": show_links,
             "show_secrets": show_secrets,
             # Which achievements go out, in every chat (#126).

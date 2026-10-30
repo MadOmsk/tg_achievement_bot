@@ -16,7 +16,6 @@ from bot.services.admin_credentials import (
 )
 from bot.services.admin_registry import (
     GROUPS,
-    REAL_UTC_OFFSETS_MIN,
     SETTINGS,
     parse,
     set_value,
@@ -170,8 +169,8 @@ async def test_the_rarity_threshold_takes_a_comma_and_refuses_the_rest(repo: Rep
 async def test_a_chat_setting_takes_only_its_own_values(repo: Repo) -> None:
     await repo.upsert_chat(CHAT_ID, "Чат", 1)
     for key, bad in (
-        ("tz_offset_min", 7),  # 7 minutes is nobody's offset
-        ("tz_offset_min", 15 * 60),  # +15 is past the last real one
+        ("tz_name", "Mars/Olympus"),  # no zone of this world
+        ("tz_name", 180),  # an offset is no place
         ("daily_summary_time", "абв"),
         ("daily_summary_time", "20:30"),  # the summary goes out on the hour
         ("flood_limit", -5),
@@ -181,19 +180,12 @@ async def test_a_chat_setting_takes_only_its_own_values(repo: Repo) -> None:
         with pytest.raises(SettingValueError):
             await set_value(repo, "chat", key, bad, 1, chat_id=CHAT_ID)
 
-    await set_value(repo, "chat", "tz_offset_min", 5 * 60 + 45, 1, chat_id=CHAT_ID)
+    await set_value(repo, "chat", "tz_name", "Europe/Vilnius", 1, chat_id=CHAT_ID)
     await set_value(repo, "chat", "daily_summary_time", "21:00", 1, chat_id=CHAT_ID)
     await set_value(repo, "chat", "publishing", False, 1, chat_id=CHAT_ID)
     [chat] = [c for c in await repo.admin_chats() if c.chat_id == CHAT_ID]
-    assert (chat.tz_offset_min, chat.daily_summary_time, chat.publishing) == (345, "21:00", False)
+    assert (chat.tz, chat.daily_summary_time, chat.publishing) == ("Europe/Vilnius", "21:00", False)
     assert chat.is_active  # the bot's own flag, no setting's
-
-
-def test_the_real_offsets_are_hours_and_the_few_that_are_not() -> None:
-    assert len(REAL_UTC_OFFSETS_MIN) == 38
-    assert REAL_UTC_OFFSETS_MIN[0] == -12 * 60 and REAL_UTC_OFFSETS_MIN[-1] == 14 * 60
-    assert {5 * 60 + 45, 9 * 60 + 30, -(3 * 60 + 30)} <= set(REAL_UTC_OFFSETS_MIN)
-    assert 15 not in REAL_UTC_OFFSETS_MIN
 
 
 def test_every_default_is_a_value_its_setting_takes() -> None:
@@ -288,9 +280,9 @@ async def test_the_mini_app_draws_and_changes_what_the_bot_does(
         ).json()
         chat_url = f"/api/mini/admin/chats/{CHAT_ID}/settings"
         chat = await (await client.get(chat_url)).json()
-        bad_tz = await client.patch(chat_url, json={"key": "tz_offset_min", "value": 7})
+        bad_tz = await client.patch(chat_url, json={"key": "tz_name", "value": "Mars/Olympus"})
         tz = await (
-            await client.patch(chat_url, json={"key": "tz_offset_min", "value": 330})
+            await client.patch(chat_url, json={"key": "tz_name", "value": "Europe/Vilnius"})
         ).json()
     finally:
         await client.close()
@@ -304,28 +296,33 @@ async def test_the_mini_app_draws_and_changes_what_the_bot_does(
 
     assert [g["id"] for g in chat["groups"]] == list(GROUPS["chat"])
     assert bad_tz.status == 400
-    [zone] = [i for g in tz["groups"] for i in g["items"] if i["key"] == "tz_offset_min"]
-    assert zone["value"] == 330 and len(zone["options"]) == 38
-    assert {"value": 330, "label": "UTC+5:30"} in zone["options"]
+    [zone] = [i for g in tz["groups"] for i in g["items"] if i["key"] == "tz_name"]
+    assert zone["value"] == "Europe/Vilnius"
+    assert any(
+        o["value"] == "Europe/Moscow" and o["label"] == "Москва · UTC+3" for o in zone["options"]
+    )
 
 
-def test_a_time_zone_names_a_place_in_the_mini_app_only() -> None:
-    """Owner, 2026-10-08: the Mini App's picker says "Москва · UTC+3", the
-    bot's buttons the offset alone."""
+def test_a_time_zone_is_a_place_and_keeps_its_summer_clock() -> None:
+    """Owner, 2026-10-30: places, not offsets — Vilnius is UTC+2 in winter
+    and UTC+3 in summer; a fixed zone kept from an offset reads as the offset."""
+    from datetime import UTC, datetime
+
+    from bot.services import time_zones
     from bot.services.admin_registry import find, value_label
-    from bot.views.admin_settings import render_setting_choices
 
-    zone = find("chat", "tz_offset_min")
-    assert value_label(zone, 180, locale="ru", place=True) == "Москва · UTC+3"
-    assert value_label(zone, 330, locale="ru", place=True) == "UTC+5:30"  # no place known
-    buttons = [
-        b.text
-        for row in render_setting_choices(
-            zone, 180, locale="ru", back="x", chat_id=1
-        ).keyboard.inline_keyboard
-        for b in row
-    ]
-    assert "• UTC+3" in buttons and not any("Москва" in text for text in buttons)
+    zone = find("chat", "tz_name")
+    winter = datetime(2026, 1, 15, 12, tzinfo=UTC)
+    summer = datetime(2026, 7, 15, 12, tzinfo=UTC)
+    assert time_zones.label("Europe/Vilnius", "ru", winter) == "Вильнюс · UTC+2"
+    assert time_zones.label("Europe/Vilnius", "ru", summer) == "Вильнюс · UTC+3"
+    assert time_zones.label("Etc/GMT-5", "ru") == "UTC+5"
+    assert time_zones.label(330, "ru") == "UTC+5:30"
+    assert value_label(zone, "Europe/Moscow", locale="ru") == "Москва · UTC+3"
+    # The month starts at local midnight, summer time and all.
+    assert time_zones.midnight_utc(summer.date().replace(day=1), "Europe/Vilnius") == datetime(
+        2026, 6, 30, 21, tzinfo=UTC
+    )
 
 
 def test_the_digest_is_a_global_setting() -> None:

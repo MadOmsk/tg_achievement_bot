@@ -112,7 +112,7 @@ async def build_stats_text(
     show_links = bool(await repo.get_int_setting(SHOW_LINKS_KEY, int(SHOW_LINKS_DEFAULT)))
 
     locale = _locale_of(i18n)
-    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    tz_offset_min = settings_row.tz if settings_row else None
     rare_threshold = (await repo.get_chat_daily_settings(chat_id)).rare_threshold_percent
     counters = await counters_for(
         repo,

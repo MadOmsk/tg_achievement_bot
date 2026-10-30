@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from bot.constants import DIGEST_CHOICES, DIGEST_NEVER, RarityMode
 from bot.i18n import AVAILABLE_LOCALES, LOCALE_NAMES, gettext
-from bot.services import poll_cadence, post_picture
+from bot.services import poll_cadence, post_picture, time_zones
 from bot.services.admin_settings import (
     DEFAULT_RARITY_MODE_DEFAULT,
     DEFAULT_RARITY_MODE_KEY,
@@ -38,7 +38,6 @@ from bot.services.admin_settings import (
     STORE_COLLECTION_KEY,
     SettingValueError,
 )
-from bot.util import utc_offset_label
 
 if TYPE_CHECKING:
     from bot.db.repo import ChatTarget, Repo
@@ -53,17 +52,6 @@ class Kind(StrEnum):
     CHOICE = "choice"
     HOUR = "hour"
     TZ = "tz"
-
-
-# Every UTC offset some place actually keeps, in minutes (owner, 2026-10-08:
-# real ones only — mostly whole hours, a few half and three-quarter hours).
-REAL_UTC_OFFSETS_MIN: tuple[int, ...] = tuple(
-    sorted(
-        [h * 60 for h in range(-12, 15)]
-        + [-9 * 60 - 30, -3 * 60 - 30, 3 * 60 + 30, 4 * 60 + 30, 5 * 60 + 30, 5 * 60 + 45]
-        + [6 * 60 + 30, 8 * 60 + 45, 9 * 60 + 30, 10 * 60 + 30, 12 * 60 + 45]
-    )
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +87,8 @@ class Setting:
         if self.kind is Kind.HOUR:
             return tuple(range(24))
         if self.kind is Kind.TZ:
-            return REAL_UTC_OFFSETS_MIN
+            # Places, not offsets (owner, 2026-10-30), by their offset now.
+            return tuple(str(z["id"]) for z in time_zones.choices("en"))
         if self.kind is Kind.BOOL:
             return (True, False)
         return ()
@@ -270,7 +259,7 @@ SETTINGS: tuple[Setting, ...] = (
         "admin-setting-chat-locale",
         choices=AVAILABLE_LOCALES,
     ),
-    Setting("tz_offset_min", "chat", "main", Kind.TZ, "admin-setting-chat-tz"),
+    Setting("tz_name", "chat", "main", Kind.TZ, "admin-setting-chat-tz"),
     Setting("daily_summary", "chat", "summary", Kind.BOOL, "admin-setting-chat-summary"),
     Setting("daily_summary_time", "chat", "summary", Kind.HOUR, "admin-setting-chat-summary-time"),
     Setting(
@@ -340,6 +329,12 @@ def parse(setting: Setting, raw: object) -> Any:
         if text in ("0", "false", "no", "off"):
             return False
         raise SettingValueError("choice", 0, 0)
+    if setting.kind is Kind.TZ:
+        # Any zone the server knows (a fixed one kept from an offset too).
+        name = str(raw).strip()
+        if time_zones.valid(name):
+            return name
+        raise SettingValueError("choice", 0, 0)
     if setting.kind is Kind.HOUR and isinstance(raw, str) and ":" in raw:
         hours, _, minutes = raw.partition(":")
         if minutes.strip() not in ("00", "0"):
@@ -385,6 +380,8 @@ def _chat_value(setting: Setting, chat: ChatTarget) -> Any:
             return int(chat.daily_summary_time.split(":", 1)[0])
         except ValueError:
             return 20
+    if setting.kind is Kind.TZ:
+        return chat.tz
     value = getattr(chat, setting.key)
     return bool(value) if setting.kind is Kind.BOOL else value
 
@@ -435,11 +432,6 @@ async def set_value(
 # ------------------------------------------------------------------ words
 
 
-# The offsets with a place named beside them where there is room for one —
-# the Mini App's pickers; the bot's buttons show the offset alone.
-_TZ_PLACES = (-480, -300, 0, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720)
-
-
 def value_label(setting: Setting, value: Any, *, locale: str, place: bool = False) -> str:
     """A value as both panels show it. `place` adds a city to a time zone
     ("Москва · UTC+3") where one is known — the Mini App asks for it."""
@@ -456,11 +448,7 @@ def value_label(setting: Setting, value: Any, *, locale: str, place: bool = Fals
     if setting.kind is Kind.HOUR:
         return f"{value:02d}:00"
     if setting.kind is Kind.TZ:
-        offset = utc_offset_label(int(value))
-        if place and int(value) in _TZ_PLACES:
-            sign = "m" if int(value) < 0 else "p"
-            return f"{_(f'admin-tz-place-{sign}{abs(int(value))}')} · {offset}"
-        return offset
+        return time_zones.label(value, locale)
     if setting.key == DEFAULT_RARITY_MODE_KEY:
         return gettext("keyboards", f"kb-rarity-{value}", locale=locale)
     if setting.key == "locale":

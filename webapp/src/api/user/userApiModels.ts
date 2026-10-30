@@ -124,6 +124,9 @@ export type MeResponse = {
   settings: {
     locale: string;
     tz_offset_min: number | null;
+    /** The time zone by place (`Europe/Vilnius`), and how it reads now. */
+    tz_name?: string | null;
+    tz_label?: string | null;
     show_profile_links: boolean;
     show_secrets: boolean;
     /** Which achievements go out, in every chat (#126). */
@@ -202,9 +205,13 @@ export type MeResponse = {
   publication: { excluded: boolean; chat_titles: string[] };
 };
 
+/** A time zone the picker offers: its place, and its offset now. */
+export type TimeZoneChoice = { id: string; name: string | null; offset: number; label: string };
+
 export type UserSettingsPatch = Partial<{
   locale: string;
   tz_offset_min: number | null;
+  tz_name: string;
   show_profile_links: boolean;
   show_secrets: boolean;
   rarity_mode: string;

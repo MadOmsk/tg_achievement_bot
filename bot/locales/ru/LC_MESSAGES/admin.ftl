@@ -94,24 +94,6 @@ admin-settings-zero-hint = { " " }0 — { $meaning }.
 admin-settings-saved = ✅ { $label }: { $value }
 admin-settings-choice-retry = Такого значения нет — выбери кнопкой.
 
-# A place in each of the zones people here live in — the Mini App's
-# admin shows it beside the offset; the bot shows the offset alone.
-admin-tz-place-m480 = Лос-Анджелес
-admin-tz-place-m300 = Нью-Йорк
-admin-tz-place-p0 = Лондон
-admin-tz-place-p60 = Берлин
-admin-tz-place-p120 = Калининград
-admin-tz-place-p180 = Москва
-admin-tz-place-p240 = Самара
-admin-tz-place-p300 = Екатеринбург
-admin-tz-place-p360 = Омск
-admin-tz-place-p420 = Новосибирск
-admin-tz-place-p480 = Иркутск
-admin-tz-place-p540 = Якутск
-admin-tz-place-p600 = Владивосток
-admin-tz-place-p660 = Магадан
-admin-tz-place-p720 = Камчатка
-
 # Platform keys (#17; Anthropic added 2026-09-09 — achievement-description
 # translation only, same admin-settable-shared-credential shape)
 admin-keys-title = 🔑 Ключи платформ

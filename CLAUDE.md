@@ -167,6 +167,7 @@ name, or when the tree goes stale.
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
+│   │   ├── time_zones.py         a person's or a chat's zone by place: the offered places, local time
 │   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
 │   │   ├── logins.py             the ways a person signs in, as the admin's cards list them
 │   │   ├── people.py             who may see whom: the relation between two people, `can_view` (#157)
@@ -2312,9 +2313,20 @@ keyboard.
   picker edit the message they were opened from and end in buttons — "‹ Назад" /
   "‹ В панель" back, "⚙️ Панель" or the next step on. Only what arrives later (a
   backfill's live status, `handlers/backfill.py`) is a message of its own.
-- **Timezones**: the eight offsets this community lives in, "Другой ▸" for the full
-  −12…+14 grid, "✏️ Ввести вручную" for one typed offset (`+3`, `+5:30`). Offsets,
-  never zone names.
+- **Time zones are places** (owner, 2026-10-30; `services/time_zones.py`,
+  migration 145): a person's and a chat's zone is an IANA name
+  (`user_settings.tz_name`, `chat_settings.tz_name`), so a summer clock change
+  follows by itself — Vilnius is UTC+2 in winter, UTC+3 in summer. Every time
+  calculation goes through `time_zones` (`local_now`, `midnight_utc`), which
+  takes a name or, where none is set, the old offset (`tz_offset_min`, a fixed
+  zone; the models' `.tz` gives whichever). 145 turned every offset into a zone
+  keeping the same clock: Russia's by city (no clock changes there), the rest
+  the fixed `Etc/GMT±N`. The Mini App's picker (Settings → Общие) is a search
+  over `time_zones.ZONES`, the phone's own zone offered first
+  (`GET /api/mini/time-zones`); a chat's is the admin registry's `tz_name`. The
+  bot's DM picker still sets an offset (eight common ones, "Другой ▸" for the
+  −12…+14 grid, "✏️ Ввести вручную" for one typed, `+3`, `+5:30`), which
+  clears the zone by place.
 - **The stale-login reminder is the only DM the bot starts itself** (besides connect
   progress), and it says reconnecting will not replay history into chats.
 - **`/panel`** is one self-editing message. Header: the person's identity and one line
@@ -2424,12 +2436,11 @@ keyboard.
   these services answer:
   - `services/admin_registry.py` — **every setting**, global and per chat, one
     row each: where it lives, its kind (number, decimal, on/off, one of a list,
-    an hour, a UTC offset), bounds or choices, group, label, hint. `set_value` is
+    an hour, a time zone), bounds or choices, group, label, hint. `set_value` is
     the one way either panel changes one — parsed, bounded, stored; a bad value
-    is refused the same from a typed message and from JSON. Time zones are the
-    38 real UTC offsets (`REAL_UTC_OFFSETS_MIN`), summaries go out on the hour;
-    the Mini App names a city beside an offset where one is known («Москва ·
-    UTC+3», `value_label(place=True)`), the bot shows the offset alone.
+    is refused the same from a typed message and from JSON. A time zone is a
+    place («Вильнюс · UTC+2», `time_zones.ZONES`, any valid IANA name taken),
+    shown with its offset now in both panels; summaries go out on the hour.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
     sign-in emails against their caps, every credential's state). **The API
     load** (owner, 2026-10-12; `services/api_usage.py`, noted as each request
