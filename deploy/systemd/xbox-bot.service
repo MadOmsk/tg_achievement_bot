@@ -1,0 +1,21 @@
+[Unit]
+Description=Xbox Achievement Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botsvc
+Group=botsvc
+WorkingDirectory=/opt/xbox_achievement_bot
+ExecStart=/opt/xbox_achievement_bot/.venv/bin/python -m bot.main
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/opt/xbox_achievement_bot/data /opt/xbox_achievement_bot/logs
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Xbox Achievement Bot (test instance)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botsvc
+WorkingDirectory=/opt/xbox_bot_test
+Environment=BOT_ENV_FILE=/opt/xbox_bot_test/.env.test
+ExecStart=/opt/xbox_bot_test/.venv/bin/python -m bot.main
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
