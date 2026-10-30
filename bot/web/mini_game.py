@@ -93,10 +93,11 @@ async def handle_game_page(request: web.Request) -> web.Response:
     hltb_found = await repo.game_hltb(game_id)
     hltb_entry = hltb_found["entry"] if hltb_found else None
     art = game_page.art_of(versions, game_page.list_icons(lists))
+    translating = False
     if locale == "ru":
-        # No Russian story yet: Haiku translates the English once, for the
-        # next visit (#230).
-        game_descriptions.translate_later(
+        # No Russian story yet: Haiku translates the English once, and the
+        # app asks again while it is on its way (#230).
+        translating = game_descriptions.translate_later(
             repo, request.app.get("mini_anthropic_auth"), versions, hltb_entry
         )
 
@@ -196,6 +197,16 @@ async def handle_game_page(request: web.Request) -> web.Response:
     collector = request.app.get("mini_store_collector")
     if collector is not None and lists:
         collector.ensure(str(lists[0]["platform"]), str(lists[0]["title_id"]), reason="page")
+    description = game_page.description_of(versions, hltb_entry, locale)
+    # Still coming: a translation into the reader's language, or the stores'
+    # first answer, which brings the text (its translation follows at once).
+    description_pending = (description is None or description["lang"] != locale) and (
+        translating
+        or (
+            collector is not None
+            and any(collector.running(str(r["platform"]), str(r["title_id"])) for r in lists)
+        )
+    )
 
     series = []
     for one in await repo.game_page_series(game_id):
@@ -235,7 +246,8 @@ async def handle_game_page(request: web.Request) -> web.Response:
                 "kind": game.get("kind"),
             },
             "art": art,
-            "description": game_page.description_of(versions, hltb_entry, locale),
+            "description": description,
+            "description_pending": description_pending,
             "genres": game_page.genres_of(versions, hltb_entry),
             "platforms": game_page.platforms_of(versions),
             "screenshots": game_page.screenshots_of(versions),

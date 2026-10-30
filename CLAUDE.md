@@ -2077,11 +2077,17 @@ elsewhere in this file still describe the bot.
   kept only when it is Russian (Cyrillic, not its English handed back;
   `_stores.native_ru`) and marked `native`; with none, the English a Russian
   reader is shown — a version's or HLTB's summary — is translated by Haiku in
-  the background the first time the page is opened in Russian, and kept with a
+  the background as soon as it is there: the first time the page is opened in
+  Russian, and right after a background collection wrote it
+  (`StoreCollector.on_collected` → `translate_game`) — and kept with a
   hash of that English (`versions.description_source = 'llm'`,
   `description_ru_of`; `hltb_entries.summary_ru_of`). A changed English text is
   translated again; a store's own Russian replaces ours; no key leaves it
-  English.
+  English. **The page never waits for it** (owner, 2026-10-30: a game showed
+  nothing, then English, and Russian only on the third visit): while a
+  translation or the stores' first answer is on its way the page says
+  `description_pending`, and the Mini App asks again every 3 s (8 times at
+  most), taking only the description from the answer.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,

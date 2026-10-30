@@ -119,3 +119,70 @@ async def test_a_version_is_translated_once_and_a_store_russian_wins(
 async def test_no_key_leaves_it_english(repo: Repo) -> None:
     game_descriptions.translate_later(repo, None, [_version()], None)
     assert not game_descriptions._TASKS
+
+
+@pytest.mark.asyncio
+async def test_a_page_hears_a_translation_is_on_its_way(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The page says the text is coming, so the app asks again (#230)."""
+    started = asyncio.Event()
+
+    async def translate(*_: object) -> None:
+        started.set()
+
+    monkeypatch.setattr(game_descriptions, "_translate", translate)
+    assert game_descriptions.translate_later(None, _Auth(), [_version()], None)  # type: ignore[arg-type]
+    native = _version(description_ru=RUSSIAN, description_source="native")
+    assert not game_descriptions.translate_later(None, _Auth(), [native], None)  # type: ignore[arg-type]
+    await asyncio.gather(*game_descriptions._TASKS)
+    assert started.is_set()
+
+
+class _GameRepo:
+    async def game_of_list(self, platform: str, title_id: str) -> int | None:
+        return 5 if (platform, title_id) == ("steam", "10") else None
+
+    async def game_hltb(self, game_id: int) -> None:
+        return None
+
+    async def game_page_versions(self, game_id: int) -> list[dict]:
+        return [_version(version_id=9)]
+
+
+@pytest.mark.asyncio
+async def test_a_collected_list_has_its_game_translated_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A collection that brought the English hands it to the translator then,
+    not on the next visit (`StoreCollector.on_collected`)."""
+    from bot.services import store_collect
+
+    done: list[tuple[str, int, str]] = []
+
+    async def translate(repo, auth, kind: str, key: int, english: str) -> None:
+        done.append((kind, key, english))
+
+    async def on() -> bool:
+        return True
+
+    async def collect(self, platform: str, title_id: str, **_: object):
+        return store_collect.CollectReport(platform, title_id)
+
+    class _Queue:
+        async def octopus_enqueue(self, *_: object) -> None:
+            return None
+
+    monkeypatch.setattr(game_descriptions, "_translate", translate)
+    monkeypatch.setattr(store_collect, "collection_on", lambda _repo: on())
+    monkeypatch.setattr(store_collect.StoreCollector, "collect", collect)
+    collector = store_collect.StoreCollector(_Queue())  # type: ignore[arg-type]
+
+    async def collected(platform: str, title_id: str) -> None:
+        await game_descriptions.translate_game(_GameRepo(), _Auth(), platform, title_id)  # type: ignore[arg-type]
+
+    collector.on_collected = collected
+    collector.ensure("steam", "10", reason="page")
+    assert collector.running("steam", "10")
+    await asyncio.gather(*collector._running.values())
+    await asyncio.gather(*game_descriptions._TASKS)
+    assert done == [("version", 9, ENGLISH)]
+    assert not collector.running("steam", "10")

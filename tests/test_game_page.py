@@ -264,6 +264,8 @@ async def test_the_page_search_and_favorite_routes(repo: Repo, settings) -> None
         assert body["game"]["name"] == "Portal 2"
         assert body["progress"]["person_id"] == person and body["progress"]["count"] == 1
         assert body["viewed_is_me"] is True and body["favorite"] is False
+        # Nothing collecting, nothing to translate: the app asks no more.
+        assert body["description_pending"] is False
 
         assert (await client.put(f"/api/mini/game/{game}/favorite")).status == 200
         body = await (await client.get(f"/api/mini/game?game_id={game}")).json()

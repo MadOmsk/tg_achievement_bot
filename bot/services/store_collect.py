@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -103,6 +104,9 @@ class StoreCollector:
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._running: dict[tuple[str, str], asyncio.Task[CollectReport]] = {}
         self._background: set[asyncio.Task[None]] = set()
+        # Told after a background collection of a list (main.py: its game's
+        # description is translated at once, not on the next visit; #230).
+        self.on_collected: Callable[[str, str], Awaitable[None]] | None = None
 
     def ensure(self, platform: str, title_id: str, *, reason: str = "published") -> None:
         """Collect the game in the background if anything about it is due —
@@ -116,6 +120,10 @@ class StoreCollector:
         self._running[key] = task
         task.add_done_callback(lambda _t: self._running.pop(key, None))
 
+    def running(self, platform: str, title_id: str) -> bool:
+        """Whether a background collection of this list is on its way."""
+        return (str(platform), title_id) in self._running
+
     async def _collect_logged(
         self, platform: str, title_id: str, *, reason: str = "published"
     ) -> CollectReport:
@@ -125,10 +133,16 @@ class StoreCollector:
             # The octopus's key for a list (`octopus.list_key`); a key in the
             # queue already stays as it is.
             await self._repo.octopus_enqueue(f"list:{platform}:{title_id}", reason)
-            return await self.collect(platform, title_id)
+            report = await self.collect(platform, title_id)
         except Exception:
             log.exception("store collection failed for %s %s", platform, title_id)
             return CollectReport(platform, title_id, errors=["crashed"])
+        if self.on_collected is not None:
+            try:
+                await self.on_collected(platform, title_id)
+            except Exception:
+                log.exception("after collecting %s %s", platform, title_id)
+        return report
 
     async def collect(
         self, platform: str, title_id: str, *, force: bool = False, link: bool = True

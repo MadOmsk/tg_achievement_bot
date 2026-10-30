@@ -5,7 +5,8 @@ export type Loaded<T> = {
   error: unknown;
   loading: boolean;
   reload: () => void;
-  set: (data: T) => void;
+  /** A value, or one made from the current (an update of a part of it). */
+  set: (data: T | ((now: T | undefined) => T | undefined)) => void;
 };
 
 /** Ask the server whenever `key` changes; the last answer stays on screen

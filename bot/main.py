@@ -69,7 +69,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
-from bot.services import achievement_icons, media, poll_cadence, raw_answers
+from bot.services import achievement_icons, game_descriptions, media, poll_cadence, raw_answers
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -231,6 +231,12 @@ async def run(settings: Settings) -> None:
     publisher = Publisher(bot, repo, settings=settings)
     steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
     store_collector = StoreCollector(repo, psn_auth, steam_auth)
+
+    async def translate_collected(platform: str, title_id: str) -> None:
+        await game_descriptions.translate_game(repo, anthropic_auth, platform, title_id)
+
+    # A description the stores just brought is translated at once (#230).
+    store_collector.on_collected = translate_collected
     fetcher = Fetcher(
         repo,
         client,
