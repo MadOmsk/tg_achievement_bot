@@ -1,4 +1,4 @@
-import type { GameRef, NewsItem } from "../api";
+import type { GameDlc, GameEdition, GameRef, NewsItem } from "../api";
 import type { AdminScreen } from "../core/constants";
 import type { Video } from "../ui/VideoPlayer";
 
@@ -49,11 +49,21 @@ export type Layer =
       cover?: string | null;
       person: { id: number; name: string } | null;
       /** The other platforms the person played the game on, to switch to. */
-      lists?: { platform: string; title_id: string; count?: number; total?: number | null }[];
+      lists?: { platform: string; title_id: string; count?: number; total?: number | null; console?: string | null; store?: string | null }[];
     }
   | { kind: "achievement"; ach: AchView }
   | { kind: "pass" }
   | { kind: "gallery"; game: string; cover: string | null; videos: Video[]; screenshots: string[] }
+  | { kind: "dlcs"; game: string; gameNames: Array<string | null | undefined>; cover: string | null; dlcs: GameDlc[] }
+  | {
+      kind: "edition";
+      game: string;
+      cover: string | null;
+      edition: GameEdition;
+      gameNames: Array<string | null | undefined>;
+      dlcs: GameDlc[];
+    }
+  | { kind: "dlc"; game: string; gameNames: Array<string | null | undefined>; cover: string | null; dlc: GameDlc }
   | {
       kind: "achievementRef";
       platform: string;

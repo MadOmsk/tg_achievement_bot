@@ -21,7 +21,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 GameRef = tuple[str, str]
 
 
-def _encode_game(game: GameRef) -> str:
+def _encode_game(game: GameRef, achievement: str | None = None) -> str:
     """`platform:titleId`, base64url with the `=` padding stripped.
 
     Telegram's own `start`/`startapp` parameter accepts only
@@ -33,7 +33,7 @@ def _encode_game(game: GameRef) -> str:
     needs no further escaping once padding is gone; `webapp/src/App.tsx`'s
     `launchContext()` decodes the same way and must stay in sync.
     """
-    raw = f"{game[0]}:{game[1]}".encode()
+    raw = (f"{game[0]}:{game[1]}" + (f":{achievement}" if achievement else "")).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
@@ -44,6 +44,7 @@ def mini_app_open_url(
     person_id: int | None = None,
     tab: str | None = None,
     game: GameRef | None = None,
+    achievement: str | None = None,
 ) -> str:
     parts = urlsplit(base.strip())
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
@@ -54,6 +55,8 @@ def mini_app_open_url(
         query["t"] = tab
     if game:
         query["g"] = f"{game[0]}:{game[1]}"
+        if achievement:
+            query["a"] = achievement
     path = parts.path or "/"
     return urlunsplit((parts.scheme, parts.netloc, path, urlencode(query), parts.fragment))
 
@@ -64,15 +67,20 @@ def mini_app_start_param(
     person_id: int | None = None,
     tab: str | None = None,
     game: GameRef | None = None,
+    achievement: str | None = None,
 ) -> str:
-    """Compact start_param — must stay in sync with webapp launchContext()."""
+    """Compact start_param — must stay in sync with webapp launchContext().
+    An achievement rides in the game's token as a third part
+    (`platform:titleId:achievementId`) while the whole fits Telegram's 64
+    characters; past that the link opens the game, as before."""
     param = f"c{chat_id}"
     if person_id is not None:
         param += f"p{person_id}"
     if tab:
         param += f"t{tab}"
     if game:
-        param += f"g{_encode_game(game)}"
+        with_ach = f"{param}g{_encode_game(game, achievement)}" if achievement else ""
+        param = with_ach if with_ach and len(with_ach) <= 64 else f"{param}g{_encode_game(game)}"
     return param
 
 
@@ -83,9 +91,12 @@ def mini_app_group_url(
     person_id: int | None = None,
     tab: str | None = None,
     game: GameRef | None = None,
+    achievement: str | None = None,
 ) -> str:
     name = bot_username.lstrip("@")
-    param = mini_app_start_param(chat_id=chat_id, person_id=person_id, tab=tab, game=game)
+    param = mini_app_start_param(
+        chat_id=chat_id, person_id=person_id, tab=tab, game=game, achievement=achievement
+    )
     return f"https://t.me/{name}?startapp={param}"
 
 
@@ -99,6 +110,7 @@ def mini_app_open_markup(
     tab: str | None = None,
     game: GameRef | None = None,
     in_group: bool = True,
+    achievement: str | None = None,
 ) -> InlineKeyboardMarkup | None:
     https_url = (https_url or "").strip()
     name = (bot_username or "").lstrip("@")
@@ -109,14 +121,26 @@ def mini_app_open_markup(
             return None
         button = InlineKeyboardButton(
             text=text,
-            url=mini_app_group_url(name, chat_id=chat_id, person_id=person_id, tab=tab, game=game),
+            url=mini_app_group_url(
+                name,
+                chat_id=chat_id,
+                person_id=person_id,
+                tab=tab,
+                game=game,
+                achievement=achievement,
+            ),
         )
     else:
         button = InlineKeyboardButton(
             text=text,
             web_app=WebAppInfo(
                 url=mini_app_open_url(
-                    https_url, chat_id=chat_id, person_id=person_id, tab=tab, game=game
+                    https_url,
+                    chat_id=chat_id,
+                    person_id=person_id,
+                    tab=tab,
+                    game=game,
+                    achievement=achievement,
                 )
             ),
         )

@@ -285,6 +285,19 @@ class _CatalogRepo:
             for row in rows
         ]
 
+    async def achievement_name_pair(
+        self, platform: str, title_id: str, achievement_id: str
+    ) -> tuple[str | None, str | None]:
+        """One achievement's two names, Russian and English, as the platform
+        gave them."""
+        cursor = await self._conn.execute(
+            "SELECT name_ru, name_en FROM title_achievements"
+            " WHERE platform = ? AND title_id = ? AND achievement_id = ?",
+            (platform, title_id, achievement_id),
+        )
+        row = await cursor.fetchone()
+        return (row["name_ru"], row["name_en"]) if row else (None, None)
+
     async def title_achievement_names(
         self, platform: str, title_id: str
     ) -> list[TitleAchievementRow]:

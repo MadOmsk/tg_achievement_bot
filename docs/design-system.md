@@ -95,8 +95,11 @@ Roboto Flex, variable. **Width is a voice**: numbers are narrow and heavy
 | `.t-meta` | 13 / 400, `--on-surface-3` | dates, counts, sources |
 | `.t-num` | narrow, 800 | any number shown as a value |
 
-Lists of achievements write their worth as one meta line (`20 очков · 6,3 % ·
-12 октября`, `AchMarks plain`), rarity coloured by how rare; chips are for
+**Points are a coin** (owner, 2026-10-29; `PointsCoin`): the logo's
+sparkle (`--tertiary`) and the number beside it, no ground — never «20 очков» after an achievement. Totals (a month's, a list's)
+stay a number with its word.
+
+Lists of achievements write their worth as one meta line (the coin, then `6,3 %`, `AchMarks plain`), rarity coloured by how rare; chips are for
 filters and states, not for every value.
 
 ## Space and shape
@@ -150,7 +153,7 @@ mythic, second legendary, third rare (the podium, the leaders' marks). Use
 the tiers for rank and rarity only.
 
 **Points are the app's own** (owner, 2026-10-27): an achievement is worth
-its tier — common 10, rare 20, legendary 30, mythic 50 (`views.POINTS`, the
+its tier — common 10, rare 20, legendary 30, mythic 100 (`views.POINTS`, the
 server's `_sql.points`) — on every platform, in place of Xbox's G. Rankings,
 the month card and the share of the circle count points. Tens leave room for
 a step between.

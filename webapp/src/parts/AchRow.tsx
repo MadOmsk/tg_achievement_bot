@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { useApp } from "../app/context";
 import type { AchView } from "../app/layers";
-import { isVeiled, pointsOf, rareLevel, revealed } from "../app/views";
-import { num, pct, plural } from "../i18n";
+import { isVeiled, pointsOf, rareLevel, revealed, TIER_NAME } from "../app/views";
+import { num, pct } from "../i18n";
 import { tick } from "../core/haptic";
 import { AchPic } from "../ui/Pic";
 import "./parts.css";
@@ -10,6 +10,30 @@ import "./parts.css";
 /** Xbox One/Series pictures are 16:9 art; every other platform's are square. */
 export function isWideArt(platform: string): boolean {
   return platform === "xbox_modern";
+}
+
+/** The app's own points as a coin of its own: the logo's sparkle and the
+ * number beside it — what an achievement is worth, at a glance. */
+export function PointsCoin({ points, total, className = "" }: { points: number; total?: number; className?: string }) {
+  const { tr, locale } = useApp();
+  return (
+    <span className={`pts-coin ${className}`} aria-label={`${points} ${tr("ptsMany")}`}>
+      <Spark className="pts-coin-spark" />
+      <b className="t-num">
+        {num(points, locale)}
+        {total != null && <small> / {num(total, locale)}</small>}
+      </b>
+    </span>
+  );
+}
+
+/** The logo's four-point sparkle: the mark of the app's points. */
+export function Spark({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path d="M12 2c.6 5.2 4.8 9.4 10 10-5.2.6-9.4 4.8-10 10-.6-5.2-4.8-9.4-10-10 5.2-.6 9.4-4.8 10-10z" />
+    </svg>
+  );
 }
 
 /** What an achievement is worth and how rare, on one scale for every
@@ -21,8 +45,11 @@ export function AchMarks({
   plain = false,
   date,
   extra,
+  noWorth = false,
 }: {
   ach: Pick<AchView, "trophy" | "gamerscore" | "rarity" | "mythic">;
+  /** The coin is shown elsewhere in the row (its right column). */
+  noWorth?: boolean;
   size?: "s" | "m";
   /** A line of text instead of chips, where many rows sit together. */
   plain?: boolean;
@@ -35,9 +62,10 @@ export function AchMarks({
   const tier = rareLevel(ach.rarity, ach);
   if (plain) {
     const pts = pointsOf(ach.rarity, ach);
-    const worth = <span className="mark-worth">{num(pts, locale)} {plural(locale, pts, ["ptsOne", "ptsFew", "ptsMany"])}</span>;
+    const worth = noWorth ? null : <PointsCoin points={pts} />;
+    // A row with its own column (`noWorth`) names its rarity above its title.
     const rarity =
-      ach.rarity != null || tier === "mythic" ? (
+      !noWorth && (ach.rarity != null || tier === "mythic") ? (
         <span className={`mark-rarity${tier ? ` mark-${tier}` : ""}`}>
           {tier && <span className="rare-mark shape-flower6" />}
           {ach.rarity != null ? pct(ach.rarity, locale) : null}
@@ -49,7 +77,7 @@ export function AchMarks({
       <span className="marks-plain">
         {parts.map((part, i) => (
           <span key={i} className="mark-part">
-            {i > 0 && <span className="mark-dot">·</span>}
+            {i > 0 && !(i === 1 && !noWorth) && <span className="mark-dot">·</span>}
             {part}
           </span>
         ))}
@@ -58,9 +86,7 @@ export function AchMarks({
   }
   return (
     <span className={`marks marks-${size}`}>
-      <span className="chip chip-outline">
-        {num(pointsOf(ach.rarity, ach), locale)} {plural(locale, pointsOf(ach.rarity, ach), ["ptsOne", "ptsFew", "ptsMany"])}
-      </span>
+      <PointsCoin points={pointsOf(ach.rarity, ach)} />
       {(ach.rarity != null || tier === "mythic") && (
         <span className={`chip ${tier ? `chip-tier chip-tier-${tier}` : "chip-outline"}`}>
           {tier && <span className="rare-mark shape-flower6" />}
@@ -79,6 +105,7 @@ export function AchRow({
   compact = false,
   plain = false,
   date,
+  when,
   extra,
   trail,
 }: {
@@ -87,10 +114,12 @@ export function AchRow({
   compact?: boolean;
   plain?: boolean;
   date?: string | null;
+  /** When it was earned, in a column of its own on the right, as a news row's day is. */
+  when?: string | null;
   extra?: ReactNode;
   trail?: ReactNode;
 }) {
-  const { tr, open, me } = useApp();
+  const { tr, open, me, locale } = useApp();
   const [, setTick] = useState(0);
   const veiled = isVeiled(ach.secret, ach.key, me.settings.show_secrets);
   const wide = isWideArt(ach.platform);
@@ -108,18 +137,46 @@ export function AchRow({
         open({ kind: "achievement", ach });
       }}
     >
-      <AchPic src={ach.icon} className={wide ? "ach-pic-wide" : "ach-pic-square"} veiled={veiled} />
+      {when !== undefined ? (
+        // What it is worth on a flower at the picture's corner, as a post's is.
+        <span className="ach-pic-wrap">
+          <AchPic src={ach.icon} className={wide ? "ach-pic-wide" : "ach-pic-square"} veiled={veiled} />
+          <span className={`ach-flower shape-flower6 tile-badge-${rareLevel(ach.rarity, ach) ?? "plain"}`}>
+            <b className="t-num flower-pts">
+              <Spark className="flower-spark" />
+              {pointsOf(ach.rarity, ach)}
+            </b>
+          </span>
+        </span>
+      ) : (
+        <AchPic src={ach.icon} className={wide ? "ach-pic-wide" : "ach-pic-square"} veiled={veiled} />
+      )}
       <span className="ach-text">
+        {when !== undefined && (
+          // Its rarity above the title, as a post's is.
+          <span className={`ach-kicker${rareLevel(ach.rarity, ach) ? ` mark-${rareLevel(ach.rarity, ach)}` : ""}`}>
+            {tierWord(tr(TIER_NAME[rareLevel(ach.rarity, ach) ?? "common"]))}
+            {ach.rarity != null && ` · ${pct(ach.rarity, locale)}`}
+          </span>
+        )}
         <span className="ach-name clamp-2">{veiled ? tr("secretAchievement") : ach.name}</span>
         {showDescription && (veiled || ach.description) && (
           <span className="ach-desc clamp-2">{veiled ? tr("secretTapToReveal") : ach.description}</span>
         )}
-        <AchMarks ach={ach} plain={plain} date={date} extra={extra} />
+        <AchMarks ach={ach} plain={plain} date={date} extra={extra} noWorth={when !== undefined} />
       </span>
+      {/* When it came, at the top of a column of its own. */}
+      {when && (
+        <span className="ach-side">
+          <span className="t-meta">{when}</span>
+        </span>
+      )}
       {trail}
     </button>
   );
 }
+
+const tierWord = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export const PLATFORM_SHORT: Record<string, string> = {
   xbox_modern: "XBOX",

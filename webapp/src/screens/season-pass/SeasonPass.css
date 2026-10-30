@@ -221,6 +221,26 @@
   font-size: 16px;
 }
 
+/* The points inside the line: its size and colour, on its baseline. */
+.pass-tl-here .pts-coin {
+  display: inline;
+  margin: 0 2px;
+  font-size: 16px;
+  color: var(--on-primary-container);
+}
+
+.pass-tl-here .pts-coin b {
+  font-size: inherit;
+}
+
+.pass-tl-here .pts-coin-spark {
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: -0.08em;
+  transform: none;
+}
+
+
 .pass-tl-here-done {
   display: inline-flex;
   align-items: center;
@@ -668,15 +688,19 @@
 /* Home's door to the pass, in the month card */
 
 .hero-pass {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  padding: 0 20px;
   width: 100%;
   height: 48px;
-  margin-top: 16px;
+  margin-top: 26px;
   border-radius: var(--r-full);
-  background: color-mix(in srgb, var(--on-primary-container) 12%, transparent);
+  background: color-mix(in srgb, var(--on-primary-container) 8%, transparent);
   color: var(--on-primary-container);
   font-size: 14.5px;
   font-weight: 800;
@@ -1128,11 +1152,13 @@
   opacity: 0.35;
 }
 
+/* The size of a prize's codes badge, so the right column lines up. */
 .pass-tl-done {
   flex: 0 0 auto;
   align-self: center;
-  width: 32px;
-  height: 32px;
+  width: 56px;
+  height: 56px;
+  margin: 0 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1141,3 +1167,44 @@
   color: var(--tier-color);
 }
 
+
+/* The way to the next level, filling the door from the left. */
+.hero-pass-fill {
+  --pass-fill: color-mix(in srgb, var(--on-primary-container) 24%, transparent);
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: -1;
+  background: var(--pass-fill);
+  transition: width var(--t-slow, 0.4s) ease;
+}
+
+/* Its edge is a running wave, as progress is everywhere in the app. */
+.hero-pass-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 10px;
+  background: var(--pass-fill);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='16'%3E%3Cpath d='M0 0H4Q10 4 4 8Q-2 12 4 16H0Z'/%3E%3C/svg%3E") 0 0 / 10px 16px repeat-y;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='16'%3E%3Cpath d='M0 0H4Q10 4 4 8Q-2 12 4 16H0Z'/%3E%3C/svg%3E") 0 0 / 10px 16px repeat-y;
+  animation: pass-wave 1.6s linear infinite;
+}
+
+.hero-pass-fill[style*="width: 100%"]::after {
+  display: none;
+}
+
+@keyframes pass-wave {
+  to {
+    -webkit-mask-position: 0 16px;
+    mask-position: 0 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-pass-fill::after {
+    animation: none;
+  }
+}

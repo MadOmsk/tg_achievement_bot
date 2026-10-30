@@ -113,6 +113,13 @@ async def handle_game_page(request: web.Request) -> web.Response:
         if person == viewer or await _may_see_activity(repo, viewer, person)
     ]
     totals = {(row["platform"], str(row["title_id"])): int(row["total"] or 0) for row in lists}
+    # Which version a list is, so two lists of one platform tell apart
+    # (Xbox One and Xbox PC): its console and store, the plain version first.
+    list_console: dict[tuple[str, str], tuple[str, str]] = {}
+    for version in sorted(versions, key=lambda v: v.get("role") != "version"):
+        key = (str(version.get("platform") or ""), str(version.get("title_id") or ""))
+        if key[1] and key not in list_console:
+            list_console[key] = (str(version.get("console") or ""), str(version.get("store") or ""))
     players = []
     progress = None
     for row in await repo.game_players(game_id, visible):
@@ -128,12 +135,15 @@ async def handle_game_page(request: web.Request) -> web.Response:
             known = await repo.title_progress(
                 account_platform_of(one["platform"]), str(one["xuid"]), str(one["title_id"])
             )
+            console, store = list_console.get((one["platform"], str(one["title_id"])), ("", ""))
             played.append(
                 {
                     "count": known.unlocked if known else int(one["n"]),
                     "last": one["last"],
                     "platform": one["platform"],
                     "title_id": str(one["title_id"]),
+                    "console": console or None,
+                    "store": store or None,
                     "total": (known.total if known else None)
                     or totals.get((one["platform"], str(one["title_id"])))
                     or None,

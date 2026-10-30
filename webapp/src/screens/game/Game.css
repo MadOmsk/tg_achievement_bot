@@ -28,12 +28,12 @@
   align-items: flex-start;
   gap: 14px;
   padding: 0 var(--gutter);
-  margin-top: -40px;
+  margin-top: -72px;
 }
 
 .gp-poster {
-  width: 92px;
-  height: 128px;
+  width: 108px;
+  height: 150px;
   flex: 0 0 auto;
   border-radius: 22px 22px 22px 8px;
   box-shadow: 0 0 0 4px var(--surface);
@@ -42,7 +42,7 @@
 .gp-titles {
   flex: 1;
   min-width: 0;
-  padding-top: 52px;
+  padding-top: 64px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -134,6 +134,11 @@
   font-size: 13.5px;
   line-height: 1.35;
   color: var(--on-surface-2);
+}
+
+/* The title's own line height already leaves air under it. */
+.gp-title + .gp-sub {
+  margin-top: -3px;
 }
 
 .gp-chips {
@@ -408,7 +413,9 @@
 }
 
 .gp-shot {
-  height: 180px;
+  flex: 0 0 auto;
+  width: 288px;
+  height: 162px;
   border-radius: var(--r-l);
   overflow: hidden;
   background: var(--surface-3);
@@ -418,18 +425,6 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.gp-shot-0 {
-  width: 260px;
-}
-
-.gp-shot-1 {
-  width: 120px;
-}
-
-.gp-shot-2 {
-  width: 260px;
 }
 
 .gp-news {
@@ -451,10 +446,20 @@
   border-radius: var(--r-l);
 }
 
-.gp-dlc-pic {
-  width: 92px;
-  height: 52px;
-  border-radius: 14px;
+.gp-dlc-name {
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.gp-dlc-list {
+  margin-top: 4px;
+  padding-bottom: 16px;
+}
+
+.gp-dlc-list .gp-news-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
 }
 
 .gp-edition {
@@ -549,9 +554,9 @@
   z-index: 1;
   position: absolute;
   right: 18px;
-  bottom: -34px;
-  width: 92px;
-  height: 92px;
+  bottom: -26px;
+  width: 72px;
+  height: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -811,7 +816,6 @@
 
 .gp-video {
   position: relative;
-  width: 320px;
 }
 
 .gp-video-blank {
@@ -852,15 +856,15 @@
 .gp-gallery-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 0 12px 16px;
+  gap: 10px;
+  padding: 0 var(--gutter) 16px;
 }
 
 .gp-gallery-grid .gp-shot {
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 9;
-  border-radius: var(--r-s);
+  border-radius: var(--r-m);
 }
 
 .gp-gallery-grid .gp-video-play {
@@ -870,7 +874,8 @@
 }
 
 .gp-gallery-grid .gp-video-name {
-  display: none;
+  padding: 14px 10px 6px;
+  font-size: 11.5px;
 }
 
 .ach-ref-skel {
@@ -892,10 +897,6 @@
 
 .gp-gallery-grid {
   margin-top: 4px;
-}
-
-.gp-gallery-grid .gp-video-name {
-  display: none;
 }
 
 .list-skel .ach-text {
@@ -1148,3 +1149,206 @@
 }
 
 
+
+.gp-news-row {
+  gap: 14px;
+  min-height: 80px;
+  padding: 14px 18px 14px 14px;
+}
+
+.gp-news-row .row-text {
+  gap: 4px;
+}
+
+.gp-news-pic {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--r-s);
+}
+
+.gp-news-mark {
+  display: grid;
+  place-items: center;
+}
+
+.gp-news-kind {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.gp-news-patch {
+  color: var(--primary);
+}
+
+.gp-news-post {
+  color: var(--tertiary);
+}
+
+/* The day sits in a column of its own: the text ends where it begins. */
+.gp-news-day {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+}
+
+.gp-dlc-stores {
+  padding: 4px 0 0;
+}
+
+/* Under the year and the studio, beside the poster: small, as facts are. */
+/* Within the column beside the poster, two rows at most: what does not
+   fit is left out, the head never runs past the poster or the screen. */
+.gp-head-chips {
+  gap: 6px 4px;
+  max-height: 58px;
+  padding: 4px 0 0;
+  overflow: hidden;
+}
+
+.gp-head-chips .chip {
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+
+.gp-edition {
+  text-align: left;
+  color: inherit;
+}
+
+.gp-ed-items .row-sub {
+  font-weight: 650;
+}
+
+/* An edition's box sits in the middle of its head, as a list's cover does. */
+.hero-stage:has(> .gp-ed-cover) {
+  display: flex;
+  justify-content: center;
+}
+
+.gp-ed-cover {
+  width: 150px;
+  height: 200px;
+}
+
+.list-head-text {
+  padding-bottom: 12px;
+}
+
+/* What a related game is to this one, under its name. */
+.gp-card-rel {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--primary);
+}
+
+.gp-skel-head-chip {
+  display: block;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* A gallery's trailers: a picture, its name under it — never over it, where
+   the trailer's own title already is. */
+.gal-videos {
+  gap: 12px;
+}
+
+.gal-video {
+  flex: 0 0 auto;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gal-video .gp-shot {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-l);
+}
+
+.gal-video .gp-video-name {
+  display: none;
+}
+
+.gal-video-name {
+  padding: 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.gal-videos-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 0 var(--gutter) 16px;
+}
+
+.gal-videos-col .gal-video {
+  width: 100%;
+}
+
+.list-whose {
+  margin-top: -4px;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--on-surface-2);
+}
+
+/* The two counts of a list, one size, parted by a line. */
+.list-stats {
+  align-items: center;
+  gap: 14px;
+}
+
+.list-stats-sep {
+  width: 2px;
+  height: 26px;
+  border-radius: 1px;
+  background: var(--outline-soft);
+}
+
+.list-coin {
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.list-coin .pts-coin-spark {
+  width: 0.72em;
+  height: 0.72em;
+}
+
+.list-coin b small {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--on-surface-2);
+  opacity: 1;
+}
+
+.ap-badge .flower-pts {
+  font-size: 18px;
+}
+
+/* On an achievement's page a square picture is the icon alone in the middle
+   of the head's ground: no tile, no shadow, no ground of its own. */
+.hero-ach-sq {
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.hero-ach-sq .pic-ground {
+  display: none;
+}
+
+.hero-ach-sq .pic-img {
+  object-fit: contain;
+  border-radius: 12%;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35));
+}

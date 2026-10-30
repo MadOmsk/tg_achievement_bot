@@ -90,6 +90,7 @@ from bot.services.translate.auth import AnthropicAuth
 from bot.services.xbox.auth import XboxAuthService, XboxIdentity
 from bot.services.xbox.client import XboxClient
 from bot.services.youtube.auth import YouTubeAuth
+from bot.util import origin_of
 from bot.version import is_test, version
 from bot.views.keyboards import timezone_keyboard
 from bot.web.mini_logins import forget_file
@@ -360,6 +361,14 @@ async def run(settings: Settings) -> None:
         app_url=settings.mini_app_url,
         contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
     )
+
+    # Browsers that allowed push on another address of the app (an old dev
+    # tunnel) get nothing more: one notice, one copy.
+    app_origin = origin_of(settings.mini_app_url)
+    if app_origin:
+        forgotten = await repo.forget_push_elsewhere(app_origin)
+        if forgotten:
+            log.info("forgot %d push subscriptions of other addresses", forgotten)
 
     # Followers hear of a new post by their own choice (owner, 2026-10-05).
     publisher.on_new_post = notifications.tell_about_post

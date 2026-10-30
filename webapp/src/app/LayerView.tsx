@@ -17,6 +17,9 @@ const ConnectPage = lazy(() => import("../screens/settings/Accounts").then((m) =
 const PsnTokenPage = lazy(() => import("../screens/settings/PsnToken").then((m) => ({ default: m.PsnTokenPage })));
 const SettingsPage = lazy(() => import("../screens/settings/Settings").then((m) => ({ default: m.SettingsPage })));
 const GalleryPage = lazy(() => import("../screens/game/GalleryPage").then((m) => ({ default: m.GalleryPage })));
+const DlcPage = lazy(() => import("../screens/game/DlcPage").then((m) => ({ default: m.DlcPage })));
+const EditionPage = lazy(() => import("../screens/game/DlcPage").then((m) => ({ default: m.EditionPage })));
+const DlcDetailPage = lazy(() => import("../screens/game/DlcPage").then((m) => ({ default: m.DlcDetailPage })));
 const SeasonPassPage = lazy(() => import("../screens/season-pass/SeasonPassPage").then((m) => ({ default: m.SeasonPassPage })));
 const AchievementByRef = lazy(() => import("../screens/game/AchievementByRef").then((m) => ({ default: m.AchievementByRef })));
 
@@ -33,6 +36,7 @@ const LOADERS = [
   () => import("../screens/settings/Accounts"),
   () => import("../screens/settings/Settings"),
   () => import("../screens/game/GalleryPage"),
+  () => import("../screens/game/DlcPage"),
   () => import("../screens/game/AchievementByRef"),
   () => import("../screens/season-pass/SeasonPassPage"),
 ];
@@ -64,6 +68,12 @@ function layerKey(layer: Layer): string {
       return `ach:${layer.ach.key}`;
     case "gallery":
       return `gallery:${layer.game}`;
+    case "dlcs":
+      return `dlcs:${layer.game}`;
+    case "dlc":
+      return `dlc:${layer.game}:${layer.dlc.name}`;
+    case "edition":
+      return `edition:${layer.game}:${layer.edition.name}`;
     case "achievementRef":
       return `ach-ref:${layer.platform}:${layer.titleId}:${layer.achievementId}:${layer.person?.id ?? ""}`;
     case "achievements":
@@ -130,6 +140,12 @@ export function LayerView({
         return <AchievementPage ach={layer.ach} onClose={close} layer={key} />;
       case "gallery":
         return <GalleryPage game={layer.game} cover={layer.cover} videos={layer.videos} screenshots={layer.screenshots} onClose={close} layer={key} />;
+      case "dlcs":
+        return <DlcPage game={layer.game} gameNames={layer.gameNames} cover={layer.cover} dlcs={layer.dlcs} onClose={close} layer={key} />;
+      case "edition":
+        return <EditionPage game={layer.game} cover={layer.cover} edition={layer.edition} gameNames={layer.gameNames} dlcs={layer.dlcs} onClose={close} layer={key} />;
+      case "dlc":
+        return <DlcDetailPage game={layer.game} gameNames={layer.gameNames} cover={layer.cover} dlc={layer.dlc} onClose={close} layer={key} />;
       case "achievementRef":
         return (
           <AchievementByRef

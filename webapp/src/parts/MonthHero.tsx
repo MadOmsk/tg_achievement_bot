@@ -2,6 +2,8 @@ import { useState } from "react";
 import { clubApi, type PersonPayload } from "../api";
 import { useLoad } from "../app/useLoad";
 import { PassStrip } from "../screens/season-pass/SeasonPassCard";
+import { usePass } from "../core/season-pass";
+import { passApi } from "../api/season-pass/seasonPassApi";
 import { useApp } from "../app/context";
 import { tick } from "../core/haptic";
 import { formatMonth, currentMonth } from "../core/people-utils";
@@ -9,6 +11,7 @@ import { num, plural } from "../i18n";
 import { Face } from "../ui/Face";
 import { Icon } from "../ui/Icon";
 import { MonthSheet } from "./Months";
+import { Spark } from "./AchRow";
 
 /** A person's month as one card, by what matters: the month's points (the
  * achievements and the games small beside; owner, 2026-10-28), the place among the people
@@ -49,6 +52,15 @@ export function MonthHero({
   const label = formatMonth(month, locale, "sheet");
   // The pass is this month's: another month shows its race.
   const pass = season && month === currentMonth();
+  const passState = usePass(data);
+  // An earlier month's season, as the arrows switch to it.
+  const pastSeason = useLoad(season && !pass ? `hero-season:${month}` : null, () => passApi.fetchPass(data, { month }));
+  const shownSeason = !season ? null : pass ? passState : (pastSeason.data ?? null);
+  // The shown month's season name (Home's only). This month's is remembered
+  // on the device, so a visit draws it at once rather than a moment later.
+  const remembered = pass && !passState ? recallSeason(month) : null;
+  if (pass && passState) rememberSeason(month, passState.title);
+  const seasonTitle = shownSeason?.title ?? remembered?.title ?? null;
   return (
     <section className="home-hero">
       <span className="home-hero-deco shape-clover4" aria-hidden="true" />
@@ -62,12 +74,14 @@ export function MonthHero({
       ) : (
         <p className="home-hero-month">{label.split(" ")[0].toUpperCase()}</p>
       )}
+      {seasonTitle && <p className="home-hero-season clamp-1">{seasonTitle}</p>}
       {pick && onMonth && <MonthSheet months={list} value={month} onChange={onMonth} onClose={() => setPick(false)} />}
       <div className="home-hero-main">
         <div className="home-hero-text">
           {payload ? (
             // Points run to five digits and more: the more digits, the smaller.
             <p className={`t-display home-hero-num home-hero-num-${Math.min(7, num(payload.month.points ?? 0, locale).length)}`}>
+              <Spark className="home-hero-spark" />
               {num(payload.month.points ?? 0, locale)}
             </p>
           ) : (
@@ -84,7 +98,6 @@ export function MonthHero({
       </div>
       {payload ? (
         <p className="home-hero-line">
-          <span>{plural(locale, payload.month.points ?? 0, ["ptsOne", "ptsFew", "ptsMany"])}</span>
           <span>
             <b className="t-num">{num(payload.month.count, locale)}</b>{" "}
             {plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}
@@ -150,4 +163,23 @@ export function MonthHero({
       {pass && <PassStrip />}
     </section>
   );
+}
+
+const SEASON_KEY = "home-season";
+
+function recallSeason(month: string): { title: string | null } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SEASON_KEY) ?? "null");
+    return saved && saved.month === month ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberSeason(month: string, title: string | null): void {
+  try {
+    localStorage.setItem(SEASON_KEY, JSON.stringify({ month, title }));
+  } catch {
+    // A private window keeps nothing: the card waits for the server then.
+  }
 }

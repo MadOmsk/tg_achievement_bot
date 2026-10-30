@@ -34,7 +34,7 @@ from bot.services.crypto import TokenCipher
 from bot.services.naming import person_name
 from bot.services.stats import month_window_utc
 from bot.services.webpush import VapidKeys
-from bot.util import thousands, utcnow
+from bot.util import origin_of, thousands, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -425,7 +425,7 @@ class Notifier:
     async def _push(self, person_id: int, kind: str, data: dict[str, Any], text: str) -> None:
         if not self.push_available:
             return
-        subscriptions = await self._repo.push_subscriptions_of(person_id)
+        subscriptions = await self._repo.push_subscriptions_of(person_id, origin_of(self._app_url))
         if not subscriptions:
             return
         keys = await self.vapid_keys()

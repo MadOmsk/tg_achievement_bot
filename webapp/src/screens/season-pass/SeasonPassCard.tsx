@@ -1,18 +1,20 @@
 import { useApp } from "../../app/context";
 import { passProgress, usePass } from "../../core/season-pass";
-import { Icon } from "../../ui/Icon";
 import "./SeasonPass.css";
 
-/** The door to the season pass in Home's month card; a count of the rewards
- * waiting to be claimed rides on it. */
+/** The door to the season pass in Home's month card. It shows how far the
+ * month's points stand: the way to the next level fills it; a count of the
+ * rewards waiting to be claimed rides on it. */
 export function PassStrip() {
   const { data, tr, open } = useApp();
-  const waiting = passProgress(usePass(data)).due;
+  const progress = passProgress(usePass(data));
+  const { next, points, from, due } = progress;
+  const share = next ? Math.max(0, Math.min(1, (points - from) / Math.max(1, next.points - from))) : 1;
   return (
     <button type="button" className="hero-pass" onClick={() => open({ kind: "pass" })}>
-      <Icon name="crown" size={18} />
+      <span className="hero-pass-fill" style={{ width: `${share * 100}%` }} aria-hidden="true" />
       {tr("passOpen")}
-      {waiting > 0 && <b className="hero-pass-count t-num">{waiting}</b>}
+      {due > 0 && <b className="hero-pass-count t-num">{due}</b>}
     </button>
   );
 }

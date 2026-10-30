@@ -1,12 +1,11 @@
 import { gameArtOf, useArtTheme } from "../../app/artTheme";
 import { useState } from "react";
 import { useApp } from "../../app/context";
-import { Segmented } from "../../ui/Controls";
-import { Hero } from "../../ui/Hero";
+import { Section, Segmented } from "../../ui/Controls";
 import { Page } from "../../ui/Page";
-import { Cover } from "../../ui/Pic";
 import type { Video } from "../../ui/VideoPlayer";
 import { MediaTile } from "./MediaTile";
+import { ListHead } from "./ListHead";
 import "./Game.css";
 
 type Show = "all" | "videos" | "shots";
@@ -35,13 +34,7 @@ export function GalleryPage({
   const theme = useArtTheme(gameArtOf(game) ?? cover);
   return (
     <Page title={game} onBack={onClose} hero layer={layer} className="list-page" style={theme.style}>
-      <Hero ground={cover}>
-        <Cover src={cover} className="gallery-cover" />
-        <p className="list-name t-title clamp-2">{game}</p>
-        <p className="gallery-sub">
-          {tr("gpGallery")} · {videos.length + screenshots.length}
-        </p>
-      </Hero>
+      <ListHead game={game} cover={cover} label={`${tr("gpGallery")} · ${videos.length + screenshots.length}`} />
       {both && (
         <div className="list-filter">
           <Segmented
@@ -55,11 +48,27 @@ export function GalleryPage({
           />
         </div>
       )}
-      <div className="gp-gallery-grid">
-        {list.map((m, i) => (
-          <MediaTile key={typeof m === "string" ? m : (m.hls ?? m.mp4 ?? i)} media={m} list={list} />
-        ))}
-      </div>
+      {show !== "shots" && videos.length > 0 && (
+        <Section title={tr("gpVideos")}>
+          <div className={show === "videos" ? "gal-videos-col" : "rail gal-videos"}>
+            {videos.map((v, i) => (
+              <div key={v.hls ?? v.mp4 ?? i} className="gal-video">
+                <MediaTile media={v} list={list} />
+                {v.name && <span className="gal-video-name clamp-2">{v.name}</span>}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {show !== "videos" && screenshots.length > 0 && (
+        <Section title={tr("gpShots")}>
+          <div className="gp-gallery-grid">
+            {screenshots.map((m) => (
+              <MediaTile key={m} media={m} list={list} />
+            ))}
+          </div>
+        </Section>
+      )}
     </Page>
   );
 }

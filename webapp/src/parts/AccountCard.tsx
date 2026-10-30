@@ -32,3 +32,23 @@ export function AccountChip({ p }: { p: Platform }) {
     </span>
   );
 }
+
+/** A game account as a row of a person's page: the platform's mark, the
+ * nickname on it, its own score (G or the trophy level), then how many
+ * achievements or trophies it holds. */
+export function AccountRow({ p }: { p: Platform }) {
+  const { tr, locale } = useApp();
+  const name = MARK[p.platform]?.name ?? p.platform;
+  const score = p.gamerscore ? `${num(p.gamerscore, locale)} G` : p.trophy_level ? `${tr("level")} ${p.trophy_level}` : null;
+  const count = p.achievement_count ?? p.trophy_count ?? null;
+  return (
+    <div className="row acc-row">
+      <PlatformMark platform={p.platform} size={40} />
+      <span className="row-text">
+        <span className="row-title clamp-1">{p.name ?? name}</span>
+        <span className="row-sub">{[name, count != null ? `${num(count, locale)} ${tr("achShort")}` : null].filter(Boolean).join(" · ")}</span>
+      </span>
+      {score && <b className="acc-row-score t-num">{score}</b>}
+    </div>
+  );
+}

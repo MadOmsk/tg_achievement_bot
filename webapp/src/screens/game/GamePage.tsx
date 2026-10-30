@@ -1,22 +1,24 @@
 import { useState } from "react";
-import { gameApi, type GameCard, type GamePage as GamePageData, type GameRef } from "../../api";
+import { gameApi, type GameCard, type GameHltb, type GamePage as GamePageData, type GameRef } from "../../api";
 import { useApp } from "../../app/context";
 import { rememberGameArt, useArtTheme } from "../../app/artTheme";
 import { openExternal } from "../../app/env";
 import { useLoad } from "../../app/useLoad";
 import { recall, remember } from "../../core/game-cache";
 import { tick } from "../../core/haptic";
-import { dayLabel, num, type TranslationKey } from "../../i18n";
+import { dayLabel, num, whenLabel, type TranslationKey } from "../../i18n";
 import { consoleLabel } from "../../parts/platforms";
 import { FAVORITES_CHANGED } from "../../parts/FollowButton";
 import { DoneMark } from "../../parts/DoneMark";
 import { PlatformPicker } from "../../parts/PlatformPicker";
-import { NewsCard } from "../news/News";
+import type { NewsItem } from "../../api";
 import { Button, Chip, Empty, Section } from "../../ui/Controls";
 import { Face } from "../../ui/Face";
 import { Icon } from "../../ui/Icon";
 import { BarAction, Page } from "../../ui/Page";
 import { MediaTile } from "./MediaTile";
+import { DlcRow } from "./DlcPage";
+import { cleanName, tidyVideos } from "./names";
 import { Cover } from "../../ui/Pic";
 import type { Media } from "../../ui/Viewer";
 import { Wave } from "../../ui/Wave";
@@ -36,6 +38,7 @@ function refKey(ref: GameRef): string {
 }
 
 const GALLERY_SHOWN = 8;
+const DLC_SHOWN = 3;
 
 export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClose: () => void; layer: string }) {
   const { data, tr, open } = useApp();
@@ -55,7 +58,10 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
     recall<GamePageData>("game", key),
   );
   const g = page.data;
-  const hero = g?.art.hero || g?.art.header || g?.art.poster || null;
+  // The head takes the gallery's newest picture (owner, 2026-10-29; the
+  // server sends them newest first): a frame of the game itself, no title
+  // written on it; the store's art when there is none.
+  const hero = g?.screenshots[0] || g?.art.hero || g?.art.header || g?.art.poster || null;
   const art = g?.art.hero || g?.art.header || g?.art.poster;
   const theme = useArtTheme(art);
   if (g && art) {
@@ -72,7 +78,7 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
       <div className="gp-hero">
         {hero ? <img src={hero} alt="" /> : <span className={`gp-hero-empty${g ? "" : " skel"}`} />}
       </div>
-      {!ready && !page.error && <GameSkeleton name={name} cover={gameRef.icon_url ?? null} />}
+      {!ready && !page.error && <GameSkeleton name={name} />}
       {!g && page.error ? (
         <Empty icon="refresh" title={tr("loadFailed")} action={<Button variant="tonal" onClick={page.reload}>{tr("retry")}</Button>} />
       ) : null}
@@ -87,21 +93,25 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
 
 /** The page's own shape while it loads: the head with what the tap already
  * knew (the name, the cover), then the chips, the progress card and a list. */
-function GameSkeleton({ name, cover }: { name: string; cover: string | null }) {
+// The poster stays a placeholder until the page answers: the feed's icon of
+// the list is often another picture, and it would be swapped a moment later.
+function GameSkeleton({ name }: { name: string }) {
   return (
     <div className="gp-skel" aria-hidden="true">
       <div className="gp-head">
-        {cover ? <Cover src={cover} className="gp-poster" /> : <span className="gp-poster skel" />}
+        <span className="gp-poster skel" />
         <div className="gp-titles">
           {name ? <h1 className="gp-title clamp-3">{name}</h1> : <span className="skel skel-line" style={{ width: "80%", height: 22 }} />}
-          <span className="skel skel-line" style={{ width: "60%" }} />
+          <span className="skel skel-line gp-sub" style={{ width: "70%" }} />
+          <div className="gp-chips gp-head-chips">
+            {[74, 52, 64, 58].map((w) => (
+              <span key={w} className="skel gp-skel-head-chip" style={{ width: w }} />
+            ))}
+          </div>
         </div>
-        <span className="gp-fav-wrap">
-          <span className="skel gp-skel-heart shape-cookie9" />
-        </span>
       </div>
       <div className="gp-chips">
-        {[86, 64, 74, 96].map((w) => (
+        {[100, 96, 78].map((w) => (
           <span key={w} className="skel gp-skel-chip" style={{ width: w }} />
         ))}
       </div>
@@ -141,11 +151,11 @@ function GameBody({
   const { data, tr, locale, me, toast } = useApp();
   const [story, setStory] = useState(false);
   const [allNews, setAllNews] = useState(false);
-  const [allDlc, setAllDlc] = useState(false);
   const [fav, setFav] = useState({ on: g.favorite, count: g.favorites });
   const [busy, setBusy] = useState(false);
   const [pickedList, setPickedList] = useState<string | null>(null);
-  const gallery: Media[] = [...(g.videos ?? []), ...g.screenshots];
+  const videos = tidyVideos(g.videos ?? [], [g.game.name, g.game.name_ru, ...g.lists.map((l) => l.name)]);
+  const gallery: Media[] = [...videos, ...g.screenshots];
 
   const studio = [
     g.game.developer && `${g.game.developer}${g.game.more_developers ? ` ${tr("gpAndOthers")}` : ""}`,
@@ -167,8 +177,11 @@ function GameBody({
     : g.lists[0];
   const whose = progress && !g.viewed_is_me ? { id: progress.person_id, name: progress.name } : null;
   const released = g.platforms.map((p) => p.release_date).filter(Boolean).sort()[0] ?? null;
-  const dlcs = [...g.dlcs].sort((a, b) => (a.release_date ?? "9").localeCompare(b.release_date ?? "9"));
+  // The newest first (owner, 2026-10-29): what came out last is what is asked about.
+  const dlcs = [...g.dlcs].sort((a, b) => (b.release_date ?? "").localeCompare(a.release_date ?? ""));
   const editions = [...g.editions].sort((a, b) => a.name.length - b.name.length);
+  // What an add-on's name opens with and is no part of its own: the game's names.
+  const gameNames = [g.game.name, g.game.name_ru, ...g.lists.map((l) => l.name)];
 
   const openList = (personId?: number, personName?: string) => {
     if (!list) return;
@@ -228,14 +241,20 @@ function GameBody({
         <Cover src={g.art.poster} className="gp-poster" />
         <div className="gp-titles">
           <h1 className="gp-title clamp-3">{locale === "ru" && g.game.name_ru ? g.game.name_ru : g.game.name}</h1>
-          <p className="gp-sub clamp-2">{[years(g.game), studio].filter(Boolean).join(" · ")}</p>
+          <p className="gp-sub clamp-1">{[years(g.game), studio].filter(Boolean).join(" · ")}</p>
+          {(g.genres.length > 0 || g.hltb?.coop || g.hltb?.multi) && (
+            <div className="gp-chips gp-head-chips">
+              {g.genres.map((genre) => (
+                <Chip key={genre}>{genre}</Chip>
+              ))}
+              {g.hltb?.coop && <Chip>{tr("gpCoop")}</Chip>}
+              {g.hltb?.multi && <Chip>{tr("gpMulti")}</Chip>}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="gp-chips">
-        {g.genres.map((genre) => (
-          <Chip key={genre}>{genre}</Chip>
-        ))}
         {g.platforms.map((p) => (
           <Chip
             key={`${p.console}:${p.store}`}
@@ -353,50 +372,7 @@ function GameBody({
         </section>
       )}
 
-      {g.hltb && (
-        <Section
-          title={tr("gpHours")}
-          action={
-            <button type="button" className="link-btn" onClick={() => openExternal(g.hltb!.url)}>
-              HLTB ↗
-            </button>
-          }
-        >
-          <div className="gp-hltb">
-            {(
-              [
-                [g.hltb.main, "gpMain"],
-                [g.hltb.extra, "gpExtra"],
-                [g.hltb.completionist, "gpFull"],
-              ] as const
-            ).map(([h, label]) => (
-              <div key={label}>
-                <b className="t-num">
-                  {h ? h.toLocaleString(locale === "en" ? "en-US" : "ru-RU", { maximumFractionDigits: 1 }) : "–"}
-                  <small> {tr("gpHoursUnit")}</small>
-                </b>
-                <span>{tr(label)}</span>
-              </div>
-            ))}
-          </div>
-          {(g.hltb.score || g.hltb.rating) && (
-            <div className="gp-badges">
-              {g.hltb.score ? (
-                <span className="gp-badge">
-                  <span className="gp-badge-shape shape-cookie9">{g.hltb.score}</span>
-                  {tr("hltbScore")}
-                </span>
-              ) : null}
-              {g.hltb.rating ? (
-                <span className="gp-badge">
-                  <span className="gp-badge-shape gp-badge-2 shape-cookie9">{g.hltb.rating}</span>
-                  {tr("ageRating")}
-                </span>
-              ) : null}
-            </div>
-          )}
-        </Section>
-      )}
+      {g.hltb && <HltbSection hltb={g.hltb} />}
 
       {(g.description || released) && (
         <Section title={tr("gpAbout")}>
@@ -426,7 +402,7 @@ function GameBody({
               <button
                 type="button"
                 className="link-btn"
-                onClick={() => open({ kind: "gallery", game: g.game.name, cover: g.art.poster ?? null, videos: g.videos ?? [], screenshots: g.screenshots })}
+                onClick={() => open({ kind: "gallery", game: g.game.name, cover: g.art.poster ?? null, videos, screenshots: g.screenshots })}
               >
                 {tr("gpAll")} {gallery.length}
               </button>
@@ -435,7 +411,7 @@ function GameBody({
         >
           <div className="gp-shots rail">
             {gallery.slice(0, GALLERY_SHOWN).map((m, i) => (
-              <MediaTile key={typeof m === "string" ? m : (m.hls ?? m.mp4 ?? i)} media={m} list={gallery} className={typeof m === "string" ? `gp-shot-${i % 3}` : ""} />
+              <MediaTile key={typeof m === "string" ? m : (m.hls ?? m.mp4 ?? i)} media={m} list={gallery} />
             ))}
           </div>
         </Section>
@@ -452,18 +428,25 @@ function GameBody({
             ) : null
           }
         >
-          <div className="gp-news">
-            {(allNews ? g.news : g.news.slice(0, 3)).map((n) => (
-              <NewsCard
-                key={n.gid}
-                compact
-                item={{
-                  ...n,
-                  excerpt: "",
-                  game: { platform: list?.platform ?? "", title_id: list?.title_id ?? "", name: g.game.name, icon_url: g.art.poster },
-                }}
-              />
-            ))}
+          <div className="group">
+            <div className="group-items">
+              {(allNews ? g.news : g.news.slice(0, 3)).map((n) => (
+                <NewsRow
+                  key={n.gid}
+                  item={{
+                    ...n,
+                    excerpt: "",
+                    game: {
+                      platform: list?.platform ?? "",
+                      title_id: list?.title_id ?? "",
+                      name: g.game.name,
+                      icon_url: g.art.poster,
+                      hero: g.art.hero || g.art.header,
+                    },
+                  }}
+                />
+              ))}
+            </div>
           </div>
         </Section>
       )}
@@ -472,27 +455,21 @@ function GameBody({
         <Section
           title={tr("gpDlc")}
           action={
-            dlcs.length > 4 ? (
-              <button type="button" className="link-btn" onClick={() => setAllDlc((v) => !v)}>
-                {allDlc ? tr("gpReadLess") : `${tr("gpAll")} ${dlcs.length}`}
+            dlcs.length > DLC_SHOWN ? (
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => open({ kind: "dlcs", game: g.game.name, gameNames, cover: g.art.poster ?? null, dlcs })}
+              >
+                {tr("gpAll")} {num(dlcs.length, locale)}
               </button>
             ) : null
           }
         >
           <div className="group">
             <div className="group-items">
-              {(allDlc ? dlcs : dlcs.slice(0, 4)).map((d) => (
-                <div key={d.name} className="row">
-                  <Cover src={d.image} className="gp-dlc-pic" />
-                  <span className="row-text">
-                    <span className="row-title clamp-2">{d.name}</span>
-                    <span className="row-sub">
-                      {[d.release_date?.slice(0, 4), d.hours ? `${num(d.hours, locale)} ${tr("gpHoursUnit")}` : null]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </span>
-                </div>
+              {dlcs.slice(0, DLC_SHOWN).map((d, i) => (
+                <DlcRow key={`${d.name}:${i}`} dlc={d} game={g.game.name} gameNames={gameNames} cover={g.art.poster ?? null} />
               ))}
             </div>
           </div>
@@ -503,10 +480,18 @@ function GameBody({
         <Section title={tr("gpEditions")}>
           <div className="rail">
             {editions.map((e) => (
-              <div key={`${e.store}:${e.name}`} className="gp-edition">
+              <button
+                key={`${e.store}:${e.name}`}
+                type="button"
+                className="gp-edition"
+                onClick={() => {
+                  tick();
+                  open({ kind: "edition", game: g.game.name, cover: g.art.poster ?? null, edition: e, gameNames, dlcs });
+                }}
+              >
                 <Cover src={e.cover || g.art.poster} className="gp-edition-cover" />
-                <span className="clamp-2">{e.name}</span>
-              </div>
+                <span className="clamp-2">{cleanName(e.name)}</span>
+              </button>
             ))}
           </div>
         </Section>
@@ -529,7 +514,7 @@ function GameBody({
                   >
                     <Cover src={card.poster || card.hero} className="gp-card-cover" />
                     {card.year && <span className="gp-card-year">{card.year}</span>}
-                    <span className="gp-card-name clamp-2">{current ? tr("gpThisGame") : card.name}</span>
+                    <span className="gp-card-name clamp-2">{current ? tr("gpThisGame") : cleanName(card.name ?? "")}</span>
                   </button>
                 );
               })}
@@ -539,29 +524,103 @@ function GameBody({
 
       {g.related.length > 0 && (
         <Section title={tr("gpRelated")}>
-          <div className="group">
-            <div className="group-items">
-              {g.related.map((r) => {
-                const words = RELATION[r.kind];
-                const label = words ? tr(r.forward ? words[1] : words[0]) : r.kind;
-                return (
-                  <button key={`${r.kind}:${r.game.game_id}`} type="button" className="row row-tap" onClick={() => openGame(r.game)}>
-                    <Cover src={r.game.poster || r.game.hero} className="gp-rel-cover" />
-                    <span className="row-text">
-                      <span className="row-title clamp-1">{r.game.name}</span>
-                      <span className="row-sub">
-                        {label}
-                        {r.game.year ? ` · ${r.game.year}` : ""}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="rail">
+            {g.related.map((r) => {
+              const words = RELATION[r.kind];
+              const label = words ? tr(r.forward ? words[1] : words[0]) : r.kind;
+              return (
+                <button key={`${r.kind}:${r.game.game_id}`} type="button" className="gp-card" onClick={() => openGame(r.game)}>
+                  <Cover src={r.game.poster || r.game.hero} className="gp-card-cover" />
+                  {r.game.year && <span className="gp-card-year">{r.game.year}</span>}
+                  <span className="gp-card-name clamp-2">{cleanName(r.game.name ?? "")}</span>
+                  <span className="gp-card-rel">{label}</span>
+                </button>
+              );
+            })}
           </div>
         </Section>
       )}
       <div style={{ height: 24 }} aria-hidden="true" />
     </>
+  );
+}
+
+/** A developer's post as a row of the game's news: its picture (or its
+ * kind's mark), its kind over its title, its day on the right. */
+function NewsRow({ item }: { item: NewsItem }) {
+  const { tr, locale, open } = useApp();
+  const patch = item.kind === "patch";
+  return (
+    <button
+      type="button"
+      className="row row-tap gp-news-row"
+      onClick={() => {
+        tick();
+        open({ kind: "news", appid: item.appid, gid: item.gid, item, game: item.game });
+      }}
+    >
+      {item.image ? (
+        <Cover src={item.image} className="gp-news-pic" />
+      ) : (
+        <span className={`gp-news-pic gp-news-mark ${patch ? "kind-patch" : "kind-news"}`}>
+          <Icon name={patch ? "patch" : "news"} size={18} />
+        </span>
+      )}
+      <span className="row-text">
+        <b className={`gp-news-kind ${patch ? "gp-news-patch" : "gp-news-post"}`}>{patch ? tr("newsPatch") : tr("newsPost")}</b>
+        <span className="gp-dlc-name">{item.title}</span>
+      </span>
+      <span className="gp-news-day t-meta">{whenLabel(item.date, locale, true)}</span>
+    </button>
+  );
+}
+
+/** HowLongToBeat's hours, its score and its age rating, as a game and an
+ * add-on show them. */
+export function HltbSection({ hltb }: { hltb: GameHltb }) {
+  const { tr, locale } = useApp();
+  return (
+    <Section
+      title={tr("gpHours")}
+      action={
+        <button type="button" className="link-btn" onClick={() => openExternal(hltb.url)}>
+          HLTB ↗
+        </button>
+      }
+    >
+      <div className="gp-hltb">
+        {(
+          [
+            [hltb.main, "gpMain"],
+            [hltb.extra, "gpExtra"],
+            [hltb.completionist, "gpFull"],
+          ] as const
+        ).map(([h, label]) => (
+          <div key={label}>
+            <b className="t-num">
+              {h ? h.toLocaleString(locale === "en" ? "en-US" : "ru-RU", { maximumFractionDigits: 1 }) : "–"}
+              <small> {tr("gpHoursUnit")}</small>
+            </b>
+            <span>{tr(label)}</span>
+          </div>
+        ))}
+      </div>
+      {(hltb.score || hltb.rating) && (
+        <div className="gp-badges">
+          {hltb.score ? (
+            <span className="gp-badge">
+              <span className="gp-badge-shape shape-cookie9">{hltb.score}</span>
+              {tr("hltbScore")}
+            </span>
+          ) : null}
+          {hltb.rating ? (
+            <span className="gp-badge">
+              <span className="gp-badge-shape gp-badge-2 shape-cookie9">{hltb.rating}</span>
+              {tr("ageRating")}
+            </span>
+          ) : null}
+        </div>
+      )}
+    </Section>
   );
 }

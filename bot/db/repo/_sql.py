@@ -306,7 +306,7 @@ def rarity(prefix: str = "s.") -> str:
 # under) 20, a legendary one (1 % and under) 30, a mythic one (Xbox's Mythic,
 # PSN's platinum) 50 — the Mini App's tiers (`views.rareLevel`). Tens, so a
 # step between can come later.
-POINTS_COMMON, POINTS_RARE, POINTS_LEGENDARY, POINTS_MYTHIC = 10, 20, 30, 50
+POINTS_COMMON, POINTS_RARE, POINTS_LEGENDARY, POINTS_MYTHIC = 10, 20, 30, 100
 
 
 def points(prefix: str = "s.") -> str:

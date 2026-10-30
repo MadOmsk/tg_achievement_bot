@@ -1544,3 +1544,73 @@ body:has(.sheet) .toast {
 .crop-mask-square {
   border-radius: var(--r-l);
 }
+
+/* A picture appears whole once it has loaded (main.tsx marks it), in one
+   short fade — never drawn top to bottom as it arrives. */
+img {
+  transition: opacity var(--t-mid) ease;
+}
+
+img:not([data-in]) {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  img {
+    transition: none;
+  }
+}
+
+/* Every picture across a page's head — a game's, a post's, an achievement's,
+   a person's — fades into the page at its foot, the same way. */
+.hero-full,
+.gp-hero,
+.pp-banner {
+  border-radius: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent);
+}
+
+/* A picture set on its own ground (an achievement's, a post's): the ground
+   fades into the page as a full picture does; the picture itself stays whole. */
+.hero:not(.hero-full) {
+  border-radius: 0;
+  background: none;
+}
+
+.hero:not(.hero-full)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--surface-3);
+}
+
+.hero:not(.hero-full)::before,
+.hero:not(.hero-full) .hero-ground {
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent);
+}
+
+.hero:not(.hero-full) .hero-ground {
+  z-index: -1;
+  border-radius: 0;
+}
+
+.detail-kicker {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--on-surface-3);
+}
+
+.detail-kicker.mark-rare {
+  color: var(--tier-epic);
+}
+
+.detail-kicker.mark-legendary {
+  color: var(--tier-legendary);
+}
+
+.detail-kicker.mark-mythic {
+  color: var(--tier-mythic);
+}

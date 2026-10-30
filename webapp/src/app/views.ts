@@ -72,7 +72,7 @@ export type Tier = "mythic" | "legendary" | "rare";
 /** The app's own points (owner, 2026-10-27), one scale for every platform
  * in place of Xbox's gamerscore — the server counts them the same way
  * (`_sql.points`). Tens, so a step between can come later. */
-export const POINTS = { common: 10, rare: 20, legendary: 30, mythic: 50 } as const;
+export const POINTS = { common: 10, rare: 20, legendary: 30, mythic: 100 } as const;
 
 export function pointsOf(rarity: number | null, special?: { trophy?: string | null; mythic?: boolean }): number {
   return POINTS[rareLevel(rarity, special) ?? "common"];

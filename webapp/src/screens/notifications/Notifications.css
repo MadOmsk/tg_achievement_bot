@@ -52,8 +52,10 @@
   gap: 6px;
 }
 
+/* On the notice's first line, as tall as it: the two read as one line. */
 .nt-time {
   font-size: 12.5px;
+  line-height: 19.5px;
   color: var(--on-surface-3);
 }
 

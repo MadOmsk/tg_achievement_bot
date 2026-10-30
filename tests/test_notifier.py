@@ -85,6 +85,42 @@ async def test_a_notice_reaches_every_channel_that_is_on(repo: Repo) -> None:
     ]
 
 
+async def test_push_goes_only_to_the_apps_own_address(repo: Repo) -> None:
+    """A browser keeps one subscription per address of the app: one an old dev
+    tunnel made gets nothing, and is forgotten at start-up."""
+    from bot.util import origin_of
+
+    ada = await repo.ensure_user(1, "ada")
+    assert ada
+    here = origin_of(APP_URL)
+    assert here
+    await repo.save_push_subscription(
+        ada, "https://fcm.googleapis.com/fcm/send/here", **_browser(), user_agent=None, origin=here
+    )
+    await repo.save_push_subscription(
+        ada,
+        "https://fcm.googleapis.com/fcm/send/old",
+        **_browser(),
+        user_agent=None,
+        origin="https://old-tunnel.trycloudflare.com",
+    )
+    await repo.save_push_subscription(
+        ada, "https://fcm.googleapis.com/fcm/send/before", **_browser(), user_agent=None
+    )
+    service, sent = _PushService(), []
+    notifier = _notifier(repo, service, sent)
+    await repo.update_user_settings(ada, notify_push_on="new_follower")
+
+    await notifier.notify(ada, "new_follower", person_id=ada, name="ada")
+
+    assert sorted(service.got) == [
+        "https://fcm.googleapis.com/fcm/send/before",
+        "https://fcm.googleapis.com/fcm/send/here",
+    ]
+    assert await repo.forget_push_elsewhere(here) == 1
+    assert len(await repo.push_subscriptions_of(ada)) == 2
+
+
 async def test_the_switches_are_the_persons_own(repo: Repo) -> None:
     ada = await repo.ensure_user(1, "ada")
     assert ada
