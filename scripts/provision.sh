@@ -120,6 +120,13 @@ if [ -f /etc/letsencrypt/live/xbox.sultanpharm.com/fullchain.pem ]; then
   ln -sf /etc/nginx/sites-available/xbox-bot /etc/nginx/sites-enabled/xbox-bot
   ln -sf /etc/nginx/sites-available/xbox-mini-test /etc/nginx/sites-enabled/xbox-mini-test
 fi
+# unlocked.how (#237): Cloudflare's origin certificate; its key is made on the
+# server and never leaves it (only the CSR goes to Cloudflare).
+install -m 644 "$REPO/deploy/nginx/cloudflare-realip.conf" /etc/nginx/snippets/
+install -m 644 "$REPO/deploy/nginx/unlocked.conf" /etc/nginx/sites-available/unlocked
+if [ -f /etc/ssl/unlocked/origin.pem ] && [ -f /etc/ssl/unlocked/origin.key ]; then
+  ln -sf /etc/nginx/sites-available/unlocked /etc/nginx/sites-enabled/unlocked
+fi
 nginx -t
 systemctl reload nginx
 
