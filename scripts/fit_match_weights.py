@@ -28,21 +28,21 @@ Without those flags read-only, safe beside a running bot.
 
 Usage:
     .venv/Scripts/python.exe -X utf8 -m scripts.fit_match_weights [--out weights.json]
-        [--db data/games.db] [--without model+claude+gemini] [--strength 0.001] [--save]
+        [--schema dev] [--without model+claude+gemini] [--strength 0.001] [--save]
     .venv/Scripts/python.exe -X utf8 -m scripts.fit_match_weights --list | --activate N|hand
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 from collections import Counter
 from pathlib import Path
 
 from bot.config import get_settings
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.game_link import GameLinker, _candidate, _Index, load_candidates
 from bot.services.game_match import WEIGHTS, Candidate, compare, features, subject_of
 from bot.services.match_fit import (
@@ -140,7 +140,7 @@ async def population(repo: Repo, fitted: Weights) -> tuple[Counter, list[str]]:
 
 async def run(args: argparse.Namespace) -> Weights | None:
     """The report, printed; the fitted weights, rounded (None: too few labels)."""
-    database = await Database(Path(args.db or get_settings().db_path)).connect()
+    database = await tools.open_database(schema=args.schema)
     try:
         repo = Repo(database)
         sources: dict[str, int] = {}
@@ -267,11 +267,11 @@ def _frozen(path: Path) -> set[tuple[int, int]] | None:
 
 def _default_eval(args: argparse.Namespace) -> Path:
     """The frozen set beside the database: `advice/eval_set.json`."""
-    return Path(args.db or get_settings().db_path).parent / "advice" / "eval_set.json"
+    return get_settings().db_path.parent / "advice" / "eval_set.json"
 
 
 async def manage(args: argparse.Namespace) -> None:
-    database = await Database(Path(args.db or get_settings().db_path)).connect()
+    database = await tools.open_database(schema=args.schema)
     try:
         repo = Repo(database)
         if args.activate:
@@ -293,7 +293,7 @@ async def manage(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="match_weights.fitted.json")
-    parser.add_argument("--db", default=None)
+    tools.add_arguments(parser)
     parser.add_argument("--strength", type=float, default=0.0001)
     parser.add_argument("--epochs", type=int, default=3000, help="at most; stops when settled")
     parser.add_argument("--without", action="append", help="a source not to learn from")
@@ -306,9 +306,9 @@ def main() -> None:
     parser.add_argument("--activate", default=None, help="a kept set's id, or 'hand'")
     args = parser.parse_args()
     if args.list or args.activate:
-        asyncio.run(manage(args))
+        tools.run(manage(args))
         return
-    fitted = asyncio.run(run(args))
+    fitted = tools.run(run(args))
     if fitted is not None:
         Path(args.out).write_text(json.dumps(fitted, indent=1), encoding="utf-8")
         print(f"written to {args.out}")

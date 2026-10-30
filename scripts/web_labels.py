@@ -24,18 +24,18 @@ differed).
 Run with the viewer stopped (one linker at a time).
 
 Usage:
-    … -m scripts.web_labels --db data/games.db answers.json [more.json …] [--dry-run]
+    … -m scripts.web_labels [--schema dev] answers.json [more.json …] [--dry-run]
         [--source gemini-web]
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from pathlib import Path
 
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.game_link import GameLinker
 from bot.services.game_match import MODEL
 from bot.services.label_conflicts import around, conflicts
@@ -95,13 +95,13 @@ def label_of(answer: dict) -> tuple[int, int, str, str] | None:
 
 
 async def write(
-    db: Path,
+    schema: str | None,
     labels: list[tuple[int, int, str, str]],
     others: list[dict] | None = None,
     source: str = SOURCE,
     overrule: bool | None = None,
 ) -> None:
-    database = await Database(db).connect()
+    database = await tools.open_database(schema=schema)
     try:
         repo = Repo(database)
         if overrule is None:
@@ -159,7 +159,7 @@ async def write(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("files", nargs="+")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--source", default=SOURCE)
@@ -183,7 +183,7 @@ def main() -> None:
                 labels.append(label)
     print(f"{len(labels)} labels, {len(others)} HLTB and series answers")
     if not args.dry_run:
-        asyncio.run(write(Path(args.db), labels, others, args.source, args.overrule or None))
+        tools.run(write(args.schema, labels, others, args.source, args.overrule or None))
 
 
 if __name__ == "__main__":

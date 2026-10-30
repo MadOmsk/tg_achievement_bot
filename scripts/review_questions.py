@@ -29,10 +29,10 @@ gets (`<out stem>.md`); its answer file is named after the model that
 answered (`<out stem>.<model>.json`).
 
 Usage:
-    … -m scripts.review_questions --db data/games.db --out questions.json [--total 500]
-    … -m scripts.review_questions --db data/games.db --out recheck.json --recheck
+    … -m scripts.review_questions [--schema dev] --out questions.json [--total 500]
+    … -m scripts.review_questions [--schema dev] --out recheck.json --recheck
         [--check 40] [--prompt]
-    … -m scripts.review_questions --db data/games.db --out recheck.json --score answers.json
+    … -m scripts.review_questions [--schema dev] --out recheck.json --score answers.json
 """
 
 from __future__ import annotations
@@ -41,10 +41,9 @@ import argparse
 import json
 import random
 import re
-import sqlite3
 from pathlib import Path
 
-from bot.db import files
+from bot.db import tools
 from bot.services.advice import DEFINITIONS
 from scripts.web_labels import label_of
 
@@ -67,7 +66,7 @@ EDITION_WORDS = re.compile(
 )
 
 
-def _version(conn: sqlite3.Connection, vid: int) -> dict:
+def _version(conn: tools.Connection, vid: int) -> dict:
     r = conn.execute(
         "SELECT v.version_id, v.name, v.console, v.store, v.product_id, v.release_date,"
         " v.developer, v.publisher, g.name AS game FROM versions v"
@@ -77,7 +76,7 @@ def _version(conn: sqlite3.Connection, vid: int) -> dict:
     return {k: r[k] for k in r.keys()}
 
 
-def _plain(conn: sqlite3.Connection, game_id: int) -> int | None:
+def _plain(conn: tools.Connection, game_id: int) -> int | None:
     """A game's own version to ask about it by: its earliest named one."""
     row = conn.execute(
         "SELECT version_id FROM versions WHERE game_id = ? AND name IS NOT NULL"
@@ -88,7 +87,7 @@ def _plain(conn: sqlite3.Connection, game_id: int) -> int | None:
     return int(row[0]) if row else None
 
 
-def to_recheck(conn: sqlite3.Connection) -> list[tuple[int, int, str]]:
+def to_recheck(conn: tools.Connection) -> list[tuple[int, int, str]]:
     """Every relation the linker set by itself and no label settles yet, as
     `(the version it is about, the other, the relation)`: between two games
     (a remaster, a remake, a compilation, a VR version, an enhanced edition
@@ -118,7 +117,7 @@ def to_recheck(conn: sqlite3.Connection) -> list[tuple[int, int, str]]:
     return found
 
 
-def to_relabel(conn: sqlite3.Connection) -> list[tuple[int, int]]:
+def to_relabel(conn: tools.Connection) -> list[tuple[int, int]]:
     """The labels "same" between an edition and a version not named so —
     given before the enhanced edition had an answer of its own."""
     found = []
@@ -133,13 +132,13 @@ def to_relabel(conn: sqlite3.Connection) -> list[tuple[int, int]]:
     return found
 
 
-def _nameless(conn: sqlite3.Connection, vid: int) -> bool:
+def _nameless(conn: tools.Connection, vid: int) -> bool:
     """A stand-in known by its number alone: nothing to look up."""
     row = conn.execute("SELECT name FROM versions WHERE version_id = ?", (vid,)).fetchone()
     return not row or not row[0] or str(row[0]).isdigit()
 
 
-def _catalog(conn: sqlite3.Connection, vid: int) -> list[str]:
+def _catalog(conn: tools.Connection, vid: int) -> list[str]:
     """Every named version of the game this version is filed under, one line
     each: the store ids an adviser needs to tell an edition sold beside the
     plain game from the same product renamed (owner, 2026-10-27)."""
@@ -160,7 +159,7 @@ def _catalog(conn: sqlite3.Connection, vid: int) -> list[str]:
     return lines
 
 
-def _question(conn: sqlite3.Connection, a: int, b: int, why: str) -> dict:
+def _question(conn: tools.Connection, a: int, b: int, why: str) -> dict:
     q = {"type": "pair", "a": a, "b": b, "asked_for": why,
          "A": _version(conn, a), "B": _version(conn, b),
          "catalog_A": _catalog(conn, a)}  # fmt: skip
@@ -169,7 +168,7 @@ def _question(conn: sqlite3.Connection, a: int, b: int, why: str) -> dict:
     return q
 
 
-def _known(conn: sqlite3.Connection, n: int, skip: set[frozenset[int]]) -> list[dict]:
+def _known(conn: tools.Connection, n: int, skip: set[frozenset[int]]) -> list[dict]:
     """`n` pairs the operator labelled by hand, asked blind among the rest
     so the answers can be scored before any is written: a few of every
     relation, the rest one game, another game of the series, unrelated."""
@@ -199,11 +198,10 @@ def _known(conn: sqlite3.Connection, n: int, skip: set[frozenset[int]]) -> list[
     return out
 
 
-def recheck_questions(db: Path, check: int = 0) -> list[dict]:
+def recheck_questions(schema: str | None, check: int = 0) -> list[dict]:
     """The recheck batch, nameless stand-ins left out, with `check` pairs of
     known answer mixed in at fixed places."""
-    conn = files.connect(db, readonly=True)
-    conn.row_factory = sqlite3.Row
+    conn = tools.connect(schema=schema, readonly=True)
     out = []
     asked: set[frozenset[int]] = set()
     pairs = [
@@ -366,9 +364,8 @@ def score(questions: list[dict], answers: list[dict]) -> tuple[list[str], list[d
     return report, kept
 
 
-def build(db: Path, total: int) -> list[dict]:
-    conn = files.connect(db, readonly=True)
-    conn.row_factory = sqlite3.Row
+def build(schema: str | None, total: int) -> list[dict]:
+    conn = tools.connect(schema=schema, readonly=True)
     labelled = {
         frozenset((int(a), int(b)))
         for a, b in conn.execute("SELECT version_id, other_id FROM match_decisions")
@@ -397,8 +394,9 @@ def build(db: Path, total: int) -> list[dict]:
             quota["relations"] -= 1
     for r in conn.execute(
         "SELECT vh.version_id, vh.hltb_id, vh.score, h.name, h.game_type, h.release_year,"
-        " h.developer, (SELECT GROUP_CONCAT(p.platform, ', ') FROM hltb_entry_platforms p"
-        "  WHERE p.hltb_id = h.hltb_id) AS platforms FROM version_hltb vh JOIN hltb_entries h"
+        " h.developer, (SELECT string_agg(p.platform, ', ' ORDER BY p.platform)"
+        "  FROM hltb_entry_platforms p WHERE p.hltb_id = h.hltb_id) AS platforms"
+        " FROM version_hltb vh JOIN hltb_entries h"
         " ON h.hltb_id = vh.hltb_id WHERE vh.source = 'auto' AND vh.score IS NOT NULL"
         " AND vh.score <> 0.9 ORDER BY vh.score LIMIT ?",
         (quota["hltb"],),
@@ -421,13 +419,13 @@ def build(db: Path, total: int) -> list[dict]:
         )
     for r in conn.execute(
         "SELECT gs.game_id, gs.series_id, gs.p, g.name AS game, g.year, s.name AS series,"
-        " (SELECT GROUP_CONCAT(g2.name, ' | ') FROM game_series x JOIN games g2"
+        " (SELECT string_agg(g2.name, ' | ' ORDER BY x.game_id) FROM game_series x JOIN games g2"
         "   ON g2.game_id = x.game_id WHERE x.series_id = gs.series_id AND x.member = 1"
         "   AND x.game_id <> gs.game_id) AS others"
         " FROM game_series gs JOIN games g ON g.game_id = gs.game_id"
         " JOIN series s ON s.series_id = gs.series_id"
         " WHERE gs.source = 'auto' AND gs.member = 1 AND s.merged_into IS NULL"
-        " ORDER BY gs.p, gs.game_id LIMIT ?",
+        " ORDER BY gs.p NULLS FIRST, gs.game_id LIMIT ?",
         (quota["series"],),
     ):
         out.append(
@@ -467,7 +465,7 @@ def build(db: Path, total: int) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--out", required=True)
     parser.add_argument("--total", type=int, default=500)
     parser.add_argument("--recheck", action="store_true")
@@ -487,9 +485,9 @@ def main() -> None:
         print(f"{len(kept)} answers to write → {to_write}")
         return
     questions = (
-        recheck_questions(Path(args.db), args.check)
+        recheck_questions(args.schema, args.check)
         if args.recheck
-        else build(Path(args.db), args.total)
+        else build(args.schema, args.total)
     )
     out.write_text(json.dumps(questions, ensure_ascii=False, indent=1), "utf-8")
     if args.prompt:

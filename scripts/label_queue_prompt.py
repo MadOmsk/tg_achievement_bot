@@ -14,19 +14,17 @@ the replies back against).
 Read-only on the database, safe beside the viewer.
 
 Usage:
-    .venv/Scripts/python.exe -X utf8 -m scripts.label_queue_prompt --db data/games.db
+    .venv/Scripts/python.exe -X utf8 -m scripts.label_queue_prompt [--schema dev]
         [--limit 400] [--batch 0] [--out data/advice/labelling/2026-10-24]
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
-import sqlite3
 from pathlib import Path
 
-from bot.db import files
+from bot.db import tools
 from bot.services.advice import RULES, versions_pair_id
 from bot.util import utcnow_iso
 from scripts.advise_pairs import load_facts, open_read_only
@@ -50,15 +48,14 @@ def _blind(text: str) -> str:
     return text.replace(" (FIRST is filed in this game now)", "")
 
 
-async def build(db: Path, limit: int) -> list[dict]:
-    conn = files.connect(db, readonly=True)
-    conn.row_factory = sqlite3.Row
+async def build(schema: str | None, limit: int) -> list[dict]:
+    conn = tools.connect(schema=schema, readonly=True)
     try:
         queue, _answered, _order = label_queue(conn)
         pairs = [(int(r["subject"]), int(r["other"]), rare) for r, rare in queue]
     finally:
         conn.close()
-    database = await open_read_only(db)
+    database = await open_read_only(schema)
     try:
         facts = await load_facts(database.conn)
     finally:
@@ -101,12 +98,12 @@ def prompt(questions: list[dict]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--limit", type=int, default=400)
     parser.add_argument("--batch", type=int, default=0, help="questions a file; 0: one file")
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
-    questions = asyncio.run(build(Path(args.db), args.limit))
+    questions = tools.run(build(args.schema, args.limit))
     out = Path(args.out or f"data/advice/labelling/{utcnow_iso()[:10]}")
     out.parent.mkdir(parents=True, exist_ok=True)
     files = []

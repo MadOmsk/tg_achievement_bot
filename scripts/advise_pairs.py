@@ -28,7 +28,7 @@ Kinds of question (pair ids):
                                   because the match was ambiguous
 
 Usage:
-    .venv/Scripts/python.exe -X utf8 -m scripts.advise_pairs --db data/games.db export
+    .venv/Scripts/python.exe -X utf8 -m scripts.advise_pairs [--schema dev] export
     … import --adviser claude data/advice/replies/claude_*.json
     … import --adviser gemini data/advice/replies/gemini_*.txt
     … status
@@ -40,7 +40,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import sys
@@ -49,9 +48,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
-
-from bot.db import files
+from bot.config import get_settings
+from bot.db import tools
+from bot.db.postgres import Connection
 from bot.db.repo import Database, Repo
 from bot.services.advice import (
     ADVISER_SOURCES,
@@ -95,17 +94,15 @@ RELEASES_SHOWN = 8
 # ---------------------------------------------------------------- the database
 
 
-def read_only_uri(path: Path) -> str:
-    return f"file:{path.resolve().as_posix()}?mode=ro"
-
-
-async def open_read_only(path: Path) -> Database:
+async def open_read_only(schema: str | None = None) -> Database:
     """The database opened read-only: no bring-up, no migration, nothing
     written (export, status and conflicts run beside the viewer)."""
-    return await files.open_database(path, readonly=True)
+    database = await tools.open_database(schema=schema)
+    await database.conn.execute("SET default_transaction_read_only = on")
+    return database
 
 
-async def _rows(conn: aiosqlite.Connection, sql: str, params: tuple = ()) -> list[dict]:
+async def _rows(conn: Connection, sql: str, params: tuple = ()) -> list[dict]:
     cursor = await conn.execute(sql, params)
     return [dict(r) for r in await cursor.fetchall()]
 
@@ -266,7 +263,7 @@ class Facts:
         return text
 
 
-async def load_facts(conn: aiosqlite.Connection) -> Facts:
+async def load_facts(conn: Connection) -> Facts:
     f = Facts()
     for r in await _rows(
         conn,
@@ -291,8 +288,9 @@ async def load_facts(conn: aiosqlite.Connection) -> Facts:
     for r in await _rows(
         conn,
         "SELECT hltb_id, name, game_type, parent_hltb_id, steam_appid, developer, publisher,"
-        " release_year, (SELECT group_concat(p.platform, ', ') FROM hltb_entry_platforms p"
-        "  WHERE p.hltb_id = hltb_entries.hltb_id) AS platforms FROM hltb_entries",
+        " release_year, (SELECT string_agg(p.platform, ', ' ORDER BY p.platform)"
+        " FROM hltb_entry_platforms p WHERE p.hltb_id = hltb_entries.hltb_id)"
+        " AS platforms FROM hltb_entries",
     ):
         f.hltb[int(r["hltb_id"])] = r
     f.labels = await _rows(
@@ -379,7 +377,7 @@ def _pair_question(
 
 
 async def advised_pairs(
-    conn: aiosqlite.Connection, facts: Facts, types: set[str]
+    conn: Connection, facts: Facts, types: set[str]
 ) -> dict[str, dict[str, Any]]:
     """The pairs the model is not sure of: its review list (`match_pairs`, as
     the linker last wrote it), HLTB matches in the grey zone, and HLTB DLC
@@ -404,9 +402,7 @@ async def advised_pairs(
     return found
 
 
-async def _hltb_questions(
-    conn: aiosqlite.Connection, facts: Facts, *, audit: bool
-) -> list[dict[str, Any]]:
+async def _hltb_questions(conn: Connection, facts: Facts, *, audit: bool) -> list[dict[str, Any]]:
     """HLTB matches in the grey zone (`audit=False`), or the sure ones."""
     where = "b.score >= ?" if audit else "b.score < ?"
     found = []
@@ -444,7 +440,7 @@ async def _hltb_questions(
     return found
 
 
-async def _dlc_rows(conn: aiosqlite.Connection) -> dict[int, list[dict]]:
+async def _dlc_rows(conn: Connection) -> dict[int, list[dict]]:
     """Our DLC under each HLTB entry with DLC of its own (as
     `repo.dlcs_under_hltb`), read at once."""
     by_entry: dict[int, list[dict]] = defaultdict(list)
@@ -469,7 +465,7 @@ def _dlc_text(d: dict) -> str:
     )
 
 
-async def _dlc_questions(conn: aiosqlite.Connection, facts: Facts) -> list[dict[str, Any]]:
+async def _dlc_questions(conn: Connection, facts: Facts) -> list[dict[str, Any]]:
     """Our DLC that one or more of an HLTB game's DLC entries would match on
     its own, which `hltb_match.match_dlc_entries` left unlinked because the
     match is ambiguous (a name two entries share, one entry on two products
@@ -515,7 +511,7 @@ async def _dlc_questions(conn: aiosqlite.Connection, facts: Facts) -> list[dict[
 
 async def audit_pairs(
     repo: Repo,
-    conn: aiosqlite.Connection,
+    conn: Connection,
     facts: Facts,
     types: set[str],
     fraction: float,
@@ -607,7 +603,7 @@ def write_batches(
 async def export(args: argparse.Namespace) -> None:
     types = set(args.types.split(",")) & set(PAIR_TYPES)
     store = _store(args)
-    database = await open_read_only(Path(args.db))
+    database = await open_read_only(args.schema)
     try:
         conn = database.conn
         facts = await load_facts(conn)
@@ -708,7 +704,7 @@ def states(
 
 async def status(args: argparse.Namespace) -> None:
     store = _store(args)
-    database = await open_read_only(Path(args.db))
+    database = await open_read_only(args.schema)
     try:
         facts = await load_facts(database.conn)
     finally:
@@ -832,8 +828,9 @@ async def apply(args: argparse.Namespace) -> None:
     from bot.services.game_link import GameLinker
 
     store = _store(args)
-    path = Path(args.db)
-    database = await (open_read_only(path) if args.dry_run else Database(path).connect())
+    database = await (
+        open_read_only(args.schema) if args.dry_run else tools.open_database(schema=args.schema)
+    )
     applied = store.applied()
     written: Counter = Counter()
     touched: set[int] = set()
@@ -881,7 +878,7 @@ async def conflicts(args: argparse.Namespace) -> None:
     folder; everything else in `<out>_other.json` (version pairs are on the
     viewer's /review as well)."""
     store = _store(args)
-    database = await open_read_only(Path(args.db))
+    database = await open_read_only(args.schema)
     try:
         facts = await load_facts(database.conn)
     finally:
@@ -957,7 +954,7 @@ async def conflicts(args: argparse.Namespace) -> None:
     print(f"{len(proposals)} game pairs → {out}; {len(other)} other pairs → {other_path}")
     print(
         "viewer: .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer"
-        f" --db {args.db} --proposals {out} --gemini {gemini_dir}"
+        f"{_schema_flag(args)} --proposals {out} --gemini {gemini_dir}"
     )
 
 
@@ -1070,23 +1067,20 @@ def _plain(answer: Answer) -> dict[str, Any]:
 def _store(args: argparse.Namespace) -> AdviceStore:
     if args.advice_dir:
         return AdviceStore(Path(args.advice_dir))
-    return AdviceStore.for_db(Path(args.db))
+    return AdviceStore.for_db(get_settings().db_path)
 
 
-def _default_db() -> str | None:
-    try:
-        from bot.config import get_settings
-
-        return str(get_settings().db_path)
-    except Exception:  # no env file: --db is then required
-        return None
+def _schema_flag(args: argparse.Namespace) -> str:
+    return f" --schema {args.schema}" if args.schema else ""
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", default=None, help="the games database (default: DB_PATH)")
+    tools.add_arguments(parser)
     parser.add_argument(
-        "--advice-dir", default=None, help="where questions and answers are kept (<db dir>/advice)"
+        "--advice-dir",
+        default=None,
+        help="where questions and answers are kept (<DB_PATH's folder>/advice)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("export", help="the questions and the advisers' prompt batches")
@@ -1114,16 +1108,11 @@ def main() -> None:
         " every kind, for the viewer's /advised",
     )
     args = parser.parse_args()
-    args.db = args.db or _default_db()
-    if args.command != "import" and not args.db:
-        parser.error("--db is required (no DB_PATH in the environment)")
-    if args.command == "import" and not args.db and not args.advice_dir:
-        parser.error("--db or --advice-dir is required")
     if args.command == "import":
         import_command(args)
         return
     command = {"export": export, "status": status, "apply": apply, "conflicts": conflicts}
-    asyncio.run(command[args.command](args))
+    tools.run(command[args.command](args))
 
 
 if __name__ == "__main__":

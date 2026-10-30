@@ -3,7 +3,7 @@
 (`adviser_labels`), and what all three agree on is written into the database
 (`services/advice_import`). The database is copied into `backups/` first.
 
-    .venv/Scripts/python.exe -X utf8 -m scripts.argon_import --db data/games.db \
+    .venv/Scripts/python.exe -X utf8 -m scripts.argon_import [--schema dev] \
         --run trial-1 --questions data/advice/argon/trial_questions.json \
         --answers argon=…/trial_gemini-argon.jsonl gpt-pro=…/trial_gpt-pro.jsonl \
                   sonnet=…/trial_sonnet-offline.jsonl [--dry-run]
@@ -12,24 +12,21 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.advice_import import apply, consensus
 from scripts.compare_answers import decisions, read_answers
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-advice-import-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    target = Path("backups") / f"{schema or 'database'}-pre-advice-import-{stamp}.dump"
+    return tools.backup(target, schema=schema)
 
 
 def _read(questions_path: str, specs: list[str]) -> tuple[list[str], dict[str, dict]]:
@@ -43,7 +40,7 @@ def _read(questions_path: str, specs: list[str]) -> tuple[list[str], dict[str, d
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--run", required=True)
     parser.add_argument("--questions", required=True)
     parser.add_argument("--answers", nargs="+", required=True, help="name=path")
@@ -59,8 +56,8 @@ async def main() -> int:
     print(f"{len(questions)} questions, {len(labels)} labels: {dict(by)}")
     if args.dry_run:
         return 0
-    print("database copied to", _backup(Path(args.db)))
-    database = await Database(Path(args.db)).connect()
+    print("database copied to", _backup(args.schema))
+    database = await tools.open_database(schema=args.schema)
     try:
         report = await apply(Repo(database), labels, args.run)
         print(
@@ -78,4 +75,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

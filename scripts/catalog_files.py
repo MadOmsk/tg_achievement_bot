@@ -16,18 +16,18 @@ there is counted and left (that copy has not collected it), and the pairs
 touched are linked again. Run with the viewer stopped, after a backup.
 
 Usage:
-    … -m scripts.catalog_files export --db data/games.db
-    … -m scripts.catalog_files import --db data/games.db [--dry-run]
+    … -m scripts.catalog_files export [--schema dev]
+    … -m scripts.catalog_files import [--schema dev] [--dry-run]
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from pathlib import Path
 
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.game_link import GameLinker
 from bot.services.game_match import MODEL
 
@@ -124,8 +124,8 @@ async def import_files(repo: Repo, *, dry_run: bool = False) -> dict[str, int]:
     return counts
 
 
-async def run(command: str, db: Path, dry_run: bool) -> None:
-    database = await Database(db).connect()
+async def run(command: str, schema: str | None, dry_run: bool) -> None:
+    database = await tools.open_database(schema=schema)
     try:
         repo = Repo(database)
         if command == "export":
@@ -140,10 +140,10 @@ async def run(command: str, db: Path, dry_run: bool) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("export", "import"))
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    asyncio.run(run(args.command, Path(args.db), args.dry_run))
+    tools.run(run(args.command, args.schema, args.dry_run))
 
 
 if __name__ == "__main__":

@@ -3,40 +3,37 @@ the operator's and the advisers' labels kept as they are. The database is
 copied into `backups/` first. With the viewer stopped or not: the linker's
 work is the viewer's own on a decision, so run it when nobody is answering.
 
-    .venv/Scripts/python.exe -X utf8 -m scripts.relink_games --db data/games.db
+    .venv/Scripts/python.exe -X utf8 -m scripts.relink_games [--schema dev]
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.game_link import GameLinker, spread_hltb
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-relink-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    target = Path("backups") / f"{schema or 'database'}-pre-relink-{stamp}.dump"
+    return tools.backup(target, schema=schema)
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument(
         "--hltb-only",
         action="store_true",
         help="only spread each game's HLTB entry to its releases",
     )
     args = parser.parse_args()
-    print("database copied to", _backup(Path(args.db)))
-    database = await Database(Path(args.db)).connect()
+    print("database copied to", _backup(args.schema))
+    database = await tools.open_database(schema=args.schema)
     try:
         if args.hltb_only:
             print("HLTB links made:", await spread_hltb(Repo(database)))
@@ -49,4 +46,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

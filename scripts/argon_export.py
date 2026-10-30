@@ -21,7 +21,7 @@ Four kinds of question:
 Each file is whole on its own: the same instructions, then its questions. The
 questions are kept beside the files (`questions.json`) for the import.
 
-    .venv/Scripts/python.exe -X utf8 -m scripts.argon_export --db data/games.db \\
+    .venv/Scripts/python.exe -X utf8 -m scripts.argon_export [--schema dev] \\
         --out data/advice/argon --per-file 150
 """
 
@@ -30,11 +30,11 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import sqlite3
 from collections import defaultdict
 from pathlib import Path
 
-from bot.db import files
+from bot.db import tools
+from bot.db.postgres import Row
 from bot.db.repo._sql import OWN_EDITION
 from bot.services.stores import console_label
 
@@ -154,16 +154,16 @@ trophy group, if any (a free update, a season of content, a bundle, or none list
 """
 
 
-def _q(conn: sqlite3.Connection, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
+def _q(conn: tools.Connection, sql: str, args: tuple = ()) -> list[Row]:
     return conn.execute(sql, args).fetchall()
 
 
-def _hltb_label(e: sqlite3.Row) -> str:
+def _hltb_label(e: Row) -> str:
     year = e["release_world"][:4] if e["release_world"] else (e["name_year"] or "?")
     return f'hltb {e["hltb_id"]} "{e["name"]}" ({e["game_type"] or "?"}, {year})'
 
 
-def game_cards(conn: sqlite3.Connection) -> list[dict]:
+def game_cards(conn: tools.Connection) -> list[dict]:
     games = _q(conn, "SELECT * FROM games WHERE merged_into IS NULL ORDER BY game_id")
     versions = defaultdict(list)
     for v in _q(
@@ -241,11 +241,12 @@ def game_cards(conn: sqlite3.Connection) -> list[dict]:
     return cards
 
 
-def _game_line(conn: sqlite3.Connection, game_id: int) -> str:
+def _game_line(conn: tools.Connection, game_id: int) -> str:
     g = conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,)).fetchone()
     vs = _q(
         conn,
-        "SELECT store, console, name, release_date FROM versions WHERE game_id = ?",
+        "SELECT store, console, name, release_date FROM versions WHERE game_id = ?"
+        " ORDER BY version_id",
         (game_id,),
     )
     releases = "; ".join(
@@ -274,7 +275,7 @@ def _key(name: str) -> str:
     return core(normalize(name or ""))
 
 
-def duplicate_questions(conn: sqlite3.Connection, related: set[frozenset]) -> list[dict]:
+def duplicate_questions(conn: tools.Connection, related: set[frozenset]) -> list[dict]:
     """Games whose names are alike (the same core name, or one the other's start
     plus a word) and that nothing relates: one game stored twice, or a remaster,
     a remake, a part of a series the matcher never put side by side."""
@@ -312,7 +313,7 @@ def duplicate_questions(conn: sqlite3.Connection, related: set[frozenset]) -> li
     return out
 
 
-def edition_questions(conn: sqlite3.Connection) -> list[dict]:
+def edition_questions(conn: tools.Connection) -> list[dict]:
     rows = _q(
         conn,
         "SELECT DISTINCT v.game_id, e.edition_id, e.store, e.name, e.kind FROM editions e"
@@ -344,7 +345,7 @@ def edition_questions(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def dlc_hltb_questions(conn: sqlite3.Connection) -> list[dict]:
+def dlc_hltb_questions(conn: tools.Connection) -> list[dict]:
     rows = _q(
         conn,
         "SELECT DISTINCT v.game_id, vh.hltb_id FROM version_hltb vh"
@@ -356,7 +357,8 @@ def dlc_hltb_questions(conn: sqlite3.Connection) -> list[dict]:
     for r in rows:
         children = _q(
             conn,
-            "SELECT * FROM hltb_entries WHERE parent_hltb_id = ? ORDER BY release_world, name",
+            "SELECT * FROM hltb_entries WHERE parent_hltb_id = ?"
+            " ORDER BY release_world NULLS FIRST, name",
             (r["hltb_id"],),
         )
         dlcs = _q(
@@ -364,7 +366,7 @@ def dlc_hltb_questions(conn: sqlite3.Connection) -> list[dict]:
             "SELECT d.dlc_id, d.name, d.release_date FROM dlcs d JOIN versions v ON v.version_id = d.version_id"  # noqa: E501
             " WHERE v.game_id = ? AND d.name IS NOT NULL AND COALESCE(d.kind, 'dlc') <> 'consumable'"  # noqa: E501
             " AND NOT EXISTS (SELECT 1 FROM dlc_hltb dh WHERE dh.dlc_id = d.dlc_id)"
-            " ORDER BY d.release_date, d.name LIMIT 60",
+            " ORDER BY d.release_date NULLS FIRST, d.name NULLS FIRST LIMIT 60",
             (r["game_id"],),
         )
         if not dlcs:
@@ -380,7 +382,7 @@ def dlc_hltb_questions(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def refused_questions(conn: sqlite3.Connection) -> list[dict]:
+def refused_questions(conn: tools.Connection) -> list[dict]:
     out = []
     for r in _q(
         conn,
@@ -405,7 +407,7 @@ def refused_questions(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def relation_questions(conn: sqlite3.Connection) -> list[dict]:
+def relation_questions(conn: tools.Connection) -> list[dict]:
     pairs: dict[tuple[int, int], str] = {}
     for r in _q(conn, "SELECT game_id, related_id, kind FROM game_relations"):
         pairs[(r[0], r[1])] = f"the database says FIRST {r[2]} SECOND"
@@ -431,14 +433,14 @@ def relation_questions(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def series_questions(conn: sqlite3.Connection) -> list[dict]:
+def series_questions(conn: tools.Connection) -> list[dict]:
     out = []
     for s in _q(conn, "SELECT * FROM series WHERE merged_into IS NULL ORDER BY series_id"):
         members = _q(
             conn,
             "SELECT g.game_id, g.name, g.year FROM game_series gs JOIN games g ON g.game_id = gs.game_id"  # noqa: E501
             " WHERE gs.series_id = ? AND COALESCE(gs.member, 1) = 1 AND g.merged_into IS NULL"
-            " ORDER BY g.year, g.name",
+            " ORDER BY g.year NULLS FIRST, g.name",
             (s["series_id"],),
         )
         if not members:
@@ -449,7 +451,7 @@ def series_questions(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def psn_group_questions(conn: sqlite3.Connection) -> list[dict]:
+def psn_group_questions(conn: tools.Connection) -> list[dict]:
     out = []
     groups = _q(
         conn,
@@ -463,7 +465,7 @@ def psn_group_questions(conn: sqlite3.Connection) -> list[dict]:
         addons = _q(
             conn,
             "SELECT store_id, name, release_date FROM dlcs WHERE version_id = ? AND store_id IS NOT NULL"  # noqa: E501
-            " ORDER BY release_date, name",
+            " ORDER BY release_date NULLS FIRST, name NULLS FIRST",
             (g["version_id"],),
         )
         lines = [
@@ -487,7 +489,7 @@ def psn_group_questions(conn: sqlite3.Connection) -> list[dict]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--out", required=True)
     parser.add_argument("--per-file", type=int, default=150)
     parser.add_argument(
@@ -498,8 +500,7 @@ def main() -> int:
     )
     parser.add_argument("--seed", type=int, default=20261016)
     args = parser.parse_args()
-    conn = files.connect(Path(args.db), readonly=True)
-    conn.row_factory = sqlite3.Row
+    conn = tools.connect(schema=args.schema, readonly=True)
     cards = game_cards(conn)
     relations = relation_questions(conn)
     parts = {

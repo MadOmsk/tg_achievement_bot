@@ -15,11 +15,11 @@ often two advisers agreeing are right, which says what their weight should
 be.
 
 Usage:
-    … -m scripts.label_queue_answers --db data/games.db
+    … -m scripts.label_queue_answers [--schema dev]
         --prefix data/advice/labelling/2026-10-24
         --claude <prefix>.claude-sonnet-medium.json --gemini <prefix>.gemini-argon.json
-    … -m scripts.label_queue_answers --db data/games.db --prefix … --score
-then, with the viewer stopped: … -m scripts.advise_pairs --db data/games.db apply
+    … -m scripts.label_queue_answers [--schema dev] --prefix … --score
+then, with the viewer stopped: … -m scripts.advise_pairs [--schema dev] apply
 """
 
 from __future__ import annotations
@@ -29,7 +29,8 @@ import json
 import random
 from pathlib import Path
 
-from bot.db import files
+from bot.config import get_settings
+from bot.db import tools
 from bot.services.advice import AdviceStore, decide, label_of, parse_answers, validate
 from bot.util import utcnow_iso
 from scripts.advise_pairs import import_answers
@@ -37,7 +38,7 @@ from scripts.advise_pairs import import_answers
 AUDIT_SEED = 1024
 
 
-def stage(db: Path, prefix: Path, claude: Path, gemini: Path, audit: int) -> None:
+def stage(prefix: Path, claude: Path, gemini: Path, audit: int) -> None:
     questions = {
         q["pair_id"]: q
         for q in json.loads(prefix.with_suffix(".questions.json").read_text("utf-8"))
@@ -56,7 +57,7 @@ def stage(db: Path, prefix: Path, claude: Path, gemini: Path, audit: int) -> Non
         for pid in questions
         if decide(None, replies["claude"].get(pid), replies["gemini"].get(pid)).state == "agreed"
     )
-    store = AdviceStore.for_db(db)
+    store = AdviceStore.for_db(get_settings().db_path)
     # Only pairs never asked before: an earlier round's answers are known.
     fresh = [pid for pid in agreed if pid not in store.questions()]
     held = set(random.Random(AUDIT_SEED).sample(fresh, min(audit, len(fresh))))
@@ -96,9 +97,9 @@ def stage(db: Path, prefix: Path, claude: Path, gemini: Path, audit: int) -> Non
     )
 
 
-def score(db: Path, prefix: Path) -> None:
+def score(schema: str | None, prefix: Path) -> None:
     held = json.loads(prefix.with_suffix(".audit.json").read_text("utf-8"))
-    conn = files.connect(db, readonly=True)
+    conn = tools.connect(schema=schema, readonly=True)
     labels = {
         frozenset((a, b)): (a, b, relation)
         for a, b, relation in conn.execute(
@@ -125,7 +126,7 @@ def score(db: Path, prefix: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--prefix", required=True)
     parser.add_argument("--claude")
     parser.add_argument("--gemini")
@@ -133,9 +134,9 @@ def main() -> None:
     parser.add_argument("--score", action="store_true")
     args = parser.parse_args()
     if args.score:
-        score(Path(args.db), Path(args.prefix))
+        score(args.schema, Path(args.prefix))
     else:
-        stage(Path(args.db), Path(args.prefix), Path(args.claude), Path(args.gemini), args.audit)
+        stage(Path(args.prefix), Path(args.claude), Path(args.gemini), args.audit)
 
 
 if __name__ == "__main__":
