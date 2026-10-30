@@ -14,9 +14,12 @@ a script takes `--schema` with `add_arguments`.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import datetime
+import selectors
 import subprocess
-from collections.abc import Iterable
+import sys
+from collections.abc import Coroutine, Iterable
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
@@ -52,6 +55,19 @@ def _target(dsn: str | None, schema: str | None) -> tuple[str, str]:
         return dsn, schema
     settings = get_settings()
     return dsn or settings.database_url, schema or settings.database_schema
+
+
+def event_loop() -> asyncio.AbstractEventLoop:
+    """The loop psycopg's async connection can run on: Windows' default one
+    (the proactor) refuses it."""
+    if sys.platform == "win32":
+        return asyncio.SelectorEventLoop(selectors.SelectSelector())
+    return asyncio.new_event_loop()
+
+
+def run(main: Coroutine[Any, Any, Any]) -> Any:
+    """`asyncio.run` for a script that opens the database."""
+    return asyncio.run(main, loop_factory=event_loop)
 
 
 async def open_database(dsn: str | None = None, *, schema: str | None = None) -> Any:
