@@ -9,8 +9,8 @@ write through `Repo`. Meant to grow into the operator's table of the games.
 anything but a dev tool) — whoever has the address can press every button.
 
 Usage:
-    .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer            # the .env database
-    .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer --db data/test.db --port 8090
+    .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer            # the .env schema
+    .venv/Scripts/python.exe -X utf8 -m scripts.catalog_viewer --schema test --port 8090
 then open http://127.0.0.1:8090/
 """
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import zlib
 from collections import Counter
 from collections.abc import Callable
@@ -28,9 +27,11 @@ from urllib.parse import quote, urlencode
 
 from aiohttp import web
 
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.postgres import Row
+from bot.db.repo import Repo
 from bot.db.repo._sql import BONUS_IN, OWN_EDITION, PART_OF_BUNDLE, STEAM_APP_OF_TITLE
+from bot.db.tools import Connection
 from bot.services.advice import (
     ADVISER_SOURCES,
     AdviceStore,
@@ -44,10 +45,8 @@ from scripts.trial_page import CSS as CARD_CSS
 PAGE_SIZE = 100
 
 
-def _db(request: web.Request) -> sqlite3.Connection:
-    conn = files.connect(request.app["db_path"], readonly=True)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _db(request: web.Request) -> Connection:
+    return tools.connect(request.app["dsn"], schema=request.app["schema"], readonly=True)
 
 
 def _repo(request: web.Request) -> Repo:
@@ -99,7 +98,7 @@ def _confirm(request: web.Request, form, question: str, sides: list[str]) -> web
     return _page(question, body)
 
 
-def _game_said(conn: sqlite3.Connection, game_id: int) -> str:
+def _game_said(conn: Connection, game_id: int) -> str:
     """A game as a confirmation names it: id, name, years, its versions."""
     row = conn.execute(
         "SELECT name, year, last_year, merged_into FROM games WHERE game_id = ?", (game_id,)
@@ -113,8 +112,8 @@ def _game_said(conn: sqlite3.Connection, game_id: int) -> str:
     if row["last_year"] and row["last_year"] != row["year"]:
         years = f"{years}–{row['last_year']}"
     consoles = conn.execute(
-        "SELECT group_concat(console, ', ') AS c, COUNT(*) AS n FROM"
-        " (SELECT console FROM versions WHERE game_id = ? ORDER BY console)",
+        "SELECT string_agg(console, ', ' ORDER BY console) AS c, COUNT(*) AS n FROM versions"
+        " WHERE game_id = ?",
         (game_id,),
     ).fetchone()
     return (
@@ -124,7 +123,7 @@ def _game_said(conn: sqlite3.Connection, game_id: int) -> str:
     )
 
 
-def _series_said(conn: sqlite3.Connection, series_id: int) -> str:
+def _series_said(conn: Connection, series_id: int) -> str:
     row = conn.execute(
         "SELECT name, merged_into, (SELECT COUNT(*) FROM game_series gs"
         " WHERE gs.series_id = s.series_id AND gs.member = 1) AS games"
@@ -215,7 +214,7 @@ def _cell(value: object) -> str:
 
 
 def _table(
-    rows: list[sqlite3.Row],
+    rows: list[Row],
     links: dict[str, object] | None = None,
     extra: dict[str, object] | None = None,
 ) -> str:
@@ -243,7 +242,7 @@ def _table(
     return f"<div class=scroll><table><tr>{head}</tr>{''.join(body)}</table></div>"
 
 
-def _record(row: sqlite3.Row | None, links: dict[str, object] | None = None) -> str:
+def _record(row: Row | None, links: dict[str, object] | None = None) -> str:
     if row is None:
         return "<p>(not found)</p>"
     links = links or {}
@@ -267,7 +266,7 @@ def _record(row: sqlite3.Row | None, links: dict[str, object] | None = None) -> 
     return f"<table>{''.join(lines)}</table>"
 
 
-def _store_href(row: sqlite3.Row) -> str:
+def _store_href(row: Row) -> str:
     """The version's own page on its store, or "" when no product is known
     (a stand-in): never a search (owner, 2026-10-11) — a name finds other
     games. A page of a product taken off sale is still its page."""
@@ -283,7 +282,7 @@ def _store_href(row: sqlite3.Row) -> str:
     return ""
 
 
-def _store_link(row: sqlite3.Row, label: str | None = None, href: str | None = None) -> str:
+def _store_link(row: Row, label: str | None = None, href: str | None = None) -> str:
     """The store page, always its own small "↗" link beside a name that
     opens our page (owner, 2026-10-12), with whether it is on sale; no page
     known: said so, with no link. Never a search."""
@@ -322,7 +321,7 @@ def _hours(main: object, plus: object = None, hundred: object = None) -> str:
     return " · ".join(parts)
 
 
-def _entry_hours(row: dict | sqlite3.Row) -> str:
+def _entry_hours(row: dict | Row) -> str:
     return _hours(row["comp_main"], row["comp_plus"], row["comp_100"])
 
 
@@ -393,7 +392,7 @@ async def _game_hltb_html(repo: Repo, game_id: int, members: list) -> str:
 # A version's picture: its store's cover, else its achievement list's, else
 # the picture of the HLTB entry it is linked to.
 COVER = (
-    "COALESCE(json_extract(v.media, '$.cover'), json_extract(v.media, '$.poster'),"
+    "COALESCE(v.media::jsonb ->> 'cover', v.media::jsonb ->> 'poster',"
     # The list's cover as the bot keeps it on disk (#55): Xbox's 360 art
     # answers no https, so its address alone is no picture here.
     " (SELECT '/covers/' || t.cover_path FROM achievement_list_connectors t WHERE t.platform = "
@@ -422,7 +421,7 @@ def _img(url: object, height: int, title: str = "") -> str:
     )
 
 
-def _dlc_href(row: sqlite3.Row) -> str:
+def _dlc_href(row: Row) -> str:
     """A DLC on its store."""
     store, store_id = row["store"], row["store_id"]
     if not store_id:
@@ -436,7 +435,7 @@ def _dlc_href(row: sqlite3.Row) -> str:
     return "#"
 
 
-def _edition_href(row: sqlite3.Row) -> str:
+def _edition_href(row: Row) -> str:
     """An edition on its store: an Xbox bundle's page, a Steam package's."""
     if row["store"] == "xbox":
         return f"https://www.xbox.com/en-US/games/store/x/{row['store_id']}"
@@ -445,23 +444,23 @@ def _edition_href(row: sqlite3.Row) -> str:
     return "#"
 
 
-def _list_href(row: sqlite3.Row) -> str:
+def _list_href(row: Row) -> str:
     return f"/list/{quote(str(row['platform']))}/{quote(str(row['title_id']))}"
 
 
-def _title_href(row: sqlite3.Row) -> str:
+def _title_href(row: Row) -> str:
     return f"/title/{quote(str(row['platform']))}/{quote(str(row['title_id']))}"
 
 
-def _version_href(row: sqlite3.Row) -> str:
+def _version_href(row: Row) -> str:
     return f"/version/{row['version_id']}"
 
 
-def _hltb_href(row: sqlite3.Row) -> str:
+def _hltb_href(row: Row) -> str:
     return f"/hltb/{row['hltb_id']}"
 
 
-def _payload_href(row: sqlite3.Row) -> str:
+def _payload_href(row: Row) -> str:
     return "/payload?" + urlencode({"subject": row["subject"], "source": row["source"]})
 
 
@@ -631,7 +630,7 @@ async def titles(request: web.Request) -> web.Response:
             "   AND v.title_id = t.title_id) AS versions,"
             "  (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = t.platform"
             "   AND a.title_id = t.title_id AND a.listed = 1) AS achievements"
-            " FROM achievement_list_connectors t WHERE ? = '' OR t.name LIKE ? OR t.name_ru LIKE "
+            " FROM achievement_list_connectors t WHERE ? = '' OR t.name ILIKE ? OR t.name_ru ILIKE "
             "? OR t.title_id = ?"
             " ORDER BY versions DESC, t.updated_at DESC LIMIT ?",
             (q, f"%{q}%", f"%{q}%", q, PAGE_SIZE),
@@ -739,7 +738,7 @@ async def versions(request: web.Request) -> web.Response:
             "SELECT v.version_id, v.name, v.store, v.product_id, v.stand_in, v.on_sale,"
             f" {_console_sql()} AS console, v.platform, v.title_id, v.kind, v.release_date,"
             " v.origin, v.found_how, v.found_via FROM versions v"
-            " WHERE ? = '' OR name LIKE ? OR product_id = ? OR store_group = ?"
+            " WHERE ? = '' OR v.name ILIKE ? OR product_id = ? OR store_group = ?"
             " ORDER BY updated_at DESC LIMIT ?",
             (q, f"%{q}%", q, q, PAGE_SIZE),
         ).fetchall()
@@ -763,7 +762,7 @@ async def version(request: web.Request) -> web.Response:
             "SELECT d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
             " d.on_sale, v.store, " + _DLC_HLTB + " FROM dlcs d"
             " JOIN versions v ON v.version_id = d.version_id"
-            " WHERE d.version_id = ? ORDER BY d.release_date, d.name",
+            " WHERE d.version_id = ? ORDER BY d.release_date NULLS FIRST, d.name NULLS FIRST",
             (version_id,),
         ).fetchall()
         hltb = conn.execute(
@@ -815,7 +814,7 @@ async def version(request: web.Request) -> web.Response:
         payloads = (
             conn.execute(
                 "SELECT subject, source, fetched_at, length(payload) AS bytes FROM source_payloads"
-                " WHERE subject LIKE ?",
+                " WHERE subject ILIKE ?",
                 (f"%{row['product_id']}%",),
             ).fetchall()
             if row is not None
@@ -909,7 +908,7 @@ async def dlcs(request: web.Request) -> web.Response:
             " d.on_sale, v.store, d.version_id, v.name AS version,"
             f" {_console_sql()} AS console, " + _DLC_HLTB + " FROM dlcs d"
             " JOIN versions v ON v.version_id = d.version_id"
-            " WHERE ? = '' OR d.name LIKE ? OR v.name LIKE ? ORDER BY d.updated_at DESC LIMIT ?",
+            " WHERE ? = '' OR d.name ILIKE ? OR v.name ILIKE ? ORDER BY d.updated_at DESC LIMIT ?",
             (q, f"%{q}%", f"%{q}%", PAGE_SIZE),
         ).fetchall()
     return _page(PAGES["/dlcs"], _search_form("/dlcs", q) + _dlc_table(rows))
@@ -926,7 +925,7 @@ _DLC_HLTB = (
 )
 
 
-def _dlc_table(rows: list[sqlite3.Row]) -> str:
+def _dlc_table(rows: list[Row]) -> str:
     """DLC rows: the name opens our page, the store is its own "↗" with
     whether it is sold, HLTB's entry and times where one is linked."""
     shown = []
@@ -1058,7 +1057,7 @@ async def hltb_list(request: web.Request) -> web.Response:
     page = max(0, int(request.query.get("page", "0") or 0))
     where, params = ["1 = 1"], []
     if q:
-        where.append("(e.name LIKE ? OR e.alias LIKE ? OR CAST(e.hltb_id AS TEXT) = ?)")
+        where.append("(e.name ILIKE ? OR e.alias ILIKE ? OR CAST(e.hltb_id AS TEXT) = ?)")
         params += [f"%{q}%", f"%{q}%", q]
     if kind:
         where.append("e.game_type = ?")
@@ -1160,12 +1159,13 @@ async def hltb_entry(request: web.Request) -> web.Response:
         ).fetchall()
         platform_rows = conn.execute(
             "SELECT platform, comp_main, comp_plus, comp_100, comp_low, comp_high, count_comp,"
-            " count_total FROM hltb_platform_times WHERE hltb_id = ? ORDER BY count_total DESC",
+            " count_total FROM hltb_platform_times WHERE hltb_id = ?"
+            " ORDER BY count_total DESC NULLS LAST",
             (hltb_id,),
         ).fetchall()
         groups = conn.execute(
             "SELECT platforms, comp_main, comp_plus, comp_100, comp_all, compare, count_comp"
-            " FROM hltb_platform_groups WHERE hltb_id = ? ORDER BY count_comp DESC",
+            " FROM hltb_platform_groups WHERE hltb_id = ? ORDER BY count_comp DESC NULLS LAST",
             (hltb_id,),
         ).fetchall()
         platforms = [
@@ -1235,7 +1235,7 @@ async def hltb_entry(request: web.Request) -> web.Response:
             ]
         )
 
-    def plat(r: sqlite3.Row) -> dict:
+    def plat(r: Row) -> dict:
         return {
             "platform": r["platform"],
             "main h": _hours1(r["comp_main"]),
@@ -1247,7 +1247,7 @@ async def hltb_entry(request: web.Request) -> web.Response:
             "all players": r["count_total"],
         }
 
-    def grp(r: sqlite3.Row) -> dict:
+    def grp(r: Row) -> dict:
         return {
             "platforms": r["platforms"],
             "main h": _hours1(r["comp_main"]),
@@ -1258,7 +1258,7 @@ async def hltb_entry(request: web.Request) -> web.Response:
             "finished": r["count_comp"],
         }
 
-    def kids(r: sqlite3.Row) -> dict:
+    def kids(r: Row) -> dict:
         return {
             "hltb_id": r["hltb_id"],
             "name": r["name"],
@@ -1445,7 +1445,7 @@ async def version_delete(request: web.Request) -> web.Response:
     raise _back("/versions", f"version {version_id} deleted")
 
 
-def _with_store(rows: list[sqlite3.Row]) -> list[dict]:
+def _with_store(rows: list[Row]) -> list[dict]:
     """Version rows with their store page as a column of its own ("↗" and
     whether it is sold) — the name beside it opens our page."""
     shown = []
@@ -1460,7 +1460,7 @@ class _Html(str):
     """A cell already written as HTML (`_cell` leaves it as it is)."""
 
 
-def _game_href(row: sqlite3.Row) -> str:
+def _game_href(row: Row) -> str:
     return f"/game/{row['game_id']}"
 
 
@@ -1607,7 +1607,7 @@ def _relation_sentence(decision: str, this: str, that: str, *, html: bool = True
     }.get(relation, f"{a} {bold(relation)} {b}")
 
 
-def _game_name(conn: sqlite3.Connection, game_id: int) -> str:
+def _game_name(conn: Connection, game_id: int) -> str:
     row = conn.execute("SELECT name FROM games WHERE game_id = ?", (game_id,)).fetchone()
     return str(row[0]) if row and row[0] else f"game {game_id}"
 
@@ -1770,7 +1770,7 @@ async def rules(request: web.Request) -> web.Response:
     return _page(PAGES["/rules"], body)
 
 
-def _achievements_link(v: sqlite3.Row) -> str:
+def _achievements_link(v: Row) -> str:
     """A version's achievements: its list, or for a Steam app nobody here
     has, the names its schema gives (what the matcher compares)."""
     if v["title_id"]:
@@ -1809,7 +1809,7 @@ async def achievement_list(request: web.Request) -> web.Response:
         rows = conn.execute(
             "SELECT achievement_id, name_en, name_ru, description_en, rarity_percent, listed"
             " FROM title_achievements WHERE platform = ? AND title_id = ?"
-            " ORDER BY listed DESC, name_en",
+            " ORDER BY listed DESC, name_en NULLS FIRST",
             (platform, title_id),
         ).fetchall()
         title = conn.execute(
@@ -1835,11 +1835,12 @@ async def games(request: web.Request) -> web.Response:
             "  (SELECT COUNT(*) FROM match_pairs mp JOIN versions v"
             "   ON v.version_id IN (mp.version_id, mp.other_id)"
             "   WHERE v.game_id = g.game_id) AS review,"
-            "  (SELECT GROUP_CONCAT(r.kind || ' ' || r.related_id) FROM game_relations r"
+            "  (SELECT string_agg(r.kind || ' ' || r.related_id, ',' ORDER BY r.related_id, r.kind)"
+            "   FROM game_relations r"
             "   WHERE r.game_id = g.game_id) AS relates,"
-            f"  (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM versions v"
+            f"  (SELECT string_agg(DISTINCT {_console_sql()}, ',') FROM versions v"
             "   WHERE v.game_id = g.game_id AND v.role <> 'covered') AS consoles"
-            " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name LIKE ?)"
+            " FROM games g WHERE g.merged_into IS NULL AND (? = '' OR g.name ILIKE ?)"
             " ORDER BY versions DESC, g.game_id DESC LIMIT ?",
             (q, f"%{q}%", PAGE_SIZE * 3),
         ).fetchall()
@@ -1862,15 +1863,15 @@ async def game(request: web.Request) -> web.Response:
             "SELECT v.version_id, v.store, v.product_id, v.stand_in, v.on_sale,"
             f" {_console_sql()} AS console, v.name, v.release_date, v.developer, v.platform,"
             " v.title_id, " + COVER + ", v.role, v.of_version_id, v.link_p AS p"
-            " FROM versions v WHERE v.game_id = ? ORDER BY v.release_date, v.console",
+            " FROM versions v WHERE v.game_id = ? ORDER BY v.release_date NULLS FIRST, v.console",
             (game_id,),
         ).fetchall()
         relations = conn.execute(
             "SELECT 'this ' || r.kind AS relation, r.related_id AS game_id, g.name, g.year,"
-            " r.source, ROUND(r.p, 2) AS p FROM game_relations r"
+            " r.source, ROUND(r.p::numeric, 2)::float8 AS p FROM game_relations r"
             " JOIN games g ON g.game_id = r.related_id WHERE r.game_id = ?"
             " UNION ALL SELECT r.kind || ' this', r.game_id, g.name, g.year, r.source,"
-            " ROUND(r.p, 2)"
+            " ROUND(r.p::numeric, 2)::float8"
             " FROM game_relations r JOIN games g ON g.game_id = r.game_id WHERE r.related_id = ?",
             (game_id, game_id),
         ).fetchall()
@@ -1894,7 +1895,8 @@ async def game(request: web.Request) -> web.Response:
             " d.dlc_id, d.name, d.kind, d.release_date, d.store_id, d.trophy_group_id,"
             " d.on_sale, " + _DLC_HLTB + " FROM dlcs d"
             " JOIN versions v ON v.version_id = d.version_id WHERE v.game_id = ?"
-            " ORDER BY v.store, v.console, d.version_id, d.release_date, d.name",
+            " ORDER BY v.store, v.console, d.version_id, d.release_date NULLS FIRST,"
+            " d.name NULLS FIRST",
             (game_id,),
         ).fetchall()
         # What the stores sell around it, by what each holds (owner,
@@ -1903,30 +1905,31 @@ async def game(request: web.Request) -> web.Response:
         held = (
             "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.kind, e.on_sale,"
             " e.first_seen_at, e.last_seen_at,"
-            " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
-            "  '; ') FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
+            " (SELECT string_agg(COALESCE(i2.name, i2.store_id) || ' [' || i2.item_kind || ']',"
+            "  '; ' ORDER BY i2.seq) FROM edition_items i2"
+            "  WHERE i2.edition_id = e.edition_id) AS holds"
             " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
             " JOIN versions v ON v.version_id = i.version_id"
-            " WHERE v.game_id = ? AND {} ORDER BY e.store, e.name"
+            " WHERE v.game_id = ? AND {} ORDER BY e.store, e.name NULLS FIRST"
         )
         editions = conn.execute(held.format(OWN_EDITION), (game_id,)).fetchall()
         in_bundles = conn.execute(held.format(PART_OF_BUNDLE), (game_id,)).fetchall()
         bonus_in = conn.execute(held.format(BONUS_IN), (game_id,)).fetchall()
         packs = conn.execute(
             "SELECT DISTINCT e.edition_id, e.store, e.store_id, e.name, e.on_sale,"
-            " (SELECT GROUP_CONCAT(COALESCE(i2.name, i2.store_id), '; ')"
+            " (SELECT string_agg(COALESCE(i2.name, i2.store_id), '; ' ORDER BY i2.seq)"
             "  FROM edition_items i2 WHERE i2.edition_id = e.edition_id) AS holds"
             " FROM editions e JOIN edition_items i ON i.edition_id = e.edition_id"
             " JOIN dlcs d ON d.store_id = i.store_id"
             " JOIN versions v ON v.version_id = d.version_id"
-            " WHERE e.scope = 'addon_pack' AND v.game_id = ? ORDER BY e.name",
+            " WHERE e.scope = 'addon_pack' AND v.game_id = ? ORDER BY e.name NULLS FIRST",
             (game_id,),
         ).fetchall()
         hltb = conn.execute(
             # HLTB's platforms: where the game also came out, as no store
             # we read says (Nintendo, older consoles, PC outside Steam).
             "SELECT DISTINCT h.hltb_id, h.name, h.game_type, h.release_year,"
-            " (SELECT group_concat(p.platform, ', ') FROM hltb_entry_platforms p"
+            " (SELECT string_agg(p.platform, ', ' ORDER BY p.platform) FROM hltb_entry_platforms p"
             "  WHERE p.hltb_id = h.hltb_id) AS also_released_on FROM version_hltb vh"
             " JOIN hltb_entries h ON h.hltb_id = vh.hltb_id"
             " JOIN versions v ON v.version_id = vh.version_id"
@@ -2037,7 +2040,7 @@ async def game(request: web.Request) -> web.Response:
     return _page(row["name"] if row else f"Game {game_id}", body)
 
 
-def _editions_table(rows: list[sqlite3.Row]) -> str:
+def _editions_table(rows: list[Row]) -> str:
     return _table(
         [
             {
@@ -2049,7 +2052,7 @@ def _editions_table(rows: list[sqlite3.Row]) -> str:
     )
 
 
-def _identity(conn: sqlite3.Connection, game_id: int) -> str:
+def _identity(conn: Connection, game_id: int) -> str:
     """Which game this is, in one line: its name, year, developer and
     publisher as the game keeps them (`game_match.game_facts`)."""
     row = conn.execute(
@@ -2076,7 +2079,7 @@ _KIND_BADGES = {"compilation": "📦 compilation", "extra": "🎵 not a game"}
 _KIND_WORDS = {"game": "a game", "compilation": "a compilation", "extra": "not a game"}
 
 
-def _version_cards(rows: list[sqlite3.Row]) -> str:
+def _version_cards(rows: list[Row]) -> str:
     """A game's versions as one compact table: the picture, what it is, its
     role (and the version a demo or tool is of), where it is sold."""
     if not rows:
@@ -2113,8 +2116,8 @@ def _version_cards(rows: list[sqlite3.Row]) -> str:
 
 
 def _pair_rows(
-    conn: sqlite3.Connection,
-    pairs: list[sqlite3.Row],
+    conn: Connection,
+    pairs: list[Row],
     back: str,
     advice: AdviceStore | None = None,
     picker: Callable[..., str] = _decision_picker,
@@ -2185,9 +2188,7 @@ def _pair_rows(
     return "".join(cards)
 
 
-def _series_of_pair(
-    conn: sqlite3.Connection, info: dict, row: sqlite3.Row
-) -> list[tuple[int, str]]:
+def _series_of_pair(conn: Connection, info: dict, row: Row) -> list[tuple[int, str]]:
     """The series either version's game is in, those of both first."""
     games = [(info.get(v) or {"game_id": None})["game_id"] for v in (row["subject"], row["other"])]
     games = [g for g in games if g is not None]
@@ -2206,12 +2207,12 @@ def _series_of_pair(
     ]
 
 
-def _dlcs_by_version(rows: list[sqlite3.Row]) -> str:
+def _dlcs_by_version(rows: list[Row]) -> str:
     """A DLC belongs to a version (owner, 2026-10-09): one block per version,
     named with its store and console."""
     if not rows:
         return "<p>(none)</p>"
-    blocks: dict[int, list[sqlite3.Row]] = {}
+    blocks: dict[int, list[Row]] = {}
     for row in rows:
         blocks.setdefault(int(row["version_id"]), []).append(row)
     parts = []
@@ -2246,7 +2247,7 @@ async def review(request: web.Request) -> web.Response:
     # doubt inside one game (is this version a remaster after all?) is a
     # version question: keep it here, or move it out as another game.
     two_games = (
-        "(SELECT game_id FROM versions WHERE version_id = mp.version_id) IS NOT"
+        "(SELECT game_id FROM versions WHERE version_id = mp.version_id) IS DISTINCT FROM"
         " (SELECT game_id FROM versions WHERE version_id = mp.other_id)"
     )
     games_where = f"mp.relation IN ({marks}) AND {two_games}"
@@ -2275,7 +2276,7 @@ async def review(request: web.Request) -> web.Response:
             ).fetchone()[0]
             for name, clause in (("versions", versions_where), ("games", games_where))
         }
-        advice = AdviceStore.for_db(Path(request.app["db_path"]))
+        advice = AdviceStore(request.app["data_dir"] / "advice")
         # A pair answered "skip" comes back, after the rest (this run of the
         # viewer remembers it; nothing is written).
         skipped = request.app["skipped"]
@@ -2349,10 +2350,10 @@ def _series_datalist(request: web.Request) -> str:
 
 
 def label_queue(
-    conn: sqlite3.Connection,
+    conn: Connection,
     skipped: set | frozenset = frozenset(),
     requested: list[dict] | tuple = (),
-) -> tuple[list[tuple[sqlite3.Row, str]], dict[str, int], list[str]]:
+) -> tuple[list[tuple[Row, str]], dict[str, int], list[str]]:
     """Pairs to label for the model's sake (the training audit, 2026-10-24):
     the doubtful pairs in which the model gives a rare relation — a VR
     version, a compilation, a remake, a remaster — at least `LABEL_FLOOR`,
@@ -2375,7 +2376,7 @@ def label_queue(
             "SELECT version_id, other_id FROM match_decisions WHERE decided_by = 'viewer'"
         )
     }
-    found: list[tuple[tuple[int, float], sqlite3.Row, str]] = []
+    found: list[tuple[tuple[int, float], Row, str]] = []
     for r in conn.execute(
         "SELECT version_id AS subject, other_id AS other, relation, p, probs, features"
         " FROM match_pairs"
@@ -2390,7 +2391,7 @@ def label_queue(
         # Least sure first: the rare relation nearest to even odds.
         found.append(((order.index(rare), abs(probs[rare] - 0.5) + (pair in skipped)), r, rare))
     found.sort(key=lambda t: t[0])
-    asked: list[tuple[sqlite3.Row, str]] = []
+    asked: list[tuple[Row, str]] = []
     queued: set[frozenset[int]] = set()
     for r in requested:
         pair = frozenset((int(r["subject"]), int(r["other"])))
@@ -2403,7 +2404,7 @@ def label_queue(
 def _label_queue(request: web.Request) -> str:
     """The labelling queue (`label_queue`) as a page."""
     with _db(request) as conn:
-        advice = AdviceStore.for_db(Path(request.app["db_path"]))
+        advice = AdviceStore(request.app["data_dir"] / "advice")
         queue, answered, order = label_queue(conn, request.app["skipped"], advice.label_requests())
         asked = sum(1 for _, x in queue if x == ASKED)
         tally = " · ".join(
@@ -2427,10 +2428,10 @@ def _label_queue(request: web.Request) -> str:
     )
 
 
-def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
+def _game_card(conn: Connection, game_id: int) -> str:
     """A game in one cell: its covers, name and identity, consoles."""
     row = conn.execute(
-        f"SELECT (SELECT GROUP_CONCAT(DISTINCT {_console_sql()}) FROM versions v"
+        f"SELECT (SELECT string_agg(DISTINCT {_console_sql()}, ',') FROM versions v"
         "  WHERE v.game_id = ? AND v.role <> 'covered') AS consoles,"
         " (SELECT " + COVER.replace(" AS cover", "") + " FROM versions v"
         "  WHERE v.game_id = ? AND v.role IN ('version', 'edition', 'enhanced') LIMIT 1) AS cover",
@@ -2444,8 +2445,8 @@ def _game_card(conn: sqlite3.Connection, game_id: int) -> str:
 
 
 def _game_pair_rows(
-    conn: sqlite3.Connection,
-    pairs: list[sqlite3.Row],
+    conn: Connection,
+    pairs: list[Row],
     back: str,
     advice: AdviceStore | None = None,
 ) -> str:
@@ -2601,7 +2602,7 @@ def _agreeing(decision: str, opinions: list[tuple[str, str | None]]) -> str:
     return "Model" if text == "the model" else text[:1].upper() + text[1:]
 
 
-def _current_game(conn: sqlite3.Connection, game_id: int) -> int:
+def _current_game(conn: Connection, game_id: int) -> int:
     """The game a game id stands for now: a game merged into another is an
     empty row pointing at it (merged_into), followed to its end."""
     seen = {game_id}
@@ -2613,7 +2614,7 @@ def _current_game(conn: sqlite3.Connection, game_id: int) -> int:
         seen.add(game_id)
 
 
-def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
+def _game_detail(conn: Connection, game_id: int) -> str:
     """A game in a card: its covers, identity, and every version with its
     store page (or that it has none)."""
     row = conn.execute("SELECT game_id FROM games WHERE game_id = ?", (game_id,)).fetchone()
@@ -2634,7 +2635,8 @@ def _game_detail(conn: sqlite3.Connection, game_id: int) -> str:
         " (SELECT COUNT(*) FROM title_achievements a WHERE a.platform = v.platform"
         "  AND a.title_id = v.title_id) AS achievements"
         " FROM versions v"
-        " WHERE v.game_id = ? AND v.role <> 'covered' ORDER BY v.release_date, v.console",
+        " WHERE v.game_id = ? AND v.role <> 'covered'"
+        " ORDER BY v.release_date NULLS FIRST, v.console",
         (game_id,),
     ).fetchall()
     covers = list(dict.fromkeys(v["cover"] for v in versions if v["cover"]))[:3]
@@ -2730,7 +2732,7 @@ def _advised_buttons(
     return _answer_forms(action, hidden, quick, more, back)
 
 
-def _advised_sides(conn: sqlite3.Connection, i: dict, back: str) -> tuple[str, str, str, str]:
+def _advised_sides(conn: Connection, i: dict, back: str) -> tuple[str, str, str, str]:
     """A re-check card's two sides, the names its sentences use, and its
     answer buttons."""
     t = i["type"]
@@ -3121,7 +3123,7 @@ async def decision_undo(request: web.Request) -> web.Response:
     raise _back(str(form.get("back") or "/decisions"), f"v{a} / v{b}: answer taken back")
 
 
-def _version_line(v: sqlite3.Row) -> str:
+def _version_line(v: Row) -> str:
     """A version in one line: its name, console and year, and its store page."""
 
     return (
@@ -3198,7 +3200,7 @@ async def conflicts_page(request: web.Request) -> web.Response:
                 "SELECT version_id, name, "
                 + _console_sql("store", "console")
                 + " AS console_name FROM versions WHERE version_id IN ("
-                + ",".join("?" * len(ids))
+                + (",".join("?" * len(ids)) or "NULL")
                 + ")",
                 ids,
             )
@@ -3247,7 +3249,7 @@ async def recheck_page(request: web.Request) -> web.Response:
                 "SELECT version_id, name, "
                 + _console_sql("store", "console")
                 + " AS console_name FROM versions WHERE version_id IN ("
-                + ",".join("?" * len(ids))
+                + (",".join("?" * len(ids)) or "NULL")
                 + ")",
                 ids,
             )
@@ -3460,16 +3462,16 @@ async def _puller(repo: Repo, version_id: int, others: list[int]) -> int:
 # ---------------------------------------------------------------- series
 
 
-def _series_href(row: sqlite3.Row) -> str:
+def _series_href(row: Row) -> str:
     return f"/series/{row['series_id']}"
 
 
-def _series_members(conn: sqlite3.Connection, series_id: int) -> list[sqlite3.Row]:
+def _series_members(conn: Connection, series_id: int) -> list[Row]:
     """A series' games by year, with how each got there; the ones said not
     to be in it last."""
     return conn.execute(
         "SELECT gs.game_id, g.name, g.year, g.developer, gs.member, gs.source,"
-        " ROUND(gs.p, 2) AS p, gs.reason, gs.decided_by FROM game_series gs"
+        " ROUND(gs.p::numeric, 2)::float8 AS p, gs.reason, gs.decided_by FROM game_series gs"
         " JOIN games g ON g.game_id = gs.game_id WHERE gs.series_id = ?"
         " ORDER BY gs.member DESC, COALESCE(g.year, 9999), g.game_id",
         (series_id,),
@@ -3492,11 +3494,12 @@ def _member_toggle(
     )
 
 
-def _game_series_section(conn: sqlite3.Connection, game_id: int) -> str:
+def _game_series_section(conn: Connection, game_id: int) -> str:
     """The series a game is in (a crossover in several), how it got into
     each, and the operator's add / remove."""
     rows = conn.execute(
-        "SELECT gs.series_id, s.name, gs.member, gs.source, ROUND(gs.p, 2) AS p, gs.reason,"
+        "SELECT gs.series_id, s.name, gs.member, gs.source,"
+        " ROUND(gs.p::numeric, 2)::float8 AS p, gs.reason,"
         " (SELECT COUNT(*) FROM game_series o WHERE o.series_id = gs.series_id"
         "  AND o.member = 1) AS games FROM game_series gs"
         " JOIN series s ON s.series_id = gs.series_id"
@@ -3537,9 +3540,9 @@ async def series_list(request: web.Request) -> web.Response:
             "  AND gs.source <> 'auto') AS answered,"
             " (SELECT MIN(g.year) FROM game_series gs JOIN games g ON g.game_id = gs.game_id"
             "  WHERE gs.series_id = s.series_id AND gs.member = 1) AS since"
-            " FROM series s WHERE s.merged_into IS NULL AND (? = '' OR s.name LIKE ?"
+            " FROM series s WHERE s.merged_into IS NULL AND (? = '' OR s.name ILIKE ?"
             "  OR EXISTS (SELECT 1 FROM game_series gs JOIN games g ON g.game_id = gs.game_id"
-            "   WHERE gs.series_id = s.series_id AND g.name LIKE ?))"
+            "   WHERE gs.series_id = s.series_id AND g.name ILIKE ?))"
             " ORDER BY games DESC, s.name LIMIT ?",
             (SURE_P, q, f"%{q}%", f"%{q}%", PAGE_SIZE * 3),
         ).fetchall()
@@ -3823,7 +3826,7 @@ async def _open(app: web.Application) -> None:
     from bot.services.steam.auth import SteamAuth
     from bot.services.store_collect import StoreCollector
 
-    database = await Database(Path(app["db_path"])).connect()
+    database = await tools.open_database(app["dsn"], schema=app["schema"])
     repo = Repo(database)
     app["database"], app["repo"] = database, repo
     from bot.services.game_link import load_weights
@@ -3848,7 +3851,7 @@ async def _close(app: web.Application) -> None:
     await app["database"].close()
 
 
-def _pictures(row: sqlite3.Row | None) -> str:
+def _pictures(row: Row | None) -> str:
     """Every picture a version has: the store's (cover, poster, hero…), its
     achievement list's, its HLTB entry's — each once, named by where it came
     from. Screenshots are left to the raw answer."""
@@ -3880,14 +3883,18 @@ def _pictures(row: sqlite3.Row | None) -> str:
 
 
 def build(
-    db_path: Path,
+    dsn: str,
+    schema: str,
     proposals_path: Path | None = None,
     gemini_dir: Path | None = None,
     advised_path: Path | None = None,
     trial_dir: Path | None = None,
+    data_dir: Path = Path("data"),
 ) -> web.Application:
+    """`data_dir`: where the server keeps its files (the folder of `DB_PATH`):
+    the advisers' answers, the covers."""
     app = web.Application()
-    app["db_path"] = db_path.resolve().as_posix()
+    app["dsn"], app["schema"], app["data_dir"] = dsn, schema, data_dir.resolve()
     app["skipped"] = set()  # pairs answered "skip": asked again, after the rest
     app["skipped_games"] = set()  # the same, as pairs of games (the proposals)
     # An adviser's proposals, read once at start (`--proposals`).
@@ -3905,9 +3912,9 @@ def build(
         if advised_path and advised_path.exists()
         else []
     )
-    covers = db_path.resolve().parent / "covers"
+    covers = data_dir.resolve() / "covers"
     if covers.is_dir():
-        # The covers the bot downloaded (#55), beside its database.
+        # The covers the bot downloaded (#55).
         app.router.add_static("/covers/", covers)
     app.on_startup.append(_open)
     app.on_cleanup.append(_close)
@@ -3971,7 +3978,7 @@ def build(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", help="database file (default: DB_PATH from the env file)")
+    tools.add_arguments(parser)
     parser.add_argument("--trial", help="a trial's folder (trial.txt, answers/), for /trial")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument(
@@ -3987,21 +3994,28 @@ def main() -> None:
         help="the advisers' pairs for a second look (advise_pairs conflicts --review), at /advised",
     )
     args = parser.parse_args()
-    if args.db:
-        db_path = Path(args.db)
-    else:
-        from bot.config import get_settings
+    from bot.config import get_settings
 
-        db_path = Path(get_settings().db_path)
-    print(f"{db_path} — http://127.0.0.1:{args.port}/ (no authentication)")
+    settings = get_settings()
+    schema = args.schema or settings.database_schema
+    print(f"schema {schema} — http://127.0.0.1:{args.port}/ (no authentication)")
     proposals = Path(args.proposals) if args.proposals else None
     gemini = Path(args.gemini) if args.gemini else None
     advised_path = Path(args.advised) if args.advised else None
     web.run_app(
-        build(db_path, proposals, gemini, advised_path, Path(args.trial) if args.trial else None),
+        build(
+            settings.database_url,
+            schema,
+            proposals,
+            gemini,
+            advised_path,
+            Path(args.trial) if args.trial else None,
+            settings.db_path.parent,
+        ),
         host="127.0.0.1",
         port=args.port,
         print=None,
+        loop=tools.event_loop(),
     )
 
 

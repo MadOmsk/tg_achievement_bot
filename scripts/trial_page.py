@@ -21,14 +21,15 @@ from __future__ import annotations
 
 import json
 import re
-import sqlite3
 from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
 from aiohttp import web
 
+from bot.db.postgres import Row
 from bot.db.repo._sql import OWN_EDITION
+from bot.db.tools import Connection
 from scripts.compare_answers import KINDS, decisions, read_answers
 
 KIND_RU = {
@@ -104,7 +105,7 @@ a{color:#0b57d0}
 """
 
 
-def own_editions(conn: sqlite3.Connection, game_id: int) -> set[int]:
+def own_editions(conn: Connection, game_id: int) -> set[int]:
     """The game's own editions as the database says now (`_sql.OWN_EDITION`)."""
     return {
         int(r[0])
@@ -118,7 +119,7 @@ def own_editions(conn: sqlite3.Connection, game_id: int) -> set[int]:
     }
 
 
-def current_keys(conn: sqlite3.Connection, qid: str, keys: list[str]) -> list[str]:
+def current_keys(conn: Connection, qid: str, keys: list[str]) -> list[str]:
     """The trial is a snapshot (2026-10-16): of an editions question, only
     the editions still the game's own are asked — FIFA 16's bundles were
     filed under Plants vs. Zombies, which they only throw in."""
@@ -169,13 +170,13 @@ def _labels(trial: Path) -> dict[str, str]:
 class _Look:
     """What the database knows of an item, as a picture and a line."""
 
-    def __init__(self, conn: sqlite3.Connection, img, store_href) -> None:
+    def __init__(self, conn: Connection, img, store_href) -> None:
         self.conn, self.img, self.store_href = conn, img, store_href
 
-    def _one(self, sql: str, args: tuple) -> sqlite3.Row | None:
+    def _one(self, sql: str, args: tuple) -> Row | None:
         return self.conn.execute(sql, args).fetchone()
 
-    def version_cover(self, v: sqlite3.Row) -> str | None:
+    def version_cover(self, v: Row) -> str | None:
         media = json.loads(v["media"] or "{}") if v["media"] else {}
         for role in ("cover", "poster", "background"):
             if media.get(role):
