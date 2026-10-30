@@ -1,24 +1,25 @@
 """Bulk one-time synchronization: pull games, user achievements, and full achievement
-catalog (`title_achievements`) into SQLite database.
+catalog (`title_achievements`) into the database.
 
-Supports bootstrapping a brand new database by cloning user/account configurations
-from an existing DB (--clone-users-from), or updating an existing database in place.
+Supports filling a brought-up schema by cloning user/account configurations from
+another schema of the database (--clone-users-from), or updating a schema in place.
 
-Safe to run on a test database first and then on production. Achievements are saved
-with `is_backfill=True` and no announcements are ever sent to Telegram chats.
+Achievements are saved with `is_backfill=True` and no announcements are ever sent to
+Telegram chats. The games catalog is one shared schema (#229): what the pull learns
+about games lands there whichever server's schema is named, a preview's too.
 
 Usage:
-    # 1. Test run on preview database with cloned users:
+    # 1. Test run on a preview schema (made by a bot's start) with cloned users:
     .venv/Scripts/python.exe -m scripts.pull_games_and_achievements \\
         --env-file .env.test \\
-        --db data/test_sync_preview.db \\
-        --clone-users-from data/test.db \\
+        --schema sync_preview \\
+        --clone-users-from test \\
         --limit-titles 10
 
-    # 2. Full run on production database:
+    # 2. Full run on production's schema:
     .venv/Scripts/python.exe -m scripts.pull_games_and_achievements \\
         --env-file .env \\
-        --db data/bot.db
+        --schema prod
 """
 
 from __future__ import annotations
@@ -33,11 +34,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import aiosqlite
+from psycopg import sql
 
 from bot.config import Settings, get_settings
 from bot.constants import Platform
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.postgres import Connection
+from bot.db.repo import Repo
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
@@ -86,8 +89,8 @@ class NoopPublisher:
 
 @dataclass(slots=True)
 class SyncConfig:
-    target_db_path: Path
-    clone_source_path: Path | None
+    target_schema: str
+    clone_source_schema: str | None
     selected_platforms: set[str]
     user_ids: list[int] | None
     skip_achievements: bool
@@ -97,40 +100,69 @@ class SyncConfig:
     limit_titles: int | None
     translate: bool
     settings: Settings
+    dsn: str | None = None
 
 
-async def clone_user_tables(source_path: Path, dest_conn: aiosqlite.Connection) -> dict[str, int]:
-    """Clone user accounts, credentials, and settings from source database to destination."""
+async def clone_user_tables(source_schema: str, dest_conn: Connection) -> dict[str, int]:
+    """Clone user accounts, credentials, and settings from another schema into the
+    connection's own: a row already there is replaced, as in the source."""
     stats: dict[str, int] = {}
-    async with aiosqlite.connect(source_path) as src_conn:
-        src_conn.row_factory = aiosqlite.Row
-        await dest_conn.execute("PRAGMA foreign_keys = OFF")
-        try:
-            for table in TABLES_TO_CLONE:
-                check_cur = await src_conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
-                )
-                if not await check_cur.fetchone():
-                    continue
-
-                cur = await src_conn.execute(f"SELECT * FROM {table}")
-                rows = await cur.fetchall()
-                if not rows:
-                    stats[table] = 0
-                    continue
-
-                cols = [d[0] for d in cur.description]
-                col_list = ", ".join(cols)
-                placeholders = ", ".join(["?"] * len(cols))
-                await dest_conn.executemany(
-                    f"INSERT OR REPLACE INTO {table} ({col_list}) VALUES ({placeholders})",
-                    [tuple(r) for r in rows],
-                )
-                stats[table] = len(rows)
-            await dest_conn.commit()
-        finally:
-            await dest_conn.execute("PRAGMA foreign_keys = ON")
+    source = sql.Identifier(source_schema).as_string(None)
+    await dest_conn.begin()
+    try:
+        for table in TABLES_TO_CLONE:
+            columns = await _columns(dest_conn, source_schema, table)
+            if not columns:
+                continue
+            keys = await _primary_key(dest_conn, table)
+            col_list = ", ".join(columns)
+            updates = ", ".join(f"{c} = EXCLUDED.{c}" for c in columns if c not in keys)
+            on_conflict = f"DO UPDATE SET {updates}" if updates else "DO NOTHING"
+            cur = await dest_conn.execute(
+                f"INSERT INTO {table} ({col_list}) OVERRIDING SYSTEM VALUE"
+                f" SELECT {col_list} FROM {source}.{table}"
+                f" ON CONFLICT ({', '.join(keys)}) {on_conflict}"
+            )
+            stats[table] = cur.rowcount
+            await _advance_counters(dest_conn, table, columns)
+        await dest_conn.commit()
+    except BaseException:
+        await dest_conn.rollback()
+        raise
     return stats
+
+
+async def _columns(conn: Connection, schema: str, table: str) -> list[str]:
+    """A table's columns one can write; none when the schema has no such table."""
+    cur = await conn.execute(
+        "SELECT column_name FROM information_schema.columns"
+        " WHERE table_schema = ? AND table_name = ? AND is_generated = 'NEVER'"
+        " ORDER BY ordinal_position",
+        (schema, table),
+    )
+    return [row[0] for row in await cur.fetchall()]
+
+
+async def _primary_key(conn: Connection, table: str) -> list[str]:
+    cur = await conn.execute(
+        "SELECT a.attname FROM pg_index i"
+        " JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)"
+        " WHERE i.indrelid = to_regclass(?) AND i.indisprimary",
+        (table,),
+    )
+    return [row[0] for row in await cur.fetchall()]
+
+
+async def _advance_counters(conn: Connection, table: str, columns: list[str]) -> None:
+    """An id counter past the ids that came in, or the next new row collides."""
+    for column in columns:
+        cur = await conn.execute("SELECT pg_get_serial_sequence(?, ?)", (table, column))
+        sequence = (await cur.fetchone())[0]
+        if sequence:
+            await conn.execute(
+                f"SELECT setval(?, GREATEST(COALESCE(MAX({column}), 0), 1)) FROM {table}",
+                (sequence,),
+            )
 
 
 def prepare_sync_config(settings: Settings | None = None) -> SyncConfig:
@@ -143,22 +175,12 @@ def prepare_sync_config(settings: Settings | None = None) -> SyncConfig:
         default=None,
         help="Path to .env file (default: BOT_ENV_FILE or .env)",
     )
-    parser.add_argument(
-        "--db",
-        type=str,
-        default=None,
-        help="Path to target SQLite database file (default: db_path from settings)",
-    )
+    tools.add_arguments(parser)
     parser.add_argument(
         "--clone-users-from",
         type=str,
         default=None,
-        help="Path to source SQLite database to clone users/accounts/tokens from",
-    )
-    parser.add_argument(
-        "--clean-target",
-        action="store_true",
-        help="Remove target database file if it already exists before running",
+        help="Schema to clone users/accounts/tokens from",
     )
     parser.add_argument(
         "--platforms",
@@ -219,23 +241,12 @@ def prepare_sync_config(settings: Settings | None = None) -> SyncConfig:
         else:
             settings = get_settings()
 
-    target_db_path = Path(args.db).resolve() if args.db else settings.db_path.resolve()
+    target_schema = args.schema or settings.database_schema
 
-    clone_source = None
-    if args.clone_users_from:
-        clone_source = Path(args.clone_users_from).resolve()
-        if not clone_source.exists():
-            log.error("Clone source DB does not exist: %s", clone_source)
-            sys.exit(1)
-        if clone_source == target_db_path:
-            log.error("--clone-users-from cannot be identical to target --db (%s)", target_db_path)
-            sys.exit(1)
-
-    if args.clean_target and target_db_path.exists():
-        log.info("Removing existing target database: %s", target_db_path)
-        target_db_path.unlink(missing_ok=True)
-        Path(f"{target_db_path}-wal").unlink(missing_ok=True)
-        Path(f"{target_db_path}-shm").unlink(missing_ok=True)
+    clone_source = args.clone_users_from
+    if clone_source == target_schema:
+        log.error("--clone-users-from cannot be identical to target --schema (%s)", target_schema)
+        sys.exit(1)
 
     raw_plats = [p.strip().lower() for p in args.platforms.split(",") if p.strip()]
     if "all" in raw_plats:
@@ -248,8 +259,8 @@ def prepare_sync_config(settings: Settings | None = None) -> SyncConfig:
     )
 
     return SyncConfig(
-        target_db_path=target_db_path,
-        clone_source_path=clone_source,
+        target_schema=target_schema,
+        clone_source_schema=clone_source,
         selected_platforms=selected_platforms,
         user_ids=user_ids,
         skip_achievements=args.skip_achievements,
@@ -259,19 +270,20 @@ def prepare_sync_config(settings: Settings | None = None) -> SyncConfig:
         limit_titles=args.limit_titles,
         translate=args.translate,
         settings=settings,
+        dsn=settings.database_url,
     )
 
 
 async def run_sync(cfg: SyncConfig) -> None:
     start_time = time.monotonic()
-    log.info("Target database: %s", cfg.target_db_path)
-    database = await Database(cfg.target_db_path).connect()
+    log.info("Target schema: %s", cfg.target_schema)
+    database = await tools.open_database(cfg.dsn, schema=cfg.target_schema)
     repo = Repo(database)
 
     # 2. Optional user clone from existing DB
-    if cfg.clone_source_path:
-        log.info("Cloning user data from %s...", cfg.clone_source_path)
-        cloned_counts = await clone_user_tables(cfg.clone_source_path, database.conn)
+    if cfg.clone_source_schema:
+        log.info("Cloning user data from %s...", cfg.clone_source_schema)
+        cloned_counts = await clone_user_tables(cfg.clone_source_schema, database.conn)
         for tbl, cnt in cloned_counts.items():
             log.info("  Cloned %s: %d rows", tbl, cnt)
 
@@ -565,7 +577,7 @@ async def run_sync(cfg: SyncConfig) -> None:
     log.info("=" * 60)
     log.info("PULL SYNCHRONIZATION SUMMARY REPORT")
     log.info("=" * 60)
-    log.info("Target DB:               %s", cfg.target_db_path)
+    log.info("Target schema:           %s", cfg.target_schema)
     log.info("Elapsed time:            %.2f seconds", elapsed)
     log.info("Total users in DB:       %d", total_users)
     log.info("Accounts in DB:          %s", acc_summary)
@@ -588,7 +600,7 @@ async def run_sync(cfg: SyncConfig) -> None:
 
 def main() -> None:
     cfg = prepare_sync_config()
-    asyncio.run(run_sync(cfg))
+    tools.run(run_sync(cfg))
 
 
 if __name__ == "__main__":

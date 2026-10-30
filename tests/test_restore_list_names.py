@@ -1,23 +1,53 @@
 """Lists known only by their id take a name another copy learned."""
 
-import sqlite3
+from collections.abc import Iterator
 
+import psycopg
+import pytest
+
+from bot.db import tools
 from scripts.restore_list_names import names_from, restore
 
 
-def test_a_list_named_by_its_id_takes_the_name_another_copy_knows() -> None:
-    source = sqlite3.connect(":memory:")
-    source.executescript(
-        "CREATE TABLE titles (platform TEXT, title_id TEXT, name TEXT);"
-        "INSERT INTO titles VALUES ('xbox_modern', '2046213688', 'Weird West'),"
-        " ('xbox_modern', '7', '7'), ('steam', '9', 'Other name');"
+@pytest.fixture
+def copies(_db_template: str) -> Iterator[tuple[tools.Connection, tools.Connection]]:
+    """Two copies with tables of their own, in schemas nothing else reads: the
+    older one's table has the list's former name."""
+    with psycopg.connect(_db_template, autocommit=True) as admin:
+        admin.execute("DROP SCHEMA IF EXISTS names_source CASCADE")
+        admin.execute("DROP SCHEMA IF EXISTS names_target CASCADE")
+        admin.execute("CREATE SCHEMA names_source")
+        admin.execute("CREATE SCHEMA names_target")
+        source = tools.connect(_db_template, schema="names_source")
+        db = tools.connect(_db_template, schema="names_target")
+        try:
+            yield source, db
+        finally:
+            source.close()
+            db.close()
+            admin.execute("DROP SCHEMA names_source CASCADE")
+            admin.execute("DROP SCHEMA names_target CASCADE")
+
+
+def test_a_list_named_by_its_id_takes_the_name_another_copy_knows(copies) -> None:
+    source, db = copies
+    source.execute(
+        "CREATE TABLE names_source.achievement_list_connectors"
+        " (platform TEXT, title_id TEXT, name TEXT)"
     )
-    db = sqlite3.connect(":memory:")
-    db.executescript(
-        "CREATE TABLE achievement_list_connectors (platform TEXT, title_id TEXT, name TEXT);"
-        "INSERT INTO achievement_list_connectors VALUES"
+    source.execute(
+        "INSERT INTO names_source.achievement_list_connectors VALUES"
+        " ('xbox_modern', '2046213688', 'Weird West'),"
+        " ('xbox_modern', '7', '7'), ('steam', '9', 'Other name')"
+    )
+    db.execute(
+        "CREATE TABLE names_target.achievement_list_connectors"
+        " (platform TEXT, title_id TEXT, name TEXT)"
+    )
+    db.execute(
+        "INSERT INTO names_target.achievement_list_connectors VALUES"
         " ('xbox_modern', '2046213688', '2046213688'), ('xbox_modern', '7', '7'),"
-        " ('steam', '9', 'Its own name');"
+        " ('steam', '9', 'Its own name')"
     )
     done = restore(db, names_from(source))
     assert done == [("xbox_modern", "2046213688", "Weird West")]
