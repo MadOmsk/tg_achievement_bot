@@ -88,7 +88,7 @@ class _AccountsRepo:
 
     async def update_username(self, tg_id: int, username: str) -> None:
         await self._conn.execute(
-            "UPDATE users SET username = ? WHERE tg_id = ? AND IFNULL(username, '') <> ?",
+            "UPDATE users SET username = ? WHERE tg_id = ? AND COALESCE(username, '') <> ?",
             (username, tg_id, username),
         )
         await self._conn.commit()

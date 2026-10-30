@@ -702,3 +702,16 @@ CREATE INDEX idx_seen_achievements_title_id ON seen_achievements(title_id);
 CREATE INDEX idx_seen_unlocked ON seen_achievements(xuid, unlocked_at DESC);
 
 CREATE INDEX idx_web_sessions_person ON web_sessions (person_id);;
+
+-- Every foreign key may be deferred to the commit: merging two people moves a
+-- Telegram id from one row to the other, briefly nobody's (`_merge.py`).
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT c.conrelid::regclass AS tbl, c.conname FROM pg_constraint c
+           WHERE c.contype = 'f' AND c.connamespace = current_schema()::regnamespace
+  LOOP
+    EXECUTE format('ALTER TABLE %s ALTER CONSTRAINT %I DEFERRABLE INITIALLY IMMEDIATE',
+                   r.tbl, r.conname);
+  END LOOP;
+END $$;

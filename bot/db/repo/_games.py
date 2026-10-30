@@ -26,17 +26,17 @@ class _GamesRepo:
             "  v.name, v.name_ru, v.kind, v.developer, v.publisher, v.release_date,"
             "  v.store_group, v.cross_gen_set, v.stand_in, t.name AS list_name,"
             "  v.genres, v.description_en,"
-            "  (SELECT GROUP_CONCAT(h.summary_en, ' ') FROM version_hltb vh JOIN hltb_entries h"
+            "  (SELECT string_agg(h.summary_en, ' ') FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "   AND vh.source <> 'rejected' AND " + NOT_SPREAD + ") AS hltb_summary,"
             "  t.name_en AS list_name_en,"
-            "  (SELECT GROUP_CONCAT(vh.hltb_id) FROM version_hltb vh"
+            "  (SELECT string_agg(vh.hltb_id::text, ',') FROM version_hltb vh"
             "   WHERE vh.version_id = v.version_id AND vh.source <> 'rejected'"
             "   AND " + NOT_SPREAD + ") AS hltb_ids,"
             "  (SELECT MIN(h.release_year) FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "   AND vh.source <> 'rejected' AND " + NOT_SPREAD + ") AS hltb_year,"
-            "  (SELECT GROUP_CONCAT(h.game_type) FROM version_hltb vh JOIN hltb_entries h"
+            "  (SELECT string_agg(h.game_type, ',') FROM version_hltb vh JOIN hltb_entries h"
             "   ON h.hltb_id = vh.hltb_id WHERE vh.version_id = v.version_id"
             "   AND vh.source <> 'rejected' AND " + NOT_SPREAD + ") AS hltb_types"
             " FROM versions v LEFT JOIN achievement_list_connectors t ON t.platform = v.platform"
@@ -113,10 +113,10 @@ class _GamesRepo:
         async with self.transaction():
             cursor = await self._conn.execute(
                 "INSERT INTO match_weights (weights, gate_before, gate_after, labels, note,"
-                " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                " created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING weights_id",
                 (json.dumps(weights), gate_before, gate_after, labels, note, utcnow_iso()),
             )
-            weights_id = int(cursor.lastrowid)
+            weights_id = int((await cursor.fetchone())[0])
             if activate:
                 await self._activate_match_weights(weights_id)
         return weights_id
@@ -398,11 +398,11 @@ class _GamesRepo:
         now = utcnow_iso()
         cursor = await self._conn.execute(
             "INSERT INTO games (name, year, anchor_version_id, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?) RETURNING game_id",
             (name, year, anchor_version_id, now, now),
         )
         await self._conn.commit()
-        return int(cursor.lastrowid)
+        return int((await cursor.fetchone())[0])
 
     async def rename_game(self, game_id: int, name: str, name_ru: str | None, source: str) -> None:
         """A manual name is never renamed by the matcher."""

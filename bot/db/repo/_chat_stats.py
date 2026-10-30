@@ -244,7 +244,7 @@ class _ChatStatsRepo:
             "  WHERE (xb.external_id IS NOT NULL OR steam.external_id IS NOT NULL"
             "         OR psn.external_id IS NOT NULL) AND u.is_excluded = 0"
             "), decided AS ("
-            "  SELECT *, MAX(xbox_level, steam_level, psn_level) AS top_level"
+            "  SELECT *, GREATEST(xbox_level, steam_level, psn_level) AS top_level"
             "  FROM presence"
             "), picked AS ("
             "  SELECT decided.*, ("
@@ -298,9 +298,9 @@ class _ChatStatsRepo:
             # By the label the table actually renders (#51) — this used to
             # order by `gamertag` alone, i.e. by an Xbox nickname that a
             # Steam/PSN row does not even have and that /online never shows.
-            "  CASE winner WHEN 'steam' THEN steam_display_name"
+            "  lower(CASE winner WHEN 'steam' THEN steam_display_name"
             "              WHEN 'psn' THEN psn_display_name"
-            "              ELSE COALESCE(gamertag_modern, gamertag) END COLLATE NOCASE",
+            "              ELSE COALESCE(gamertag_modern, gamertag) END)",
             member_params,
         )
         return [

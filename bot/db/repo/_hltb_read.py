@@ -142,7 +142,8 @@ class _HltbReadRepo:
         leaves the queue."""
         await self._conn.execute(
             "UPDATE hltb_entries SET image_path = ?, image_hash = ?,"
-            " image_checked_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') WHERE hltb_id = ?",
+            " image_checked_at = to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS')"
+            " WHERE hltb_id = ?",
             (path, digest, hltb_id),
         )
         await self._conn.commit()

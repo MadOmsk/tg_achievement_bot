@@ -363,13 +363,14 @@ class _SteamRepo:
         if not game_ids:
             return []
         cursor = await self._conn.execute(
-            "WITH fav(game_id) AS (SELECT value FROM json_each(?)), apps AS ("
+            "WITH fav(game_id) AS (SELECT value::bigint FROM"
+            " jsonb_array_elements_text(?::jsonb)), apps AS ("
             "  SELECT f.game_id, CAST(v.product_id AS INTEGER) AS appid FROM fav f"
             "  JOIN versions v ON v.game_id = f.game_id WHERE v.store = 'steam'"
             "  UNION"
-            "  SELECT f.game_id, CAST(json_extract(j.value, '$[1]') AS INTEGER) FROM fav f"
-            "  JOIN versions v ON v.game_id = f.game_id, json_each(v.store_ids) j"
-            "  WHERE json_extract(j.value, '$[0]') = 'steam_twin'"
+            "  SELECT f.game_id, (j.value->>1)::bigint FROM fav f"
+            "  JOIN versions v ON v.game_id = f.game_id, jsonb_array_elements(v.store_ids::jsonb) j"
+            "  WHERE j.value->>0 = 'steam_twin'"
             ") "
             "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
             "       gp.text_en, gp.image_url, MIN(a.game_id) AS game_id,"

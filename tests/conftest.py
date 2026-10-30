@@ -113,6 +113,27 @@ def event_loop_policy() -> asyncio.AbstractEventLoopPolicy:
     return asyncio.DefaultEventLoopPolicy()
 
 
+# Every table emptied and every id counter back at 1, in one call: a TRUNCATE
+# of the eighty tables took most of a second a test.
+_RESET_FUNCTION = f"""
+CREATE OR REPLACE FUNCTION public.reset_test_data() RETURNS void LANGUAGE plpgsql AS $$
+DECLARE r record;
+BEGIN
+  SET LOCAL session_replication_role = replica;
+  FOR r IN SELECT schemaname, tablename FROM pg_tables
+           WHERE schemaname IN ('{TEST_SCHEMA}', '{GAMES}') AND tablename <> 'schema_migrations'
+  LOOP
+    EXECUTE format('DELETE FROM %I.%I', r.schemaname, r.tablename);
+  END LOOP;
+  FOR r IN SELECT schemaname, sequencename FROM pg_sequences
+           WHERE schemaname IN ('{TEST_SCHEMA}', '{GAMES}')
+  LOOP
+    EXECUTE format('ALTER SEQUENCE %I.%I RESTART', r.schemaname, r.sequencename);
+  END LOOP;
+END $$;
+"""
+
+
 @pytest.fixture(scope="session")
 def _db_template() -> str:
     """The test database, made empty with today's schema, once a run."""
@@ -128,6 +149,7 @@ def _db_template() -> str:
         finally:
             await admin.close()
         db = await Database(TEST_DATABASE_URL, schema=TEST_SCHEMA).connect()
+        await db.conn.executescript(_RESET_FUNCTION)
         await db.close()
 
     asyncio.run(_init(), loop_factory=_event_loop)
@@ -137,13 +159,7 @@ def _db_template() -> str:
 @pytest.fixture
 async def database(tmp_path: Path, _db_template: str) -> AsyncIterator[Database]:
     db = await Database(_db_template, schema=TEST_SCHEMA, data_dir=tmp_path).connect()
-    cursor = await db.conn.execute(
-        "SELECT schemaname, tablename FROM pg_tables WHERE schemaname IN (?, ?)"
-        " AND tablename <> 'schema_migrations'",
-        (TEST_SCHEMA, GAMES),
-    )
-    tables = ", ".join(f"{row[0]}.{row[1]}" for row in await cursor.fetchall())
-    await db.conn.execute(f"TRUNCATE {tables} RESTART IDENTITY CASCADE")
+    await db.conn.executescript("BEGIN; SELECT public.reset_test_data(); COMMIT;")
     await db._seed_app_settings()
     try:
         yield db

@@ -35,16 +35,18 @@ class PushSubscription:
 class _NotificationsRepo:
     async def add_notification(self, person_id: int, kind: str, data: dict[str, Any]) -> int:
         cursor = await self._conn.execute(
-            "INSERT INTO notifications (person_id, kind, data, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO notifications (person_id, kind, data, created_at) VALUES (?, ?, ?, ?)"
+            " RETURNING id",
             (person_id, kind, json.dumps(data, ensure_ascii=False), utcnow_iso()),
         )
+        notification_id = int((await cursor.fetchone())[0])
         await self._conn.execute(
             "DELETE FROM notifications WHERE person_id = ? AND id NOT IN ("
             "  SELECT id FROM notifications WHERE person_id = ? ORDER BY id DESC LIMIT ?)",
             (person_id, person_id, KEEP_PER_PERSON),
         )
         await self._conn.commit()
-        return int(cursor.lastrowid)
+        return notification_id
 
     async def post_noticed_since(
         self, person_id: int, author: int, platform: str, title_id: str, since: str
@@ -53,9 +55,9 @@ class _NotificationsRepo:
         since `since`: one game's evening is one post, not a notice per poll."""
         cursor = await self._conn.execute(
             "SELECT 1 FROM notifications WHERE person_id = ? AND kind = 'new_post'"
-            " AND json_extract(data, '$.person_id') = ?"
-            " AND json_extract(data, '$.platform') = ?"
-            " AND json_extract(data, '$.title_id') = ?"
+            " AND (data::jsonb->>'person_id') = ?"
+            " AND (data::jsonb->>'platform') = ?"
+            " AND (data::jsonb->>'title_id') = ?"
             " AND created_at >= ? LIMIT 1",
             (person_id, author, platform, title_id, since),
         )

@@ -230,10 +230,11 @@ class _PassRepo:
         async with self.transaction():
             cursor = await self._conn.execute(
                 "INSERT INTO pass_items (" + ", ".join(FIELDS) + ", month, state, created_by,"
-                " created_at) VALUES (" + ", ".join("?" * len(FIELDS)) + ", ?, 'draft', ?, ?)",
+                " created_at) VALUES (" + ", ".join("?" * len(FIELDS)) + ", ?, 'draft', ?, ?)"
+                " RETURNING item_id",
                 (*values, month, created_by, _now()),
             )
-            item_id = int(cursor.lastrowid)
+            item_id = int((await cursor.fetchone())[0])
             await self._conn.executemany(
                 "INSERT INTO pass_item_codes (item_id, code) VALUES (?, ?)",
                 [(item_id, code) for code in codes],

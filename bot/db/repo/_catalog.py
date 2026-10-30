@@ -75,7 +75,7 @@ class _CatalogRepo:
                 "  rarity_percent = COALESCE(excluded.rarity_percent, "
                 "                            title_achievements.rarity_percent),"
                 "  updated_at = excluded.updated_at,"
-                "  listed = MAX(title_achievements.listed, excluded.listed)",
+                "  listed = GREATEST(title_achievements.listed, excluded.listed)",
                 (
                     r.platform,
                     r.title_id,

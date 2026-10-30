@@ -1170,7 +1170,8 @@ class _StoresRepo:
         """One visit's answer, stamped found or not."""
         await self._conn.execute(
             "UPDATE editions SET image_path = ?, image_hash = ?,"
-            " image_checked_at = strftime('%Y-%m-%dT%H:%M:%S', 'now') WHERE edition_id = ?",
+            " image_checked_at = to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS')"
+            " WHERE edition_id = ?",
             (path, digest, edition_id),
         )
         await self._conn.commit()

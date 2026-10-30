@@ -230,10 +230,10 @@ def platform_is(platform: str, column: str = "platform") -> tuple[str, list[str]
 # versions of the list (`versions.store_ids`), not as a column of the list.
 STEAM_APP_OF_TITLE = (
     "(CASE WHEN t.platform = 'steam' THEN CAST(t.title_id AS INTEGER)"
-    " ELSE (SELECT CAST(json_extract(j.value, '$[1]') AS INTEGER)"
-    "  FROM versions v, json_each(v.store_ids) j"
+    " ELSE (SELECT (j.value->>1)::bigint"
+    "  FROM versions v, jsonb_array_elements(v.store_ids::jsonb) j"
     "  WHERE v.platform = t.platform AND v.title_id = t.title_id"
-    "   AND json_extract(j.value, '$[0]') = 'steam_twin' LIMIT 1) END)"
+    "   AND j.value->>0 = 'steam_twin' LIMIT 1) END)"
 )
 
 

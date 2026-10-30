@@ -99,8 +99,9 @@ class _MergeRepo:
         async with self.transaction():
             # Checked at commit, not per statement: a Telegram id moving from one
             # row to the other is briefly nobody's, and `chat_seen` points at it.
-            # The pragma lasts for the open transaction only, so it goes inside.
-            await conn.execute("PRAGMA defer_foreign_keys = ON")
+            # It lasts for the open transaction only, so it goes inside; every
+            # foreign key is DEFERRABLE (bot/db/pg/*.sql) for this.
+            await conn.execute("SET CONSTRAINTS ALL DEFERRED")
             # Whose Xbox account stays decides whose Xbox login stays with it.
             cursor = await conn.execute(
                 "SELECT person_id FROM account_links"

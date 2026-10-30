@@ -174,7 +174,7 @@ class _ChatsRepo:
             "WHERE u.tg_id IS NOT NULL AND u.is_excluded = 0 AND ("
             " u.id IN (SELECT person_id FROM subscriptions WHERE chat_id = ?)"
             " OR u.tg_id IN (SELECT tg_id FROM chat_seen WHERE chat_id = ?)) "
-            "ORDER BY u.handle_norm COLLATE NOCASE, u.id",
+            "ORDER BY lower(u.handle_norm), u.id",
             (chat_id, chat_id),
         )
         return [

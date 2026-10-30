@@ -98,10 +98,10 @@ class _SeriesRepo:
                     if target is None:
                         cursor = await self._conn.execute(
                             "INSERT INTO series (name, anchor_game_id, rule_key, created_at,"
-                            " updated_at) VALUES (?, NULL, ?, ?, ?)",
+                            " updated_at) VALUES (?, NULL, ?, ?, ?) RETURNING series_id",
                             (name, rule_key, now, now),
                         )
-                        target = int(cursor.lastrowid)
+                        target = int((await cursor.fetchone())[0])
                         by_rule[rule_key] = target
                         series[target] = {
                             "series_id": target,
@@ -148,10 +148,10 @@ class _SeriesRepo:
                         )
                         cursor = await self._conn.execute(
                             "INSERT INTO series (name, anchor_game_id, created_at, updated_at)"
-                            " VALUES (?, ?, ?, ?)",
+                            " VALUES (?, ?, ?, ?) RETURNING series_id",
                             (name, core[0], now, now),
                         )
-                        target = int(cursor.lastrowid)
+                        target = int((await cursor.fetchone())[0])
                         series[target] = {
                             "series_id": target,
                             "anchor_game_id": core[0],
@@ -301,11 +301,11 @@ class _SeriesRepo:
         now = utcnow_iso()
         cursor = await self._conn.execute(
             "INSERT INTO series (name, name_source, created_at, updated_at)"
-            " VALUES (?, 'manual', ?, ?)",
+            " VALUES (?, 'manual', ?, ?) RETURNING series_id",
             (name, now, now),
         )
         await self._conn.commit()
-        return int(cursor.lastrowid)
+        return int((await cursor.fetchone())[0])
 
     async def rename_series(self, series_id: int, name: str, name_ru: str | None) -> None:
         await self._conn.execute(

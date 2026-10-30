@@ -274,9 +274,9 @@ class _GamePageRepo:
             "SELECT DISTINCT CAST(product_id AS INTEGER) AS appid FROM versions"
             " WHERE game_id = ? AND store = 'steam'"
             " UNION"
-            " SELECT DISTINCT CAST(json_extract(j.value, '$[1]') AS INTEGER) FROM versions v,"
-            "  json_each(v.store_ids) j"
-            " WHERE v.game_id = ? AND json_extract(j.value, '$[0]') = 'steam_twin'",
+            " SELECT DISTINCT (j.value->>1)::bigint FROM versions v,"
+            "  jsonb_array_elements(v.store_ids::jsonb) j"
+            " WHERE v.game_id = ? AND j.value->>0 = 'steam_twin'",
             (game_id, game_id),
         )
         return [int(row[0]) for row in await cursor.fetchall() if row[0]]
@@ -453,7 +453,7 @@ class _GamePageRepo:
         if not apps:
             return []
         cursor = await self._conn.execute(
-            "WITH fav(appid) AS (SELECT value FROM json_each(?))"
+            "WITH fav(appid) AS (SELECT value::bigint FROM jsonb_array_elements_text(?::jsonb))"
             " SELECT fav.appid FROM fav LEFT JOIN steam_apps sa ON sa.appid = fav.appid"
             " WHERE sa.patches_checked_at IS NULL OR sa.patches_checked_at < ?"
             " ORDER BY sa.patches_checked_at IS NOT NULL, sa.patches_checked_at LIMIT ?",

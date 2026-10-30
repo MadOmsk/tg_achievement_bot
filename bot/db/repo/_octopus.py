@@ -111,9 +111,10 @@ class _OctopusRepo:
         """The versions a store id names (`versions.store_ids`: a PSN title
         id, an Xbox product id, …), case aside."""
         return await self._ids(
-            "SELECT DISTINCT v.version_id FROM versions v, json_each(v.store_ids) j"
-            " WHERE json_extract(j.value, '$[0]') = ?"
-            " AND UPPER(json_extract(j.value, '$[1]')) = UPPER(?) ORDER BY v.version_id",
+            "SELECT DISTINCT v.version_id FROM versions v,"
+            " jsonb_array_elements(v.store_ids::jsonb) j"
+            " WHERE j.value->>0 = ?"
+            " AND UPPER(j.value->>1) = UPPER(?) ORDER BY v.version_id",
             (kind, value),
         )
 

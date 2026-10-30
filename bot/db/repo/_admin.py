@@ -320,7 +320,8 @@ class _AdminRepo:
         "t.platform = 'xbox_modern' AND t.platforms IS NULL"
         f" AND t.platforms_attempts < {PLATFORMS_LOOKUP_ATTEMPTS}"
         " AND (t.platforms_checked_at IS NULL"
-        "      OR t.platforms_checked_at < strftime('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour'))"
+        "      OR t.platforms_checked_at < to_char(now() AT TIME ZONE 'utc' - interval '1"
+        " hour', 'YYYY-MM-DD\"T\"HH24:MI:SS'))"
     )
 
     async def platforms_lookup_due(self, title_id: str) -> bool:

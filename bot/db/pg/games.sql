@@ -702,3 +702,16 @@ $$;
 CREATE TRIGGER list_name_reaches_its_stand_ins
 AFTER UPDATE OF name, name_ru, name_en ON achievement_list_connectors
 FOR EACH ROW EXECUTE FUNCTION list_name_reaches_its_stand_ins();
+
+-- Every foreign key may be deferred to the commit: merging two people moves a
+-- Telegram id from one row to the other, briefly nobody's (`_merge.py`).
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN SELECT c.conrelid::regclass AS tbl, c.conname FROM pg_constraint c
+           WHERE c.contype = 'f' AND c.connamespace = current_schema()::regnamespace
+  LOOP
+    EXECUTE format('ALTER TABLE %s ALTER CONSTRAINT %I DEFERRABLE INITIALLY IMMEDIATE',
+                   r.tbl, r.conname);
+  END LOOP;
+END $$;

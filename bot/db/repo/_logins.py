@@ -42,10 +42,10 @@ class _LoginsRepo:
         async with self.transaction():  # type: ignore[attr-defined]
             cursor = await self._conn.execute(
                 "INSERT INTO users (email, email_linked_at, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?) RETURNING id",
                 (email, now, now, now),
             )
-            person = int(cursor.lastrowid)
+            person = int((await cursor.fetchone())[0])
             await self._conn.execute(
                 "INSERT INTO user_settings (person_id, rarity_mode) VALUES (?, ?)"
                 " ON CONFLICT DO NOTHING",
