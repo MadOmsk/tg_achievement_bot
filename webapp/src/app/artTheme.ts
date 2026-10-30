@@ -135,8 +135,8 @@ function scheme({ h, v }: Art, light: boolean, bright = false): CSSProperties {
     ? {}
     : light
       ? {
-          "--primary-container": hsl(38, 80),
-          "--primary-container-2": hsl(42, 74),
+          "--primary-container": hsl(45, 80),
+          "--primary-container-2": hsl(49, 74),
           "--on-primary-container": hsl(60, 12),
           "--on-primary-container-2": hsl(50, 24),
           "--surface-1": hsl(60, 90),
@@ -146,8 +146,8 @@ function scheme({ h, v }: Art, light: boolean, bright = false): CSSProperties {
           "--on-secondary-container": hsl(55, 18),
         }
       : {
-          "--primary-container": hsl(34, 36),
-          "--primary-container-2": hsl(36, 42),
+          "--primary-container": hsl(42, 36),
+          "--primary-container-2": hsl(44, 42),
           "--on-primary-container": hsl(90, 95),
           "--on-primary-container-2": hsl(70, 86),
           "--surface-1": hsl(28, 15),
