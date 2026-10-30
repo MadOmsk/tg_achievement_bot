@@ -268,9 +268,9 @@ name, or when the tree goes stale.
 │       ├── repo/                 all data access, the only place with SQL; one Repo from mixins
 │       │                         (map in its __init__.py); `_sql.py` holds the shared joins (#52);
 │       │                         `_games_db.py`: which tables are the shared games catalog (#229)
-│       ├── schema.sql, migrations/   the SQLite schema and its history up to 143: what the
-│       │                         import tool reads production's SQLite file against, nothing else
-│       └── files.py              a SQLite file opened by a script (the scripts not yet moved, #234)
+│       ├── schema.sql, migrations/   the SQLite schema and its history up to 143: the import
+│       │                         tool's tests build a source from them, and it reads the names
+│       └── tools.py              a database opened by a script: `--schema`, `run`, `connect`, `backup`
 │
 ├── scripts/                     one-off operational helpers, outside the running bot
 │   ├── render_screen.py          draws any screen, prints it or sends it to the owner's DM (#63)
@@ -278,8 +278,7 @@ name, or when the tree goes stale.
 │   ├── collect_game.py           collect one game from the stores now (#147), beside a running bot
 │   ├── reparse_store_payloads.py the store side again from the kept answers, no request (#147)
 │   ├── catalog_viewer.py         a bare local, read-only viewer of the games' store side (#147)
-│   ├── catalog_transfer.py       the games catalog carried whole from one database to another (#147)
-│   ├── games_db.py               the shared games database: split it out, join it, leave it (#229)
+│   ├── sqlite_to_pg.py           a server's SQLite files into PostgreSQL: preflight, import, verify (#234)
 │   ├── fit_match_weights.py      the games matcher's weights fitted to the operator's labels (#147)
 │   ├── advise_pairs.py           the matcher's doubtful pairs to Claude and Gemini and back:
 │   │                             export / import / status / apply / conflicts (#147)
@@ -382,8 +381,8 @@ setting it up: `docs/mail-setup.md`).
 The canonical schema is `bot/db/pg/app.sql` (a server's own tables) and
 `bot/db/pg/games.sql` (the shared catalog), PostgreSQL since #234; this section
 describes the model, not every column. `bot/db/schema.sql` and `bot/db/migrations/`
-are the SQLite history (up to migration 143), kept for the import tool only: a
-migration number or a column named below may point there. History: #106.
+are the SQLite history (up to migration 143), kept for the import tool and its
+tests only: a migration number or a column named below may point there. History: #106.
 
 ### One games database for prod and the test server (#229)
 
@@ -607,7 +606,7 @@ migration number or a column named below may point there. History: #106.
 - **Favorite games** (`favorite_games (person_id, game_id, anchor_key)`, migration
   130; owner, 2026-10-25): a person's hearts on games. `anchor_key` is the
   game's anchor version as `store:product_id:console`, and a favorite is
-  found by it first — a catalog carried over (`scripts/catalog_transfer.py`)
+  found by it first — a catalog carried over or merged (`scripts/sqlite_to_pg.py`)
   may give a game another id and the old id to another game —, else by its
   id (a merged game leading on). A merge of two people moves them.
 - **Season pass claims** (`pass_claims (person_id, palette, month)`, migration
@@ -1226,7 +1225,7 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
     (anything not an adviser's `decided_by`). Labels are written as the
     viewer writes them (`save_decision`, then the linker); an HLTB match
     agreed on becomes a `manual` link. Questions and answers are JSON in
-    `data/advice/` beside the database (`pair_state(pair_id, dir)` for the
+    `advice/` in `DB_PATH`'s folder (`pair_state(pair_id, dir)` for the
     viewer), never in the database. An HLTB entry refused is kept as a
     `rejected` link (never made again), a DLC's HLTB entry written by hand is a
     `manual` link in `dlc_hltb` (or `rejected`), so every answer can be written.
@@ -1291,18 +1290,9 @@ stage 3; the Mini App's game page (stage 5) shows them — see User interface,
   what would change; `--apply` backs the database up into `backups/` first,
   with the bot stopped. What only a request brings (a Steam DLC's or
   package's own answer, the Russian appdetails) stays as it was.
-- **The catalog is built where it is taught and carried to the servers**
-  (owner, 2026-10-25: production collects the very games the development
-  catalog holds): `scripts/catalog_transfer.py export` copies its tables —
-  versions, games, relations, editions, DLC, the HLTB side, series, labels
-  and their log, the weights, `fetch_state`, the octopus's queue; not the
-  raw answers — and `import` replaces a server's catalog with them in one
-  transaction, the bot stopped, a backup beside the database first. The
-  catalog points outside itself only by a list's (platform, title_id), so
-  nothing else moves; a list the file lacks keeps its own stand-in, linked
-  into a game after. `--tables match_weights` carries a new fit alone.
-  Prod and the test server share one catalog (#229, above), so it is no
-  longer carried between them.
+- **The catalog is one schema, never carried** (#229, #234): prod and the test
+  server read the same `games`. What travels between copies is labels and
+  weights, below.
 - **Labels and weights are files in git** (owner, 2026-10-27; `catalog/labels.jsonl`,
   `catalog/weights.json`, `scripts/catalog_files.py`): one training serves
   production, the test server and the dev server. A label names its versions by
@@ -2970,10 +2960,21 @@ Agreed with the owner on 2026-10-30, **the fast path**: no dual backend and no
 week-long soak — the code moves in one step on `feature/postgres`, is checked on a
 copy of production and on the dev server, then both servers switch; production
 runs on SQLite until the switch, its downtime the data import alone. PostgreSQL 16
-runs on the VPS (localhost). Until the switch, the servers, the deploy script
-(`xbox-deploy`, its SQLite backups, `games split|join|leave`) and the scripts
-under `scripts/` that open SQLite files are as described in this section; what
-is left is in #234. The new bot (#238) and `unlocked.how` (#237) switch after it.
+runs on the VPS (localhost). Until the switch, the servers and the deploy script
+(`xbox-deploy`, its SQLite backups) are as described in this section, except that
+on this branch `xbox-deploy games split|join|leave` and `catalog_files --db` name
+what is gone; what is left is in #234. The new bot (#238) and `unlocked.how` (#237)
+switch after it.
+
+**Scripts open PostgreSQL through `bot/db/tools.py`** (the bot's dialect and rows,
+no bring-up): `--schema` in place of `--db`, default `DATABASE_SCHEMA`; an async
+script starts with `tools.run`, since Windows' default event loop refuses psycopg.
+A script's backup is a `pg_dump` file in `backups/`, so `pg_dump` must be on PATH
+(`pg_restore` and `CREATEDB` for `reparse_store_payloads`' dry run). The catalog is
+shared, so a script writing it writes the live one whichever schema it names.
+**`scripts/sqlite_to_pg.py`** moves a server: `preflight`, `import --schema`,
+`verify` (exit 1 on a mismatch, 2 on a refusal). A second server on the same
+catalog file skips the catalog; one that differs needs `--merge-catalog`.
 
 ### Three branches, three servers
 
