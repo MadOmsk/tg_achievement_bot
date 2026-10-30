@@ -241,38 +241,6 @@ async def test_patches_of_played_games_are_refreshed_a_few_at_a_time(
     assert 4 in read and 5 not in read
 
 
-async def test_migration_069_adds_the_steam_side_to_an_existing_database(tmp_path) -> None:
-    import aiosqlite
-
-    from bot.db.repo import MIGRATIONS_DIR
-
-    sql = (MIGRATIONS_DIR / "069_steam_guides_patches.sql").read_text(encoding="utf-8")
-    async with aiosqlite.connect(tmp_path / "m069.db") as conn:
-        await conn.executescript(
-            """
-            CREATE TABLE titles (title_id TEXT PRIMARY KEY, name TEXT);
-            CREATE TABLE title_achievements (
-                platform TEXT, title_id TEXT, achievement_id TEXT, name_en TEXT);
-            INSERT INTO titles VALUES ('t', 'Game');
-            INSERT INTO title_achievements VALUES ('steam', 't', 'a', 'A');
-            """
-        )
-        await conn.executescript(sql)
-        title = await (
-            await conn.execute("SELECT steam_appid, steam_appid_attempts FROM titles")
-        ).fetchone()
-        tip = await (await conn.execute("SELECT tip_en, tip_ru FROM title_achievements")).fetchone()
-        tables = {
-            r[0]
-            for r in await (
-                await conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-            ).fetchall()
-        }
-    assert tuple(title) == (None, 0)
-    assert tuple(tip) == (None, None)
-    assert {"steam_apps", "game_patches"} <= tables
-
-
 async def test_a_read_that_finds_nothing_keeps_the_tips_already_stored(
     repo: Repo, steam_auth: SteamAuth, steam
 ) -> None:
@@ -538,55 +506,3 @@ async def test_the_app_found_for_a_list_is_a_steam_twin_id_of_its_versions(repo:
         f"SELECT {STEAM_APP_OF_TITLE} FROM achievement_list_connectors t WHERE t.platform = 'steam'"
     )
     assert (await cursor.fetchone())[0] == 2100  # a Steam list is its own app
-
-
-async def test_migration_114_keeps_the_app_found_as_a_twin_id(tmp_path) -> None:
-    import json
-
-    import aiosqlite
-
-    from bot.db.repo import MIGRATIONS_DIR
-
-    sql = (MIGRATIONS_DIR / "114_steam_app_is_a_version_id.sql").read_text(encoding="utf-8")
-    async with aiosqlite.connect(tmp_path / "m113.db") as conn:
-        await conn.executescript(
-            """
-            CREATE TABLE titles (
-                platform TEXT NOT NULL, title_id TEXT NOT NULL, name TEXT NOT NULL,
-                steam_appid INTEGER, steam_appid_attempts INTEGER NOT NULL DEFAULT 0,
-                steam_appid_checked_at TEXT, updated_at TEXT NOT NULL,
-                PRIMARY KEY (platform, title_id));
-            CREATE TABLE versions (
-                version_id INTEGER PRIMARY KEY, platform TEXT, title_id TEXT, store_ids TEXT);
-            CREATE TABLE fetch_state (
-                subject TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL,
-                attempts INTEGER NOT NULL DEFAULT 0, interval_days INTEGER NOT NULL DEFAULT 7,
-                checked_at TEXT NOT NULL, next_check_at TEXT NOT NULL, last_error TEXT,
-                PRIMARY KEY (subject, source)) WITHOUT ROWID;
-            INSERT INTO titles VALUES
-              ('xbox_modern', '1', 'Found', 553850, 1, '2026-02-02T10:00:00+00:00', 'x'),
-              ('xbox_modern', '2', 'Given up', NULL, 3, '2026-02-02T10:00:00+00:00', 'x'),
-              ('xbox_modern', '3', 'Never asked', NULL, 0, NULL, 'x'),
-              ('steam', '2100', 'Its own', NULL, 0, NULL, 'x');
-            INSERT INTO versions VALUES
-              (1, 'xbox_modern', '1', '[["list", "xbox_modern:1"]]'),
-              (2, 'xbox_modern', '2', NULL), (3, 'xbox_modern', '3', NULL),
-              (4, 'steam', '2100', NULL);
-            """
-        )
-        await conn.executescript(sql)
-        cursor = await conn.execute("SELECT version_id, store_ids FROM versions ORDER BY 1")
-        ids = {r[0]: r[1] for r in await cursor.fetchall()}
-        cursor = await conn.execute(
-            "SELECT subject, status, attempts, next_check_at FROM fetch_state ORDER BY subject"
-        )
-        state = [tuple(r) for r in await cursor.fetchall()]
-        cursor = await conn.execute("PRAGMA table_info(titles)")
-        columns = {r[1] for r in await cursor.fetchall()}
-    assert json.loads(ids[1]) == [["list", "xbox_modern:1"], ["steam_twin", "553850"]]
-    assert ids[2] is None and ids[3] is None and ids[4] is None
-    assert state == [
-        ("xbox_modern:1", "ok", 0, "2026-02-09T10:00:00+00:00"),
-        ("xbox_modern:2", "gave_up", 3, "2026-03-04T10:00:00+00:00"),
-    ]
-    assert not columns & {"steam_appid", "steam_appid_attempts", "steam_appid_checked_at"}

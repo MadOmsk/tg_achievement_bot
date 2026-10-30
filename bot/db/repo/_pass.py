@@ -97,9 +97,9 @@ class _PassRepo:
             " FROM pass_items i LEFT JOIN pass_item_codes c ON c.item_id = i.item_id"
             " WHERE i.state != 'draft' AND (?::text IS NULL OR i.month = ?)"
             " GROUP BY i.item_id"
-            " HAVING i.state = 'live' OR mine IS NOT NULL"
+            " HAVING i.state = 'live' OR MAX(CASE WHEN c.person_id = ? THEN c.code END) IS NOT NULL"
             " ORDER BY i.points, i.item_id",
-            (person_id, month, month),
+            (person_id, month, month, person_id),
         )
         return [dict(row) for row in await cursor.fetchall()]
 

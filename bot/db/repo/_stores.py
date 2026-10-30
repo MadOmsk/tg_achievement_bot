@@ -710,10 +710,10 @@ class _StoresRepo:
         cursor = await self._conn.execute(
             "SELECT v.version_id, v.game_id, v.console, v.store, v.kind, v.role, v.name,"
             " v.name_ru, vh.hltb_id, vh.source, vh.score, e.game_type,"
-            " (SELECT group_concat(platform, '|') FROM ("
+            " (SELECT string_agg(platform, '|') FROM ("
             "   SELECT platform FROM hltb_entry_platforms p WHERE p.hltb_id = vh.hltb_id"
             "   UNION SELECT platform FROM hltb_platform_times t WHERE t.hltb_id = vh.hltb_id"
-            " )) AS entry_platforms"
+            " ) AS named) AS entry_platforms"
             " FROM versions v LEFT JOIN version_hltb vh ON vh.version_id = v.version_id"
             " LEFT JOIN hltb_entries e ON e.hltb_id = vh.hltb_id"
             f" WHERE v.game_id IS NOT NULL{where} ORDER BY v.game_id, v.version_id",

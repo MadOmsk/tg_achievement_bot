@@ -126,7 +126,8 @@ class _OctopusRepo:
             "SELECT version_id FROM edition_items"
             " WHERE edition_id = ? AND version_id IS NOT NULL"
             " GROUP BY version_id"
-            " ORDER BY MIN(COALESCE(role, 'main') <> 'main'), MAX(is_primary) DESC, version_id",
+            " ORDER BY MIN(CASE WHEN COALESCE(role, 'main') <> 'main' THEN 1 ELSE 0 END),"
+            " MAX(is_primary) DESC, version_id",
             (edition_id,),
         )
 

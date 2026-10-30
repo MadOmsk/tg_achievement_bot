@@ -964,27 +964,6 @@ def _migration(name: str) -> str:
     return (MIGRATIONS_DIR / name).read_text(encoding="utf-8")
 
 
-async def test_migration_104_moves_win32_stand_ins_to_the_unknown_store(repo: Repo) -> None:
-    conn = repo._conn
-    for title_id, platforms in (("1", '["Win32"]'), ("2", '["PC"]')):
-        await conn.execute(
-            "INSERT INTO achievement_list_connectors (platform, title_id, name, platforms, "
-            "updated_at)"
-            " VALUES (?, ?, ?, ?, 'now')",
-            ("xbox_modern", title_id, f"Game {title_id}", platforms),
-        )
-        await conn.execute(
-            "INSERT INTO versions (store, product_id, console, platform, title_id, name,"
-            " updated_at, stand_in) VALUES ('xbox', ?, 'pc', 'xbox_modern', ?, ?, 'now', 1)",
-            (title_id, title_id, f"Game {title_id}"),
-        )
-    # The migration speaks of the table by the name it had then.
-    await conn.execute("CREATE TEMP VIEW titles AS SELECT * FROM achievement_list_connectors")
-    await conn.execute(_migration("104_pc_unknown_store.sql"))  # one statement
-    cur = await conn.execute("SELECT product_id, store FROM versions ORDER BY product_id")
-    assert [tuple(r) for r in await cur.fetchall()] == [("1", "unknown"), ("2", "xbox")]
-
-
 async def test_a_label_outlives_its_version(repo: Repo) -> None:
     """A store re-parse deleting a version must not delete the operator's
     answer about it (migration 106): the label stays, with which product each
@@ -1038,43 +1017,6 @@ def test_text_signs_change_nothing_until_weights_are_fitted() -> None:
 
 
 # ------------------------------------------------ a version holds its game (108)
-
-
-async def test_migration_108_moves_the_games_columns_onto_versions(tmp_path) -> None:
-    import aiosqlite
-
-    from bot.db.repo import MIGRATIONS_DIR
-
-    sql = (MIGRATIONS_DIR / "108_versions_hold_their_game.sql").read_text(encoding="utf-8")
-    async with aiosqlite.connect(tmp_path / "m107.db") as conn:
-        await conn.executescript(
-            """
-            CREATE TABLE games (game_id INTEGER PRIMARY KEY);
-            CREATE TABLE versions (version_id INTEGER PRIMARY KEY, name TEXT);
-            CREATE TABLE game_versions (
-                version_id INTEGER PRIMARY KEY, game_id INTEGER NOT NULL, role TEXT NOT NULL,
-                of_version_id INTEGER, p REAL, linked_at TEXT NOT NULL);
-            CREATE INDEX idx_game_versions_game ON game_versions(game_id, role);
-            INSERT INTO games VALUES (1), (2);
-            INSERT INTO versions VALUES (10, 'Game'), (11, 'Its demo'), (12, 'Unlinked');
-            INSERT INTO game_versions VALUES
-                (10, 1, 'version', NULL, 0.97, 't1'), (11, 1, 'demo', 10, NULL, 't2');
-            """
-        )
-        await conn.executescript(sql)
-        cursor = await conn.execute(
-            "SELECT version_id, game_id, role, of_version_id, link_p, linked_at"
-            " FROM versions ORDER BY version_id"
-        )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-        cursor = await conn.execute("SELECT name FROM sqlite_master WHERE name = 'game_versions'")
-        gone = await cursor.fetchall()
-    assert rows == [
-        (10, 1, "version", None, 0.97, "t1"),
-        (11, 1, "demo", 10, None, "t2"),
-        (12, None, None, None, None, None),
-    ]
-    assert gone == []
 
 
 async def test_linking_writes_the_game_on_the_version_and_keeps_when_it_got_there(
@@ -1221,7 +1163,7 @@ async def test_a_360_list_takes_the_product_its_fission_mark_names(repo: Repo, m
 
 
 async def test_an_xbox_list_read_whole_gives_the_earned_rows_their_group(repo: Repo) -> None:
-    await repo._conn.execute("PRAGMA foreign_keys = OFF")  # no account needed here
+    await repo._conn.execute("SET session_replication_role = replica")  # no account needed
     await repo._conn.execute(
         "INSERT INTO seen_achievements (xuid, title_id, achievement_id, name, platform,"
         " is_backfill, created_at) VALUES ('x1', '77', '5', 'A', 'xbox_modern', 0, 'now')"
@@ -1310,7 +1252,7 @@ async def test_the_last_base_unlock_is_the_mythic_and_the_last_of_all_completes(
 ) -> None:
     from bot.db.repo import TitleAchievementRow
 
-    await repo._conn.execute("PRAGMA foreign_keys = OFF")
+    await repo._conn.execute("SET session_replication_role = replica")
     await repo.upsert_title_achievements(
         [
             TitleAchievementRow(

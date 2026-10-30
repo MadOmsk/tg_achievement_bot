@@ -6,9 +6,7 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
-
-from bot.db.repo import Database, Repo
+from bot.db.repo import Repo
 
 OLD_USERS = """
 CREATE TABLE users (
@@ -70,41 +68,6 @@ def _as_before_071(path) -> None:
             "DELETE FROM schema_migrations"
             " WHERE version IN ('071_person_id', '078_person_id_tables')"
         )
-
-
-async def test_migration_071_gives_everyone_an_id_and_keeps_what_points_at_them(
-    tmp_path,
-) -> None:
-    path = tmp_path / "people.db"
-    await (await Database(path).connect()).close()
-    _as_before_071(path)
-
-    database = await Database(path).connect()
-    try:
-        conn = database.conn
-        people = await (await conn.execute("SELECT id, tg_id FROM users ORDER BY id")).fetchall()
-        # Ids follow who joined first.
-        assert [tuple(row) for row in people] == [(1, 111), (2, 222)]
-        # 078 then moved the settings onto the person id.
-        settings = await (
-            await conn.execute(
-                "SELECT u.tg_id FROM user_settings s JOIN users u ON u.id = s.person_id"
-            )
-        ).fetchall()
-        assert sorted(row[0] for row in settings) == [111, 222]
-        assert await (await conn.execute("PRAGMA foreign_key_check")).fetchall() == []
-
-        # Foreign keys are on again: deleting a person takes their settings.
-        assert (await (await conn.execute("PRAGMA foreign_keys")).fetchone())[0] == 1
-        await conn.execute("DELETE FROM users WHERE tg_id = 111")
-        left = await (
-            await conn.execute(
-                "SELECT u.tg_id FROM user_settings s JOIN users u ON u.id = s.person_id"
-            )
-        ).fetchall()
-        assert [row[0] for row in left] == [222]
-    finally:
-        await database.close()
 
 
 async def test_a_new_person_gets_the_next_id_and_may_have_no_telegram(repo: Repo) -> None:
@@ -208,46 +171,3 @@ def _as_before_078(path) -> None:
             (NOW,),
         )
         conn.execute("DELETE FROM schema_migrations WHERE version = '078_person_id_tables'")
-
-
-async def test_migration_078_moves_the_tables_about_a_person_onto_their_id(tmp_path) -> None:
-    path = tmp_path / "people.db"
-    database = await Database(path).connect()
-    seed = Repo(database)
-    await seed.ensure_user(111, "first")
-    await seed.ensure_user(222, "second")
-    await database.close()
-    _as_before_078(path)
-
-    database = await Database(path).connect()
-    try:
-        repo = Repo(database)
-        conn = database.conn
-        assert await (await conn.execute("PRAGMA foreign_key_check")).fetchall() == []
-        # Read back through the repo, which still takes Telegram ids at its door.
-        link = await repo.get_platform_link(await repo.person_id(111), "xbox")
-        assert link is not None and link.external_id == "x1"
-        psn = [
-            link.external_id
-            for link in await repo.platform_links_for(await repo.person_id(222), "psn")
-        ]
-        assert psn == ["p1", "p2"]
-        assert await repo.get_token(await repo.person_id(111)) is not None
-        settings = await repo.get_user_settings(await repo.person_id(111))
-        assert settings is not None and settings.rarity_mode == "rare"
-        assert await repo.is_subscribed(-100, await repo.person_id(222))
-        assert await repo.get_flood_state(await repo.person_id(222), -100) is not None
-        # The index came back under its own name: still one Xbox account a person.
-        await conn.execute(
-            "INSERT INTO accounts (platform, external_id, first_seen_at, updated_at)"
-            " VALUES ('xbox', 'x1b', ?, ?)",
-            (NOW, NOW),
-        )
-        with pytest.raises(sqlite3.IntegrityError):
-            await conn.execute(
-                "INSERT INTO account_links (person_id, platform, external_id, linked_at)"
-                " VALUES ((SELECT id FROM users WHERE tg_id = 111), 'xbox', 'x1b', ?)",
-                (NOW,),
-            )
-    finally:
-        await database.close()

@@ -110,18 +110,6 @@ async def test_publishing_off_keeps_the_chat_out_of_the_targets(repo: Repo) -> N
     assert await repo.publication_targets(person) == []
 
 
-async def test_the_migration_makes_the_adder_the_admin(repo: Repo) -> None:
-    await _chat(repo)
-    await _chat(repo, OTHER)
-    await repo.deactivate_chat(OTHER)  # the bot is not there: no admin
-    await repo.set_chat_admin(CHAT, None, None)
-    start = MIGRATION.index("INSERT OR IGNORE")
-    insert = MIGRATION[start : MIGRATION.index(";", start)]
-    await repo._conn.execute(insert)
-    assert await repo.chat_admin(CHAT) == ADDER
-    assert await repo.chat_admin(OTHER) is None
-
-
 async def test_the_super_admin_gives_app_roles_one_step_at_a_time(repo: Repo) -> None:
     for tg_id, name in ((ADDER, "boss"), (MEMBER, "member"), (STRANGER, "fixed")):
         await repo.ensure_user(tg_id, name)

@@ -198,8 +198,8 @@ class _SeriesRepo:
                 " ON CONFLICT(game_id, series_id) DO UPDATE SET p = excluded.p,"
                 "  reason = excluded.reason, updated_at = excluded.updated_at"
                 " WHERE game_series.source = 'auto'"
-                "  AND (game_series.p IS NOT excluded.p"
-                "   OR game_series.reason IS NOT excluded.reason)",
+                "  AND (game_series.p IS DISTINCT FROM excluded.p"
+                "   OR game_series.reason IS DISTINCT FROM excluded.reason)",
                 [
                     (game, sid, p, reason, now, now)
                     for sid, members in wanted.items()

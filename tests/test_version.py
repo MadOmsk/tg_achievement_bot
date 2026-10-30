@@ -127,84 +127,6 @@ def test_a_database_ahead_of_the_code_is_refused() -> None:
     assert "999" in complaint and expected_schema() in complaint
 
 
-async def test_connecting_to_a_newer_database_aborts_instead_of_migrating(tmp_path) -> None:
-    database = await Database(tmp_path / "bot.db").connect()
-    await database.conn.execute(
-        "INSERT INTO schema_migrations (version, applied_at) VALUES ('999_future', '2026-09-16')"
-    )
-    await database.conn.commit()
-    await database.close()
-
-    with pytest.raises(SchemaTooNewError):
-        await Database(tmp_path / "bot.db").connect()
-
-
-async def test_a_migration_whose_column_schema_sql_already_added_is_not_fatal(tmp_path) -> None:
-    """The collision a big version jump causes, found by rehearsing the
-    accounts-52 merge against a copy of production (2026-09-16).
-
-    schema.sql runs first and creates missing tables in their *finished*
-    shape; the migrations then run. A table that did not exist yet is
-    therefore born with the columns a later migration meant to add — and
-    that migration used to die on "duplicate column name", which on the
-    production deploy would not have been a rehearsal.
-    """
-    database = await Database(tmp_path / "bot.db").connect()
-    await database.conn.execute("CREATE TABLE later (id TEXT PRIMARY KEY, name_ru TEXT)")
-    await database.conn.commit()
-    await database.close()
-
-    migrations = tmp_path / "migrations"
-    migrations.mkdir()
-    # The rest of the migration still runs (#167): `executescript` used to stop
-    # at the duplicate, and the error was swallowed with everything after it.
-    (migrations / "900_add_name_ru.sql").write_text(
-        "-- a comment; with a semicolon\n"
-        "ALTER TABLE later ADD COLUMN name_ru TEXT;\n"
-        "ALTER TABLE later ADD COLUMN name_en TEXT;\n"
-        "CREATE TRIGGER later_t AFTER INSERT ON later BEGIN SELECT 1; SELECT 2; END;\n",
-        encoding="utf-8",
-    )
-
-    import bot.db.repo._database as database_module
-
-    original = database_module.MIGRATIONS_DIR
-    database_module.MIGRATIONS_DIR = migrations
-    try:
-        reopened = await Database(tmp_path / "bot.db").connect()  # must not raise
-        cursor = await reopened.conn.execute("PRAGMA table_info(later)")
-        columns = {row["name"] for row in await cursor.fetchall()}
-        cursor = await reopened.conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'later_t'"
-        )
-        trigger = await cursor.fetchone()
-        await reopened.close()
-    finally:
-        database_module.MIGRATIONS_DIR = original
-    assert "name_en" in columns
-    assert trigger is not None
-
-
-async def test_a_migration_that_fails_for_any_other_reason_still_stops_startup(tmp_path) -> None:
-    """The swallow above is exactly one error wide."""
-    database = await Database(tmp_path / "bot.db").connect()
-    await database.close()
-
-    migrations = tmp_path / "migrations"
-    migrations.mkdir()
-    (migrations / "901_broken.sql").write_text("SELECT * FROM nothing_at_all;", encoding="utf-8")
-
-    import bot.db.repo._database as database_module
-
-    original = database_module.MIGRATIONS_DIR
-    database_module.MIGRATIONS_DIR = migrations
-    try:
-        with pytest.raises(Exception, match="nothing_at_all"):
-            await Database(tmp_path / "bot.db").connect()
-    finally:
-        database_module.MIGRATIONS_DIR = original
-
-
 def _git_answers(monkeypatch, answers: dict[tuple[str, ...], str | None]) -> list[tuple[str, ...]]:
     """Stand in for git, and record what was asked."""
     asked: list[tuple[str, ...]] = []
@@ -319,16 +241,42 @@ def test_a_documentation_only_commit_does_not_advance_the_version(tmp_path, monk
         version_module.line.cache_clear()
 
 
-async def test_a_new_database_gets_the_indexes_its_baselined_migrations_carried(
-    tmp_path,
+async def test_connecting_to_a_newer_database_aborts_instead_of_migrating(
+    database: Database, _db_template: str
 ) -> None:
-    """#167: a database made from scratch is baselined, so the indexes that
-    only migrations created were missing; they are made after the migrations."""
-    db = await Database(tmp_path / "fresh.db").connect()
+    await database.conn.execute(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES ('999_future', '2026-09-16')"
+    )
     try:
-        cursor = await db.conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
-        names = {row[0] for row in await cursor.fetchall()}
+        with pytest.raises(SchemaTooNewError):
+            await Database(_db_template, schema=database.schema).connect()
     finally:
-        await db.close()
+        await database.conn.execute("DELETE FROM schema_migrations WHERE version = '999_future'")
+
+
+async def test_a_migration_that_fails_still_stops_startup(
+    database: Database, _db_template: str, tmp_path
+) -> None:
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    (migrations / "901_broken.sql").write_text("SELECT * FROM nothing_at_all;", encoding="utf-8")
+
+    import bot.db.repo._database as database_module
+
+    original = database_module.MIGRATIONS_DIR
+    database_module.MIGRATIONS_DIR = migrations
+    try:
+        with pytest.raises(Exception, match="nothing_at_all"):
+            await Database(_db_template, schema=database.schema).connect()
+    finally:
+        database_module.MIGRATIONS_DIR = original
+
+
+async def test_a_new_schema_has_the_indexes_the_migrations_made(database: Database) -> None:
+    """#167: the indexes only migrations created are in the schema itself."""
+    cursor = await database.conn.execute(
+        "SELECT indexname FROM pg_indexes WHERE schemaname IN (?, 'games')", (database.schema,)
+    )
+    names = {row[0] for row in await cursor.fetchall()}
     assert {"idx_seen_unlocked", "idx_seen_account", "idx_bot_messages_system"} <= names
     assert "idx_title_achievements_title" not in names

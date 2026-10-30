@@ -53,7 +53,10 @@ class _HltbReadRepo:
             " JOIN hltb_entries e ON e.hltb_id = vh.hltb_id"
             f" WHERE v.game_id = ? AND vh.source <> 'rejected' AND e.game_type NOT IN {_ADDITIONAL}"
             " GROUP BY e.hltb_id"
-            " ORDER BY manual DESC, score IS NULL, score DESC, n_versions DESC, e.hltb_id",
+            # The aggregates themselves: PostgreSQL reads an output name inside an
+            # expression as the column, vh.score, not as this MAX.
+            " ORDER BY manual DESC, MAX(vh.score) IS NULL, MAX(vh.score) DESC, n_versions DESC,"
+            " e.hltb_id",
             (game_id,),
         )
         rows = [dict(r) for r in await cursor.fetchall()]

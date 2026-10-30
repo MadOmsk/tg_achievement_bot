@@ -128,10 +128,11 @@ async def _game(repo: Repo, name: str, year: int, developer: str = "Studio") -> 
     # A live game has a version.
     cur = await repo._conn.execute(
         "INSERT INTO versions (store, product_id, console, name, updated_at)"
-        " VALUES ('steam', ?, 'steam', ?, 'now')",
+        " VALUES ('steam', ?, 'steam', ?, 'now') RETURNING version_id",
         (f"p{game}", name),
     )
-    await repo.write_members({int(cur.lastrowid): (game, "version", None, None)})
+    version = int((await cur.fetchone())[0])
+    await repo.write_members({version: (game, "version", None, None)})
     return game
 
 
@@ -338,7 +339,7 @@ async def test_a_series_a_rule_names_is_kept_by_its_key_and_never_merged(repo: R
     await SeriesBuilder(repo).rebuild()  # again: the same series, not new ones
 
     cursor = await repo._conn.execute(
-        "SELECT s.name, s.rule_key, s.anchor_game_id, group_concat(gs.game_id) FROM series s"
+        "SELECT s.name, s.rule_key, s.anchor_game_id, string_agg(gs.game_id::text, ',') FROM series s"
         " JOIN game_series gs ON gs.series_id = s.series_id WHERE s.rule_key IS NOT NULL"
         " GROUP BY s.series_id"
     )

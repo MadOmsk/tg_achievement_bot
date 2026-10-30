@@ -282,12 +282,12 @@ async def test_the_whole_page_is_saved_and_a_second_reading_replaces_it(repo: Re
 def test_the_parser_and_the_table_name_the_same_columns() -> None:
     import re
 
-    from bot.db.repo._database import SCHEMA_PATH
+    from bot.db.repo._database import GAMES_SCHEMA_PATH
 
-    ddl = SCHEMA_PATH.read_text(encoding="utf-8")
-    block = ddl[ddl.index("CREATE TABLE IF NOT EXISTS hltb_entries (") :]
+    ddl = GAMES_SCHEMA_PATH.read_text(encoding="utf-8")
+    block = ddl[ddl.index("CREATE TABLE hltb_entries (") :]
     block = block[: block.index(");")]
-    columns = set(re.findall(r"^\s+(\w+) (?:INTEGER|TEXT|REAL)", block, re.MULTILINE))
+    columns = set(re.findall(r"^\s+(\w+) (?:BIGINT|TEXT|DOUBLE PRECISION)", block, re.MULTILINE))
     assert {column for _page, column, _kind in hltb_page.ENTRY_FIELDS} <= columns
     assert {
         "hltb_id",
@@ -297,105 +297,3 @@ def test_the_parser_and_the_table_name_the_same_columns() -> None:
         "checked_at",
         "page_read_at",
     } <= columns
-
-
-async def test_migration_112_brings_the_old_rows_over_as_columns(tmp_path) -> None:
-    import aiosqlite
-
-    from bot.db.repo import MIGRATIONS_DIR
-    from bot.db.repo._database import SCHEMA_PATH
-
-    sql = (MIGRATIONS_DIR / "112_hltb_mirror.sql").read_text(encoding="utf-8")
-    async with aiosqlite.connect(tmp_path / "m111.db") as conn:
-        await conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        await conn.executescript(
-            """
-            CREATE TABLE hltb_games (
-                hltb_id INTEGER PRIMARY KEY, name TEXT NOT NULL, game_type TEXT,
-                parent_hltb_id INTEGER, steam_appid INTEGER, developer TEXT, publisher TEXT,
-                release_year INTEGER, platforms TEXT, times TEXT, platform_times TEXT,
-                details TEXT, summary_en TEXT, summary_ru TEXT, image_url TEXT,
-                checked_at TEXT NOT NULL, page_read_at TEXT);
-            INSERT INTO hltb_games VALUES
-              (1, 'Game', 'game', NULL, 55, 'Dev', 'Pub', 2020, '["PC"]',
-               '{"main": {"average": 10.0}, "extra": {"average": 20.5},
-                 "completionist": {"average": 40.0}}', NULL, NULL, 'A game.', 'Игра.',
-               'https://howlongtobeat.com/games/1_game.jpg', '2026-01-01', '2026-01-02'),
-              (2, 'Its DLC', 'dlc', 1, NULL, NULL, NULL, NULL, NULL,
-               '{"main": {"average": 2.0}}', NULL, NULL, NULL, NULL, NULL, '2026-01-03', NULL);
-            """
-        )
-        await conn.executescript(sql)
-        cursor = await conn.execute(
-            "SELECT hltb_id, name, game_type, parent_hltb_id, steam_appid, summary_ru, image,"
-            " image_url, comp_main, comp_plus, comp_100, page_read_at FROM hltb_entries"
-            " ORDER BY hltb_id"
-        )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-        cursor = await conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'hltb_games'")
-        gone = await cursor.fetchall()
-    assert rows == [
-        (
-            1,
-            "Game",
-            "game",
-            None,
-            55,
-            "Игра.",
-            "1_game.jpg",
-            "https://howlongtobeat.com/games/1_game.jpg",
-            36000,
-            73800,
-            144000,
-            "2026-01-02",
-        ),
-        (2, "Its DLC", "dlc", 1, None, None, None, None, 7200, None, None, None),
-    ]
-    assert gone == []
-
-
-async def test_migration_113_brings_the_old_caches_summaries_over(tmp_path) -> None:
-    import aiosqlite
-
-    from bot.db.repo import MIGRATIONS_DIR
-    from bot.db.repo._database import SCHEMA_PATH
-
-    sql = (MIGRATIONS_DIR / "113_hltb_cache_goes.sql").read_text(encoding="utf-8")
-    async with aiosqlite.connect(tmp_path / "m112.db") as conn:
-        await conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        await conn.executescript(
-            """
-            CREATE TABLE hltb_cache (
-                hltb_id INTEGER PRIMARY KEY, name TEXT NOT NULL, release_year INTEGER,
-                main_hours REAL, extra_hours REAL, completionist_hours REAL,
-                platforms TEXT NOT NULL DEFAULT '[]', game_url TEXT, image_url TEXT, genre TEXT,
-                description_en TEXT, description_ru TEXT, details TEXT, cached_at TEXT NOT NULL);
-            INSERT INTO hltb_cache VALUES
-              (1, 'In both', 2020, 5, NULL, NULL, '[]', NULL, NULL, 'RPG', 'English.', 'Русский.',
-               NULL, '2026-01-01'),
-              (2, 'Only cached', 2019, 2.5, 5, 10, '[]', NULL, NULL, 'Action', 'Only.', 'Только.',
-               NULL, '2026-01-02');
-            INSERT INTO hltb_entries (hltb_id, name, checked_at, page_read_at)
-              VALUES (1, 'In both', '2026-02-01', '2026-02-01');
-            """
-        )
-        await conn.executescript(sql)
-        cursor = await conn.execute(
-            "SELECT hltb_id, summary_en, summary_ru, comp_main, genres, page_read_at"
-            " FROM hltb_entries ORDER BY hltb_id"
-        )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-        cursor = await conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'hltb_cache'")
-        gone = await cursor.fetchall()
-    assert rows == [
-        (
-            1,
-            "English.",
-            "Русский.",
-            None,
-            None,
-            "2026-02-01",
-        ),  # the mirror's own row keeps its page
-        (2, "Only.", "Только.", 9000, "Action", None),  # known only from the cache: page unread
-    ]
-    assert gone == []
