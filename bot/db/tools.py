@@ -14,12 +14,9 @@ a script takes `--schema` with `add_arguments`.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import datetime
-import selectors
 import subprocess
-import sys
-from collections.abc import Coroutine, Iterable
+from collections.abc import Iterable
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
@@ -55,18 +52,6 @@ def _target(dsn: str | None, schema: str | None) -> tuple[str, str]:
         return dsn, schema
     settings = get_settings()
     return dsn or settings.database_url, schema or settings.database_schema
-
-
-def run(main: Coroutine[Any, Any, Any]) -> Any:
-    """`asyncio.run` on a loop psycopg's async mode can use: Windows' default
-    cannot (the choice `bot.main` makes)."""
-
-    def event_loop() -> asyncio.AbstractEventLoop:
-        if sys.platform == "win32":
-            return asyncio.SelectorEventLoop(selectors.SelectSelector())
-        return asyncio.new_event_loop()
-
-    return asyncio.run(main, loop_factory=event_loop)
 
 
 async def open_database(dsn: str | None = None, *, schema: str | None = None) -> Any:
