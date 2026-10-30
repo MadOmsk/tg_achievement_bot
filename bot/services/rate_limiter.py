@@ -14,7 +14,8 @@ log = logging.getLogger(__name__)
 
 
 class RateLimiter:
-    """Sliding windows, shared by every user of the bot."""
+    """Sliding windows over whatever the owner shares it among: one per
+    person for Xbox, one for the whole process elsewhere."""
 
     def __init__(self, windows: tuple[tuple[int, float], ...]) -> None:
         self._windows = [(limit, span, deque[float]()) for limit, span in windows]

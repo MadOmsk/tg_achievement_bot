@@ -350,6 +350,10 @@ class _PlatformLinksRepo:
             "WHERE person_id = ? AND platform = ? AND is_active = 1",
             (utcnow_iso(), person_id, platform),
         )
+        # A personal PSN token never outlives its link (#233).
+        await self._conn.execute(
+            "DELETE FROM psn_tokens WHERE person_id = ? AND ? = 'psn'", (person_id, platform)
+        )
         await self._conn.commit()
 
     async def unlink_account(self, person_id: int, platform: str, external_id: str) -> None:
@@ -358,6 +362,10 @@ class _PlatformLinksRepo:
             "UPDATE account_links SET is_active = 0, unlinked_at = ? "
             "WHERE person_id = ? AND platform = ? AND external_id = ? AND is_active = 1",
             (utcnow_iso(), person_id, platform, external_id),
+        )
+        await self._conn.execute(
+            "DELETE FROM psn_tokens WHERE account_id = ? AND person_id = ? AND ? = 'psn'",
+            (external_id, person_id, platform),
         )
         await self._conn.commit()
 

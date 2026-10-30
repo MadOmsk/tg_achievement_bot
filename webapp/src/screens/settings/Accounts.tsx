@@ -114,6 +114,14 @@ export function AccountsPane() {
             />
             {a.achievements_visible === false && <Row lead={<Icon name="lock" />} title={tr("hiddenPsn")} sub={tr("connectPsnTip")} />}
             <Row title={tr("publishing")} trail={<Toggle checked={a.publishes} label={tr("publishing")} onChange={(on) => void publishes("psn", on, a.account_id)} />} />
+            <Row
+              lead={<Icon name="key" />}
+              title={tr("psnTokenRow")}
+              sub={a.token === "active" ? tr("psnTokenOwn") : a.token === "dead" ? tr("psnTokenDeadShort") : tr("psnTokenShared")}
+              danger={a.token === "dead"}
+              chevron
+              onClick={() => open({ kind: "psn-token", accountId: a.account_id })}
+            />
             <Row lead={<Icon name="trash" />} title={tr("disconnect")} danger onClick={() => setUnlink({ platform: "psn", accountId: a.account_id, label: a.name })} />
           </div>
         ))}
@@ -176,7 +184,7 @@ export function AccountsPane() {
 
 /** Steam by its profile link, vanity name or SteamID64; PSN by online id. */
 export function ConnectPage({ platform, onClose, layer }: { platform: "steam" | "psn"; onClose: () => void; layer: string }) {
-  const { data, tr, locale, reloadMe, toast } = useApp();
+  const { data, tr, locale, reloadMe, toast, open } = useApp();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,6 +232,17 @@ export function ConnectPage({ platform, onClose, layer }: { platform: "steam" | 
           {tr("submit")}
         </Button>
       </form>
+      {!steam && (
+        <Group>
+          <Row
+            lead={<Icon name="key" />}
+            title={tr("psnTokenByToken")}
+            sub={tr("psnTokenByTokenSub")}
+            chevron
+            onClick={() => open({ kind: "psn-token", accountId: null })}
+          />
+        </Group>
+      )}
     </Page>
   );
 }
@@ -237,4 +256,9 @@ const CONNECT_ERRORS: Record<string, TranslationKey> = {
   cooldown: "connectCooldown",
   service_dead: "connectServiceDead",
   limit: "connectLimit",
+  // A token pasted into the nickname field is linked as a token (#233).
+  format: "psnTokenErrFormat",
+  refused: "psnTokenErrRefused",
+  unavailable: "psnTokenErrUnavailable",
+  too_soon: "psnTokenErrTooSoon",
 };

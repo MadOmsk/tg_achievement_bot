@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from psnawp_api import PSNAWP
 
@@ -28,6 +29,9 @@ from bot.services.psn.client import (
     check_alive,
 )
 from bot.util import utcnow
+
+if TYPE_CHECKING:
+    from bot.services.psn.personal import PsnPersonalAuth
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +76,8 @@ class PsnAuth:
         self.on_dead: Callable[[], Awaitable[None]] | None = None
         self.on_alive: Callable[[], Awaitable[None]] | None = None
         self._health = CredentialHealth(repo, STATUS_KEY, CHECKED_AT_KEY, label="psn")
+        # Players' own tokens (#233), set from main.py; None: shared only.
+        self.personal: PsnPersonalAuth | None = None
 
     async def status(self) -> str:
         return await self._repo.get_app_setting(STATUS_KEY, STATUS_NOT_CONFIGURED) or (
@@ -136,6 +142,23 @@ class PsnAuth:
         npsso = self._stored_npsso(encrypted)
         self._client = await build_client(npsso)
         return self._client
+
+    async def client_for(self, account_id: str) -> tuple[PSNAWP, bool]:
+        """The client to read one account with (#233): its own token's while
+        that is alive, else the shared one. The flag says which, so a refusal
+        of the account's own token is never read as the shared one dying.
+        Raises PsnNotConfiguredError when neither exists."""
+        if self.personal is not None:
+            client = await self.personal.client_for(account_id)
+            if client is not None:
+                return client, True
+        return await self.get_client(), False
+
+    async def refused(self, account_id: str, personal: bool) -> None:
+        """A request was refused as a dead token: only an account's own token
+        is marked here — the shared one is service_health's to judge."""
+        if personal and self.personal is not None:
+            await self.personal.mark_dead(account_id, "refused while polling")
 
     async def get_translation_client(self) -> PSNAWP:
         """The second, Russian-locale PSNAWP instance services/psn/

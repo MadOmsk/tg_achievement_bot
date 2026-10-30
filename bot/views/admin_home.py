@@ -114,6 +114,16 @@ def usage_rows(status: AdminStatus, *, locale: str) -> list[tuple[str, str]]:
     ]
 
 
+def usage_by_credential(status: AdminStatus, *, locale: str) -> dict[str, str]:
+    """The load line of each credential that has one, for its own key screen
+    (#233): Steam, PSN, Anthropic and the mail login."""
+    rows = usage_rows(status, locale=locale)
+    names = ["xbox", "steam", "psn", "anthropic"] + (["octopus"] if status.octopus else [])
+    named = dict(zip(names, (value for _label, value in rows), strict=False))
+    named["smtp"] = rows[-1][1]
+    return named
+
+
 def _octopus_value(status: AdminStatus, _) -> str:
     """The octopus on one line (owner, 2026-10-25): on or off, its queue,
     how many it assembled in the last hour and day, the failures, the last."""

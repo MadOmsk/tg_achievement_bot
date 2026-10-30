@@ -113,6 +113,12 @@ async def test_the_walker_asks_once_per_game_and_then_leaves_it(repo: Repo, monk
         async def get_client(self):
             return object()
 
+        async def client_for(self, account_id):
+            return object(), False
+
+        async def refused(self, account_id, personal):
+            pass
+
     walker = PsnTrophyGroups(repo, _Auth())  # type: ignore[arg-type]
     await walker.tick()
     await walker.tick()

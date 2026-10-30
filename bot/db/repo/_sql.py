@@ -304,7 +304,7 @@ def rarity(prefix: str = "s.") -> str:
 # The app's own points (owner, 2026-10-27), one scale for every platform in
 # place of Xbox's gamerscore: a common achievement 10, a rare one (10 % and
 # under) 20, a legendary one (1 % and under) 30, a mythic one (Xbox's Mythic,
-# PSN's platinum) 50 — the Mini App's tiers (`views.rareLevel`). Tens, so a
+# PSN's platinum) 100 (owner, 2026-10-29) — the Mini App's tiers (`views.rareLevel`). Tens, so a
 # step between can come later.
 POINTS_COMMON, POINTS_RARE, POINTS_LEGENDARY, POINTS_MYTHIC = 10, 20, 30, 100
 

@@ -205,3 +205,42 @@ async def test_a_reply_with_a_line_missing_is_not_matched_by_position(monkeypatc
     )
     texts = {"A": "One", "B": "Two", "C": "Three"}
     assert await translate_descriptions("key", texts, target_language="ru") == {}
+
+
+class _RecordingClient(_FakeAsyncClient):
+    """Keeps what was sent: Haiku 5.5 refuses a sampling setting."""
+
+    def __init__(self, post_body: object) -> None:
+        super().__init__(200, post_body=post_body)
+        self.sent: list[dict] = []
+
+    async def post(self, url: str, headers: dict[str, str], json: object) -> _FakeResponse:
+        self.sent.append(json)  # type: ignore[arg-type]
+        return await super().post(url, headers, json)
+
+
+async def test_haiku_5_5_is_asked_without_sampling_at_low_effort(monkeypatch) -> None:
+    """A thinking block may come first in a reply: the text is the first
+    text block (2026-10-30, the switch to Haiku 5.5)."""
+    body = {
+        "content": [
+            {"type": "thinking", "thinking": ""},
+            {"type": "text", "text": json.dumps(["Победи"])},
+        ]
+    }
+    fake = _RecordingClient(body)
+    monkeypatch.setattr(translate_client.httpx, "AsyncClient", fake)
+    assert await translate_descriptions("key", {"W": "Win"}, target_language="ru") == {
+        "W": "Победи"
+    }
+    fake.post_body = {
+        "content": [{"type": "thinking", "thinking": ""}, {"type": "text", "text": "Да"}]
+    }
+    fake._post_body = fake.post_body
+    assert await translate_client.ask_model("key", "?") == "Да"
+    assert (
+        await translate_client.translate_game_description("key", "Hi", target_language="ru") == "Да"
+    )
+    for sent in fake.sent:
+        assert sent["model"] == "claude-haiku-5-5"
+        assert "temperature" not in sent and sent["output_config"] == {"effort": "low"}

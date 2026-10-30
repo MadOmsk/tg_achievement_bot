@@ -319,7 +319,7 @@ async def _admin_home(ctx: Context) -> Screen:
 
 @screen("admin-keys")
 async def _admin_keys(ctx: Context) -> Screen:
-    return Screen(*await render_keys(_credentials(ctx), locale=ctx.locale))
+    return Screen(*await render_keys(_credentials(ctx), ctx.repo, locale=ctx.locale))
 
 
 @screen("admin-users")

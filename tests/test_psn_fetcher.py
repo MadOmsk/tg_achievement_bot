@@ -362,8 +362,13 @@ async def test_tick_throttles_offline_users(
     await fetcher.tick()
     assert len(calls) == 0, "offline user should not be polled within offline interval"
 
-    # 2. If user is Online and was polled 300s ago (> achievement_poll_interval=120s):
+    # 2. Online, polled 300s ago: read with the shared token, the online
+    # step (120s) is three times longer (#233), so not yet...
     await repo.save_psn_presence_state(ACCOUNT_ID, "Online", "CUSA001", "Rust", changed=False)
+    await fetcher.tick()
+    assert len(calls) == 0, "an account without its own token waits 3 x 120s"
+    # ...and with no slowdown it is due.
+    await repo.set_app_setting("poll_psn_shared_slowdown", "1", None)
     await fetcher.tick()
     assert len(calls) == 1, "online user should be polled once 120s passed"
 

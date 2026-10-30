@@ -22,6 +22,8 @@ from bot.constants import Platform
 from bot.db.repo import Repo, SteamPollTarget
 from bot.poller.cadence import debounce_passed, is_due, presence_interval
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import poll_cadence
+from bot.services.poll_cadence import Cadence
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import SteamApiError, SteamPresence, get_presence_batch
 from bot.util import parse_iso, utcnow
@@ -65,7 +67,8 @@ class SteamPresencePoller:
             return  # Steam not configured on this instance — same silent
             # skip /connect_steam already does (M-Steam-1)
 
-        due = [t for t in await self._repo.steam_pollable_users() if self._is_due(t)]
+        cadence = await poll_cadence.load(self._repo, "steam")
+        due = [t for t in await self._repo.steam_pollable_users() if self._is_due(cadence, t)]
         for chunk in _chunks(due, BATCH_SIZE):
             try:
                 snapshots = await get_presence_batch(api_key, [t.steam_id for t in chunk])
@@ -183,21 +186,17 @@ class SteamPresencePoller:
         # Steam's own budget is nowhere near a constraint either (SPEC 5.3).
         return debounce_passed(target.last_ach_poll_at, self._settings.achievement_poll_interval)
 
-    def _is_due(self, target: SteamPollTarget) -> bool:
-        return is_due(target.updated_at, self._interval(target))
+    def _is_due(self, cadence: Cadence, target: SteamPollTarget) -> bool:
+        return is_due(target.updated_at, self._interval(cadence, target))
 
-    def _interval(self, target: SteamPollTarget) -> int:
-        # Reuses the same presence_interval_* settings as Xbox rather than a
-        # Steam-specific copy (SPEC 9, M-Steam-2c) — Steam's own budget isn't
-        # the constraint here either.
+    def _interval(self, cadence: Cadence, target: SteamPollTarget) -> int:
+        # Steam's own steps (#184 stage 0): asked in one batch for everybody
+        # due, so a short step everywhere costs it next to nothing.
         return presence_interval(
             online=target.persona_state is not None and target.persona_state != 0,
             in_game=bool(target.gameid),
             changed_at=target.changed_at,
-            interval_in_game=self._settings.presence_interval_in_game,
-            interval_online=self._settings.presence_interval_online,
-            interval_offline=self._settings.presence_interval_offline,
-            interval_idle=self._settings.presence_interval_idle,
+            cadence=cadence,
         )
 
     async def _flush_exit_queue(self) -> None:

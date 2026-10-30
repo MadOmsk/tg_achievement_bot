@@ -24,6 +24,11 @@ export type PsnAccount = {
   visibility: string;
   achievements_visible: boolean | null;
   profile_url: string | null;
+  /** The account's own token (#233): its state, never the token. */
+  token?: "active" | "dead" | null;
+  token_since?: string | null;
+  token_checked_at?: string | null;
+  token_dead_at?: string | null;
 };
 
 export type AccountPlatform = "xbox" | "psn" | "steam";

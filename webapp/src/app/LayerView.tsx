@@ -15,6 +15,7 @@ const PersonPage = lazy(() => import("../screens/people/PersonPage").then((m) =>
 const SearchPage = lazy(() => import("../screens/people/SearchPage").then((m) => ({ default: m.SearchPage })));
 const AddGamePage = lazy(() => import("../screens/home/AddGame").then((m) => ({ default: m.AddGamePage })));
 const ConnectPage = lazy(() => import("../screens/settings/Accounts").then((m) => ({ default: m.ConnectPage })));
+const PsnTokenPage = lazy(() => import("../screens/settings/PsnToken").then((m) => ({ default: m.PsnTokenPage })));
 const SettingsPage = lazy(() => import("../screens/settings/Settings").then((m) => ({ default: m.SettingsPage })));
 const GalleryPage = lazy(() => import("../screens/game/GalleryPage").then((m) => ({ default: m.GalleryPage })));
 const DlcPage = lazy(() => import("../screens/game/DlcPage").then((m) => ({ default: m.DlcPage })));
@@ -88,6 +89,8 @@ function layerKey(layer: Layer): string {
       return `follows:${layer.personId}:${layer.which}`;
     case "connect":
       return `connect:${layer.platform}`;
+    case "psn-token":
+      return `psn-token:${layer.accountId ?? "new"}`;
     default:
       return layer.kind;
   }
@@ -173,6 +176,8 @@ export function LayerView({
         return <SettingsPage pane={layer.pane} onClose={close} layer={key} />;
       case "connect":
         return <ConnectPage platform={layer.platform} onClose={close} layer={key} />;
+      case "psn-token":
+        return <PsnTokenPage accountId={layer.accountId} onClose={close} layer={key} />;
       case "admin":
         return <AdminPage screen={layer.screen} onClose={close} layer={key} />;
     }

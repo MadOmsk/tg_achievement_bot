@@ -312,7 +312,7 @@ async def test_dormant_steam_account_uses_idle_interval(repo: Repo, steam_auth) 
 
     poller = SteamCatchUpPoller(_settings(), repo, FakeSteamFetcher(), steam_auth)  # type: ignore[arg-type]
     [target] = await repo.steam_pollable_users()
-    assert poller._target_interval(target) == 1440 * 60  # 24 hours
+    assert poller._target_interval(target, 14) == 1440 * 60  # 24 hours
 
     # But an active user uses the normal 1h interval
     now_iso = utcnow().isoformat()
@@ -321,4 +321,4 @@ async def test_dormant_steam_account_uses_idle_interval(repo: Repo, steam_auth) 
     )
     await repo._conn.commit()
     [target] = await repo.steam_pollable_users()
-    assert poller._target_interval(target) == 60 * 60  # 1 hour
+    assert poller._target_interval(target, 14) == 60 * 60  # 1 hour

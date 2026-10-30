@@ -263,6 +263,28 @@ async def test_reminder_respects_the_interval(repo: Repo, cipher) -> None:
     assert await repo.tokens_needing_reminder(MAX_REMINDERS, REMINDER_INTERVAL_HOURS) == []
 
 
+async def test_a_reminder_to_someone_who_never_opened_the_bot_counts(repo: Repo, cipher) -> None:
+    """Telegram answers "chat not found" to a person who never wrote to the
+    bot; uncounted, the job retried it every run forever."""
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import SendMessage
+
+    class NoChatBot:
+        async def send_message(self, chat_id, text, **kwargs):
+            raise TelegramBadRequest(
+                SendMessage(chat_id=chat_id, text=text), "Bad Request: chat not found"
+            )
+
+    await _connected_user(repo, cipher)
+    person = await repo.person_id(TG_ID)
+    await repo.set_token_status(person, "invalid")
+    await ReminderJob(NoChatBot(), repo).run()  # type: ignore[arg-type]
+
+    token = await repo.get_token(person)
+    assert token is not None and token.status == "invalid"
+    assert await repo.tokens_needing_reminder(MAX_REMINDERS, REMINDER_INTERVAL_HOURS) == []
+
+
 async def test_an_x360_title_name_is_resolved_because_contract_1_has_none(
     repo: Repo, cipher
 ) -> None:

@@ -169,7 +169,8 @@ class AvatarRefresh:
                 key = await self._steam_auth.get_key()
                 return await steam_avatar_url(key, external_id) if key else None
             if platform == AccountPlatform.PSN and self._psn_auth is not None:
-                return await profile_avatar_url(await self._psn_auth.get_client(), external_id)
+                client, _own = await self._psn_auth.client_for(external_id)
+                return await profile_avatar_url(client, external_id)
         except (SteamApiError, PsnApiError, PsnNotConfiguredError) as exc:
             log.info("no avatar url for %s %s: %r", platform, external_id, exc)
             return None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.constants import TokenStatus
@@ -55,6 +55,14 @@ class ReminderJob:
                 log.info("tg_id=%s blocked the bot, no more reminders", tg_id)
                 await self._repo.set_token_status(person, TokenStatus.REVOKED)
                 continue
+            except TelegramBadRequest as exc:
+                if "chat not found" not in str(exc).lower():
+                    log.exception("could not remind tg_id=%s", tg_id)
+                    continue
+                # Never opened the bot (signed in through the Mini App): it
+                # cannot write first. Count the attempt, or the job retries
+                # every run forever.
+                log.info("tg_id=%s never opened the bot, reminder not delivered", tg_id)
             except Exception:
                 log.exception("could not remind tg_id=%s", tg_id)
                 continue

@@ -82,7 +82,7 @@ export function NotificationsPage({ onClose, layer }: { onClose: () => void; lay
       });
     } else if (item.person_id) {
       open({ kind: "person", personId: item.person_id });
-    } else if (item.kind === "xbox_login_dead") {
+    } else if (item.kind === "xbox_login_dead" || item.kind === "psn_token_dead") {
       open({ kind: "settings", pane: "accounts" });
     }
   };
@@ -132,7 +132,7 @@ export function NotificationsPage({ onClose, layer }: { onClose: () => void; lay
  * corner and the achievement's or the post's picture at the end. */
 function Moment({ item, onOpen }: { item: NotificationItem; onOpen: () => void }) {
   const { locale } = useApp();
-  const alert = item.kind === "xbox_login_dead";
+  const alert = item.kind === "xbox_login_dead" || item.kind === "psn_token_dead";
   const lead = item.person_id ? (
     <Face personId={item.person_id} name={item.name ?? "?"} size={44} />
   ) : item.cover ? (

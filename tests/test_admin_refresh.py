@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from bot.db.repo import Repo
 from bot.poller.admin_refresh import AdminPanelRefresh
 from bot.poller.service_health import KEY_CHECK_INTERVAL_KEY
@@ -15,6 +17,13 @@ from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
 
 ADMIN_ID = 777
+
+
+@pytest.fixture(autouse=True)
+async def _superadmin(repo: Repo) -> None:
+    """The panel's owner is a super-admin: a demoted one's stops redrawing."""
+    await repo.ensure_user(ADMIN_ID)
+    await repo.ensure_superadmins([ADMIN_ID])
 
 
 class FakeBot:
@@ -115,3 +124,30 @@ async def test_a_failed_edit_stops_tracking_the_admin(repo: Repo, cipher: TokenC
     await _refresh(FakeBot(fail=True), repo, cipher).tick()
 
     assert await repo.all_admin_panel_refreshes() == []
+
+
+async def test_tick_stops_for_a_person_no_longer_an_admin(repo: Repo, cipher: TokenCipher) -> None:
+    await repo.start_admin_panel_refresh(ADMIN_ID, 42)
+    await _backdate(repo, minutes_ago=31)
+    await repo.set_person_role(await repo.person_id(ADMIN_ID), None)
+
+    bot = FakeBot()
+    await _refresh(bot, repo, cipher).tick()
+
+    assert bot.edits == []
+    assert await repo.get_admin_panel_refresh(ADMIN_ID) is None
+
+
+async def test_a_superadmin_the_environment_stops_naming_is_one_no_longer(repo: Repo) -> None:
+    other = 778
+    await repo.ensure_user(other)
+    await repo.ensure_superadmins([ADMIN_ID, other])
+    made = 779  # one a super-admin made in the app stays
+    await repo.ensure_user(made)
+    await repo.set_person_role(await repo.person_id(made), "superadmin")
+
+    await repo.ensure_superadmins([ADMIN_ID])
+
+    assert await repo.person_role(await repo.person_id(other)) is None
+    assert await repo.person_role(await repo.person_id(ADMIN_ID)) == "superadmin"
+    assert await repo.person_role(await repo.person_id(made)) == "superadmin"
