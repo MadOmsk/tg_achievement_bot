@@ -5,59 +5,56 @@ as a name; a later copy of production often has the real one. The trigger
 of migration 117/130 names the list's stand-in versions after it.
 
 Only a name that is not a placeholder is taken, and only where this
-database has none. Run with the viewer stopped, after a backup. `--from`
-is another database, or a JSON array of `[platform, title_id, name]` —
-what production's lists are called, read on the server (`--dump`, run
-there, prints it; names only, nothing about anybody).
+catalog has none. Run with the viewer stopped, after a backup. `--from`
+is another database's address, or a JSON array of `[platform, title_id,
+name]` — what production's lists are called, read on the server (`--dump`,
+run there, prints it; names only, nothing about anybody).
 
 Usage:
-    … -m scripts.restore_list_names --db data/games.db --from data/test.db [--dry-run]
-    … -m scripts.restore_list_names --dump data/bot.db > list_names.json
-    … -m scripts.restore_list_names --db data/games.db --from list_names.json
+    … -m scripts.restore_list_names --from postgresql://…/other [--dry-run]
+    … -m scripts.restore_list_names --dump > list_names.json
+    … -m scripts.restore_list_names --from list_names.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 from pathlib import Path
 
-from bot.db import files
+from bot.db import tools
 
 PLACEHOLDER = "(name IS NULL OR name IN ('', '?') OR name = title_id)"
 
 
-def _rows(source: sqlite3.Connection) -> list[tuple]:
-    """Every real list name a copy holds, under either table name."""
-    tables = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    table = "achievement_list_connectors" if "achievement_list_connectors" in tables else "titles"
+def _rows(source: tools.Connection) -> list[tuple]:
+    """Every real list name a copy holds."""
     return source.execute(
-        f"SELECT platform, title_id, name FROM {table} WHERE NOT {PLACEHOLDER}"
+        f"SELECT platform, title_id, name FROM achievement_list_connectors WHERE NOT {PLACEHOLDER}"
         " AND platform IS NOT NULL ORDER BY platform, title_id"
     ).fetchall()
 
 
-def names_from(source: sqlite3.Connection) -> dict[tuple[str, str], str]:
+def names_from(source: tools.Connection) -> dict[tuple[str, str], str]:
     return {(str(p), str(t)): str(n) for p, t, n in _rows(source)}
 
 
-def names_in(path: str) -> dict[tuple[str, str], str]:
-    """The names another copy knows: a database, or a `--dump`'s JSON."""
+def names_in(path: str, schema: str | None = None) -> dict[tuple[str, str], str]:
+    """The names another copy knows: a database's address, or a `--dump`'s JSON."""
     if Path(path).suffix == ".json":
         return {
             (str(p), str(t)): str(n)
             for p, t, n in json.loads(Path(path).read_text("utf-8"))
             if p and n and str(n) not in ("?", str(t))
         }
-    source = files.connect(path, readonly=True)
+    source = tools.connect(path, schema=schema, readonly=True)
     try:
         return names_from(source)
     finally:
         source.close()
 
 
-def restore(db: sqlite3.Connection, names: dict[tuple[str, str], str]) -> list[tuple]:
+def restore(db: tools.Connection, names: dict[tuple[str, str], str]) -> list[tuple]:
     """Set what `names` knows on the lists named by nothing; what was set."""
     done = []
     for platform, title_id in db.execute(
@@ -76,20 +73,21 @@ def restore(db: sqlite3.Connection, names: dict[tuple[str, str], str]) -> list[t
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db")
+    tools.add_arguments(parser)
     parser.add_argument("--from", dest="source")
-    parser.add_argument("--dump", help="a database whose list names to print as JSON")
+    parser.add_argument("--dump", action="store_true", help="print the list names as JSON")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.dump:
-        source = files.connect(args.dump, readonly=True)
+        source = tools.connect(schema=args.schema, readonly=True)
         print(json.dumps([list(r) for r in _rows(source)], ensure_ascii=False))
         source.close()
         return
-    if not (args.db and args.source):
-        parser.error("--db and --from, or --dump")
-    names = names_in(args.source)
-    db = files.connect(args.db)
+    if not args.source:
+        parser.error("--from, or --dump")
+    names = names_in(args.source, args.schema)
+    db = tools.connect(schema=args.schema)
+    db.begin()
     done = restore(db, names)
     left = db.execute(
         f"SELECT COUNT(*) FROM achievement_list_connectors WHERE {PLACEHOLDER}"

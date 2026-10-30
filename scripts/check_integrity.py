@@ -4,7 +4,7 @@ Compares, per linked account, what the platform itself says a person has
 earned with what the bot has stored — the answer to "how deep did the history
 go", measured rather than assumed. Read-only everywhere:
 
-* the database is opened with sqlite's own read-only mode, never through
+* the database is opened read-only (`tools.connect`), never through
   `Database.connect()` — that applies migrations, which is how a script once
   took production down (#56);
 * **Xbox** is compared against the profile gamerscore the poller already
@@ -17,11 +17,11 @@ go", measured rather than assumed. Read-only everywhere:
   (free-to-play and never-launched games included) and then one request per
   game that has achievements — the only way: Steam keeps no total.
 
-Credentials come from the database the env file points at; the data from
-`--db` when given, so a copy of production can be checked with the dev
+Credentials come from the schema the env file points at; the data from
+`--schema` when given, so a copy of production can be checked with the dev
 server's own keys:
 
-    python scripts/check_integrity.py --env-file .env.test --db backups/bot-copy.db
+    python scripts/check_integrity.py --env-file .env.test --schema prod_copy
     python scripts/check_integrity.py --platform psn            # on a server
 
 Exit code 1 when anything is missing.
@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import sqlite3
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bot.config import Settings
-from bot.db import files
+from bot.db import tools
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import NPSSO_KEY
 from bot.services.psn.client import build_client
@@ -64,13 +63,7 @@ class Report:
         print(line, flush=True)
 
 
-def _open_ro(path: Path) -> sqlite3.Connection:
-    conn = files.connect(path, readonly=True)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _accounts(data: sqlite3.Connection, platform: str) -> list[sqlite3.Row]:
+def _accounts(data: tools.Connection, platform: str) -> list:
     return data.execute(
         "SELECT a.display_name, a.external_id, a.gamerscore FROM accounts a "
         "JOIN account_links al ON al.platform = a.platform AND al.external_id = a.external_id"
@@ -80,7 +73,7 @@ def _accounts(data: sqlite3.Connection, platform: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def _secret(creds: sqlite3.Connection, cipher: TokenCipher, key: str) -> str | None:
+def _secret(creds: tools.Connection, cipher: TokenCipher, key: str) -> str | None:
     row = creds.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
     if row is None or not row["value"]:
         return None
@@ -94,11 +87,11 @@ def _secret(creds: sqlite3.Connection, cipher: TokenCipher, key: str) -> str | N
 # ------------------------------------------------------------------ Xbox
 
 
-def check_xbox(data: sqlite3.Connection, report: Report) -> None:
+def check_xbox(data: tools.Connection, report: Report) -> None:
     report.say("== Xbox: profile gamerscore (cached from the API) vs stored achievements")
     for account in _accounts(data, "xbox"):
         stored, count = data.execute(
-            "SELECT COALESCE(SUM(gamerscore), 0), COUNT(*) FROM seen_achievements "
+            "SELECT COALESCE(SUM(gamerscore), 0)::bigint, COUNT(*) FROM seen_achievements "
             "WHERE account_platform = 'xbox' AND xuid = ?",
             (account["external_id"],),
         ).fetchone()
@@ -119,7 +112,7 @@ def check_xbox(data: sqlite3.Connection, report: Report) -> None:
 # ------------------------------------------------------------------- PSN
 
 
-async def check_psn(data: sqlite3.Connection, npsso: str | None, report: Report) -> None:
+async def check_psn(data: tools.Connection, npsso: str | None, report: Report) -> None:
     report.say("== PSN: Sony's trophy summary and per-game lists vs stored trophies")
     if not npsso:
         report.say("  skipped: no NPSSO configured")
@@ -182,7 +175,7 @@ async def _steam_game(key: str, steam_id: str, appid: str, slots: asyncio.Semaph
     return sum(1 for a in achievements if a.achieved)
 
 
-async def check_steam(data: sqlite3.Connection, key: str | None, report: Report) -> None:
+async def check_steam(data: tools.Connection, key: str | None, report: Report) -> None:
     report.say("== Steam: every game in the library vs stored achievements")
     if not key:
         report.say("  skipped: no Steam key configured")
@@ -261,14 +254,15 @@ async def check_steam(data: sqlite3.Connection, key: str | None, report: Report)
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--env-file", default=".env", help="credentials (default: .env)")
-    parser.add_argument("--db", type=Path, help="data to check (default: the env file's DB)")
+    parser.add_argument("--schema", help="data to check (default: the env file's schema)")
     parser.add_argument("--platform", choices=["all", "xbox", "psn", "steam"], default="all")
     args = parser.parse_args()
 
     settings = Settings(_env_file=args.env_file)
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
-    creds = _open_ro(Path(settings.db_path))
-    data = _open_ro(args.db) if args.db else creds
+    dsn = settings.database_url
+    creds = tools.connect(dsn, schema=settings.database_schema, readonly=True)
+    data = tools.connect(dsn, schema=args.schema, readonly=True) if args.schema else creds
     report = Report()
 
     if args.platform in ("all", "xbox"):

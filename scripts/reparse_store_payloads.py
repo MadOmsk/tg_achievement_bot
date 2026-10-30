@@ -8,27 +8,35 @@ of their own game only, the Xbox 360 store pages, HLTB entries (a DLC's game
 as its parent, an entry's own times) and their links, the answers kept again
 without prices. Then every game is rebuilt (`GameLinker.link_all`).
 
-Dry run by default: the work is done on a copy of the database (made with
-sqlite's `backup()`, in a temporary folder) and what would change is printed.
-`--apply` first copies the database into `backups/`, then does it for real —
-with the bot stopped (one process writes the database).
+Dry run by default: the work is done on a copy of the schema and the catalog
+(`pg_dump` restored into a temporary database, so the role must be allowed to
+create one) and what would change is printed. `--apply` first copies them into
+`backups/`, then does it for real — with the bot stopped (one process writes
+the database).
 
 Usage:
-    .venv/Scripts/python.exe -X utf8 -m scripts.reparse_store_payloads --db data/games.db
-    .venv/Scripts/python.exe -X utf8 -m scripts.reparse_store_payloads --db data/games.db --apply
+    .venv/Scripts/python.exe -X utf8 -m scripts.reparse_store_payloads --schema dev
+    .venv/Scripts/python.exe -X utf8 -m scripts.reparse_store_payloads --schema dev --apply
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
-import sqlite3
+import os
+import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bot.db import files
-from bot.db.repo import Database, Repo
+import psycopg
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
+
+from bot.config import get_settings
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.game_link import GameLinker
 from bot.services.store_collect import StoreCollector
 
@@ -64,27 +72,42 @@ SUMMARY = (
 )
 
 
-def _counts(path: Path) -> dict[str, object]:
-    conn = files.connect(path, readonly=True)
+def _counts(dsn: str, schema: str) -> dict[str, object]:
+    conn = tools.connect(dsn, schema=schema, readonly=True)
     try:
         found: dict[str, object] = {}
         for label, query in SUMMARY:
             try:
                 found[label] = conn.execute(query).fetchone()[0]
-            except sqlite3.Error:
+            except psycopg.Error:
                 found[label] = "—"  # a column a migration has not added yet
         return found
     finally:
         conn.close()
 
 
-def _copy(source: Path, target: Path) -> None:
-    """A copy as sqlite makes it (the database runs in WAL mode: never `cp`)."""
-    files.backup(source, target)
+@contextmanager
+def _copy(dsn: str, schema: str) -> Iterator[str]:
+    """The schema and the catalog in a temporary database of their own: a dry
+    run beside a running bot takes no lock on the rows it works on."""
+    name = f"reparse_dry_run_{os.getpid()}"
+    database = sql.Identifier(name)
+    with tempfile.TemporaryDirectory() as folder:
+        dump = tools.backup(Path(folder) / "copy.dump", dsn=dsn, schema=schema)
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL("CREATE DATABASE {}").format(database))
+            try:
+                copy = make_conninfo(dsn, dbname=name)
+                subprocess.run(
+                    ["pg_restore", "--no-owner", f"--dbname={copy}", str(dump)], check=True
+                )
+                yield copy
+            finally:
+                admin.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(database))
 
 
-async def _run(path: Path) -> dict[str, int]:
-    database = await Database(path).connect()
+async def _run(dsn: str, schema: str) -> dict[str, int]:
+    database = await tools.open_database(dsn, schema=schema)
     try:
         repo = Repo(database)
         done = await StoreCollector(repo).reparse_stored()
@@ -97,31 +120,24 @@ async def _run(path: Path) -> dict[str, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", help="database file (default: DB_PATH from the env file)")
+    tools.add_arguments(parser)
     parser.add_argument("--apply", action="store_true", help="write (the bot stopped)")
     args = parser.parse_args()
-    if args.db:
-        db_path = Path(args.db)
-    else:
-        from bot.config import get_settings
-
-        db_path = Path(get_settings().db_path)
-    before = _counts(db_path)
+    settings = get_settings()
+    dsn, schema = settings.database_url, args.schema or settings.database_schema
+    before = _counts(dsn, schema)
     if args.apply:
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        backups = Path("backups")
-        backups.mkdir(exist_ok=True)
-        backup = backups / f"{db_path.stem}-pre-reparse-{stamp}.db"
-        _copy(db_path, backup)
+        backup = tools.backup(
+            Path("backups") / f"{schema}-pre-reparse-{stamp}.dump", dsn=dsn, schema=schema
+        )
         print(f"backed up to {backup}")
-        done = asyncio.run(_run(db_path))
-        after = _counts(db_path)
+        done = tools.run(_run(dsn, schema))
+        after = _counts(dsn, schema)
     else:
-        with tempfile.TemporaryDirectory() as folder:
-            copy = Path(folder) / db_path.name
-            _copy(db_path, copy)
-            done = asyncio.run(_run(copy))
-            after = _counts(copy)
+        with _copy(dsn, schema) as copy:
+            done = tools.run(_run(copy, schema))
+            after = _counts(copy, schema)
     print("done:", ", ".join(f"{k} {v}" for k, v in done.items()))
     width = max(len(label) for label, _ in SUMMARY)
     for label, _ in SUMMARY:

@@ -6,13 +6,12 @@ leaves the games as they are (an operator reviewing them). The database is
 copied into `backups/` first.
 
     BOT_ENV_FILE=.env.test .venv/Scripts/python.exe -X utf8 -m scripts.collect_lists \
-        --db data/games.db --platform xbox_modern --stand-ins --force --no-link
+        --schema dev --platform xbox_modern --stand-ins --force --no-link
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 import os
 import sys
@@ -20,8 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -30,17 +29,15 @@ from bot.services.store_collect import StoreCollector
 logging.basicConfig(level="WARNING")
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-collect-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-collect-{stamp}.dump", schema=schema)
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--platform", required=True)
     parser.add_argument("--stand-ins", action="store_true")
     parser.add_argument("--force", action="store_true")
@@ -48,8 +45,7 @@ async def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
     settings = get_settings()
-    db_path = Path(args.db)
-    database = await Database(db_path).connect()
+    database = await tools.open_database(schema=args.schema)
     try:
         repo = Repo(database)
         lists = (
@@ -58,7 +54,7 @@ async def main() -> int:
             else await repo.achievement_list_ids(args.platform)
         )[: args.limit]
         print(f"{len(lists)} {args.platform} lists")
-        print("database copied to", _backup(db_path))
+        print("database copied to", _backup(args.schema))
         cipher = TokenCipher(settings.fernet_key.get_secret_value())
         key = settings.steam_api_key
         collector = StoreCollector(
@@ -94,6 +90,6 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    code = asyncio.run(main())
+    code = tools.run(main())
     sys.stdout.flush()
     os._exit(code)  # psnawp's limiter may keep a thread alive

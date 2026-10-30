@@ -13,39 +13,31 @@ is copied into `backups/` first.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.config import get_settings
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.hltb import ensure_title_match
 
 logging.basicConfig(level="WARNING")
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-hltb-match-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-hltb-match-{stamp}.dump", schema=schema)
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", default=None)
+    tools.add_arguments(parser)
     parser.add_argument("--platform", required=True)
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
-    if args.db:
-        db_path = Path(args.db)
-    else:
-        from bot.config import get_settings
-
-        db_path = Path(get_settings().db_path)
-    database = await Database(db_path).connect()
+    database = await tools.open_database(schema=args.schema)
     try:
         repo = Repo(database)
         todo = [
@@ -54,7 +46,7 @@ async def main() -> int:
             if await repo.list_hltb_match(args.platform, title_id) is None
         ][: args.limit]
         print(f"{len(todo)} {args.platform} lists with no HLTB entry")
-        print("database copied to", _backup(db_path))
+        print("database copied to", _backup(args.schema))
         matched = 0
         for n, title_id in enumerate(todo, 1):
             await repo.make_fetch_due(f"{args.platform}:{title_id}", "hltb_match")
@@ -73,4 +65,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

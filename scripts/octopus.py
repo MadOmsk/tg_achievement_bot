@@ -5,7 +5,7 @@ due; `--force` asks everything again. The database is copied into `backups/`
 first.
 
     BOT_ENV_FILE=…/.env.games .venv/Scripts/python.exe -X utf8 -m scripts.octopus \\
-        --db data/games.db --auth-db data/games-bot.db --seed game:4070
+        --schema dev --auth-schema dev --seed game:4070
     … --seed list:psn:NPWR12345_00 --seed product:steam:620 --seed dlc:77 \\
       --seed achievement:steam:620:ACH.WAKE_UP --seed hltb:10270 --seed "name:Dead Rising"
     … --seed edition:42 --seed series:7 --seed account:psn:<account id> \\
@@ -17,7 +17,6 @@ first.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 import os
 import sys
@@ -25,8 +24,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
 from bot.services.octopus import OctopusCollector, entry_key, game_key
@@ -37,12 +36,10 @@ from bot.services.store_collect import StoreCollector
 logging.basicConfig(level="WARNING")
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-octopus-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-octopus-{stamp}.dump", schema=schema)
 
 
 def _seed_key(seed: str) -> str:
@@ -55,30 +52,30 @@ def _seed_key(seed: str) -> str:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     parser.add_argument("--seed", action="append", default=[], help="kind:value, see above")
     parser.add_argument("--which", choices=["all", "singles", "stand-ins"])
     parser.add_argument("--limit", type=int, default=None, help="entries handled at most")
     parser.add_argument("--force", action="store_true")
     parser.add_argument(
-        "--auth-db",
-        help="the database whose PSN and Steam keys are used (the dev bot's; never production's)",
+        "--auth-schema",
+        help="the schema whose PSN and Steam keys are used (the dev bot's; never production's)",
     )
     args = parser.parse_args()
     settings = get_settings()
-    db_path = Path(args.db)
-    print("database copied to", _backup(db_path))
-    database = await Database(db_path).connect()
-    keys_db: Database | None = None
+    print("database copied to", _backup(args.schema))
+    database = await tools.open_database(schema=args.schema)
+    keys_db = None
     try:
         repo = Repo(database)
         raw_answers.set_sink(repo.save_payload)
         cipher = TokenCipher(settings.fernet_key.get_secret_value())
         key = settings.steam_api_key
         keys_repo = repo
-        if args.auth_db:
-            # Opened as it is: no schema, no migration of another bot's file.
-            keys_repo = Repo(await files.open_database(args.auth_db))
+        if args.auth_schema:
+            # Opened as it is: no bring-up of another bot's schema.
+            keys_db = await tools.open_database(schema=args.auth_schema)
+            keys_repo = Repo(keys_db)
         collector = StoreCollector(
             repo,
             PsnAuth(keys_repo, cipher),
@@ -111,13 +108,13 @@ async def main() -> int:
         )
     finally:
         raw_answers.set_sink(None)
-        if keys_db is not None and keys_db._conn is not None:
-            await keys_db._conn.close()
+        if keys_db is not None:
+            await keys_db.close()
         await database.close()
     return 0
 
 
 if __name__ == "__main__":
-    code = asyncio.run(main())
+    code = tools.run(main())
     sys.stdout.flush()
     os._exit(code)  # psnawp's limiter may keep a thread alive

@@ -10,27 +10,25 @@ mends what was written before, without asking the store:
   `on_sale` of the versions, add-ons and editions they describe as of when
   each was given — a dry run unless `--apply`;
 - `export` writes every Xbox product's `on_sale` as a JSON file, and
-  `apply` sets them on a server, whose catalog came by `catalog_transfer`
-  without the raw answers.
+  `apply` sets them on a server whose catalog has not the raw answers.
 
 Run `--apply` and `apply` with the bot stopped.
 
 Usage:
-    … -m scripts.xbox_on_sale recompute --db data/games.db [--apply]
-    … -m scripts.xbox_on_sale export --db data/games.db --out sale.json
-    … -m scripts.xbox_on_sale apply --db data/test.db --file sale.json
+    … -m scripts.xbox_on_sale recompute --schema dev [--apply]
+    … -m scripts.xbox_on_sale export --schema dev --out sale.json
+    … -m scripts.xbox_on_sale apply --schema test --file sale.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import zlib
 from collections import Counter
 from pathlib import Path
 
-from bot.db import files
+from bot.db import tools
 from bot.services.stores import xbox_catalog
 
 XBOX_VERSION = "version_id IN (SELECT version_id FROM versions WHERE store = 'xbox')"
@@ -42,7 +40,7 @@ TABLES = (
 )
 
 
-def _products(conn: sqlite3.Connection):
+def _products(conn: tools.Connection):
     """Every kept Xbox product with when its answer was given."""
     for _subject, at, payload in conn.execute(
         "SELECT subject, fetched_at, payload FROM source_payloads WHERE source = 'xbox_catalog'"
@@ -55,13 +53,15 @@ def _products(conn: sqlite3.Connection):
                 yield str(product["ProductId"]), at, product
 
 
-def recompute(db: Path, *, apply: bool) -> None:
-    conn = files.connect(db)
+def recompute(schema: str | None, *, apply: bool) -> None:
+    conn = tools.connect(schema=schema)
     sale: dict[str, int] = {}
     for product_id, at, product in _products(conn):
         # A product seen in several answers is on sale if any said so then.
         sale[product_id] = max(sale.get(product_id, 0), int(xbox_catalog.sold(product, at)))
     moved: Counter[str] = Counter()
+    if apply:
+        conn.begin()
     for table, key, where in TABLES:
         for row_key, on_sale in conn.execute(f"SELECT {key}, on_sale FROM {table} WHERE {where}"):
             now = sale.get(str(row_key))
@@ -80,8 +80,8 @@ def recompute(db: Path, *, apply: bool) -> None:
     print("applied" if apply else "dry run: nothing written (--apply to write)")
 
 
-def export(db: Path, out: Path) -> None:
-    conn = files.connect(db, readonly=True)
+def export(schema: str | None, out: Path) -> None:
+    conn = tools.connect(schema=schema, readonly=True)
     rows = {
         "versions": conn.execute(
             "SELECT DISTINCT product_id, on_sale FROM versions WHERE store = 'xbox'"
@@ -96,18 +96,21 @@ def export(db: Path, out: Path) -> None:
         ).fetchall(),
     }
     conn.close()
-    out.write_text(json.dumps(rows), encoding="utf-8")
+    plain = {table: [list(row) for row in found] for table, found in rows.items()}
+    out.write_text(json.dumps(plain), encoding="utf-8")
     print(f"{out}: " + ", ".join(f"{k} {len(v)}" for k, v in rows.items()))
 
 
-def apply_file(db: Path, file: Path) -> None:
+def apply_file(schema: str | None, file: Path) -> None:
     rows = json.loads(file.read_text(encoding="utf-8"))
-    conn = files.connect(db)
+    conn = tools.connect(schema=schema)
     changed: Counter[str] = Counter()
+    conn.begin()
     for table, key, where in TABLES:
         for row_key, on_sale in rows.get(table, []):
             cursor = conn.execute(
-                f"UPDATE {table} SET on_sale = ? WHERE {key} = ? AND {where} AND on_sale IS NOT ?",
+                f"UPDATE {table} SET on_sale = ? WHERE {key} = ? AND {where}"
+                " AND on_sale IS DISTINCT FROM ?",
                 (on_sale, row_key, on_sale),
             )
             changed[table] += cursor.rowcount
@@ -120,21 +123,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
     re_ = sub.add_parser("recompute")
-    re_.add_argument("--db", required=True)
+    tools.add_arguments(re_)
     re_.add_argument("--apply", action="store_true")
     ex = sub.add_parser("export")
-    ex.add_argument("--db", required=True)
+    tools.add_arguments(ex)
     ex.add_argument("--out", required=True)
     ap = sub.add_parser("apply")
-    ap.add_argument("--db", required=True)
+    tools.add_arguments(ap)
     ap.add_argument("--file", required=True)
     args = parser.parse_args()
     if args.command == "recompute":
-        recompute(Path(args.db), apply=args.apply)
+        recompute(args.schema, apply=args.apply)
     elif args.command == "export":
-        export(Path(args.db), Path(args.out))
+        export(args.schema, Path(args.out))
     else:
-        apply_file(Path(args.db), Path(args.file))
+        apply_file(args.schema, Path(args.file))
 
 
 if __name__ == "__main__":

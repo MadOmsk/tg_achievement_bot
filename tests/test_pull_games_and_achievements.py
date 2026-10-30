@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,6 +20,18 @@ from scripts.pull_games_and_achievements import (
     run_sync,
 )
 
+CLONE_SOURCE = "pull_clone_source"
+
+
+@pytest.fixture
+async def clone_source(database: Database, _db_template: str) -> AsyncIterator[Database]:
+    """A second server's schema beside the test one, as a bot's start makes it."""
+    await database.conn.execute(f"DROP SCHEMA IF EXISTS {CLONE_SOURCE} CASCADE")
+    source = await Database(_db_template, schema=CLONE_SOURCE).connect()
+    yield source
+    await source.close()
+    await database.conn.execute(f"DROP SCHEMA {CLONE_SOURCE} CASCADE")
+
 
 @pytest.mark.asyncio
 async def test_noop_publisher() -> None:
@@ -32,18 +45,14 @@ async def test_noop_publisher() -> None:
 def test_prepare_sync_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, settings: Settings
 ) -> None:
-    db_file = tmp_path / "test.db"
-    source_db = tmp_path / "src.db"
-    source_db.touch()
-
     monkeypatch.setattr(
         "sys.argv",
         [
             "pull_games_and_achievements.py",
-            "--db",
-            str(db_file),
+            "--schema",
+            "target",
             "--clone-users-from",
-            str(source_db),
+            "source",
             "--platforms",
             "xbox,steam",
             "--users",
@@ -59,8 +68,8 @@ def test_prepare_sync_config(
     )
 
     cfg = prepare_sync_config(settings=settings)
-    assert cfg.target_db_path == db_file.resolve()
-    assert cfg.clone_source_path == source_db.resolve()
+    assert cfg.target_schema == "target"
+    assert cfg.clone_source_schema == "source"
     assert cfg.selected_platforms == {"xbox", "steam"}
     assert cfg.user_ids == [123, 456]
     assert cfg.skip_achievements is True
@@ -72,48 +81,41 @@ def test_prepare_sync_config(
 
 
 @pytest.mark.asyncio
-async def test_clone_user_tables(tmp_path: Path) -> None:
-    src_path = tmp_path / "src.db"
-    dst_path = tmp_path / "dst.db"
-
-    # Set up source and destination databases with full schema
-    src_db = await Database(src_path).connect()
-    src_repo = Repo(src_db)
+async def test_clone_user_tables(database: Database, clone_source: Database) -> None:
+    # Set up source and destination schemas with full schema
+    src_repo = Repo(clone_source)
     await src_repo.ensure_user(111, username="user1", first_name="First1")
     await src_repo.link_xbox_account(
         await src_repo.person_id(111), "2533000000000001", "Gamer1", 1000
     )
-    await src_db.close()
 
-    dst_db = await Database(dst_path).connect()
-    stats = await clone_user_tables(src_path, dst_db.conn)
+    stats = await clone_user_tables(CLONE_SOURCE, database.conn)
     assert stats.get("users", 0) >= 1
     assert stats.get("accounts", 0) >= 1
 
-    dst_repo = Repo(dst_db)
+    dst_repo = Repo(database)
     link = await dst_repo.get_platform_link(await dst_repo.person_id(111), "xbox")
     assert link is not None
     assert link.external_id == "2533000000000001"
     assert link.display_name == "Gamer1"
-    await dst_db.close()
+
+    # The id counter went past what came in: the next person is a new one.
+    await dst_repo.ensure_user(112, username="user2", first_name="First2")
+    assert await dst_repo.person_id(112) != await dst_repo.person_id(111)
 
 
 @pytest.mark.asyncio
-async def test_run_sync_flow(tmp_path: Path) -> None:
-    db_file = tmp_path / "sync_test.db"
-    db = await Database(db_file).connect()
-    repo = Repo(db)
+async def test_run_sync_flow(repo: Repo, _db_template: str) -> None:
     await repo.ensure_user(222, username="player", first_name="Player")
     await repo.link_xbox_account(await repo.person_id(222), "2533000000000002", "PlayerTag", 500)
     await repo.save_refresh_token(await repo.person_id(222), b"fake_encrypted_token")
     await repo.upsert_title("100", "Game One", Platform.XBOX_MODERN)
     person = await repo.person_id(222)
-    await db.close()
 
     fernet_val = Fernet.generate_key().decode()
     cfg = SyncConfig(
-        target_db_path=db_file,
-        clone_source_path=None,
+        target_schema="app",
+        clone_source_schema=None,
         selected_platforms={"xbox"},
         user_ids=None,
         skip_achievements=False,
@@ -127,6 +129,7 @@ async def test_run_sync_flow(tmp_path: Path) -> None:
             steam_api_key=None,
             anthropic_api_key=None,
         ),
+        dsn=_db_template,
     )
 
     with (
