@@ -10,9 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-import aiosqlite
-
 from bot.constants import RarityMode
+from bot.db.postgres import Row
 
 
 @dataclass(slots=True)
@@ -733,7 +732,7 @@ class TitleAchievementWithUnlock:
     unlocked_at: str | None = None
 
 
-def _as_user(row: aiosqlite.Row) -> User:
+def _as_user(row: Row) -> User:
     return User(
         tg_id=row["tg_id"],
         username=row["username"],
@@ -753,7 +752,7 @@ def _as_user(row: aiosqlite.Row) -> User:
     )
 
 
-def _as_token(row: aiosqlite.Row) -> TokenRecord:
+def _as_token(row: Row) -> TokenRecord:
     return TokenRecord(
         tg_id=row["tg_id"],
         refresh_token_enc=row["refresh_token_enc"],
@@ -766,7 +765,7 @@ def _as_token(row: aiosqlite.Row) -> TokenRecord:
     )
 
 
-def _as_user_settings(row: aiosqlite.Row) -> UserSettings:
+def _as_user_settings(row: Row) -> UserSettings:
     keys = row.keys()
     return UserSettings(
         tg_id=row["tg_id"],

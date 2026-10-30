@@ -167,7 +167,7 @@ class _GamePageRepo:
         marks = ",".join("?" * len(editions))
         cursor = await self._conn.execute(
             "SELECT edition_id, name, item_kind, is_primary FROM edition_items"
-            f" WHERE edition_id IN ({marks}) ORDER BY is_primary DESC, rowid",
+            f" WHERE edition_id IN ({marks}) ORDER BY is_primary DESC, seq",
             [e["edition_id"] for e in editions],
         )
         items: dict[int, list[dict[str, Any]]] = {}

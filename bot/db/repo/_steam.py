@@ -12,8 +12,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-import aiosqlite
-
 from bot.db.repo._sql import (
     STEAM_APP_OF_TITLE,
     earned_at,
@@ -22,6 +20,7 @@ from bot.db.repo._sql import (
     platform_is,
     titles_on,
 )
+from bot.db.repo._tx import GatedConnection
 from bot.util import looks_russian, utcnow_iso
 
 
@@ -72,7 +71,7 @@ class TitleSteam:
 
 
 class _SteamRepo:
-    _conn: aiosqlite.Connection
+    _conn: GatedConnection
 
     STEAM_APPID_ATTEMPTS = 3
 

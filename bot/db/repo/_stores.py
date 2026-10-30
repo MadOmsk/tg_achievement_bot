@@ -1206,7 +1206,7 @@ class _StoresRepo:
             "SELECT e.edition_id, e.name, e.scope, e.kind, i.store_id, i.item_kind,"
             " i.is_primary, i.role FROM editions e"
             " JOIN edition_items i ON i.edition_id = e.edition_id"
-            " ORDER BY e.edition_id, i.rowid"
+            " ORDER BY e.edition_id, i.seq"
         )
         found: dict[int, dict[str, Any]] = {}
         for r in await cursor.fetchall():

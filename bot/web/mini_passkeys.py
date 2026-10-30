@@ -14,12 +14,12 @@ an address with a key gets the key's options there, and no mail goes out.
 from __future__ import annotations
 
 import logging
-import sqlite3
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiohttp import web
 
+from bot.db.postgres import IntegrityError
 from bot.db.repo import PasskeyRow, Repo
 from bot.services.passkeys import PasskeyError, Passkeys, device_name
 from bot.web.mini_auth import MiniAppUser
@@ -104,7 +104,7 @@ def register(app: web.Application, require_user: RequireUser) -> None:
                 key.transports,
                 device_name(request.headers.get("User-Agent")),
             )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             return _error("taken", 409)
         log.info("person_id=%s added a passkey", user.person_id)
         return web.json_response(await _list(repo, passkeys, user.person_id))

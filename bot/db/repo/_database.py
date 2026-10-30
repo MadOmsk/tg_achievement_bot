@@ -1,32 +1,31 @@
-"""Connection lifecycle and schema/migration bring-up — split out of what
-used to be one 2900-line bot/db/repo.py (2026-09-09); see this package's
-own __init__.py for the full picture. Behavior is unchanged.
+"""Connection lifecycle and schema/migration bring-up, on PostgreSQL (#234).
+
+One database, three schemas: the server's own (`prod`, `test`, `dev`, …: its
+people, accounts, chats and settings) and `games`, the catalog the servers
+share (#229). The connection's search path is "<server>, games", so a table
+nobody qualified is found in the server's schema first, then in the catalog —
+what attaching the games file did on SQLite — and queries are as they were.
 """
 
 from __future__ import annotations
 
 import logging
-import re
-import sqlite3
 from pathlib import Path
 from typing import Self
 
-import aiosqlite
-
 from bot.constants import SettingKey
-from bot.db.repo._games_db import GAMES, GAMES_DB_KEY, placed
+from bot.db.postgres import Connection
+from bot.db.repo._games_db import GAMES
 from bot.db.repo._tx import TransactionGate
 from bot.util import utcnow_iso
 from bot.version import schema_gap
 
 log = logging.getLogger(__name__)
 
-# bot/db/repo/_database.py -> parent is bot/db/repo/, parent.parent is
-# bot/db/ — schema.sql and migrations/ live there, one level up from this
-# subpackage, unchanged by the 2026-09-09 split.
-_DB_DIR = Path(__file__).parent.parent
-SCHEMA_PATH = _DB_DIR / "schema.sql"
-MIGRATIONS_DIR = _DB_DIR / "migrations"
+_PG_DIR = Path(__file__).parent.parent / "pg"
+APP_SCHEMA_PATH = _PG_DIR / "app.sql"
+GAMES_SCHEMA_PATH = _PG_DIR / "games.sql"
+MIGRATIONS_DIR = _PG_DIR / "migrations"
 
 DEFAULT_APP_SETTINGS: dict[str, str] = {
     # Row caps for the game/player tables (SPEC 6.3, 6.6, 7.2) — separate
@@ -41,120 +40,47 @@ DEFAULT_APP_SETTINGS: dict[str, str] = {
 }
 
 
-# Indexes on columns a migration added (#167). schema.sql cannot name such a
-# column — it runs before the migrations, and an old file does not have it
-# yet — and a new database is baselined, so its migrations never ran either:
-# these were missing on every database made from scratch. Created after the
-# migrations, on every start; IF NOT EXISTS makes that free.
-INDEXES_AFTER_MIGRATIONS = (
-    "CREATE INDEX IF NOT EXISTS idx_seen_unlocked ON seen_achievements(xuid, unlocked_at DESC)",
-    "CREATE INDEX IF NOT EXISTS idx_seen_account ON seen_achievements(account_platform, xuid)",
-    # poller/message_cleanup.py sweeps every chat's system messages each minute.
-    "CREATE INDEX IF NOT EXISTS idx_bot_messages_system ON bot_messages(is_system, sent_at)",
-    # The primary key (platform, title_id, achievement_id) already serves it.
-    "DROP INDEX IF EXISTS idx_title_achievements_title",
-    # A game's versions (108): game_id is a column a migration added.
-    "CREATE INDEX IF NOT EXISTS idx_versions_game ON versions(game_id, role)",
-    # A series a rule names (111): one per rule key.
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_series_rule_key ON series(rule_key)"
-    " WHERE rule_key IS NOT NULL",
-)
-
-
-_ADD_COLUMN = re.compile(
-    r"\s*ALTER\s+TABLE\s+[\"`]?(?P<table>\w+)[\"`]?\s+ADD\s+(?:COLUMN\s+)?"
-    r"[\"`]?(?P<column>\w+)",
-    re.IGNORECASE,
-)
-
-
-def _statements(script: str) -> list[str]:
-    """A migration cut into its statements, each with the text before it (its
-    comments), so joining them again gives the script back. SQLite's own
-    `complete_statement` decides where one ends — a trigger's body has `;`
-    inside it."""
-    statements: list[str] = []
-    current = ""
-    for line in script.splitlines(keepends=True):
-        current += line
-        if sqlite3.complete_statement(current):
-            statements.append(current)
-            current = ""
-    if current.strip():
-        statements.append(current)
-    return statements
-
-
-def _without_comments(statement: str) -> str:
-    return " ".join(line.split("--", 1)[0] for line in statement.splitlines())
-
-
 class SchemaTooNewError(RuntimeError):
     """The database has migrations this code does not ship (#56)."""
 
 
-class GamesDatabaseMissingError(RuntimeError):
-    """The database names a games file (#229) that is not there."""
-
-
 class Database:
-    """Owns the connection and brings the file up to the current schema."""
+    """Owns the connection and brings the schemas up to the current shape."""
 
-    def __init__(self, path: Path, *, games: Path | None = None) -> None:
-        self._path = path
-        # The games file a *new* database is made with (#229); an existing
-        # one names its own in `app_settings`, and that is the one attached.
-        self._new_games = games
-        self.games_path: Path | None = None
-        self._conn: aiosqlite.Connection | None = None
+    def __init__(self, dsn: str, *, schema: str, data_dir: Path | None = None) -> None:
+        self._dsn = dsn
+        self.schema = schema
+        # Where the server keeps its files beside the database (the advisers'
+        # answers, the lock): the folder `DB_PATH` used to name.
+        self.data_dir = data_dir or Path("data")
+        self._conn: Connection | None = None
         # Who holds the connection for a block of writes (#167, `_tx.py`).
         self.gate = TransactionGate()
 
     @property
-    def conn(self) -> aiosqlite.Connection:
+    def conn(self) -> Connection:
         if self._conn is None:
             raise RuntimeError("database is not connected")
         return self._conn
 
     async def connect(self) -> Self:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = await aiosqlite.connect(self._path)
-        self._conn.row_factory = aiosqlite.Row
-        # WAL keeps the poller writing while a panel reads; foreign keys are off
-        # by default in SQLite and our ON DELETE CASCADE depends on them.
-        await self._conn.execute("PRAGMA journal_mode = WAL")
-        await self._conn.execute("PRAGMA foreign_keys = ON")
-        await self._conn.execute("PRAGMA busy_timeout = 30000")
-        # Safe with WAL (a power cut may lose the last commits, never corrupt
-        # the file) and spares an fsync on every one of the pollers' commits.
-        await self._conn.execute("PRAGMA synchronous = NORMAL")
+        self._conn = await Connection.connect(self._dsn, search_path=f"{self.schema},{GAMES}")
         try:
-            # Whether this file had anything in it *before* schema.sql ran —
-            # see _apply_migrations for why that one bit matters.
-            fresh = await self._is_empty()
+            await self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self.schema}")
+            await self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {GAMES}")
+            fresh = not await self._has_tables(self.schema)
             await self._refuse_a_newer_database()
-            await self._attach_games(fresh=fresh)
-            await self._apply_schema()
+            if not await self._has_tables(GAMES):
+                log.info("making the games catalog's schema")
+                await self._run_in(GAMES, GAMES_SCHEMA_PATH)
+            if fresh:
+                log.info("making schema %s", self.schema)
+                await self._run_in(self.schema, APP_SCHEMA_PATH)
             await self._apply_migrations(fresh=fresh)
-            for statement in INDEXES_AFTER_MIGRATIONS:
-                await self._conn.execute(self._placed(statement))
             await self._seed_app_settings()
-            if fresh and self.games_path is not None:
-                await self._conn.execute(
-                    "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)"
-                    " ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = "
-                    "excluded.updated_at, updated_by = NULL",
-                    (GAMES_DB_KEY, str(self.games_path), utcnow_iso()),
-                )
-            await self._conn.commit()
         except BaseException:
-            # Bring-up failing has to *stop* the process, and until this
-            # existed it hung it instead: aiosqlite runs its own worker
-            # thread, and a connection left open keeps a non-daemon thread
-            # alive after the exception has unwound everything else — the
-            # bot neither serves nor exits. Found while testing the
-            # fail-fast path added in #56, which is precisely the path that
-            # has to end in a clean exit.
+            # Bring-up failing has to *stop* the process: a connection left
+            # open would keep the bot from exiting cleanly (#56).
             await self.close()
             raise
         return self
@@ -164,31 +90,26 @@ class Database:
             await self._conn.close()
             self._conn = None
 
-    async def _is_empty(self) -> bool:
+    async def _has_tables(self, schema: str) -> bool:
         cursor = await self.conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'  AND name NOT LIKE 'sqlite_%'"
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = ? LIMIT 1", (schema,)
         )
-        row = await cursor.fetchone()
-        return (row[0] if row else 0) == 0
+        return await cursor.fetchone() is not None
+
+    async def _run_in(self, schema: str, script: Path) -> None:
+        """A schema file, its tables created in `schema`."""
+        # A local file, read once at startup before the bot serves anything.
+        sql = script.read_text(encoding="utf-8")  # noqa: ASYNC240
+        await self.conn.executescript(
+            f"BEGIN; SET LOCAL search_path TO {schema}, {GAMES};\n{sql}\nCOMMIT;"
+        )
 
     async def _refuse_a_newer_database(self) -> None:
         """Stop before touching a database that a *newer* build has already
-        migrated (#56).
-
-        This is the 2026-09-14 outage in one check. A script run out of the
-        accounts-52 worktree opened production's bot.db, `connect()` applied
-        that branch's migrations to it, and the production bot — older code,
-        on main — then crashed on tables it had never heard of. Every step
-        was reasonable on its own; nothing compared the two.
-
-        Only "database ahead of code" is fatal. Behind is the normal state
-        of an upgrade and is what the migrations below are for.
-        """
-        cursor = await self.conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
-        )
-        if await cursor.fetchone() is None:
-            return  # nothing has ever been applied here
+        migrated (#56). Behind is the normal state of an upgrade and is what
+        the migrations are for; only "database ahead of code" is fatal."""
+        if not await self._has_table(self.schema, "schema_migrations"):
+            return
         cursor = await self.conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1"
         )
@@ -197,128 +118,39 @@ class Database:
         if complaint is not None:
             raise SchemaTooNewError(complaint)
 
-    async def _attach_games(self, *, fresh: bool) -> None:
-        """Attach the games file (#229): the one this database names, or for
-        a new database the one it is made with. Never made up: a database
-        naming a file that is not there stops start-up, rather than going on
-        with an empty catalog."""
-        path = self._new_games if fresh else await self._named_games()
-        if path is None:
-            return
-        if not fresh and not path.exists():
-            raise GamesDatabaseMissingError(f"{self._path} keeps its games in {path}, not found")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        await self.conn.execute(f"ATTACH DATABASE ? AS {GAMES}", (str(path),))
-        await self.conn.execute(f"PRAGMA {GAMES}.journal_mode = WAL")
-        await self.conn.execute(f"PRAGMA {GAMES}.synchronous = NORMAL")
-        self.games_path = path
-
-    async def _named_games(self) -> Path | None:
+    async def _has_table(self, schema: str, table: str) -> bool:
         cursor = await self.conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'"
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
+            (schema, table),
         )
-        if await cursor.fetchone() is None:
-            return None
-        cursor = await self.conn.execute(
-            "SELECT value FROM app_settings WHERE key = ?", (GAMES_DB_KEY,)
-        )
-        row = await cursor.fetchone()
-        return Path(row[0]) if row and row[0] else None
-
-    def _placed(self, statement: str) -> str:
-        return placed(statement, self.games_path is not None)
-
-    async def _apply_schema(self) -> None:
-        script = SCHEMA_PATH.read_text(encoding="utf-8")
-        await self.conn.executescript("".join(map(self._placed, _statements(script))))
+        return await cursor.fetchone() is not None
 
     async def _apply_migrations(self, *, fresh: bool = False) -> None:
-        """Bring an existing database up to the current schema.
+        """Bring an existing schema up to the current shape.
 
-        A brand-new one is *baselined* instead: schema.sql already created
-        the current shape, so its migrations are recorded as applied without
-        being run (2026-09-12). Running them was the older behaviour and it
-        quietly constrained every migration ever written — each had to stay
-        executable against the finished schema as well as against the older
-        one it was written for, which is impossible the moment a migration
-        reads a column that a later one removes. That trap was hit three
-        times in two days (#52): a column renamed, a table dropped, and
-        finally `users.xuid` moving out to `accounts`, where there was no
-        way to write 037 so that it also parsed against a schema without
-        that column.
-
-        The bit that decides is "was the file empty before schema.sql ran",
-        not "does schema_migrations exist" — a database old enough to
-        predate that table must still have its migrations applied.
+        A brand-new one is *baselined* instead: app.sql already made the
+        current shape, so the migrations are recorded as applied without
+        running. A migration runs with the search path "<server>, games": what
+        it creates unqualified lands in the server's schema, the catalog's is
+        written `games.<name>` — and, the catalog being shared, only ever
+        added to, idempotently (#229).
         """
-        await self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations ("
-            "  version TEXT PRIMARY KEY,"
-            "  applied_at TEXT NOT NULL)"
-        )
         cursor = await self.conn.execute("SELECT version FROM schema_migrations")
         applied = {row["version"] for row in await cursor.fetchall()}
-
-        if not MIGRATIONS_DIR.exists():
-            return
         for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if path.stem in applied:
                 continue
             if fresh:
-                log.info("baselining migration %s (new database)", path.stem)
+                log.info("baselining migration %s (new schema)", path.stem)
             else:
                 log.info("applying migration %s", path.stem)
-                await self._apply_one(path)
+                # A local file of a few kilobytes, read once at startup.
+                script = path.read_text(encoding="utf-8")
+                await self.conn.executescript(f"BEGIN;\n{script}\nCOMMIT;")
             await self.conn.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (path.stem, utcnow_iso()),
             )
-
-    async def _apply_one(self, path: Path) -> None:
-        """One migration, with the one collision schema.sql can cause.
-
-        A database that skips several versions at once meets both halves of
-        the bring-up: schema.sql runs first and creates every table that does
-        not exist yet — in its *finished* shape — and only then do the
-        migrations run. So a migration that creates a table and a later one
-        that adds a column to it are fine on a database old enough to have
-        neither (the table is made whole, both are skipped in effect) and fine
-        on one that has the table already... except that the ADD COLUMN then
-        hits a column schema.sql just put there.
-
-        Found by rehearsing the accounts-52 merge against a copy of production
-        (2026-09-16): `title_groups` did not exist there, schema.sql created it
-        with `name_ru`, and 044 died on "duplicate column name: name_ru" —
-        which would have been the production deploy, not a rehearsal.
-
-        So an ADD COLUMN whose column is already there is left out of the
-        script before it runs, and logged: the column is already exactly where
-        the migration wanted it. It used to be the error that was swallowed —
-        but `executescript` stops at the failing statement, so everything after
-        it in that migration silently never ran, and the migration was still
-        recorded as applied (#167). Any other error stops start-up.
-        """
-        # A local file of a few kilobytes, read once at startup before the
-        # bot serves anything — the blocking read ASYNC240 warns about is
-        # what this has always done, just now one call further in.
-        script = path.read_text(encoding="utf-8")  # noqa: ASYNC240
-        kept: list[str] = []
-        for statement in _statements(script):
-            added = _ADD_COLUMN.match(_without_comments(statement))
-            if added and await self._has_column(added["table"], added["column"]):
-                log.info(
-                    "migration %s: %s.%s exists already (schema.sql added it), skipped",
-                    path.stem,
-                    added["table"],
-                    added["column"],
-                )
-                continue
-            kept.append(self._placed(statement))
-        await self.conn.executescript("".join(kept))
-
-    async def _has_column(self, table: str, column: str) -> bool:
-        cursor = await self.conn.execute(f"PRAGMA table_info({table})")
-        return any(row["name"].lower() == column.lower() for row in await cursor.fetchall())
 
     async def _seed_app_settings(self) -> None:
         for key, value in DEFAULT_APP_SETTINGS.items():

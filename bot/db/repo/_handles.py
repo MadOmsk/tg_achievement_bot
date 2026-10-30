@@ -4,11 +4,11 @@ change theirs and when. The rules about what a nickname looks like are in
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from bot.constants import Platform
+from bot.db.postgres import IntegrityError
 from bot.services import handles
 from bot.util import utcnow_iso
 
@@ -77,7 +77,7 @@ class _HandlesRepo:
                         person_id,
                     ),
                 )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             return False
         return True
 

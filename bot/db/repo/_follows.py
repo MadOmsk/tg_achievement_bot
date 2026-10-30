@@ -50,7 +50,7 @@ class PersonRow:
 # the older queries, here keyed on the `p` alias.
 _SHOWN = (
     "CASE WHEN p.handle_number = 0 THEN p.handle"
-    " ELSE p.handle || '#' || printf('%04d', p.handle_number) END"
+    " ELSE p.handle || '#' || lpad(p.handle_number::text, 4, '0') END"
 )
 # Relation of `?` (the viewer) to `p`, as four columns.
 _RELATION = (

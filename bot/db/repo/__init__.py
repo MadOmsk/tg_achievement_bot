@@ -80,9 +80,10 @@ from bot.db.repo._catalog import _CatalogRepo
 from bot.db.repo._chat_stats import _ChatStatsRepo
 from bot.db.repo._chats import _ChatsRepo
 from bot.db.repo._database import (
+    APP_SCHEMA_PATH,
     DEFAULT_APP_SETTINGS,
+    GAMES_SCHEMA_PATH,
     MIGRATIONS_DIR,
-    SCHEMA_PATH,
     Database,
 )
 from bot.db.repo._descriptions import _DescriptionsRepo
@@ -148,12 +149,13 @@ from bot.db.repo._stores import _StoresRepo
 from bot.db.repo._tx import GatedConnection, transaction
 
 __all__ = [
+    "APP_SCHEMA_PATH",
     # Re-exported for scripts/backfill_*.py and the odd test that reaches
     # for a constant directly rather than through a Repo method — same
     # names, same values as before the split.
     "DEFAULT_APP_SETTINGS",
+    "GAMES_SCHEMA_PATH",
     "MIGRATIONS_DIR",
-    "SCHEMA_PATH",
     "AchievementRow",
     "AdminPanelRefreshRow",
     "AdminUserRow",

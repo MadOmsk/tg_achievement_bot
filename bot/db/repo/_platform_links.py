@@ -258,7 +258,7 @@ class _PlatformLinksRepo:
         a person may hold several (PSN, #10)."""
         cursor = await self._conn.execute(
             self._LINK_COLUMNS + "WHERE al.person_id = ? AND al.platform = ? AND al.is_active = 1 "
-            "ORDER BY al.linked_at, al.rowid LIMIT 1",
+            "ORDER BY al.linked_at, al.seq LIMIT 1",
             (person_id, platform),
         )
         row = await cursor.fetchone()
@@ -269,7 +269,7 @@ class _PlatformLinksRepo:
         first — several only on PSN (#10)."""
         cursor = await self._conn.execute(
             self._LINK_COLUMNS + "WHERE al.person_id = ? AND al.platform = ? AND al.is_active = 1 "
-            "ORDER BY al.linked_at, al.rowid",
+            "ORDER BY al.linked_at, al.seq",
             (person_id, platform),
         )
         return [_as_platform_link(row) for row in await cursor.fetchall()]
@@ -301,7 +301,7 @@ class _PlatformLinksRepo:
             + clause
             + "ORDER BY CASE al.platform WHEN 'xbox' THEN 0 WHEN 'psn' THEN 1 ELSE 2 END,"
             # Several PSN accounts (#10): first linked first, everywhere.
-            "  al.linked_at, al.rowid",
+            "  al.linked_at, al.seq",
             (person_id,),
         )
         return [_as_platform_link(row) for row in await cursor.fetchall()]

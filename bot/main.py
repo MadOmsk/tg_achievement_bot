@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import selectors
 import sys
 
 from aiogram import Bot, Dispatcher
@@ -142,7 +143,9 @@ def setup_logging(level: str) -> None:
 
 async def run(settings: Settings) -> None:
     media.configure(settings.media_dir)
-    database = await Database(settings.db_path).connect()
+    database = await Database(
+        settings.database_url, schema=settings.database_schema, data_dir=settings.db_path.parent
+    ).connect()
     repo = Repo(database)
     # The environment's super-admins are the column's (services/roles.py).
     await repo.ensure_superadmins(settings.superadmin_tg_ids)
@@ -648,6 +651,14 @@ async def _publish_mini_app_menu(bot: Bot, settings: Settings) -> None:
         log.warning("could not set Mini App menu button", exc_info=True)
 
 
+def event_loop() -> asyncio.AbstractEventLoop:
+    """psycopg's async mode needs a selector loop; Windows (the dev server)
+    defaults to the proactor one (#234)."""
+    if sys.platform == "win32":
+        return asyncio.SelectorEventLoop(selectors.SelectSelector())
+    return asyncio.new_event_loop()
+
+
 def main() -> None:
     settings = get_settings()
     setup_logging(settings.log_level)
@@ -656,7 +667,7 @@ def main() -> None:
     try:
         with single_instance(lock_path):
             try:
-                asyncio.run(run(settings))
+                asyncio.run(run(settings), loop_factory=event_loop)
             except (KeyboardInterrupt, SystemExit):
                 log.info("stopped")
             except Exception:

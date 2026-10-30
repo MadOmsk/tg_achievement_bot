@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 
-import aiosqlite
-
 from bot.constants import MAIN_GAME_GROUP, achievement_group
 from bot.db.repo._models import TitleAchievementRow, TitleAchievementWithUnlock
 from bot.db.repo._sql import platform_is
+from bot.db.repo._tx import GatedConnection
 from bot.util import looks_russian, utcnow_iso
 
 
@@ -20,7 +19,7 @@ def _group_source(platform: str, group_id: str | None) -> str | None:
 
 
 class _CatalogRepo:
-    _conn: aiosqlite.Connection
+    _conn: GatedConnection
 
     async def upsert_title_achievements(
         self, rows: list[TitleAchievementRow], *, complete: bool = False
@@ -260,7 +259,7 @@ class _CatalogRepo:
             "       description_source "
             "FROM title_achievements "
             "WHERE platform = ? AND title_id = ? AND listed = 1 "
-            "ORDER BY rowid ASC",
+            "ORDER BY seq ASC",
             (platform, title_id),
         )
         rows = await cursor.fetchall()
@@ -312,7 +311,7 @@ class _CatalogRepo:
             # PlayStation's platinum is for having every other trophy: no guide
             # has anything to say about it.
             "  AND COALESCE(trophy_type, '') <> 'platinum' "
-            "ORDER BY rowid ASC",
+            "ORDER BY seq ASC",
             (platform, title_id),
         )
         return [
@@ -353,7 +352,7 @@ class _CatalogRepo:
                 "  ON sa.platform = ta.platform AND sa.title_id = ta.title_id "
                 " AND sa.achievement_id = ta.achievement_id AND sa.xuid = ? "
                 "WHERE ta.platform = ? AND ta.title_id = ? AND ta.listed = 1 "
-                "ORDER BY ta.rowid ASC",
+                "ORDER BY ta.seq ASC",
                 (xuid, platform, title_id),
             )
         else:
@@ -364,7 +363,7 @@ class _CatalogRepo:
                 "       ta.updated_at, NULL AS unlocked_at "
                 "FROM title_achievements ta "
                 "WHERE ta.platform = ? AND ta.title_id = ? AND ta.listed = 1 "
-                "ORDER BY ta.rowid ASC",
+                "ORDER BY ta.seq ASC",
                 (platform, title_id),
             )
         rows = await cursor.fetchall()

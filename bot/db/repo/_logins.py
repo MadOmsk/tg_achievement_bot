@@ -6,9 +6,9 @@ stores."""
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 
+from bot.db.postgres import IntegrityError
 from bot.util import utcnow_iso
 
 
@@ -67,7 +67,7 @@ class _LoginsRepo:
                     "UPDATE users SET email = ?, email_linked_at = ?, updated_at = ? WHERE id = ?",
                     (email, now, now, person_id),
                 )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             # Taken between the check above and this write.
             raise LoginTaken(email) from exc
 
@@ -109,7 +109,7 @@ class _LoginsRepo:
                     " updated_at = ? WHERE id = ?",
                     (tg_id, username, first_name, last_name, utcnow_iso(), person_id),
                 )
-        except sqlite3.IntegrityError as exc:
+        except IntegrityError as exc:
             raise LoginTaken(str(tg_id)) from exc
 
     async def remove_telegram(self, person_id: int) -> str | None:

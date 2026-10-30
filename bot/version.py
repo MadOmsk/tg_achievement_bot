@@ -55,6 +55,8 @@ TRUNK_LINE = 2
 TRUNK = "main"
 
 MIGRATIONS = Path(__file__).resolve().parent / "db" / "migrations"
+# PostgreSQL's own (#234), numbered on from the SQLite ones.
+PG_MIGRATIONS = Path(__file__).resolve().parent / "db" / "pg" / "migrations"
 REPO = Path(__file__).resolve().parents[1]
 UNKNOWN_REVISION = "?"
 
@@ -179,7 +181,11 @@ def expected_schema() -> str:
     """The newest migration this code ships, as its own three-digit number.
     `000` for a checkout with no migrations at all, which is not a state the
     bot can be in but is one a test can construct."""
-    numbers = sorted(path.name[:3] for path in MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
+    numbers = sorted(
+        path.name[:3]
+        for folder in (MIGRATIONS, PG_MIGRATIONS)
+        for path in folder.glob("[0-9][0-9][0-9]_*.sql")
+    )
     return numbers[-1] if numbers else "000"
 
 

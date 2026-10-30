@@ -1,7 +1,7 @@
 """Transactions on the one shared connection (#167).
 
-The bot has one aiosqlite connection, and every coroutine writes through it.
-SQLite's transaction is the connection's, not a coroutine's: one caller's
+The bot has one database connection, and every coroutine writes through it.
+A transaction is the connection's, not a coroutine's: one caller's
 `commit()` committed whatever another had half written, and one caller's
 `rollback()` threw it away — a backfill's half-written batch, later found
 again by a live poll and published as new.
@@ -14,7 +14,8 @@ inside a block is a savepoint. Who is inside is a context variable rather
 than the task, so a child task the block starts — `asyncio.wait_for`,
 `gather` — counts as inside instead of waiting for its own parent.
 
-Everything not inside a block works as before: a statement and its commit.
+Everything not inside a block is a statement of its own: the connection
+runs in autocommit (#234), and a `commit()` outside a block has nothing to do.
 """
 
 from __future__ import annotations
@@ -22,12 +23,11 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import itertools
-import sqlite3
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any
 
-import aiosqlite
+from bot.db.postgres import Connection, Cursor
 
 # The block this context is inside of, if any.
 _current: contextvars.ContextVar[int | None] = contextvars.ContextVar("db_tx", default=None)
@@ -64,7 +64,7 @@ class GatedConnection:
     """The connection as the repo sees it: each statement waits while somebody
     else's block is open, and a `commit()` inside a block waits for its end."""
 
-    def __init__(self, conn: aiosqlite.Connection, gate: TransactionGate) -> None:
+    def __init__(self, conn: Connection, gate: TransactionGate) -> None:
         self._raw = conn
         self._gate = gate
 
@@ -72,17 +72,13 @@ class GatedConnection:
     def in_transaction(self) -> bool:
         return self._raw.in_transaction
 
-    @property
-    def row_factory(self) -> Any:
-        return self._raw.row_factory
-
-    async def execute(self, sql: str, parameters: Any = None) -> aiosqlite.Cursor:
+    async def execute(self, sql: str, parameters: Any = None) -> Cursor:
         await self._gate.wait_turn()
         if parameters is None:
             return await self._raw.execute(sql)
         return await self._raw.execute(sql, parameters)
 
-    async def executemany(self, sql: str, parameters: Iterable[Any]) -> aiosqlite.Cursor:
+    async def executemany(self, sql: str, parameters: Iterable[Any]) -> Cursor:
         await self._gate.wait_turn()
         return await self._raw.executemany(sql, parameters)
 
@@ -129,21 +125,7 @@ async def transaction(conn: GatedConnection) -> AsyncIterator[None]:
     gate.take(block)
     token = _current.set(block)
     try:
-        # Somebody's statement may be waiting for its own commit (it ran, its
-        # commit had not yet): that write is whole, so it goes in first rather
-        # than into this block.
-        if raw.in_transaction:
-            await raw.commit()
-        try:
-            await raw.execute("BEGIN")
-        except sqlite3.OperationalError as exc:
-            # A statement already queued on the connection before this block
-            # took its turn ran between the commit above and BEGIN, and opened
-            # an implicit transaction of its own: that write too is whole.
-            if "within a transaction" not in str(exc):
-                raise
-            await raw.commit()
-            await raw.execute("BEGIN")
+        await raw.begin()
         try:
             yield
         except BaseException:
@@ -151,7 +133,7 @@ async def transaction(conn: GatedConnection) -> AsyncIterator[None]:
             raise
         try:
             # Deferred foreign keys are checked here, so the commit itself can
-            # refuse — and a refused commit leaves the transaction open.
+            # refuse.
             await raw.commit()
         except BaseException:
             await raw.rollback()

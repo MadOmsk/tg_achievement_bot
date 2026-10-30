@@ -15,13 +15,13 @@ A member's own codes: `GET /api/mini/me/invites`, `POST` makes one, `DELETE
 from __future__ import annotations
 
 import logging
-import sqlite3
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiohttp import web
 
 from bot.config import Settings
+from bot.db.postgres import IntegrityError
 from bot.db.repo import Repo
 from bot.i18n import normalize_locale
 from bot.services import invites
@@ -91,7 +91,7 @@ async def sign_up(request: web.Request, proof: dict[str, Any], raw_invite: objec
                     raise _InviteSpent
         except _InviteSpent:
             return _error("invite_invalid", 400, signup=_pending(request.app).put(proof))
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             # The same proof signed up a moment ago: that is who this is.
             existing = await _existing(repo, proof)
             if existing is None:
