@@ -1417,6 +1417,17 @@ async def version_title(request: web.Request) -> web.Response:
     form = await request.post()
     platform = str(form.get("platform") or "").strip() or None
     title_id = str(form.get("title_id") or "").strip() or None
+    # Only a list we hold: a name typed into the id field (version 5901,
+    # 2026-10-24) cut the stand-in off its list and left it named by its id.
+    if (platform or title_id) and (
+        not platform
+        or not title_id
+        or await _repo(request).title_record(platform, title_id) is None
+    ):
+        raise _back(
+            f"/version/{version_id}",
+            f"no achievement list {platform} {title_id}: give a platform and a list id we hold",
+        )
     await _repo(request).set_version_title(version_id, platform, title_id)
     raise _back(f"/version/{version_id}", f"achievement list: {platform} {title_id}")
 
