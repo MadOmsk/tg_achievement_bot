@@ -24,6 +24,10 @@ ANTHROPIC_VERSION = "2023-06-01"
 # live per-message call (CLAUDE.md's own "no recurring paid LLM usage
 # without explicit rate limits" rule for exactly this class of feature).
 HAIKU_MODEL = "claude-haiku-5-5"
+# Haiku 5.5 thinks by default and refuses a sampling setting: a translation
+# or a choice of line numbers needs no thinking, and a thinking block would
+# come first in the reply (`_text`).
+_NO_THINKING = {"type": "disabled"}
 
 _CONNECT_TIMEOUT_SECONDS = 10.0
 _READ_TIMEOUT_SECONDS = 30.0
@@ -101,8 +105,7 @@ async def ask_model(
     api_key: str, prompt: str, *, max_tokens: int = _MAX_OUTPUT_TOKENS, what: str = "request"
 ) -> str | None:
     """One question to Haiku, answered in plain text; None when it could not be
-    asked or answered (logged as `what`). Temperature 0: the same question, the same
-    answer as far as the model allows."""
+    asked or answered (logged as `what`)."""
     try:
         async with httpx.AsyncClient(timeout=_long_timeout()) as client:
             response = await client.post(
@@ -111,7 +114,7 @@ async def ask_model(
                 json={
                     "model": HAIKU_MODEL,
                     "max_tokens": max_tokens,
-                    "temperature": 0,
+                    "thinking": _NO_THINKING,
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
@@ -123,7 +126,7 @@ async def ask_model(
         log.warning("anthropic %s failed: HTTP %s", what, response.status_code)
         return None
     try:
-        return response.json()["content"][0]["text"]
+        return _text(response.json())
     except (KeyError, IndexError, ValueError) as exc:
         log.warning("anthropic %s: could not parse response: %r", what, exc)
         return None
@@ -189,6 +192,7 @@ async def _translate_batch(
                 json={
                     "model": HAIKU_MODEL,
                     "max_tokens": _MAX_OUTPUT_TOKENS,
+                    "thinking": _NO_THINKING,
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
@@ -205,7 +209,7 @@ async def _translate_batch(
         if payload.get("stop_reason") == "max_tokens":
             log.warning("anthropic translate: reply cut off at %s tokens", _MAX_OUTPUT_TOKENS)
             return {}
-        content = payload["content"][0]["text"]
+        content = _text(payload)
         translations = json.loads(_strip_json_fence(content))
     except (KeyError, IndexError, ValueError, AttributeError) as exc:
         log.warning("anthropic translate: could not parse response: %r", exc)
@@ -259,6 +263,7 @@ async def translate_game_description(
                 json={
                     "model": HAIKU_MODEL,
                     "max_tokens": _MAX_OUTPUT_TOKENS,
+                    "thinking": _NO_THINKING,
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
@@ -270,11 +275,19 @@ async def translate_game_description(
         log.warning("anthropic game-description translate failed: HTTP %s", response.status_code)
         return None
     try:
-        translated = response.json()["content"][0]["text"].strip()
+        translated = _text(response.json()).strip()
     except (KeyError, IndexError, ValueError) as exc:
         log.warning("anthropic game-description translate: could not parse response: %r", exc)
         return None
     return translated or None
+
+
+def _text(payload: dict) -> str:
+    """The reply's text: its first text block, whatever comes before it."""
+    for block in payload["content"]:
+        if block.get("type") == "text":
+            return block["text"]
+    raise ValueError("no text block in the reply")
 
 
 def _strip_json_fence(text: str) -> str:
