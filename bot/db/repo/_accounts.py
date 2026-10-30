@@ -72,9 +72,9 @@ class _AccountsRepo:
             # `user_settings.show_profile_links` is left unread.
             default_rarity_mode = await self.get_app_setting("default_rarity_mode", "all")
             await self._conn.execute(
-                "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES ("
+                "INSERT INTO user_settings (person_id, rarity_mode) VALUES ("
                 + PERSON_BY_TG
-                + ", ?)",
+                + ", ?) ON CONFLICT DO NOTHING",
                 (tg_id, default_rarity_mode or "all"),
             )
         # A new person starts with a nickname made from their username; the

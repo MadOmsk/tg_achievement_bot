@@ -321,6 +321,7 @@ class Database:
     async def _seed_app_settings(self) -> None:
         for key, value in DEFAULT_APP_SETTINGS.items():
             await self.conn.execute(
-                "INSERT OR IGNORE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)",
+                "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT DO NOTHING",
                 (key, value, utcnow_iso()),
             )

@@ -47,7 +47,8 @@ class _LoginsRepo:
             )
             person = int(cursor.lastrowid)
             await self._conn.execute(
-                "INSERT OR IGNORE INTO user_settings (person_id, rarity_mode) VALUES (?, ?)",
+                "INSERT INTO user_settings (person_id, rarity_mode) VALUES (?, ?)"
+                " ON CONFLICT DO NOTHING",
                 (person, default_rarity_mode or "all"),
             )
         return person

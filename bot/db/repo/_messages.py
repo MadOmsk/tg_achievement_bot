@@ -418,7 +418,8 @@ class _MessagesRepo:
 
     async def mark_daily_report_sent(self, chat_id: int, report_date: str) -> None:
         await self._conn.execute(
-            "INSERT OR IGNORE INTO daily_reports (chat_id, report_date, sent_at) VALUES (?, ?, ?)",
+            "INSERT INTO daily_reports (chat_id, report_date, sent_at) VALUES (?, ?, ?)"
+            " ON CONFLICT DO NOTHING",
             (chat_id, report_date, utcnow_iso()),
         )
         await self._conn.commit()

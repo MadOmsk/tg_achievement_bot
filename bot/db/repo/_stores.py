@@ -538,7 +538,8 @@ class _StoresRepo:
                 ],
             )
             await self._conn.executemany(
-                "INSERT OR IGNORE INTO hltb_entry_platforms (hltb_id, platform) VALUES (?, ?)",
+                "INSERT INTO hltb_entry_platforms (hltb_id, platform) VALUES (?, ?)"
+                " ON CONFLICT DO NOTHING",
                 [(entry.hltb_id, p) for p in entry.platforms],
             )
             await self._conn.executemany(
@@ -547,7 +548,8 @@ class _StoresRepo:
                 [(entry.hltb_id, score, votes) for score, votes in entry.reviews.items()],
             )
             await self._conn.executemany(
-                "INSERT OR IGNORE INTO hltb_related (hltb_id, related_id) VALUES (?, ?)",
+                "INSERT INTO hltb_related (hltb_id, related_id) VALUES (?, ?)"
+                " ON CONFLICT DO NOTHING",
                 [(entry.hltb_id, item.hltb_id) for item in entry.others],
             )
             unread = "hltb_entries.page_read_at IS NULL"
@@ -760,7 +762,8 @@ class _StoresRepo:
                     f"DELETE FROM dlc_hltb WHERE source = 'auto' AND dlc_id IN ({marks})", batch
                 )
             await self._conn.executemany(
-                "INSERT OR IGNORE INTO dlc_hltb (dlc_id, hltb_id, source) VALUES (?, ?, 'auto')",
+                "INSERT INTO dlc_hltb (dlc_id, hltb_id, source) VALUES (?, ?, 'auto')"
+                " ON CONFLICT DO NOTHING",
                 sorted(links.items()),
             )
 
@@ -860,8 +863,8 @@ class _StoresRepo:
             )
         else:
             await self._conn.execute(
-                "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source, score)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO version_hltb (version_id, hltb_id, source, score)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                 (version_id, hltb_id, source, score),
             )
         await self._conn.commit()
@@ -1073,8 +1076,9 @@ class _StoresRepo:
                 )
                 await self.add_store_ids(into, await self.store_ids_of(old))
                 await self._conn.execute(
-                    "INSERT OR IGNORE INTO version_hltb (version_id, hltb_id, source)"
-                    " SELECT ?, hltb_id, source FROM version_hltb WHERE version_id = ?",
+                    "INSERT INTO version_hltb (version_id, hltb_id, source)"
+                    " SELECT ?, hltb_id, source FROM version_hltb WHERE version_id = ?"
+                    " ON CONFLICT DO NOTHING",
                     (into, old),
                 )
                 await self._conn.execute(

@@ -109,8 +109,8 @@ class _GuidesRepo:
                     "DELETE FROM guide_marks WHERE video_id = ?", (video.video_id,)
                 )
                 await self._conn.executemany(
-                    "INSERT OR IGNORE INTO guide_marks (video_id, label, start_seconds, part)"
-                    " VALUES (?, ?, ?, ?)",
+                    "INSERT INTO guide_marks (video_id, label, start_seconds, part)"
+                    " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                     [(video.video_id, label, start, part) for label, start, part in video.marks],
                 )
 

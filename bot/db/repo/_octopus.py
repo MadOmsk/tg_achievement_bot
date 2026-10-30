@@ -22,8 +22,8 @@ class _OctopusRepo:
         """Put an entry in the queue, due now. Returns whether it was new."""
         now = utcnow_iso()
         cursor = await self._conn.execute(
-            "INSERT OR IGNORE INTO octopus_queue (key, reason, due_at, created_at)"
-            " VALUES (?, ?, ?, ?)",
+            "INSERT INTO octopus_queue (key, reason, due_at, created_at)"
+            " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
             (key, reason, now, now),
         )
         await self._conn.commit()

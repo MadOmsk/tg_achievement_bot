@@ -157,40 +157,41 @@ class _MergeRepo:
 
             # ------------------------------------------- chats and people
             await conn.execute(
-                "INSERT OR IGNORE INTO subscriptions (chat_id, person_id, created_at)"
-                " SELECT chat_id, :keep, created_at FROM subscriptions WHERE person_id = :absorb",
+                "INSERT INTO subscriptions (chat_id, person_id, created_at)"
+                " SELECT chat_id, :keep, created_at FROM subscriptions WHERE person_id = :absorb"
+                " ON CONFLICT DO NOTHING",
                 a,
             )
             for column, other in (("follower_id", "followee_id"), ("followee_id", "follower_id")):
                 await conn.execute(
-                    f"INSERT OR IGNORE INTO follows ({column}, {other}, created_at)"
+                    f"INSERT INTO follows ({column}, {other}, created_at)"
                     f" SELECT :keep, {other}, created_at FROM follows"
-                    f" WHERE {column} = :absorb AND {other} != :keep",
+                    f" WHERE {column} = :absorb AND {other} != :keep ON CONFLICT DO NOTHING",
                     a,
                 )
             for column, other in (("person_id", "blocked_id"), ("blocked_id", "person_id")):
                 await conn.execute(
-                    f"INSERT OR IGNORE INTO blocks ({column}, {other}, created_at)"
+                    f"INSERT INTO blocks ({column}, {other}, created_at)"
                     f" SELECT :keep, {other}, created_at FROM blocks"
-                    f" WHERE {column} = :absorb AND {other} != :keep",
+                    f" WHERE {column} = :absorb AND {other} != :keep ON CONFLICT DO NOTHING",
                     a,
                 )
             await conn.execute(
-                "INSERT OR IGNORE INTO favorite_games (person_id, game_id, anchor_key, created_at)"
+                "INSERT INTO favorite_games (person_id, game_id, anchor_key, created_at)"
                 " SELECT :keep, game_id, anchor_key, created_at FROM favorite_games"
-                " WHERE person_id = :absorb",
+                " WHERE person_id = :absorb ON CONFLICT DO NOTHING",
                 a,
             )
             await conn.execute(
-                "INSERT OR IGNORE INTO pass_claims (person_id, palette, month, claimed_at)"
+                "INSERT INTO pass_claims (person_id, palette, month, claimed_at)"
                 " SELECT :keep, palette, month, claimed_at FROM pass_claims"
-                " WHERE person_id = :absorb",
+                " WHERE person_id = :absorb ON CONFLICT DO NOTHING",
                 a,
             )
             await conn.execute(
-                "INSERT OR IGNORE INTO pass_reached (person_id, item_id, month, reached_at)"
+                "INSERT INTO pass_reached (person_id, item_id, month, reached_at)"
                 " SELECT :keep, item_id, month, reached_at FROM pass_reached"
-                " WHERE person_id = :absorb",
+                " WHERE person_id = :absorb ON CONFLICT DO NOTHING",
                 a,
             )
             # A code taken by the absorbed side is the kept person's; where both
@@ -222,10 +223,10 @@ class _MergeRepo:
             # for the person who stays.
             for column, other in (("follower_id", "followee_id"), ("followee_id", "follower_id")):
                 await conn.execute(
-                    f"INSERT OR IGNORE INTO follow_log ({column}, {other}, notified_at,"
+                    f"INSERT INTO follow_log ({column}, {other}, notified_at,"
                     "  unfollowed_at)"
                     f" SELECT :keep, {other}, notified_at, unfollowed_at FROM follow_log"
-                    f" WHERE {column} = :absorb AND {other} != :keep",
+                    f" WHERE {column} = :absorb AND {other} != :keep ON CONFLICT DO NOTHING",
                     a,
                 )
 

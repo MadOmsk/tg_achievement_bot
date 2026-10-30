@@ -368,8 +368,8 @@ class _GamePageRepo:
     async def set_favorite(self, person_id: int, game_id: int, on: bool) -> None:
         if on:
             await self._conn.execute(
-                "INSERT OR IGNORE INTO favorite_games (person_id, game_id, anchor_key, created_at)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO favorite_games (person_id, game_id, anchor_key, created_at)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                 (
                     person_id,
                     game_id,

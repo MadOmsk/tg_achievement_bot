@@ -135,8 +135,8 @@ class _FollowsRepo:
             if available > utcnow():
                 raise FollowTooSoon(available.isoformat(timespec="seconds"))
         cursor = await self._conn.execute(
-            "INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) "
-            "SELECT ?, id, ? FROM users WHERE id = ?",
+            "INSERT INTO follows (follower_id, followee_id, created_at) "
+            "SELECT ?, id, ? FROM users WHERE id = ? ON CONFLICT DO NOTHING",
             (me, utcnow_iso(), other),
         )
         await self._conn.commit()
@@ -180,8 +180,8 @@ class _FollowsRepo:
         if me == other:
             return False
         cursor = await self._conn.execute(
-            "INSERT OR IGNORE INTO blocks (person_id, blocked_id, created_at) "
-            "SELECT ?, id, ? FROM users WHERE id = ?",
+            "INSERT INTO blocks (person_id, blocked_id, created_at) "
+            "SELECT ?, id, ? FROM users WHERE id = ? ON CONFLICT DO NOTHING",
             (me, utcnow_iso(), other),
         )
         await self._conn.execute(

@@ -53,7 +53,7 @@ class _ChatsRepo:
             (chat_id, title, added_by, now),
         )
         await self._conn.execute(
-            "INSERT OR IGNORE INTO chat_settings (chat_id) VALUES (?)", (chat_id,)
+            "INSERT INTO chat_settings (chat_id) VALUES (?) ON CONFLICT DO NOTHING", (chat_id,)
         )
         await self._conn.commit()
 
@@ -63,7 +63,8 @@ class _ChatsRepo:
 
     async def subscribe(self, chat_id: int, person_id: int) -> None:
         await self._conn.execute(
-            "INSERT OR IGNORE INTO subscriptions (chat_id, person_id, created_at) VALUES (?, ?, ?)",
+            "INSERT INTO subscriptions (chat_id, person_id, created_at) VALUES (?, ?, ?)"
+            " ON CONFLICT DO NOTHING",
             (chat_id, person_id, utcnow_iso()),
         )
         await self._conn.commit()

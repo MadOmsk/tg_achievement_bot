@@ -56,8 +56,8 @@ class _PassRepo:
     async def set_pass_claim(self, person_id: int, palette: str, month: str, on: bool) -> None:
         if on:
             await self._conn.execute(
-                "INSERT OR IGNORE INTO pass_claims (person_id, palette, month, claimed_at)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO pass_claims (person_id, palette, month, claimed_at)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                 (person_id, palette, month, _now()),
             )
         else:
@@ -479,8 +479,8 @@ class _PassRepo:
             fresh = [int(row[0]) for row in rows]
             now = _now()
             await self._conn.executemany(
-                "INSERT OR IGNORE INTO pass_reached (person_id, item_id, month, reached_at)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO pass_reached (person_id, item_id, month, reached_at)"
+                " VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
                 [(person_id, item_id, month, now) for item_id in fresh],
             )
         return [int(row[0]) for row in rows if not row[1]]

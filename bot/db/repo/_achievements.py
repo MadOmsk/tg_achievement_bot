@@ -104,8 +104,8 @@ class _AchievementsRepo:
         """
         now = utcnow_iso()
         await self._conn.execute(
-            "INSERT OR IGNORE INTO accounts (platform, external_id, first_seen_at, updated_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO accounts (platform, external_id, first_seen_at, updated_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
             (account_platform, external_id, now, now),
         )
 
@@ -130,11 +130,12 @@ class _AchievementsRepo:
             now = utcnow_iso()
             for item in achievements:
                 cursor = await self._conn.execute(
-                    "INSERT OR IGNORE INTO seen_achievements "
+                    "INSERT INTO seen_achievements "
                     "(xuid, title_id, achievement_id, name, description, icon_url, unlocked_at,"
                     " gamerscore, rarity_percent, platform, is_backfill, is_secret, trophy_type,"
                     " trophy_group_id, device, created_at, group_source) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT DO NOTHING",
                     (
                         external_id,
                         item.title_id,
