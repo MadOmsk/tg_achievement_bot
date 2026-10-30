@@ -129,6 +129,7 @@ name, or when the tree goes stale.
 │   │   │                        API calls, no layout (#63)
 │   │   ├── connect.py            /start, /connect_xbox, /disconnect_xbox
 │   │   ├── steam.py, psn.py      /connect_* and /disconnect_* for Steam and PSN
+│   │   ├── psn_token.py          a player's own PSN token: its screen, pasting, linking by it (#233)
 │   │   ├── awaiting.py           whose next private message is a profile link, for which platform
 │   │   ├── panel.py              the personal panel, "Мои чаты"
 │   │   ├── chat.py               group commands and the group hub
@@ -156,6 +157,7 @@ name, or when the tree goes stale.
 │   │   ├── admin_credentials.py  every shared credential, one registry for both panels (#176)
 │   │   ├── admin_actions.py      every super-admin action, described once, for both panels (#176)
 │   │   ├── roles.py              who may do what: four roles, one table, `Access` (#232)
+│   │   ├── poll_cadence.py       how often each platform is asked: the admin's steps (#184)
 │   │   ├── admin_accounts.py     refresh / reset one person's game account (an action's work)
 │   │   ├── admin_cleanup.py      wiping the bot's messages from a chat (an action's work)
 │   │   ├── connect.py            one-time OAuth state, finishing a login
@@ -214,7 +216,8 @@ name, or when the tree goes stale.
 │   │   │                         backoff), models.py (pydantic responses)
 │   │   ├── steam/                auth.py (the admin-settable key, #17), client.py, achievements.py
 │   │   │                         (fetch_unlocked + schema/rarity cache)
-│   │   ├── psn/                  auth.py (NPSSO, PsnAuth), client.py (to_thread wrapper),
+│   │   ├── psn/                  auth.py (the shared NPSSO, PsnAuth), personal.py (a player's own
+│   │   │                         NPSSO, #233), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
 │   │   ├── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
 │   │   │                         client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
@@ -321,7 +324,8 @@ super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 
 Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
-App entry points), the poller interval settings, and the mail server for email sign-in
+App entry points), the poller intervals (a first-run seed: the polling steps are
+`app_settings` since #184 stage 0, see Polling model), and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM` — a bare address, it is also push's contact; #162;
 setting it up: `docs/mail-setup.md`).
@@ -1356,7 +1360,12 @@ hand an answer to `raw_answers.keep`; the bot's assembly points it at
 
 `tokens` stores encrypted Xbox refresh tokens only (access/XSTS tokens stay in
 memory); status is active / invalid / revoked. Shared credentials (PSN NPSSO, Steam
-key, Anthropic key, YouTube key) are encrypted in `app_settings`.
+key, Anthropic key, YouTube key) are encrypted in `app_settings`. **A player's own
+PSN token** (owner, 2026-10-29; #233; migration 142, `psn_tokens`,
+`services/psn/personal.py`) is kept by PSN account, encrypted, active or dead,
+and counts only while its person holds the account (`_psn_tokens._HELD`): an
+unlink deletes it, a takeover leaves it unread and the daily check forgets it,
+a merge moves it with the person.
 
 ## Platform integrations
 
@@ -1474,6 +1483,18 @@ for this; psnawp uses the private one the PlayStation App uses.
 - **The design rests on one verified bet**: one admin NPSSO can read the trophies of
   *any* account whose trophy privacy is "Everyone", so nobody else logs in. Do not
   weaken the design without re-verifying it.
+- **Two levels** (owner, 2026-10-29; #233): the shared admin NPSSO reads every
+  account without a token and everything about games (the catalog, the store,
+  trophy groups' names, the Russian client); **a player's own NPSSO**, opt-in, reads
+  its own account (`PsnAuth.client_for`: presence, the trophy scan, groups, the
+  avatar, a resync). An account without one is polled `shared_slowdown` times
+  less often (×3, the PSN group of «Опрос статуса») — the shared token is the
+  bottleneck; what is new and costly (play time, hero stats) is read only with an
+  own token. A refused own token is marked dead (`PsnAuth.refused`), its account
+  falls back to the shared one, its owner is told once (`psn_token_dead`, on until
+  switched off), and the shared token's health is never touched; every live own
+  token is checked once a day (05:10). psnawp's own logger is pinned to WARNING:
+  at DEBUG it logs request headers, bearer token included.
 - **Verify an NPSSO with a real call (`check_alive()`) before saving it** — psnawp's
   token exchange is lazy.
 - **Pacing is psnawp's own limiter, one request every 2 s per client**
@@ -1489,9 +1510,9 @@ for this; psnawp uses the private one the PlayStation App uses.
 - **Presence and trophies** (#90): presence is one `get_presence()` per account, on
   the shared politeness cadence. Going Online → Offline fires an exit poll
   (`psn_fetcher.poll_account`), since trophies often sync when a session ends. Trophy
-  titles are scanned every 120s while online, 30 min while offline and active, 24h
-  when dormant (settings `psn_poll_interval`, `psn_offline_poll_interval`,
-  `psn_dormant_poll_interval`); a title whose progress grew is fetched in full.
+  titles are scanned every 2 min while online, 30 min while offline and active, 24h
+  when dormant (the PSN group of «Опрос статуса», `services/poll_cadence.py`);
+  a title whose progress grew is fetched in full.
 - **The scan persists one game at a time, trophies before the progress cache**
   (#26) — the other order silently lost trophies when a scan failed partway. An
   unmapped error on one game is logged and skipped.
@@ -1534,12 +1555,23 @@ for this; psnawp uses the private one the PlayStation App uses.
 The scheduler ticks every minute; each poller decides whether a target is due.
 History: #108.
 
-- **Presence cadence** (Xbox, Steam) is state-based — fastest in a game, then online,
-  then offline, slowest for someone long absent — for politeness, not quota.
-- **Accounts idle more than 14 days are dormant** (`poller/cadence.py::is_dormant`,
-  `catchup_idle_threshold_days`, from `last_online_at` or `linked_at`): their
-  catch-up and PSN scans drop to once a day. Coming online (`touch_last_online`)
-  wakes them at once; a fresh link counts as active.
+- **Presence cadence** is state-based — fastest in a game, then online, then
+  offline, slower for someone offline a while (`idle_after`), slowest for a
+  dormant account — **the super-admin's settings, per platform** (owner,
+  2026-10-29; #184 stage 0; `services/poll_cadence.py`): /admin → Настройки →
+  «Опрос статуса: Xbox / Steam / PlayStation», in both panels from the registry,
+  whole minutes (the tick is a minute), PSN's trophy-scan steps beside them. The
+  pollers read them on every tick, so a change needs no restart; the
+  environment's `presence_interval_*`, `achievement_poll_interval`,
+  `psn_*_poll_interval` only seed them once (`seed_once` at start-up). A dormant
+  account's presence is asked once an hour, its PSN trophies once a day. Steam is asked in one batch for everybody due, so
+  its steps are a minute everywhere. How long an account has been offline is its
+  own presence row's (`changed_at`).
+- **Accounts idle more than `dormant_after` days (7; owner, 2026-10-29) are dormant**
+  (`poller/cadence.py::is_dormant`, the platform's setting, from `last_online_at` or
+  `linked_at`): their catch-up drops to once a day and PSN scans to the dormant
+  step. Coming online (`touch_last_online`) wakes them at once; a fresh link counts
+  as active.
 - **Achievement polling and exit polls**: while in a game, poll that game on the
   achievement debounce. On leaving it or going offline, one exit poll catches the
   last unlocks — immediately on Xbox, after 180s on Steam, on Online → Offline for
@@ -2214,7 +2246,16 @@ keyboard.
   every chat (#126), language (#48, DMs only), then one row per platform in the
   display order — `[🟢 XBOX ▸, 🔔 posting switch]` (#10), or one wide "🎮 Подключить X"
   (#33). The platform button opens that platform's screen: profile, the switch,
-  unlink, and for PSN every account (up to three) plus adding one. The panel's switch
+  unlink, and for PSN every account (up to three) plus adding one — by nickname
+  or by the account's own token (#233) —, each with «🔑 Токен ✅/➕/⚠️»: that
+  token's screen (what it gives, the safety note, how to get one, paste,
+  replace, remove; agreed on a navigable mockup, 2026-10-29). A pasted token's
+  message is deleted at once and the result replaces the prompt. The Mini App has the
+  same (#233): Settings → Аккаунты → PlayStation → «Личный токен» opens its page
+  (`screens/settings/PsnToken.tsx`; `PUT|DELETE /api/mini/psn/token`), «Или по
+  токену» on the PSN connect page links one (`POST /api/mini/connect/psn-token`,
+  `web/mini_psn_token.py`); `/me` says each account's `token` state, never the
+  token; the admin's «Ключи» list the players' tokens beside the keys. The panel's switch
   covers the whole platform ("Частично" when only some PSN accounts post); a Steam or
   PSN button carries ❗ while its achievements are hidden (any one PSN account), and
   that platform's screen then says what it means and puts "🔓 Как открыть ачивки"
@@ -2355,9 +2396,13 @@ keyboard.
   `admin_registry.py`, its drawing in `views/admin_settings.py` and in
   the Mini App's admin — and from then on every setting of
   that kind appears in both panels by itself.
-- **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" to
-  set / change / clear the Steam key, PSN NPSSO, Anthropic and YouTube keys and the
-  mail login (#17) — a key is
+- **`/admin`** (private, self-refreshing): credential health; "🔑 Ключи платформ" —
+  one button per credential with its state as an icon (✅ / ⚠️ / ⚪️; #233, agreed
+  on a mockup 2026-10-29), each opening its own screen: state, last check, load,
+  where to get it, set / change / clear the Steam key, PSN NPSSO, Anthropic and
+  YouTube keys and the mail login (#17); beside them «👥 Личные токены PSN»,
+  whose own token reads which account and whether it works, and the user card's
+  PSN block says which token reads each account — a key or token is
   **never shown back**, and entering one is a single-message state with only a way
   out; API usage; «⚙️ Настройки» — the registry's global groups (Правила: the
   rarity threshold, the digest size, profile links, the post picture, its card, scale and small-icon limit · Новые пользователи: the

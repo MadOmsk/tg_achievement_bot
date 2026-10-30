@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from html import escape as html_escape
 
 from aiogram import Bot, F, Router
@@ -39,6 +40,7 @@ from bot.services.naming import link_nickname
 from bot.services.psn.auth import STATUS_NOT_CONFIGURED, PsnAuth, PsnNotConfiguredError
 from bot.services.psn.client import (
     PsnApiError,
+    PsnProfile,
     PsnTokenDeadError,
     is_trophy_visible,
     resolve_profile,
@@ -58,7 +60,8 @@ GROUP_HINT_TTL = 30
 
 # tg_id -> the Online ID waiting on a "yes, switch accounts" tap (#52).
 # Same in-memory, dies-with-the-process treatment as handlers/awaiting.py.
-_pending_switch: dict[int, str] = {}
+# A tuple ("token", npsso) is a link by token (#233), kept in memory only.
+_pending_switch: dict[int, str | tuple[str, str]] = {}
 
 
 class AwaitingPsnLink(BaseFilter):
@@ -151,7 +154,21 @@ async def prompt_for_link(
         )
         return
     awaiting.expect(tg_id, "psn")
-    await bot.send_message(tg_id, i18n.get("psn-link-prompt"))
+    await bot.send_message(
+        tg_id,
+        i18n.get("psn-link-prompt"),
+        # Or by the account's own token (#233): trophies may then be hidden.
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=i18n.get("psn-link-by-token-button"),
+                        callback_data="psntok:steps:new",
+                    )
+                ]
+            ]
+        ),
+    )
 
 
 def _full_keyboard(i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarkup:
@@ -166,9 +183,10 @@ def _full_keyboard(i18n: I18nContext | StaticI18nContext) -> InlineKeyboardMarku
     )
 
 
-@router.callback_query(F.data == "psn:add")
+@router.callback_query(F.data == "psn:addnick")
 async def psn_add(callback: CallbackQuery, repo: Repo, i18n: I18nContext) -> None:
-    """ "Link another PSN account" (#10): the Online ID prompt, in place of
+    """ "Link another PSN account" by its nickname (#10; the choice of nickname
+    or token is `psn_token.psn_add`, #233): the Online ID prompt, in place of
     the screen it was tapped on."""
     links = await repo.platform_links_for(await repo.person_id(callback.from_user.id), Platform.PSN)
     if len(links) >= MAX_PSN_ACCOUNTS:
@@ -301,6 +319,28 @@ async def _connect(
         await bot.send_message(tg_id, i18n.get("psn-profile-private"))
         return
 
+    await link_profile(
+        bot, repo, psn_fetcher, tg_id, username, profile, i18n, confirmed=confirmed, pending=raw
+    )
+
+
+async def link_profile(
+    bot: Bot,
+    repo: Repo,
+    psn_fetcher: PsnFetcher,
+    tg_id: int,
+    username: str | None,
+    profile: PsnProfile,
+    i18n: I18nContext | StaticI18nContext,
+    *,
+    confirmed: bool,
+    pending: str | tuple[str, str],
+    keep_token: Callable[[int], Awaitable[None]] | None = None,
+) -> bool:
+    """Links an account already resolved — by its nickname (`_connect`) or by
+    its own token (`handlers/psn_token.py`, #233, which passes `keep_token`
+    to store the token once the account is the person's). `pending` is what a
+    "yes, switch" tap runs again. True when the account was linked."""
     person = await repo.ensure_user(tg_id, username)
 
     held = await repo.platform_links_for(person, Platform.PSN)
@@ -313,7 +353,7 @@ async def _connect(
             i18n.get("psn-accounts-full", max=MAX_PSN_ACCOUNTS),
             reply_markup=_full_keyboard(i18n),
         )
-        return
+        return False
 
     cooldown = await repo.check_platform_cooldown(tg_id, Platform.PSN, profile.account_id)
     if cooldown.is_blocked:
@@ -328,14 +368,14 @@ async def _connect(
                 minutes=minutes,
             ),
         )
-        return
+        return False
 
     # Same as Steam's own switch guard (#52): trading one PSN account for
     # another leaves the first one's trophies behind, so ask before doing it
     # — but never for relinking the same account.
     preview = await relink.preview(repo, tg_id, Platform.PSN, profile.account_id)
     if preview.needs_confirmation and not confirmed:
-        _pending_switch[tg_id] = raw
+        _pending_switch[tg_id] = pending
         await bot.send_message(
             tg_id,
             switch_prompt(
@@ -343,7 +383,7 @@ async def _connect(
             ),
             reply_markup=switch_keyboard("psn", i18n),
         )
-        return
+        return False
 
     taken_from = await relink.perform(
         repo, tg_id, Platform.PSN, profile.account_id, profile.online_id
@@ -352,6 +392,8 @@ async def _connect(
     # row has a real answer from the moment someone links, not just after
     # the first backfill/resync gets around to setting it.
     await repo.set_achievements_visible(person, Platform.PSN, True, external_id=profile.account_id)
+    if keep_token is not None:
+        await keep_token(person)
     log.info("connect_psn: tg_id=%s linked account_id=%s", tg_id, profile.account_id)
     count = len(await repo.platform_links_for(person, Platform.PSN))
     await bot.send_message(
@@ -393,11 +435,12 @@ async def _connect(
             profile.account_id, get_settings().catchup_publish_window_hours
         )
         await bot.send_message(tg_id, i18n.get("psn-catch-up-started"))
-        return
+        return True
 
     asyncio.create_task(  # noqa: RUF006
         run_psn(bot, psn_fetcher, repo, tg_id, profile.account_id, profile.online_id)
     )
+    return True
 
 
 @router.callback_query(F.data == "psn:switch:yes")
@@ -415,6 +458,14 @@ async def psn_switch_confirmed(
         return  # the prompt outlived a restart, or was answered twice
     with contextlib.suppress(Exception):
         await callback.message.delete()
+    if isinstance(raw, tuple):
+        # Linking by token (#233): the token checked once more, then linked.
+        from bot.handlers.psn_token import link_by_token
+
+        await link_by_token(
+            bot, repo, psn_auth, psn_fetcher, callback.from_user, raw[1], i18n, confirmed=True
+        )
+        return
     await _connect(
         bot,
         repo,

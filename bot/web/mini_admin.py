@@ -40,7 +40,7 @@ from bot.services.logins import logins_of
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.views.admin import login_value, rarity_label, tg_name
-from bot.views.admin_home import usage_rows
+from bot.views.admin_home import usage_by_credential, usage_rows
 
 log = logging.getLogger(__name__)
 
@@ -180,6 +180,7 @@ async def build_admin_user(repo: Repo, person: int, *, locale: str = "ru") -> di
         return None
     steam = await repo.get_platform_link(person, Platform.STEAM)
     psn_links = await repo.platform_links_for(person, Platform.PSN)
+    tokens = {token.account_id: token for token in await repo.psn_tokens_of(person)}
     psn = psn_links[0] if psn_links else None
     if user is None or (not user.xuid and steam is None and psn is None):
         return None
@@ -221,6 +222,13 @@ async def build_admin_user(repo: Repo, person: int, *, locale: str = "ru") -> di
                     ),
                     "trophy_level": link.psn_trophy_level,
                     "publishes": link.publishes,
+                    # Which token reads it (#233) — never the token.
+                    "token": tokens[link.external_id].status
+                    if link.external_id in tokens
+                    else None,
+                    "token_checked_at": tokens[link.external_id].checked_at
+                    if link.external_id in tokens
+                    else None,
                 }
                 for link in psn_links
             ],
@@ -563,12 +571,35 @@ def _plain(text: str) -> str:
 
 
 async def _keys_payload(request: web.Request, admin: Any) -> dict[str, Any]:
+    """Every credential with its state, check, load and hint, and the players'
+    own PSN tokens (#233) — the bot's keys screens, as data."""
     repo: Repo = request.app["mini_repo"]
     credentials: AdminCredentials = request.app["mini_admin_credentials"]
+    locale = await repo.user_locale(admin.person_id)
+    keys = _credentials_json(await credentials.states(), locale=locale)
+    usage = usage_by_credential(await admin_status(repo, credentials=credentials), locale=locale)
+    for key in keys:
+        key["usage"] = usage.get(key["name"])
+    alive, dead = await repo.psn_token_counts()
     return {
-        "keys": _credentials_json(
-            await credentials.states(), locale=await repo.user_locale(admin.person_id)
-        )
+        "keys": keys,
+        "psn_tokens": {
+            "alive": alive,
+            "dead": dead,
+            "shared": await repo.psn_accounts_without_token(),
+            "accounts": [
+                {
+                    "account_id": row["account_id"],
+                    "name": row["display_name"] or row["account_id"],
+                    "person_id": row["person_id"],
+                    "who": person_name(person_id=row["person_id"], handle=row["handle"]),
+                    "status": row["status"],
+                    "checked_at": row["checked_at"],
+                    "dead_at": row["dead_at"],
+                }
+                for row in await repo.psn_token_overview()
+            ],
+        },
     }
 
 

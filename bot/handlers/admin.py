@@ -61,7 +61,9 @@ from bot.views.admin import (
     render_chat_admin_pick,
     render_chat_card,
     render_chat_list,
+    render_key,
     render_keys,
+    render_psn_tokens,
     render_user_card,
     render_user_list,
     tg_name,
@@ -221,13 +223,49 @@ class AwaitingAdminTextInput(BaseFilter):
 
 @router.callback_query(F.data == "a:keys")
 async def keys_menu(
-    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
+    callback: CallbackQuery,
+    repo: Repo,
+    admin_credentials: AdminCredentials,
+    i18n: I18nContext,
+    access: Access,
 ) -> None:
     if not access.superadmin:
         await _refuse(callback, i18n.locale)
         return
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await render_keys(admin_credentials, locale=i18n.locale))
+    await _redraw(callback, *await render_keys(admin_credentials, repo, locale=i18n.locale))
+
+
+@router.callback_query(F.data.startswith("a:key:"))
+async def key_screen(
+    callback: CallbackQuery,
+    repo: Repo,
+    admin_credentials: AdminCredentials,
+    i18n: I18nContext,
+    access: Access,
+) -> None:
+    """One credential's own screen (#233): state, check, load, actions."""
+    if not access.superadmin:
+        await _refuse(callback, i18n.locale)
+        return
+    assert callback.data is not None
+    name = callback.data.removeprefix("a:key:")
+    if name not in admin_credentials:
+        await callback.answer()
+        return
+    _awaiting_input.pop(callback.from_user.id, None)
+    await _redraw(callback, *await render_key(admin_credentials, repo, name, locale=i18n.locale))
+
+
+@router.callback_query(F.data == "a:psntok")
+async def psn_tokens_screen(
+    callback: CallbackQuery, repo: Repo, i18n: I18nContext, access: Access
+) -> None:
+    """The players' own PSN tokens (#233), whose and in what state."""
+    if not access.superadmin:
+        await _refuse(callback, i18n.locale)
+        return
+    await _redraw(callback, *await render_psn_tokens(repo, locale=i18n.locale))
 
 
 @router.callback_query(F.data.startswith("a:keyset:"))
@@ -251,17 +289,23 @@ async def keys_set(
 
 @router.callback_query(F.data.startswith("a:keyclr:"))
 async def keys_clear(
-    callback: CallbackQuery, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
+    callback: CallbackQuery,
+    repo: Repo,
+    admin_credentials: AdminCredentials,
+    i18n: I18nContext,
+    access: Access,
 ) -> None:
     if not access.superadmin:
         await _refuse(callback, i18n.locale)
         return
     assert callback.data is not None
     name = callback.data.rsplit(":", 1)[1]
-    if name in admin_credentials:
-        await admin_credentials.clear(name, callback.from_user.id)
     _awaiting_input.pop(callback.from_user.id, None)
-    await _redraw(callback, *await render_keys(admin_credentials, locale=i18n.locale))
+    if name not in admin_credentials:
+        await _redraw(callback, *await render_keys(admin_credentials, repo, locale=i18n.locale))
+        return
+    await admin_credentials.clear(name, callback.from_user.id)
+    await _redraw(callback, *await render_key(admin_credentials, repo, name, locale=i18n.locale))
 
 
 @router.callback_query(F.data == "a:psncancel")
@@ -291,7 +335,11 @@ async def admin_text_input_cancel(
 
 @router.message(F.chat.type == ChatType.PRIVATE, AwaitingAdminTextInput())
 async def admin_text_input(
-    message: Message, admin_credentials: AdminCredentials, i18n: I18nContext, access: Access
+    message: Message,
+    repo: Repo,
+    admin_credentials: AdminCredentials,
+    i18n: I18nContext,
+    access: Access,
 ) -> None:
     _ = translator("admin", i18n.locale)
     assert message.from_user is not None and message.text is not None
@@ -322,7 +370,7 @@ async def admin_text_input(
         )
         return
     _awaiting_input.pop(message.from_user.id, None)
-    text, markup = await render_keys(admin_credentials, locale=i18n.locale)
+    text, markup = await render_key(admin_credentials, repo, name, locale=i18n.locale)
     await message.answer(_(f"admin-keys-{name}-saved", text=text), reply_markup=markup)
 
 

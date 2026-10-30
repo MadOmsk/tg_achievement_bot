@@ -991,6 +991,23 @@ CREATE TABLE IF NOT EXISTS passkeys (
 );
 CREATE INDEX IF NOT EXISTS idx_passkeys_person ON passkeys (person_id);
 
+-- A player's own PSN token (migration 142, #233): an NPSSO a person adds to one
+-- of their PSN accounts, opt-in; by account, gone when the account leaves its
+-- person. Fernet, never logged, never shown back.
+CREATE TABLE IF NOT EXISTS psn_tokens (
+    account_id       TEXT PRIMARY KEY,
+    person_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    npsso_enc        BLOB NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'dead')),
+    verified_at      TEXT NOT NULL,
+    checked_at       TEXT,
+    dead_at          TEXT,
+    last_error       TEXT,
+    notify_count     INTEGER NOT NULL DEFAULT 0,
+    last_notified_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_psn_tokens_person ON psn_tokens (person_id);
+
 
 -- One-time sign-in codes sent by email (#162, migration 079). Only an HMAC of
 -- the code is kept; `person_id` is set when a signed-in person adds the address

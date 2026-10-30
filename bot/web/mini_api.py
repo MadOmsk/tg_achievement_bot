@@ -63,6 +63,7 @@ from bot.web import (
     mini_notifications,
     mini_passkeys,
     mini_people,
+    mini_psn_token,
     mini_session,
 )
 from bot.web.mini_admin import setup_admin_routes
@@ -176,6 +177,7 @@ def setup_mini_api(
     app.router.add_post("/api/mini/disconnect/steam", handle_disconnect_steam)
     app.router.add_post("/api/mini/connect/psn", handle_connect_psn)
     app.router.add_post("/api/mini/disconnect/psn", handle_disconnect_psn)
+    mini_psn_token.setup(app)
     app.router.add_post("/api/mini/sync", handle_sync)
     app.router.add_patch("/api/mini/accounts/{platform}", handle_patch_account)
     app.router.add_get("/api/mini/chats", handle_chats)

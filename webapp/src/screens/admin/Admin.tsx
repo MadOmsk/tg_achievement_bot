@@ -120,7 +120,7 @@ function CredentialRow({ c, onClick }: { c: AdminCredential; onClick?: () => voi
 }
 
 function KeysView() {
-  const { data, tr, toast } = useApp();
+  const { data, tr, toast, locale, open } = useApp();
   const keys = useLoad("admin-keys", () => adminApi.fetchKeys(data));
   const [edit, setEdit] = useState<AdminCredential | null>(null);
   const [value, setValue] = useState("");
@@ -142,6 +142,21 @@ function KeysView() {
           />
         ))}
       </Group>
+      {keys.data?.psn_tokens && (
+        <Group title={tr("adminPsnTokens")}>
+          {keys.data.psn_tokens.accounts.map((t) => (
+            <Row
+              key={t.account_id}
+              lead={<span className={`adm-dot ${t.status === "active" ? "adm-dot-ok" : "adm-dot-bad"}`} />}
+              title={t.name}
+              sub={`${t.who} · ${t.status === "active" ? `${tr("psnTokenChecked")} ${formatWhen(t.checked_at ?? "", locale)}` : `${tr("psnTokenDeadSince")} ${formatWhen(t.dead_at ?? "", locale)}`}`}
+              chevron
+              onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.USER, personId: t.person_id } })}
+            />
+          ))}
+          <Row title={tr("adminPsnTokensShared").replace("{count}", String(keys.data.psn_tokens.shared))} sub={tr("adminPsnTokensNote")} />
+        </Group>
+      )}
       {edit && (
         <Sheet title={edit.label} onClose={() => setEdit(null)} layer="key">
           <form
@@ -160,6 +175,11 @@ function KeysView() {
               }
             }}
           >
+            <p className="t-body">
+              {!edit.configured ? tr("keyUnset") : edit.status === "invalid" ? tr("keyDead") : tr("keySet")}
+              {edit.checked_at ? ` · ${formatWhen(edit.checked_at, locale)}` : ""}
+            </p>
+            {edit.usage && <p className="t-meta">{`${tr("adminKeyRequests")}: ${edit.usage}`}</p>}
             <p className="t-body">{edit.hint}</p>
             <Field
               type="password"
@@ -364,7 +384,7 @@ function UsersView() {
 }
 
 function UserView({ personId, onGone }: { personId: number; onGone: () => void }) {
-  const { data, tr } = useApp();
+  const { data, tr, locale } = useApp();
   const card = useLoad(`admin-user:${personId}`, () => adminApi.fetchUser(data, personId));
   const actions = useLoad(`admin-actions-user:${personId}`, () => adminApi.fetchActions(data, "user", `p${personId}`));
   const c = card.data;
@@ -393,6 +413,18 @@ function UserView({ personId, onGone }: { personId: number; onGone: () => void }
       </Group>
       {platform("Xbox", c.xbox)}
       {platform("PlayStation", c.psn)}
+      {Array.isArray(c.psn?.accounts) && (
+        <Group title={tr("adminPsnTokens")}>
+          {(c.psn.accounts as Array<{ external_id: string; name: string | null; token?: string | null; token_checked_at?: string | null }>).map((a) => (
+            <Row
+              key={a.external_id}
+              lead={<Icon name="key" />}
+              title={a.name ?? a.external_id}
+              sub={a.token === "active" ? `${tr("psnTokenOwn")} · ${formatWhen(a.token_checked_at ?? "", locale)}` : a.token === "dead" ? tr("psnTokenDeadShort") : tr("psnTokenShared")}
+            />
+          ))}
+        </Group>
+      )}
       {platform("Steam", c.steam)}
       <Group title={tr("publishing")}>
         <Row title={c.rarity.title} sub={c.rarity.value} />

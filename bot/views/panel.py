@@ -44,6 +44,7 @@ from bot.views.parts import (
     visibility_status_text,
     xbox_value_parts,
 )
+from bot.views.psn_token import token_mark
 
 LOGIN_STATUS_KEYS = {
     TokenStatus.ACTIVE: "panel-login-active",
@@ -579,9 +580,12 @@ async def render_account_menu(
 
 
 async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
-    links = await repo.platform_links_for(await repo.person_id(tg_id), Platform.PSN)
+    person = await repo.person_id(tg_id)
+    links = await repo.platform_links_for(person, Platform.PSN)
     if not links:
         return None
+    # Each account's own token, if it has one (#233).
+    tokens = {token.account_id: token for token in await repo.psn_tokens_of(person)}
     lines = [
         i18n.get(
             "panel-psn-title",
@@ -605,12 +609,16 @@ async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
         name = link_nickname(link)
         parts = await link_value_parts(repo, tg_id=tg_id, link=link, locale=i18n.locale)
         lines.append(f"<b>PSN: {html_escape(name)}</b>  ·  " + "  ·  ".join(parts))
+        token = tokens.get(link.external_id)
+        own = token is not None and token.status == "active"
         lines.append(
             i18n.get(
                 "panel-psn-account-state",
                 login=visibility_status_text(link, i18n.locale),
                 state=_publish_state(link.publishes, i18n),
             )
+            + " · "
+            + i18n.get("psn-token-own" if own else "psn-token-shared")
         )
         builder.row(
             InlineKeyboardButton(
@@ -624,6 +632,10 @@ async def _psn_menu(repo: Repo, tg_id: int, i18n: I18nContext) -> Screen | None:
             InlineKeyboardButton(
                 text=i18n.get("kb-publishes-on" if link.publishes else "kb-publishes-off"),
                 callback_data=f"panel:psnpub:{link.external_id}",
+            ),
+            InlineKeyboardButton(
+                text=i18n.get("psn-token-button", mark=token_mark(token)),
+                callback_data=f"psntok:{link.external_id}",
             ),
             InlineKeyboardButton(
                 text=i18n.get("kb-psn-disconnect"), callback_data=f"psn:unlink:{link.external_id}"

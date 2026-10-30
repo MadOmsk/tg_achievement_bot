@@ -199,7 +199,15 @@ class _MergeRepo:
                 "UPDATE OR IGNORE pass_item_codes SET person_id = :keep WHERE person_id = :absorb",
                 a,
             )
-            for table in ("web_sessions", "notifications", "push_subscriptions", "passkeys"):
+            # A PSN token goes with its account (#233); one whose account was not
+            # kept stops counting with its link and is forgotten later.
+            for table in (
+                "web_sessions",
+                "notifications",
+                "push_subscriptions",
+                "passkeys",
+                "psn_tokens",
+            ):
                 await conn.execute(
                     f"UPDATE {table} SET person_id = :keep WHERE person_id = :absorb", a
                 )

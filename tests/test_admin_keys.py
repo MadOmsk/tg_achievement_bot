@@ -16,7 +16,7 @@ from bot.services.steam import auth as steam_auth_module
 from bot.services.steam.auth import SteamAuth
 from bot.services.translate.auth import AnthropicAuth
 from bot.services.youtube.auth import YouTubeAuth
-from bot.views.admin import render_keys
+from bot.views.admin import render_key, render_keys
 
 KEY = "0123456789ABCDEF0123456789ABCDEF"
 ADMIN_ID = 1
@@ -39,19 +39,19 @@ def _callback_datas(markup) -> list[str]:
 async def test_keys_screen_lists_all_platforms_unconfigured(
     repo: Repo, cipher: TokenCipher, i18n
 ) -> None:
-    text, markup = await render_keys(_credentials(repo, cipher), locale="ru")
+    credentials = _credentials(repo, cipher)
+    _text, markup = await render_keys(credentials, repo, locale="ru")
 
     datas = _callback_datas(markup)
-    assert "a:keyset:steam" in datas
-    assert "a:keyset:psn" in datas
-    assert "a:keyset:anthropic" in datas
-    assert "a:keyset:youtube" in datas
-    # Nothing configured — no Clear buttons.
-    assert "a:keyclr:steam" not in datas
-    assert "a:keyclr:psn" not in datas
-    assert "a:keyclr:anthropic" not in datas
-    assert "a:keyclr:youtube" not in datas
-    assert "не настроен" in text
+    # One button per key (#233), then the players' own PSN tokens.
+    for name in ("steam", "psn", "anthropic", "youtube"):
+        assert f"a:key:{name}" in datas
+    assert "a:psntok" in datas
+    # Inside a key not set: set it, nothing to clear.
+    text, markup = await render_key(credentials, repo, "steam", locale="ru")
+    datas = _callback_datas(markup)
+    assert "a:keyset:steam" in datas and "a:keyclr:steam" not in datas
+    assert "не задан" in text
 
 
 async def test_keys_screen_offers_clear_once_steam_is_configured(
@@ -64,12 +64,17 @@ async def test_keys_screen_offers_clear_once_steam_is_configured(
     steam_auth = SteamAuth(repo, cipher)
     await steam_auth.set_key(KEY, admin_id=ADMIN_ID)
 
-    _text, markup = await render_keys(_credentials(repo, cipher, steam_auth), locale="ru")
-
-    datas = _callback_datas(markup)
-    assert "a:keyclr:steam" in datas
-    assert "a:keyclr:psn" not in datas
-    assert "a:keyclr:anthropic" not in datas
+    credentials = _credentials(repo, cipher, steam_auth)
+    _text, markup = await render_keys(credentials, repo, locale="ru")
+    assert any(
+        b.text.startswith("✅") and b.callback_data == "a:key:steam"
+        for row in markup.inline_keyboard
+        for b in row
+    )
+    _text, markup = await render_key(credentials, repo, "steam", locale="ru")
+    assert "a:keyclr:steam" in _callback_datas(markup)
+    _text, markup = await render_key(credentials, repo, "psn", locale="ru")
+    assert "a:keyclr:psn" not in _callback_datas(markup)
 
 
 class _FakeMessage:
@@ -94,7 +99,7 @@ async def test_admin_text_input_saves_a_valid_steam_key(
     _awaiting_input[ADMIN_ID] = STEAM_PENDING
     msg = _FakeMessage(KEY)
 
-    await admin_text_input(msg, _credentials(repo, cipher, steam_auth), i18n, FULL)
+    await admin_text_input(msg, repo, _credentials(repo, cipher, steam_auth), i18n, FULL)
 
     assert await steam_auth.get_key() == KEY
     assert ADMIN_ID not in _awaiting_input  # flow finished
@@ -112,7 +117,7 @@ async def test_admin_text_input_rejects_a_bad_steam_key_and_stays_armed(
     _awaiting_input[ADMIN_ID] = STEAM_PENDING
     msg = _FakeMessage("bad-key")
 
-    await admin_text_input(msg, _credentials(repo, cipher, steam_auth), i18n, FULL)
+    await admin_text_input(msg, repo, _credentials(repo, cipher, steam_auth), i18n, FULL)
 
     assert await steam_auth.get_key() is None
     assert _awaiting_input.get(ADMIN_ID) == STEAM_PENDING  # still armed for a retry

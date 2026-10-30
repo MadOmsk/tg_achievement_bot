@@ -14,11 +14,12 @@ ceremony for what is otherwise three genuinely identical calculations.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from bot.util import parse_iso, utcnow
 
-# Sparser polling of absent people is politeness, not thrift: neither
-# provider's budget is anywhere near a constraint (SPEC 5.2).
-IDLE_AFTER_SECONDS = 2 * 3600
+if TYPE_CHECKING:
+    from bot.services.poll_cadence import Cadence
 
 # Both tickers fire every 60s, but a timestamp is written a moment after the
 # tick begins, so the next tick measures 59.x seconds and decides it is too
@@ -52,21 +53,23 @@ def presence_interval(
     online: bool,
     in_game: bool,
     changed_at: str | None,
-    interval_in_game: int,
-    interval_online: int,
-    interval_offline: int,
-    interval_idle: int,
+    cadence: Cadence,
 ) -> int:
     """How long to wait before the next presence check, given the target's
-    last known state. `online`/`in_game` are the caller's own translation of
-    its platform's state shape — everything past that point is identical."""
+    last known state and its platform's steps (the super-admin's settings,
+    `services/poll_cadence.py`). `online`/`in_game` are the caller's own
+    translation of its platform's state shape — everything past that point is
+    identical. How long somebody has been offline is the account's own, from
+    its presence row's `changed_at`."""
     if online:
-        return interval_in_game if in_game else interval_online
+        return cadence.in_game if in_game else cadence.online
     changed = parse_iso(changed_at)
     offline_for = (utcnow() - changed).total_seconds() if changed else 0.0
-    if offline_for >= IDLE_AFTER_SECONDS:
-        return interval_idle
-    return interval_offline
+    if offline_for >= cadence.dormant_after_days * 86400:
+        return cadence.dormant
+    if offline_for >= cadence.idle_after:
+        return cadence.idle
+    return cadence.offline
 
 
 DORMANT_THRESHOLD_DAYS = 14

@@ -248,7 +248,7 @@ async def test_the_mini_app_lists_and_sets_every_key_the_bot_does(
 
     monkeypatch.setattr(steam_auth_module, "check_alive", _dead)
     credentials = _credentials(repo, cipher, settings)
-    text, markup = await render_keys(credentials, locale="ru")
+    _text, markup = await render_keys(credentials, repo, locale="ru")
     client = await _client(repo, settings, credentials)
     try:
         keys = (await (await client.get("/api/mini/admin/keys")).json())["keys"]
@@ -261,11 +261,9 @@ async def test_the_mini_app_lists_and_sets_every_key_the_bot_does(
     assert [k["name"] for k in keys] == ["psn", "steam", "anthropic", "youtube", "smtp"]
     smtp = keys[-1]
     assert smtp["label"] == "Почта (SMTP)" and smtp["hint"]
+    buttons = {b.callback_data: b.text for row in markup.inline_keyboard for b in row}
     for key in keys:
-        assert key["label"] in text
-        assert f"a:keyset:{key['name']}" in {
-            b.callback_data for row in markup.inline_keyboard for b in row
-        }
+        assert key["label"] in buttons[f"a:key:{key['name']}"]
     assert refused.status == 400 and refused_body["error"] == "invalid"
     assert unknown.status == 404
 

@@ -13,6 +13,7 @@ reason: poller/admin_refresh.py redraws it on a timer.
 from __future__ import annotations
 
 from collections.abc import Callable
+from html import escape as html_escape
 from typing import Literal
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -31,7 +32,7 @@ from bot.i18n import translator
 from bot.services import roles
 from bot.services.admin_actions import ActionView, AdminContext, Confirm, Target
 from bot.services.admin_actions import available as available_actions
-from bot.services.admin_credentials import AdminCredentials
+from bot.services.admin_credentials import AdminCredentials, CredentialState
 from bot.services.admin_registry import GROUPS, group_label
 from bot.services.admin_registry import values as registry_values
 from bot.services.admin_settings import (
@@ -39,6 +40,7 @@ from bot.services.admin_settings import (
     STATUS_ICON,
     VISIBILITY_ICON,
 )
+from bot.services.admin_status import admin_status
 from bot.services.logins import Login, logins_of
 from bot.services.naming import (
     account_nickname,
@@ -51,6 +53,7 @@ from bot.services.roles import FULL, Access
 from bot.services.stats import month_cutoff_utc, today_cutoff_utc
 from bot.util import humanize_ago, real_game_name
 from bot.views import Screen
+from bot.views.admin_home import usage_by_credential
 from bot.views.admin_settings import action_rows, setting_rows
 from bot.views.inline_lists import InlineListing, button_rows, page_nav, paginate
 from bot.views.keyboards import (
@@ -84,38 +87,113 @@ def _cancel_input_keyboard(*, locale: str) -> InlineKeyboardMarkup:
 # ---- Platform keys (#17) ----
 
 
+def key_icon(state: CredentialState) -> str:
+    """A credential's state at a glance (#233): set and working, set and
+    refused, or not set at all."""
+    if not state.configured:
+        return "⚪️"
+    return "⚠️" if state.status == TokenStatus.INVALID else "✅"
+
+
 async def render_keys(
-    credentials: AdminCredentials, *, locale: str
+    credentials: AdminCredentials, repo: Repo, *, locale: str
 ) -> tuple[str, InlineKeyboardMarkup]:
-    """One line and one set of buttons per credential, from the registry the
-    Mini App walks too (#176)."""
+    """One button per credential with its state (#233; agreed on a mockup,
+    2026-10-29), from the registry the Mini App walks too (#176); inside each
+    its state, load and actions. Beside them, the players' own PSN tokens."""
     _ = translator("admin", locale)
     states = await credentials.states()
-    lines = [_("admin-keys-title"), ""]
+    buttons = [
+        InlineKeyboardButton(
+            text=key_icon(state) + " " + _("admin-keys-" + state.name + "-label"),
+            callback_data="a:key:" + state.name,
+        )
+        for state in states
+    ]
     builder = InlineKeyboardBuilder()
-    for state in states:
+    for i in range(0, len(buttons), 2):
+        builder.row(*buttons[i : i + 2])
+    alive, dead = await repo.psn_token_counts()
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-personal-button", alive=alive, dead=dead),
+            callback_data="a:psntok",
+        )
+    )
+    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    return "\n".join([_("admin-keys-title"), "", _("admin-keys-tap")]), builder.as_markup()
+
+
+async def render_key(
+    credentials: AdminCredentials, repo: Repo, name: str, *, locale: str
+) -> tuple[str, InlineKeyboardMarkup]:
+    """One credential (#233): its state, when it was last checked, its load,
+    where to get it, and what can be done with it. The value is never shown."""
+    _ = translator("admin", locale)
+    state = await credentials.state(name)
+    if not state.configured:
+        status = _("admin-key-status-unset")
+    elif state.status == TokenStatus.INVALID:
+        status = _("admin-key-status-dead")
+    else:
+        status = _("admin-key-status-alive")
+    lines = [_("admin-key-title", label=_("admin-keys-" + name + "-label")), "", status]
+    if state.configured and state.checked_at:
+        lines.append(_("admin-key-checked", ago=humanize_ago(state.checked_at, locale)))
+    usage = usage_by_credential(await admin_status(repo, credentials=credentials), locale=locale)
+    if name in usage:
+        lines.append(_("admin-key-usage", usage=usage[name]))
+    if name == "psn":
+        alive, dead = await repo.psn_token_counts()
         lines.append(
             _(
-                "admin-keys-line",
-                label=_(f"admin-keys-{state.name}-label"),
-                state=_("admin-keys-set") if state.configured else _("admin-keys-unset"),
+                "admin-key-psn-reads",
+                shared=await repo.psn_accounts_without_token(),
+                alive=alive,
+                dead=dead,
             )
         )
-        action = "change" if state.configured else "add"
+    lines += ["", _("admin-keys-" + name + "-hint")]
+    builder = InlineKeyboardBuilder()
+    action = "change" if state.configured else "add"
+    builder.row(
+        InlineKeyboardButton(
+            text=_("admin-keys-" + name + "-" + action), callback_data="a:keyset:" + name
+        )
+    )
+    if state.configured:
         builder.row(
             InlineKeyboardButton(
-                text=_(f"admin-keys-{state.name}-{action}"),
-                callback_data=f"a:keyset:{state.name}",
+                text=_("admin-keys-" + name + "-clear"), callback_data="a:keyclr:" + name
             )
         )
-        if state.configured:
-            builder.row(
-                InlineKeyboardButton(
-                    text=_(f"admin-keys-{state.name}-clear"),
-                    callback_data=f"a:keyclr:{state.name}",
-                )
-            )
-    builder.row(InlineKeyboardButton(text=_("admin-back"), callback_data="a:home"))
+    builder.row(InlineKeyboardButton(text=_("admin-keys-back"), callback_data="a:keys"))
+    return "\n".join(lines), builder.as_markup()
+
+
+async def render_psn_tokens(repo: Repo, *, locale: str) -> tuple[str, InlineKeyboardMarkup]:
+    """The players' own PSN tokens (#233): whose, which account, working or
+    not — never a token itself."""
+    _ = translator("admin", locale)
+    rows = await repo.psn_token_overview()
+    lines = [_("admin-psntok-title"), ""]
+    builder = InlineKeyboardBuilder()
+    for row in rows:
+        name = html_escape(row["display_name"] or row["account_id"])
+        who = html_escape(person_name(person_id=row["person_id"], handle=row["handle"]))
+        if row["status"] == "active":
+            ago = humanize_ago(row["checked_at"], locale)
+            lines.append(_("admin-psntok-alive", name=name, who=who, ago=ago))
+        else:
+            ago = humanize_ago(row["dead_at"], locale)
+            lines.append(_("admin-psntok-dead", name=name, who=who, ago=ago))
+        builder.row(
+            InlineKeyboardButton(text="👤 " + who, callback_data="a:u:p" + str(row["person_id"]))
+        )
+    if not rows:
+        lines.append(_("admin-psntok-none"))
+    lines += ["", _("admin-psntok-note", shared=await repo.psn_accounts_without_token())]
+    builder.row(InlineKeyboardButton(text=_("admin-keys-back"), callback_data="a:keys"))
     return "\n".join(lines), builder.as_markup()
 
 
@@ -395,10 +473,21 @@ async def _psn_admin_block(
         ),
         _("admin-psn-id-tag", external_id=link.external_id),
         _("admin-login-row", login=visibility_status_text(link, locale)),
+        await _psn_token_row(repo, link.external_id, _, locale),
         "  ·  ".join(parts),
         _("admin-online-row", online=online),
         *_muted_line(link, _),
     ]
+
+
+async def _psn_token_row(repo: Repo, account_id: str, _, locale: str) -> str:
+    """Which token reads this account (#233) — never the token itself."""
+    token = await repo.psn_token(account_id)
+    if token is None:
+        return _("admin-psn-token-shared")
+    if token.status == "active":
+        return _("admin-psn-token-alive", ago=humanize_ago(token.checked_at, locale))
+    return _("admin-psn-token-dead", ago=humanize_ago(token.dead_at, locale))
 
 
 async def render_user_card(

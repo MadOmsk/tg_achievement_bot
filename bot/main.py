@@ -30,6 +30,7 @@ from bot.handlers import connect as connect_handlers
 from bot.handlers import hltb as hltb_handlers
 from bot.handlers import panel as panel_handlers
 from bot.handlers import psn as psn_handlers
+from bot.handlers import psn_token as psn_token_handlers
 from bot.handlers import steam as steam_handlers
 from bot.handlers.chat import PersonMiddleware, UsernameMiddleware
 from bot.i18n import (
@@ -68,7 +69,7 @@ from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
-from bot.services import achievement_icons, media, raw_answers
+from bot.services import achievement_icons, media, poll_cadence, raw_answers
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -79,6 +80,7 @@ from bot.services.notifier import Notifier
 from bot.services.notify import SuperadminNotifier
 from bot.services.octopus import OctopusCollector
 from bot.services.psn.auth import PsnAuth
+from bot.services.psn.personal import PsnPersonalAuth
 from bot.services.release_notify import announce_release_if_needed
 from bot.services.smtp_auth import SmtpAuth
 from bot.services.steam.auth import SteamAuth
@@ -133,6 +135,9 @@ def setup_logging(level: str) -> None:
     # production: the key had been sitting in plain text in journalctl since
     # M-Steam-1. WARNING still surfaces httpx's own connection/TLS errors.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    # psnawp logs every request's headers at DEBUG — the bearer token of a
+    # player's own PSN token included (#233).
+    logging.getLogger("psnawp").setLevel(logging.WARNING)
 
 
 async def run(settings: Settings) -> None:
@@ -151,6 +156,9 @@ async def run(settings: Settings) -> None:
     # later without touching .env. The value from the environment only seeds it.
     if await repo.get_app_setting("timezone") is None:
         await repo.set_app_setting("timezone", settings.tz)
+    # How often each platform is asked: the panel's from now on, the
+    # environment's values only seed it (#184 stage 0).
+    await poll_cadence.seed_once(repo, settings)
 
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
     auth = XboxAuthService(settings, repo, cipher)
@@ -179,6 +187,10 @@ async def run(settings: Settings) -> None:
     # …and its counterpart (#62): a credential that comes back says so,
     # or the admin is left holding an alarm with no end to it.
     psn_auth.on_alive = lambda: notifier.service_key_alive(Platform.PSN)
+    # Players' own PSN tokens (#233): their account is read with them while
+    # they live; its owner is told when one dies (below, with the notifier).
+    psn_personal = PsnPersonalAuth(repo, cipher)
+    psn_auth.personal = psn_personal
 
     # The Steam key now lives encrypted in app_settings, admin-settable
     # without a restart (#17); the .env value is only a first-run seed
@@ -285,6 +297,7 @@ async def run(settings: Settings) -> None:
         PatchRefresh(repo, steam_extras),
         GuideVideos(repo, youtube_auth),
         OctopusWorker(repo, OctopusCollector(repo, store_collector)),
+        psn_personal=psn_personal,
     )
 
     async def on_linked(
@@ -371,6 +384,19 @@ async def run(settings: Settings) -> None:
 
     auth.on_token_dead = on_xbox_login_dead
 
+    async def on_psn_token_dead(person: int, account_id: str) -> None:
+        # The account is read with the shared token again; its owner hears of
+        # it in their list, on their devices and in Telegram (#233).
+        names = {
+            link.external_id: link.display_name
+            for link in await repo.platform_links_for(person, Platform.PSN)
+        }
+        await notifications.notify(
+            person, "psn_token_dead", name=names.get(account_id) or account_id
+        )
+
+    psn_personal.on_dead = on_psn_token_dead
+
     async def on_people_merged(keep: int, absorb: int) -> None:
         # The Xbox account and its token may have changed hands (#162).
         auth.forget(keep)
@@ -428,6 +454,7 @@ async def run(settings: Settings) -> None:
     dispatcher.include_router(hltb_handlers.router)
     dispatcher.include_router(steam_handlers.router)
     dispatcher.include_router(psn_handlers.router)
+    dispatcher.include_router(psn_token_handlers.router)
     dispatcher.include_router(backfill_handlers.router)
 
     async def startup_catch_up() -> None:

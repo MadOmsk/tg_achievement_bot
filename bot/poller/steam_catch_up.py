@@ -29,6 +29,7 @@ from bot.constants import AccountPlatform
 from bot.db.repo import Repo, SteamPollTarget
 from bot.poller.cadence import is_dormant
 from bot.poller.steam_fetcher import SteamFetcher
+from bot.services import poll_cadence
 from bot.services.steam import client as steam_client
 from bot.services.steam.auth import SteamAuth
 from bot.services.steam.client import SteamApiError
@@ -167,22 +168,22 @@ class SteamCatchUpPoller:
             api_key=api_key,
         )
 
-    def _target_interval(self, target: SteamPollTarget) -> int:
+    def _target_interval(self, target: SteamPollTarget, dormant_after: int) -> int:
         if self._settings.catchup_interval_minutes == 0:
             return 0
-        if is_dormant(
-            target.last_online_at, target.linked_at, self._settings.catchup_idle_threshold_days
-        ):
+        if is_dormant(target.last_online_at, target.linked_at, dormant_after):
             return self._settings.catchup_idle_interval_minutes * 60
         return self._settings.catchup_interval_minutes * 60
 
     async def _next_due(self) -> SteamPollTarget | None:
         """The account that has waited longest past its interval."""
+        dormant_after = (await poll_cadence.load(self._repo, "steam")).dormant_after_days
         now = time.monotonic()
         overdue = [
             target
             for target in await self._repo.steam_pollable_users()
-            if now - self._last.get(target.steam_id, self._started) >= self._target_interval(target)
+            if now - self._last.get(target.steam_id, self._started)
+            >= self._target_interval(target, dormant_after)
         ]
         if not overdue:
             return None
