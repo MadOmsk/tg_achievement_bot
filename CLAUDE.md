@@ -288,6 +288,7 @@ name, or when the tree goes stale.
 │   ├── cache_achievement_icons.py                                   icon pre-caching (#99)
 │   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
 │   ├── collect_x360_addons.py    a 360 game's add-ons searched once, where never searched yet
+│   ├── translate_game_descriptions.py   every game's description translated at once (#230)
 │   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
 │                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
@@ -2131,7 +2132,9 @@ elsewhere in this file still describe the bot.
   translated as soon as the store collection or the octopus collects it
   (`GameTranslator.later`), and `poller/translations.py` walks every game by
   id for what they missed (a pass that finds nothing rests an hour), so no
-  page waits for it.
+  page waits for it. The whole catalog can also be done in one run
+  (`scripts/translate_game_descriptions.py`, beside a running bot; the same
+  choice of text, call and storage).
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,
