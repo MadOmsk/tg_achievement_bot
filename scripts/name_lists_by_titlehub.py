@@ -1,54 +1,43 @@
 """Name the Xbox achievement lists whose name was never learned (#147; owner,
 2026-10-15), by asking titlehub about each title id through a login the
-operator gave the bot whose database `--auth-db` is (the dev bot's, never
+operator gave the bot whose schema `--auth-schema` is (the dev bot's, never
 production's: a refresh here would log that person out there). Titlehub
 describes any title to any login.
 
 **That bot must be stopped**: Microsoft invalidates the previous refresh token
 when it issues a new one, so two processes refreshing one person log them out.
-This takes the bot's own lock beside `--auth-db` and refuses while it runs.
-The games database is copied into `backups/` first.
+This takes the bot's own lock (that of the env file) and refuses while it
+runs. The database is copied into `backups/` first.
 
     BOT_ENV_FILE=.env.test .venv/Scripts/python.exe -X utf8 -m scripts.name_lists_by_titlehub \
-        --auth-db data/test.db --db data/games.db --dry-run
+        --auth-schema test --schema dev --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.lock import AlreadyRunningError, single_instance
 from bot.services.crypto import TokenCipher
 from bot.services.xbox.auth import XboxAuthService
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-names-{stamp}.db"
-    files.backup(db_path, target)
-    return target
-
-
-async def _open_as_is(path: Path) -> Database:
-    """The login's database as it is: no schema, no migration. It belongs to
-    another bot, maybe on older code — `Database.connect` once migrated the
-    dev bot's file to this branch's schema and the dev bot refused to start
-    (2026-10-15). Writable: a refreshed token is stored back."""
-    return await files.open_database(path)
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-names-{stamp}.dump", schema=schema)
 
 
 async def run(args: argparse.Namespace) -> int:
     settings = get_settings()
-    games = await Database(Path(args.db)).connect()
-    auth_db = await _open_as_is(Path(args.auth_db))
+    games = await tools.open_database(schema=args.schema)
+    auth_db = await tools.open_database(schema=args.auth_schema)
     try:
         repo, auth_repo = Repo(games), Repo(auth_db)
         todo = await repo.unnamed_lists(("xbox_modern", "xbox_360"))
@@ -56,7 +45,7 @@ async def run(args: argparse.Namespace) -> int:
         print(f"{len(todo)} Xbox lists with no name; login of person {person}")
         if args.dry_run or not todo or person is None:
             return 0
-        print("database copied to", _backup(Path(args.db)))
+        print("database copied to", _backup(args.schema))
         auth = XboxAuthService(
             settings, auth_repo, TokenCipher(settings.fernet_key.get_secret_value())
         )
@@ -89,13 +78,13 @@ async def run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True, help="the games database to name lists in")
-    parser.add_argument("--auth-db", required=True, help="the database whose Xbox login is used")
+    tools.add_arguments(parser)
+    parser.add_argument("--auth-schema", required=True, help="the schema whose logins are used")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     try:
-        with single_instance(Path(args.auth_db).parent / "bot.lock"):
-            return asyncio.run(run(args))
+        with single_instance(get_settings().db_path.parent / "bot.lock"):
+            return tools.run(run(args))
     except AlreadyRunningError:
         print("that bot is running: stop it first (manage.ps1 stop -Test)")
         return 1

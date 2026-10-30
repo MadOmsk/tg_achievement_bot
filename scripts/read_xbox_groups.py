@@ -1,24 +1,23 @@
 """Read each Xbox list once on contract 6 to learn its achievements' groups —
 `base`, the list it shipped with, or `non_base`, added later (#147; owner,
-2026-10-15) — through a login the operator gave the bot whose database
-`--auth-db` is (never production's: a refresh here logs that person out
+2026-10-15) — through a login the operator gave the bot whose schema
+`--auth-schema` is (never production's: a refresh here logs that person out
 there). The answers are kept whole (`xbox_achievements`). **That bot must be
-stopped.** The games database is copied into `backups/` first.
+stopped.** The database is copied into `backups/` first.
 
     BOT_ENV_FILE=.env.test .venv/Scripts/python.exe -X utf8 -m scripts.read_xbox_groups \
-        --auth-db data/test.db --db data/games.db --limit 5
+        --auth-schema test --schema dev --limit 5
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.lock import AlreadyRunningError, single_instance
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
@@ -27,23 +26,16 @@ from bot.services.xbox.client import PAGE_SIZE, XboxApiError, XboxClient
 from bot.services.xbox.models import xbox_group
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-xbox-groups-{stamp}.db"
-    files.backup(db_path, target)
-    return target
-
-
-async def _open_as_is(path: Path) -> Database:
-    """The login's database as it is: no schema, no migration."""
-    return await files.open_database(path)
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-xbox-groups-{stamp}.dump", schema=schema)
 
 
 async def run(args: argparse.Namespace) -> int:
     settings = get_settings()
-    games = await Database(Path(args.db)).connect()
-    auth_db = await _open_as_is(Path(args.auth_db))
+    games = await tools.open_database(schema=args.schema)
+    auth_db = await tools.open_database(schema=args.auth_schema)
     try:
         repo = Repo(games)
         todo = await repo.achievement_list_ids("xbox_modern")
@@ -53,7 +45,7 @@ async def run(args: argparse.Namespace) -> int:
         print(f"{len(todo)} Xbox lists; login of person {person}")
         if person is None:
             return 1
-        print("database copied to", _backup(Path(args.db)))
+        print("database copied to", _backup(args.schema))
         raw_answers.set_sink(repo.save_payload)
         auth = XboxAuthService(
             settings, Repo(auth_db), TokenCipher(settings.fernet_key.get_secret_value())
@@ -99,13 +91,13 @@ async def run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
-    parser.add_argument("--auth-db", required=True)
+    tools.add_arguments(parser)
+    parser.add_argument("--auth-schema", required=True, help="the schema whose logins are used")
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
     try:
-        with single_instance(Path(args.auth_db).parent / "bot.lock"):
-            return asyncio.run(run(args))
+        with single_instance(get_settings().db_path.parent / "bot.lock"):
+            return tools.run(run(args))
     except AlreadyRunningError:
         print("that bot is running: stop it first (manage.ps1 stop -Test)")
         return 1

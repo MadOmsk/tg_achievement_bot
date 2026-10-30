@@ -3,23 +3,22 @@ from what is stored (#147; owner, 2026-10-16): the earned row that finished the
 game's base list is `mythic`, the one that finished its whole list
 `completes` (`repo.mark_xbox_completions`). No request; marks once.
 
-    .venv/Scripts/python.exe -X utf8 -m scripts.mark_completions --db data/games.db
+    .venv/Scripts/python.exe -X utf8 -m scripts.mark_completions --schema dev
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
-from pathlib import Path
 
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
+    tools.add_arguments(parser)
     args = parser.parse_args()
-    database = await Database(Path(args.db)).connect()
+    database = await tools.open_database(schema=args.schema)
     try:
         repo = Repo(database)
         for platform in ("xbox_modern", "xbox_360"):
@@ -32,4 +31,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

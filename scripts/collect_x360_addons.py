@@ -7,34 +7,32 @@ catalog's pace (`xbox_catalog.LIMITER`); beside a running bot (it only adds
 DLC rows). The database is copied into `backups/` first.
 
     .venv/Scripts/python.exe -X utf8 -m scripts.collect_x360_addons --limit 5
-    .venv/Scripts/python.exe -X utf8 -m scripts.collect_x360_addons --db data/bot.db
+    .venv/Scripts/python.exe -X utf8 -m scripts.collect_x360_addons --schema prod
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.config import get_settings
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.store_collect import CollectReport, StoreCollector
 
 logging.basicConfig(level="WARNING")
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-x360-addons-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-x360-addons-{stamp}.dump", schema=schema)
 
 
-def _titles(db_path: Path) -> list[str]:
-    with files.connect(db_path, readonly=True) as conn:
+def _titles(schema: str | None) -> list[str]:
+    with tools.connect(schema=schema, readonly=True) as conn:
         rows = conn.execute(
             "SELECT DISTINCT title_id FROM versions WHERE store = 'xbox' AND console = '360'"
             " AND stand_in = 0 AND platform = 'xbox_360' AND title_id IS NOT NULL ORDER BY title_id"
@@ -44,21 +42,15 @@ def _titles(db_path: Path) -> list[str]:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", default=None)
+    tools.add_arguments(parser)
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
-    if args.db:
-        db_path = Path(args.db)
-    else:
-        from bot.config import get_settings
-
-        db_path = Path(get_settings().db_path)
-    titles = _titles(db_path)
+    titles = _titles(args.schema)
     if args.limit:
         titles = titles[: args.limit]
     print(f"{len(titles)} 360 games with a store page")
-    print("database copied to", _backup(db_path))
-    database = await Database(db_path).connect()
+    print("database copied to", _backup(args.schema))
+    database = await tools.open_database(schema=args.schema)
     try:
         collector = StoreCollector(Repo(database))
         asked = dlcs = 0
@@ -80,4 +72,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

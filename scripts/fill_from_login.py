@@ -1,5 +1,5 @@
 """Fill what only a login can read (#147; owner, 2026-10-16), through the
-logins and keys of the bot whose database `--auth-db` is — the dev bot's,
+logins and keys of the bot whose schema `--auth-schema` is — the dev bot's,
 never production's (a refreshed Xbox token there would log its person out
 here and there).
 
@@ -11,25 +11,24 @@ here and there).
    studio, publisher, day, genres for the stand-ins, and a 360 game's store
    product when its own mark names the game.
 
-**The bot of `--auth-db` must be stopped.** The games database is copied into
+**The bot of `--auth-schema` must be stopped.** The database is copied into
 `backups/` first.
 
     BOT_ENV_FILE=.env.test .venv/Scripts/python.exe -X utf8 -m scripts.fill_from_login \\
-        --auth-db data/test.db --db data/games.db [--limit 5] [--skip-catalog] [--skip-titlehub]
+        --auth-schema test --schema dev [--limit 5] [--skip-catalog] [--skip-titlehub]
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 from bot.config import get_settings
-from bot.db import files
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.lock import AlreadyRunningError, single_instance
 from bot.services import raw_answers
 from bot.services.crypto import TokenCipher
@@ -41,28 +40,21 @@ from bot.services.xbox.auth import XboxAuthService
 from bot.services.xbox.client import XboxApiError, XboxClient
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-login-fill-{stamp}.db"
-    files.backup(db_path, target)
-    return target
-
-
-async def _open_as_is(path: Path) -> Database:
-    """The login's database as it is: no schema, no migration."""
-    return await files.open_database(path)
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-login-fill-{stamp}.dump", schema=schema)
 
 
 async def run(args: argparse.Namespace) -> int:
     settings = get_settings()
-    games = await Database(Path(args.db)).connect()
-    auth_db = await _open_as_is(Path(args.auth_db))
+    games = await tools.open_database(schema=args.schema)
+    auth_db = await tools.open_database(schema=args.auth_schema)
     try:
         repo, auth_repo = Repo(games), Repo(auth_db)
         person = await auth_repo.any_active_xbox_person()
-        print(f"Xbox login of person {person} (in {args.auth_db})")
-        print("database copied to", _backup(Path(args.db)))
+        print(f"Xbox login of person {person} (in {args.auth_schema})")
+        print("database copied to", _backup(args.schema))
         cipher = TokenCipher(settings.fernet_key.get_secret_value())
         xbox_auth = XboxAuthService(settings, auth_repo, cipher)
         await xbox_auth.start()
@@ -120,15 +112,15 @@ async def run(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", required=True)
-    parser.add_argument("--auth-db", required=True)
+    tools.add_arguments(parser)
+    parser.add_argument("--auth-schema", required=True, help="the schema whose logins are used")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--skip-catalog", action="store_true")
     parser.add_argument("--skip-titlehub", action="store_true")
     args = parser.parse_args()
     try:
-        with single_instance(Path(args.auth_db).parent / "bot.lock"):
-            return asyncio.run(run(args))
+        with single_instance(get_settings().db_path.parent / "bot.lock"):
+            return tools.run(run(args))
     except AlreadyRunningError:
         print("that bot is running: stop it first (manage.ps1 stop -Test)")
         return 1

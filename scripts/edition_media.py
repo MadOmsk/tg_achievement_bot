@@ -18,21 +18,20 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bot.db import files
-from bot.db.repo import Database, Repo
-from bot.services import edition_media, images
+from bot.config import get_settings
+from bot.db import tools
+from bot.db.repo import Repo
+from bot.services import covers, edition_media, images, media
 from bot.services.stores import psn_product, steam_store, xbox_catalog
 
 logging.basicConfig(level="WARNING")
 PAUSE_SECONDS = 0.5
 
 
-def _backup(db_path: Path) -> Path:
+def _backup(schema: str | None) -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    Path("backups").mkdir(exist_ok=True)
-    target = Path("backups") / f"{db_path.stem}-pre-edition-media-{stamp}.db"
-    files.backup(db_path, target)
-    return target
+    name = schema or get_settings().database_schema
+    return tools.backup(Path("backups") / f"{name}-pre-edition-media-{stamp}.dump", schema=schema)
 
 
 async def from_kept(repo: Repo) -> dict[str, int]:
@@ -110,29 +109,24 @@ async def download(repo: Repo, root: Path) -> dict[str, int]:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--db", default=None)
+    tools.add_arguments(parser)
     parser.add_argument("--no-steam", action="store_true", help="do not ask Steam")
     parser.add_argument("--no-download", action="store_true", help="do not download covers")
     args = parser.parse_args()
-    if args.db:
-        db_path = Path(args.db)
-    else:
-        from bot.config import get_settings
-
-        db_path = Path(get_settings().db_path)
-    database = await Database(db_path).connect()
+    media.configure(get_settings().media_dir)
+    database = await tools.open_database(schema=args.schema)
     try:
         repo = Repo(database)
-        print("database copied to", _backup(db_path))
+        print("database copied to", _backup(args.schema))
         print("from what is kept:", await from_kept(repo))
         if not args.no_steam:
             print("steam packages:", await steam_packages(repo))
         if not args.no_download:
-            print("covers:", await download(repo, db_path.resolve().parent))
+            print("covers:", await download(repo, covers.cover_dir().parent))
     finally:
         await database.close()
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(tools.run(main()))

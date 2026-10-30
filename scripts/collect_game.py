@@ -17,14 +17,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import os
-from pathlib import Path
 
 from bot.config import get_settings
-from bot.db.repo import Database, Repo
+from bot.db import tools
+from bot.db.repo import Repo
 from bot.services.crypto import TokenCipher
 from bot.services.psn.auth import PsnAuth
 from bot.services.steam.auth import SteamAuth
@@ -45,7 +44,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     settings = get_settings()
-    database = await Database(Path(settings.db_path)).connect()
+    database = await tools.open_database()
     repo = Repo(database)
     cipher = TokenCipher(settings.fernet_key.get_secret_value())
     psn = PsnAuth(repo, cipher)
@@ -83,6 +82,6 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    code = asyncio.run(main())
+    code = tools.run(main())
     # psnawp's limiter may keep a thread alive; nothing is left to wait for.
     os._exit(code)
