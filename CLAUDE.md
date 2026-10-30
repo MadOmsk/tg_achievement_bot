@@ -18,12 +18,13 @@ on a deep violet ground lit from the top left (`#7457c9` → `#4f378b` →
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
-badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
+badge; `logo-splash-512.png` is the bare U with no tile in its violet light on
+the app's night (`#141218`, the manifest's background, so no edge shows), the manifest's 512
 `any` icon that Android draws on its launch splash (the maskable one is
 only 192 px, so a browser that draws its largest icon there — Edge — draws
 the bare U, not the square tile); an iPhone's launch screen is
-`public/splash/apple-splash-*.png`, the bare U on the app's night with a
-violet glow, one a screen size (`index.html`). The sign-in screens write
+`public/splash/apple-splash-*.png`, the bare U on the app's night in a
+wide violet light fading into it (owner, 2026-10-30), one a screen size (`index.html`). The sign-in screens write
 the name as one word — the logo's U with its sparkle, no tile, then "nlocked" in Nunito ExtraBold, its seven
 letters kept in `public/fonts`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
