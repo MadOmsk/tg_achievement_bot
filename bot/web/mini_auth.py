@@ -112,6 +112,26 @@ def validate_init_data(
     )
 
 
+def validate_init_data_any(
+    init_data: str,
+    bot_tokens: list[str],
+    **kwargs: object,
+) -> MiniAppUser:
+    """Init Data signed by any of these bots — the current one first. A bot
+    that replaced another (#238) still meets the Mini App opened from the old
+    bot's posts, signed with the old token. Only a bad signature moves on to
+    the next token: an expired blob a token did sign is refused as it is."""
+    error = InitDataError("no bot token")
+    for token in bot_tokens:
+        try:
+            return validate_init_data(init_data, token, **kwargs)  # type: ignore[arg-type]
+        except InitDataError as exc:
+            if str(exc) != "bad hash":
+                raise
+            error = exc
+    raise error
+
+
 # ---------------------------------------------------------------- browser login
 
 LOGIN_MAX_AGE_SECONDS = 600

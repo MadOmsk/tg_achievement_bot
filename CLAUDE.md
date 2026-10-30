@@ -324,7 +324,10 @@ Required environment variables: `BOT_TOKEN`, `SUPERADMIN_TG_IDS` (comma-separate
 super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
-Optional: `STEAM_API_KEY`, `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
+Optional: `LEGACY_BOT_TOKENS` (the tokens of bots this one replaced, #238: the
+Mini App opened from their posts arrives signed by them and is still accepted,
+`Settings.mini_app_tokens`; never used to poll or send), `STEAM_API_KEY`,
+`ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
 `OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller intervals (a first-run seed: the polling steps are
 `app_settings` since #184 stage 0, see Polling model), and the mail server for email sign-in
