@@ -393,8 +393,7 @@ def test_verify_catches_a_counter_left_behind(tmp_path: Path, dsn: str) -> None:
 
 
 def test_the_bot_comes_up_on_what_was_imported(tmp_path: Path, dsn: str) -> None:
-    import asyncio
-
+    from bot.db import tools
     from bot.db.repo import Database
 
     db = _source(tmp_path)
@@ -408,7 +407,7 @@ def test_the_bot_comes_up_on_what_was_imported(tmp_path: Path, dsn: str) -> None
         finally:
             await database.close()
 
-    assert asyncio.run(bring_up(), loop_factory=tool._event_loop) == 145
+    assert tools.run(bring_up()) == 145
 
 
 @pytest.mark.parametrize(

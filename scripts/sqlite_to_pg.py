@@ -41,11 +41,9 @@ names in its diagnostics are shown.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hashlib
 import os
 import re
-import selectors
 import sqlite3
 import struct
 import sys
@@ -1296,9 +1294,7 @@ def run_import(
                     where = "merging the catalog"
                     result.kept = merge_catalog(src, catalog, pg, repairs)
                     result.catalog = "merged"
-                    print(
-                        f"  kept stand-ins, lists the catalog has no version for: {len(result.kept)}"
-                    )
+                    print(f"  kept stand-ins of lists new to the catalog: {len(result.kept)}")
                 mapping = game_map(src, pg)
         else:
             print("catalog:")
@@ -1363,13 +1359,6 @@ def run_import(
     return result
 
 
-def _event_loop() -> asyncio.AbstractEventLoop:
-    # psycopg's async mode needs a selector loop; Windows defaults to the proactor one.
-    if sys.platform == "win32":
-        return asyncio.SelectorEventLoop(selectors.SelectSelector())
-    return asyncio.new_event_loop()
-
-
 def _link_kept(dsn: str, schema: str, version_ids: list[int]) -> None:
     """The kept stand-ins put into games, with the weights now active."""
     from bot.db import tools
@@ -1384,7 +1373,7 @@ def _link_kept(dsn: str, schema: str, version_ids: list[int]) -> None:
         finally:
             await database.close()
 
-    asyncio.run(link(), loop_factory=_event_loop)
+    tools.run(link())
 
 
 # ---------------------------------------------------------------- verify
