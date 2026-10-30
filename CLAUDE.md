@@ -102,6 +102,8 @@ name, or when the tree goes stale.
 │                              and a phone-sized screenshot of the dev server as a signed-in person
 ├── pyproject.toml             dependencies, ruff, pytest config
 ├── manage.ps1 / manage.bat    the dev server's process manager and its double-click dashboard
+├── deploy/                    the server's nginx sites, systemd units and SSH socket, as installed
+│                              by scripts/provision.sh (a fresh Ubuntu 24.04 into the bots' server)
 ├── webapp/                    Telegram Mini App SPA (Vite/React); built by CI, never served by the bot;
 │                              `src/`: `api/`, `i18n/`, `core/` (behaviour), `styles/` + `ui/` (the
 │                              design system, the one source of look), `parts/`, `screens/`, `app/` (shell)
@@ -2988,14 +2990,29 @@ so a fresh clone does not have them. Never run the dev server on prod's `BOT_TOK
 
 ### The VPS
 
-A VPS at Spaceship (Namecheap), Ubuntu 24.04, nginx + systemd, dedicated user
-`botsvc`; nginx terminates TLS (Let's Encrypt, certbot timer) and proxies to the bots,
-whose ports are never exposed (`OAUTH_LISTEN_HOST=127.0.0.1`).
-**SSH is keys only, on port 22022** (owner, 2026-10-23: password login
-is off, root by key only). CI's deploy connects on 22022 too, with
-`HostKeyAlias` so the pinned `DEPLOY_KNOWN_HOSTS` entry still matches.
-Port 22 is closed: `ssh.socket` listens on 22022 alone (its `override.conf`,
-#228); ufw is off, nothing else is exposed.
+A VPS at Contabo (owner, 2026-10-30; Cloud VPS 6: 6 cores, 12 GB, 200 GB,
+EU, `80.241.212.183`), Ubuntu 24.04, nginx + systemd, dedicated user `botsvc`;
+nginx terminates TLS and proxies to the bots, whose ports are never exposed
+(`OAUTH_LISTEN_HOST=127.0.0.1`). **Everything it was set up with is in the
+repository** — `deploy/` (the nginx sites, the units, prod's shared-folder
+drop-in, the SSH socket) and `scripts/provision.sh`, which makes a fresh
+Ubuntu 24.04 into this server and never starts a bot; a change made by hand on
+the server is made in `deploy/` too. PostgreSQL 16 runs there, localhost
+only, for #234.
+**SSH is keys only, on port 22022**, as `ubuntu` with `sudo` (Contabo's
+admin user); root cannot log in. CI's `deploy` user may run only
+`xbox-deploy`; it connects on 22022 too, with `HostKeyAlias` so the pinned
+`DEPLOY_KNOWN_HOSTS` entry still matches. Port 22 is closed: `ssh.socket`
+listens on 22022 alone; ufw is off, nothing else is exposed.
+**Two certificates**: Let's Encrypt for `xbox.sultanpharm.com` and
+`test.xbox.sultanpharm.com` (certbot timer), and Cloudflare's origin
+certificate for `unlocked.how` and `test.unlocked.how` (#237: behind
+Cloudflare's proxy, Full (strict), until 2041; its key was made on the server
+and never left it — only the CSR went to Cloudflare), whose sites take the
+visitor's address from `CF-Connecting-IP`, trusted only from Cloudflare's
+ranges (`deploy/nginx/cloudflare-realip.conf`). The old Spaceship server
+(`209.74.85.21`) keeps its bots masked and proxies to this one until it is
+deleted.
 
 ```bash
 systemctl {start|stop|restart|status} xbox-bot        # xbox-bot-test for the test server
