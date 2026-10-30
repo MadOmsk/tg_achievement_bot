@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { userApi, type UserSettingsPatch } from "../../api";
+import { userApi, type TimeZoneChoice, type UserSettingsPatch } from "../../api";
 import { peopleApi, type ActivityVisible } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
 import { inTelegram, look, PALETTES, setLook } from "../../app/env";
@@ -262,13 +262,17 @@ function TimeZoneSheet({ current, onPick, onClose }: { current: string | null; o
     (z) => !needle || z.label.toLowerCase().includes(needle) || z.id.toLowerCase().includes(needle),
   );
   const device = list.data?.device;
-  const pick = (id: string, label: string, sub?: string) => (
-    <button key={id} type="button" className={`set-pick${id === current ? " set-pick-on" : ""}`} onClick={() => onPick(id)}>
+  // The cities on the left, the offset on the right.
+  const pick = (z: TimeZoneChoice, sub?: string) => (
+    <button key={z.id} type="button" className={`set-pick${z.id === current ? " set-pick-on" : ""}`} onClick={() => onPick(z.id)}>
       <span className="set-pick-text">
-        {label}
+        {z.name ?? formatOffset(z.offset, locale)}
         {sub && <span className="set-pick-sub">{sub}</span>}
       </span>
-      {id === current && <Icon name="check" size={20} />}
+      <span className="set-pick-end">
+        <span className="set-tz-offset t-num">{formatOffset(z.offset, locale)}</span>
+        {z.id === current && <Icon name="check" size={20} />}
+      </span>
     </button>
   );
   return (
@@ -276,11 +280,11 @@ function TimeZoneSheet({ current, onPick, onClose }: { current: string | null; o
       <div className="set-tz-search">
         <Field icon="search" placeholder={tr("timezoneFind")} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      {device && !needle && <div className="set-list set-tz-device">{pick(device.id, device.label, tr("timezoneDevice"))}</div>}
+      {device && !needle && <div className="set-list set-tz-device">{pick(device, tr("timezoneDevice"))}</div>}
       {list.loading && !list.data ? (
         <div className="set-list">{[0, 1, 2, 3].map((i) => <span key={i} className="set-pick skel" />)}</div>
       ) : (
-        <div className="set-list">{zones.map((z) => pick(z.id, z.label))}</div>
+        <div className="set-list">{zones.map((z) => pick(z))}</div>
       )}
     </Sheet>
   );

@@ -299,7 +299,8 @@ async def test_the_mini_app_draws_and_changes_what_the_bot_does(
     [zone] = [i for g in tz["groups"] for i in g["items"] if i["key"] == "tz_name"]
     assert zone["value"] == "Europe/Vilnius"
     assert any(
-        o["value"] == "Europe/Moscow" and o["label"] == "Москва · UTC+3" for o in zone["options"]
+        o["value"] == "Europe/Moscow" and o["label"] == "(UTC+03:00) Москва, Санкт-Петербург"
+        for o in zone["options"]
     )
 
 
@@ -314,11 +315,13 @@ def test_a_time_zone_is_a_place_and_keeps_its_summer_clock() -> None:
     zone = find("chat", "tz_name")
     winter = datetime(2026, 1, 15, 12, tzinfo=UTC)
     summer = datetime(2026, 7, 15, 12, tzinfo=UTC)
-    assert time_zones.label("Europe/Vilnius", "ru", winter) == "Вильнюс · UTC+2"
-    assert time_zones.label("Europe/Vilnius", "ru", summer) == "Вильнюс · UTC+3"
-    assert time_zones.label("Etc/GMT-5", "ru") == "UTC+5"
-    assert time_zones.label(330, "ru") == "UTC+5:30"
-    assert value_label(zone, "Europe/Moscow", locale="ru") == "Москва · UTC+3"
+    row = "Вильнюс, Киев, Рига, София, Таллин, Хельсинки"
+    assert time_zones.label("Europe/Vilnius", "ru", winter) == f"(UTC+02:00) {row}"
+    assert time_zones.label("Europe/Vilnius", "ru", summer) == f"(UTC+03:00) {row}"
+    assert time_zones.row_of("Europe/Vilnius") == "Europe/Kyiv"
+    assert time_zones.label("Etc/GMT-5", "ru") == "(UTC+05:00)"
+    assert time_zones.label(330, "ru") == "(UTC+05:30)"
+    assert value_label(zone, "Europe/Moscow", locale="ru") == "(UTC+03:00) Москва, Санкт-Петербург"
     # The month starts at local midnight, summer time and all.
     assert time_zones.midnight_utc(summer.date().replace(day=1), "Europe/Vilnius") == datetime(
         2026, 6, 30, 21, tzinfo=UTC

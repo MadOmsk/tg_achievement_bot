@@ -2439,7 +2439,8 @@ keyboard.
     an hour, a time zone), bounds or choices, group, label, hint. `set_value` is
     the one way either panel changes one — parsed, bounded, stored; a bad value
     is refused the same from a typed message and from JSON. A time zone is a
-    place («Вильнюс · UTC+2», `time_zones.ZONES`, any valid IANA name taken),
+    place, listed as Windows lists them («(UTC+02:00) Вильнюс, Киев, Рига…»,
+    `time_zones.ZONES`, one row a clock; any valid IANA name taken),
     shown with its offset now in both panels; summaries go out on the hour.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
     sign-in emails against their caps, every credential's state). **The API

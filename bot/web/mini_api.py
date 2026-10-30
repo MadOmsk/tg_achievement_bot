@@ -317,7 +317,8 @@ async def handle_time_zones(request: web.Request) -> web.Response:
     zones = time_zones.choices(locale)
     device = time_zones.current_name(request.query.get("device", "").strip())
     if time_zones.valid(device) and not device.startswith("Etc/"):
-        known = next((z for z in zones if z["id"] == device), None)
+        row = time_zones.row_of(device) or device
+        known = next((z for z in zones if z["id"] == row), None)
         if known is None:
             known = {
                 "id": device,
