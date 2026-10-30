@@ -140,7 +140,7 @@ class _MergeRepo:
             # The Xbox login belongs to the Xbox account that stays; a login with
             # no account behind it any more goes.
             await conn.execute(
-                "DELETE FROM tokens WHERE person_id IN (?, ?) AND person_id IS NOT ?",
+                "DELETE FROM tokens WHERE person_id IN (?, ?) AND person_id IS DISTINCT FROM ?",
                 (keep, absorb, xbox_side),
             )
             await conn.execute("UPDATE tokens SET person_id = :keep WHERE person_id = :absorb", a)
@@ -153,7 +153,15 @@ class _MergeRepo:
                 a,
             )
             await conn.execute(
-                "UPDATE OR IGNORE account_links SET person_id = :keep WHERE person_id = :absorb", a
+                # Every link the kept person has no twin of: the same account, or
+                # an active one of the platform (one per platform but PSN).
+                "UPDATE account_links SET person_id = :keep WHERE person_id = :absorb"
+                " AND NOT EXISTS (SELECT 1 FROM account_links o WHERE o.person_id = :keep"
+                "  AND o.platform = account_links.platform"
+                "  AND (o.external_id = account_links.external_id"
+                "   OR (account_links.is_active = 1 AND o.is_active = 1"
+                "       AND account_links.platform <> 'psn')))",
+                a,
             )
 
             # ------------------------------------------- chats and people
@@ -198,7 +206,9 @@ class _MergeRepo:
             # A code taken by the absorbed side is the kept person's; where both
             # took one of the same reward, the absorbed one's stays taken.
             await conn.execute(
-                "UPDATE OR IGNORE pass_item_codes SET person_id = :keep WHERE person_id = :absorb",
+                "UPDATE pass_item_codes SET person_id = :keep WHERE person_id = :absorb"
+                " AND NOT EXISTS (SELECT 1 FROM pass_item_codes o"
+                "  WHERE o.person_id = :keep AND o.item_id = pass_item_codes.item_id)",
                 a,
             )
             # A PSN token goes with its account (#233); one whose account was not

@@ -46,7 +46,8 @@ class _HltbReadRepo:
         an automatic one, then the surer match, then the one most versions
         share, then the lower id. `others`: the rest, as they are named."""
         cursor = await self._conn.execute(
-            "SELECT e.*, MAX(vh.source = 'manual') AS manual, MAX(vh.score) AS score,"
+            "SELECT e.*, MAX(CASE WHEN vh.source = 'manual' THEN 1 ELSE 0 END) AS manual,"
+            " MAX(vh.score) AS score,"
             "  COUNT(DISTINCT vh.version_id) AS n_versions"
             " FROM versions v JOIN version_hltb vh ON vh.version_id = v.version_id"
             " JOIN hltb_entries e ON e.hltb_id = vh.hltb_id"

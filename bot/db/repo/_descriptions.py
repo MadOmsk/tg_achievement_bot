@@ -324,8 +324,8 @@ class _DescriptionsRepo:
         translator (or are waiting on it, `fallback`) — for a platform whose
         English text is already stored, so no request is needed (#127)."""
         cursor = await self._conn.execute(
-            "SELECT s.achievement_id, d.description_ru,"
-            "       COALESCE(d.description_en, s.description) AS english "
+            "SELECT s.achievement_id, MAX(d.description_ru) AS description_ru,"
+            "       COALESCE(MAX(d.description_en), MAX(s.description)) AS english "
             "FROM seen_achievements s "
             + OWNED_BY_PERSON
             + _CATALOG_ROW

@@ -138,7 +138,7 @@ class _GamePageRepo:
         cursor = await self._conn.execute(
             "SELECT DISTINCT a.platform, a.title_id, a.name, a.name_ru, a.name_en,"
             "  a.icon_url, a.platforms,"
-            "  MAX(COALESCE(a.achievements_total, 0),"
+            "  GREATEST(COALESCE(a.achievements_total, 0),"
             "      (SELECT COUNT(*) FROM title_achievements ta"
             "        WHERE ta.platform = a.platform AND ta.title_id = a.title_id"
             "          AND ta.listed = 1)) AS total"

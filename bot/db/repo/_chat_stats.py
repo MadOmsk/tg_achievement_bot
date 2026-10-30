@@ -106,7 +106,10 @@ class _ChatStatsRepo:
             + active_account("steam", "steam")
             + active_account("psn", "psn")
             + "WHERE sub.chat_id = ? AND u.is_excluded = 0 "
-            "GROUP BY u.id ORDER BY cnt DESC, score DESC",
+            # The accounts' keys too: their columns follow from them, as the
+            # person's follow from u.id (PostgreSQL wants every one named).
+            "GROUP BY u.id, xb.platform, xb.external_id, steam.platform, steam.external_id,"
+            " psn.platform, psn.external_id ORDER BY cnt DESC, score DESC",
             [rare_threshold, *date_params, chat_id],
         )
         return [
@@ -269,7 +272,11 @@ class _ChatStatsRepo:
             "    END AS winner"
             "  FROM picked"
             ") "
-            "SELECT tg_id, person_id, gamertag, gamertag_modern, username, first_name,"
+            # A subquery, so ORDER BY may use what it names (state, title_id)
+            # inside its expressions: PostgreSQL reads an output name there only
+            # bare.
+            "SELECT * FROM (SELECT winner, tg_id, person_id, gamertag, gamertag_modern,"
+            " username, first_name,"
             " last_name,"
             "       handle, xuid,"
             "       CASE winner"
@@ -290,7 +297,7 @@ class _ChatStatsRepo:
             "         WHEN 'psn' THEN psn_device"
             "         WHEN 'steam' THEN 'PC'"
             "         ELSE NULL END AS device "
-            "FROM final "
+            "FROM final) AS shown "
             "ORDER BY "
             "  CASE WHEN state = 'Online' AND title_id IS NOT NULL THEN 0 "
             "       WHEN state = 'Online' THEN 1 "

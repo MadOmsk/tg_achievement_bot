@@ -91,10 +91,11 @@ class _PassRepo:
         stays for whoever took a code of it, so the code is never lost."""
         cursor = await self._conn.execute(
             "SELECT i.*, COUNT(c.code_id) AS total,"
-            " COALESCE(SUM(c.code_id IS NOT NULL AND c.claimed_at IS NULL), 0) AS left_count,"
+            " COALESCE(SUM(CASE WHEN c.code_id IS NOT NULL AND c.claimed_at IS NULL THEN 1 ELSE"
+            " 0 END), 0) AS left_count,"
             " MAX(CASE WHEN c.person_id = ? THEN c.code END) AS mine"
             " FROM pass_items i LEFT JOIN pass_item_codes c ON c.item_id = i.item_id"
-            " WHERE i.state != 'draft' AND (? IS NULL OR i.month = ?)"
+            " WHERE i.state != 'draft' AND (?::text IS NULL OR i.month = ?)"
             " GROUP BY i.item_id"
             " HAVING i.state = 'live' OR mine IS NOT NULL"
             " ORDER BY i.points, i.item_id",
@@ -166,7 +167,8 @@ class _PassRepo:
             return {}
         marks = ",".join("?" * len(months))
         cursor = await self._conn.execute(
-            "SELECT month, COUNT(*), SUM(state = 'draft' OR pending IS NOT NULL)"
+            "SELECT month, COUNT(*), SUM(CASE WHEN state = 'draft' OR pending IS NOT NULL THEN"
+            " 1 ELSE 0 END)"
             f" FROM pass_items WHERE state != 'removed' AND month IN ({marks}) GROUP BY month",
             months,
         )
@@ -190,7 +192,7 @@ class _PassRepo:
         or waiting changes laid over each, how many have it, and its codes."""
         cursor = await self._conn.execute(
             f"SELECT i.*, {_TAKEN} AS taken FROM pass_items i WHERE i.state != 'removed'"
-            " AND (? IS NULL OR i.month = ?)"
+            " AND (?::text IS NULL OR i.month = ?)"
             " ORDER BY i.points, i.item_id",
             (month, month),
         )
@@ -314,7 +316,7 @@ class _PassRepo:
         they alone held given back, to delete."""
         cursor = await self._conn.execute(
             "SELECT state, image_path, pending FROM pass_items"
-            " WHERE (state = 'draft' OR pending IS NOT NULL) AND (? IS NULL OR month = ?)",
+            " WHERE (state = 'draft' OR pending IS NOT NULL) AND (?::text IS NULL OR month = ?)",
             (month, month),
         )
         pictures = []
@@ -326,16 +328,16 @@ class _PassRepo:
                 pictures.append(waiting)
         async with self.transaction():
             await self._conn.execute(
-                "DELETE FROM pass_items WHERE state = 'draft' AND (? IS NULL OR month = ?)",
+                "DELETE FROM pass_items WHERE state = 'draft' AND (?::text IS NULL OR month = ?)",
                 (month, month),
             )
             await self._conn.execute(
-                "UPDATE pass_items SET pending = NULL WHERE (? IS NULL OR month = ?)",
+                "UPDATE pass_items SET pending = NULL WHERE (?::text IS NULL OR month = ?)",
                 (month, month),
             )
             cursor = await self._conn.execute(
                 "SELECT image_path, draft_image_path FROM pass_seasons"
-                " WHERE draft = 1 AND (? IS NULL OR month = ?)",
+                " WHERE draft = 1 AND (?::text IS NULL OR month = ?)",
                 (month, month),
             )
             for row in await cursor.fetchall():
@@ -343,7 +345,7 @@ class _PassRepo:
                     pictures.append(row["draft_image_path"])
             await self._conn.execute(
                 "UPDATE pass_seasons SET draft = 0, draft_title = NULL, draft_image_path = NULL"
-                " WHERE (? IS NULL OR month = ?)",
+                " WHERE (?::text IS NULL OR month = ?)",
                 (month, month),
             )
         return pictures
@@ -361,7 +363,7 @@ class _PassRepo:
             cursor = await self._conn.execute(
                 f"SELECT i.*, {_TAKEN} AS taken FROM pass_items i"
                 " WHERE (i.state = 'draft' OR i.pending IS NOT NULL)"
-                " AND (? IS NULL OR i.month = ?)",
+                " AND (?::text IS NULL OR i.month = ?)",
                 (month, month),
             )
             for row in [dict(r) for r in await cursor.fetchall()]:
@@ -410,7 +412,7 @@ class _PassRepo:
             # The pass's name and cover waiting with the levels.
             cursor = await self._conn.execute(
                 "SELECT image_path, draft_image_path FROM pass_seasons"
-                " WHERE draft = 1 AND (? IS NULL OR month = ?)",
+                " WHERE draft = 1 AND (?::text IS NULL OR month = ?)",
                 (month, month),
             )
             for row in await cursor.fetchall():
@@ -419,7 +421,7 @@ class _PassRepo:
             cursor = await self._conn.execute(
                 "UPDATE pass_seasons SET title = draft_title, image_path = draft_image_path,"
                 " draft = 0, draft_title = NULL, draft_image_path = NULL"
-                " WHERE draft = 1 AND (? IS NULL OR month = ?)",
+                " WHERE draft = 1 AND (?::text IS NULL OR month = ?)",
                 (month, month),
             )
             changed += cursor.rowcount

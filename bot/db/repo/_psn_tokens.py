@@ -122,7 +122,8 @@ class _PsnTokensRepo:
     async def psn_token_counts(self) -> tuple[int, int]:
         """(alive, dead) tokens of accounts still held — the admin's summary."""
         cursor = await self._conn.execute(
-            "SELECT COALESCE(SUM(t.status = 'active'), 0), COALESCE(SUM(t.status = 'dead'), 0)"
+            "SELECT COALESCE(SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END), 0),"
+            " COALESCE(SUM(CASE WHEN t.status = 'dead' THEN 1 ELSE 0 END), 0)"
             f" FROM psn_tokens t WHERE {_HELD}"
         )
         alive, dead = await cursor.fetchone()

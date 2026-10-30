@@ -20,6 +20,7 @@ face, so moving the database moved the SQL dialect and nothing else:
 
 from __future__ import annotations
 
+import datetime
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from functools import lru_cache
@@ -124,6 +125,19 @@ class _UntypedBool(_Untyped):
         return b"1" if obj else b"0"
 
 
+class _UntypedDateTime(_Untyped):
+    """A datetime as sqlite3's adapter wrote it — ISO text with a space — and
+    untyped: the columns are text, and are compared as text."""
+
+    def dump(self, obj: Any) -> bytes:
+        return obj.isoformat(" ").encode()
+
+
+class _UntypedDate(_Untyped):
+    def dump(self, obj: Any) -> bytes:
+        return obj.isoformat().encode()
+
+
 def _row_factory(cursor: Any) -> Any:
     description = cursor.description or ()
     # A name given twice reads as its first column, as sqlite3.Row did.
@@ -202,6 +216,8 @@ class Connection:
         raw.adapters.register_dumper(int, _Untyped)
         raw.adapters.register_dumper(float, _Untyped)
         raw.adapters.register_dumper(bool, _UntypedBool)
+        raw.adapters.register_dumper(datetime.datetime, _UntypedDateTime)
+        raw.adapters.register_dumper(datetime.date, _UntypedDate)
         return cls(raw)
 
     @property
@@ -214,7 +230,11 @@ class Connection:
 
     async def execute(self, sql: str, parameters: Any = None) -> Cursor:
         async with self._raw.cursor() as cursor:
-            await cursor.execute(translate(sql), _params(parameters))
+            try:
+                await cursor.execute(translate(sql), _params(parameters))
+            except psycopg.Error as exc:
+                _log_failed(sql, exc)
+                raise
             return await _finish(cursor)
 
     async def executemany(self, sql: str, parameters: Iterable[Any]) -> Cursor:
@@ -250,3 +270,15 @@ def _params(parameters: Any) -> Any:
     if isinstance(parameters, dict):
         return parameters
     return tuple(parameters)
+
+
+def _log_failed(sql: str, exc: Exception) -> None:
+    """TEMPORARY (#234 dialect move): every refused statement, for finding
+    them all in one test run. Removed before the branch is merged."""
+    import os
+
+    path = os.environ.get("PG_FAILED_SQL_LOG")
+    if path:
+        with open(path, "a", encoding="utf-8") as log_file:
+            first = str(exc).splitlines()[0] if str(exc) else ""
+            log_file.write(f"=== {type(exc).__name__}: {first}\n{sql}\n")

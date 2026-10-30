@@ -214,8 +214,9 @@ class _PlatformLinksRepo:
             "  SELECT platform, external_id FROM account_links"
             "  WHERE person_id = ? AND platform = ? AND is_active = 1"
             # One account's nickname, where a person holds several (#10).
-            "    AND (? IS NULL OR external_id = ?))"
-            "  AND (display_name IS NOT ? OR (? IS NOT NULL AND secondary_name IS NOT ?))",
+            "    AND (?::text IS NULL OR external_id = ?))"
+            "  AND (display_name IS DISTINCT FROM ? OR (?::text IS NOT NULL AND secondary_name"
+            " IS DISTINCT FROM ?))",
             (
                 display_name,
                 secondary_name,
@@ -248,7 +249,7 @@ class _PlatformLinksRepo:
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
             "  WHERE person_id = ? AND platform = ? AND is_active = 1"
-            "    AND (? IS NULL OR external_id = ?))",
+            "    AND (?::text IS NULL OR external_id = ?))",
             (secondary_name, utcnow_iso(), person_id, platform, external_id, external_id),
         )
         await self._conn.commit()
@@ -325,7 +326,7 @@ class _PlatformLinksRepo:
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
             "  WHERE person_id = ? AND platform = 'psn' AND is_active = 1"
-            "    AND (? IS NULL OR external_id = ?))",
+            "    AND (?::text IS NULL OR external_id = ?))",
             (level, utcnow_iso(), person_id, account_id, account_id),
         )
         await self._conn.commit()
@@ -340,7 +341,7 @@ class _PlatformLinksRepo:
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
             "  WHERE person_id = ? AND platform = ? AND is_active = 1"
-            "    AND (? IS NULL OR external_id = ?))",
+            "    AND (?::text IS NULL OR external_id = ?))",
             (int(visible), now, now, person_id, platform, external_id, external_id),
         )
         await self._conn.commit()
@@ -475,7 +476,7 @@ class _PlatformLinksRepo:
             "LEFT JOIN achievement_list_connectors t ON t.platform = s.platform AND t.title_id = "
             "s.title_id "
             "WHERE s.account_platform = ? AND s.trophy_group_id IS NULL "
-            "GROUP BY s.xuid, s.title_id "
+            "GROUP BY s.xuid, s.title_id, al.person_id, t.platforms "
             "UNION ALL "
             "SELECT al.person_id, p.account_id, p.np_communication_id, t.platforms, p.updated_at "
             "FROM psn_title_progress p "

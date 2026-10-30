@@ -339,19 +339,20 @@ class _AdminRepo:
         unknown — the same "somebody here with a live token" owner the cover
         walker asks through, since titlehub answers only through a person's."""
         cursor = await self._conn.execute(
-            "SELECT t.title_id,"
+            # A subquery, so the owner it names can be filtered on (#234).
+            "SELECT title_id, owner FROM (SELECT t.title_id, t.platforms_checked_at,"
             "       (SELECT MIN(al.person_id) FROM seen_achievements s "
             "        JOIN account_links al ON al.platform = s.account_platform"
             "         AND al.external_id = s.xuid AND al.is_active = 1 "
             "        JOIN tokens tok ON tok.person_id = al.person_id AND tok.status = 'active' "
             "        JOIN users u ON u.id = al.person_id AND u.is_excluded = 0 "
             f"        WHERE {titles_on()}) AS owner "
-            f"FROM achievement_list_connectors t WHERE {self._PLATFORMS_DUE} "
+            f"FROM achievement_list_connectors t WHERE {self._PLATFORMS_DUE}) AS due "
             # Filtered before the LIMIT: a game nobody here can be asked about
             # must not take a place in the batch, or a head of such games
             # would stall the queue for good.
-            "AND owner IS NOT NULL "
-            "ORDER BY t.platforms_checked_at IS NOT NULL, t.platforms_checked_at "
+            "WHERE owner IS NOT NULL "
+            "ORDER BY platforms_checked_at IS NOT NULL, platforms_checked_at "
             "LIMIT ?",
             (limit,),
         )

@@ -269,7 +269,9 @@ class _SteamRepo:
         of our games that is this app since `played_since`, with that game —
         `(person_id, platform, title_id, name_ru, name_en, name)`, one row each."""
         cursor = await self._conn.execute(
-            "SELECT al.person_id, MAX(s.platform) AS platform, s.title_id,"
+            # One row a person, the one of the greatest platform — the row
+            # SQLite's MAX() handed its bare columns from (#234).
+            "SELECT DISTINCT ON (al.person_id) al.person_id, s.platform, s.title_id,"
             "       t.name_ru, t.name_en, t.name"
             " FROM seen_achievements s"
             " JOIN account_links al ON al.platform = s.account_platform"
@@ -280,8 +282,7 @@ class _SteamRepo:
             "s.title_id"
             f" WHERE {STEAM_APP_OF_TITLE} = ?"
             f"  AND {earned_date_is_real('s.')} AND {earned_at('s.')} >= ?"
-            " GROUP BY al.person_id"
-            " ORDER BY al.person_id",
+            " ORDER BY al.person_id, s.platform DESC",
             (appid, played_since),
         )
         return [
@@ -325,13 +326,15 @@ class _SteamRepo:
             "  FROM played p JOIN achievement_list_connectors t ON t.platform = p.platform AND "
             "t.title_id = p.title_id"
             ") "
-            "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
+            # One card a post (DISTINCT ON), whichever of our games it is.
+            "SELECT * FROM (SELECT DISTINCT ON (gp.steam_appid, gp.gid)"
+            " gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
             "       gp.text_en, gp.image_url, a.platform, a.title_id,"
             "       a.name, a.name_ru, a.name_en, a.icon_url "
             "FROM game_patches gp JOIN apps a ON a.appid = gp.steam_appid "
             "WHERE gp.published_at >= ? AND gp.published_at < ? "
-            "GROUP BY gp.steam_appid, gp.gid "
-            "ORDER BY gp.published_at DESC, gp.steam_appid, gp.gid "
+            "ORDER BY gp.steam_appid, gp.gid, a.platform, a.title_id) AS one_each "
+            "ORDER BY published_at DESC, steam_appid, gid "
             "LIMIT ?",
             (played_since, since, until, limit),
         )
@@ -372,14 +375,16 @@ class _SteamRepo:
             "  JOIN versions v ON v.game_id = f.game_id, jsonb_array_elements(v.store_ids::jsonb) j"
             "  WHERE j.value->>0 = 'steam_twin'"
             ") "
-            "SELECT gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
-            "       gp.text_en, gp.image_url, MIN(a.game_id) AS game_id,"
+            # One card a post, of its smallest game id (as MIN() picked it).
+            "SELECT * FROM (SELECT DISTINCT ON (gp.steam_appid, gp.gid)"
+            " gp.steam_appid, gp.gid, gp.kind, gp.title, gp.published_at,"
+            "       gp.text_en, gp.image_url, a.game_id,"
             "       g.name AS game_name, g.name_ru AS game_name_ru "
             "FROM game_patches gp JOIN apps a ON a.appid = gp.steam_appid "
             "JOIN games g ON g.game_id = a.game_id "
             "WHERE gp.published_at >= ? AND gp.published_at < ? "
-            "GROUP BY gp.steam_appid, gp.gid "
-            "ORDER BY gp.published_at DESC, gp.steam_appid, gp.gid "
+            "ORDER BY gp.steam_appid, gp.gid, a.game_id) AS one_each "
+            "ORDER BY published_at DESC, steam_appid, gid "
             "LIMIT ?",
             (f"[{','.join(str(int(g)) for g in game_ids)}]", since, until, limit),
         )

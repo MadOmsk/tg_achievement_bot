@@ -1073,9 +1073,11 @@ class _StoresRepo:
                 # the kept version already has one with that other version.
                 for column, other in (("version_id", "other_id"), ("other_id", "version_id")):
                     await self._conn.execute(
-                        f"UPDATE OR IGNORE match_decisions SET {column} = ?"
-                        f" WHERE {column} = ? AND {other} <> ?",
-                        (into, old, into),
+                        f"UPDATE match_decisions SET {column} = ?"
+                        f" WHERE {column} = ? AND {other} <> ?"
+                        " AND NOT EXISTS (SELECT 1 FROM match_decisions o"
+                        f"  WHERE o.{column} = ? AND o.{other} = match_decisions.{other})",
+                        (into, old, into, into),
                     )
                 await self._conn.execute(
                     "UPDATE games SET anchor_version_id = ? WHERE anchor_version_id = ?"

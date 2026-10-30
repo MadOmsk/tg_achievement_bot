@@ -128,8 +128,8 @@ class _StatsRepo:
             "WHERE (platform, external_id) IN ("
             "  SELECT platform, external_id FROM account_links"
             "  WHERE person_id = ? AND platform = 'xbox' AND is_active = 1)"
-            "  AND ((? IS NOT NULL AND secondary_name IS NOT ?)"
-            "    OR (? IS NOT NULL AND display_name IS NOT ?))",
+            "  AND ((?::text IS NOT NULL AND secondary_name IS DISTINCT FROM ?)"
+            "    OR (?::text IS NOT NULL AND display_name IS DISTINCT FROM ?))",
             (
                 gamertag,
                 gamertag_modern,

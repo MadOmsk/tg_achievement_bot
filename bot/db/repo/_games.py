@@ -409,7 +409,7 @@ class _GamesRepo:
         await self._conn.execute(
             "UPDATE games SET name = ?, name_ru = COALESCE(?, name_ru), name_source = ?,"
             " updated_at = ? WHERE game_id = ? AND (name_source = 'auto' OR ? = 'manual')"
-            " AND (name IS NOT ? OR name_source IS NOT ?)",
+            " AND (name IS DISTINCT FROM ? OR name_source IS DISTINCT FROM ?)",
             (name, name_ru, source, utcnow_iso(), game_id, source, name, source),
         )
         await self._conn.commit()
@@ -440,7 +440,7 @@ class _GamesRepo:
         """The linker's word on what each game is; the operator's stands."""
         await self._conn.executemany(
             "UPDATE games SET kind = ?, updated_at = ? WHERE game_id = ?"
-            " AND kind_source = 'auto' AND kind IS NOT ?",
+            " AND kind_source = 'auto' AND kind IS DISTINCT FROM ?",
             [(kind, utcnow_iso(), game_id, kind) for game_id, kind in kinds.items()],
         )
         await self._conn.commit()
@@ -476,7 +476,8 @@ class _GamesRepo:
         # while the version stays in its game.
         await self._conn.executemany(
             "UPDATE versions SET game_id = ?, role = ?, of_version_id = ?, link_p = ?,"
-            " linked_at = CASE WHEN game_id IS ? THEN COALESCE(linked_at, ?) ELSE ? END"
+            " linked_at = CASE WHEN game_id IS NOT DISTINCT FROM ? THEN COALESCE(linked_at, ?)"
+            " ELSE ? END"
             " WHERE version_id = ?",
             [(g, role, of, p, g, now, now, vid) for vid, (g, role, of, p) in members.items()],
         )
@@ -623,9 +624,10 @@ class _GamesRepo:
             await self._conn.execute(
                 "UPDATE games SET year = ?, developer = ?, publisher = ?, last_year = ?,"
                 " more_developers = ?, more_publishers = ?, updated_at = ?"
-                " WHERE game_id = ? AND (year IS NOT ? OR developer IS NOT ?"
-                "  OR publisher IS NOT ? OR last_year IS NOT ? OR more_developers IS NOT ?"
-                "  OR more_publishers IS NOT ?)",
+                " WHERE game_id = ? AND (year IS DISTINCT FROM ? OR developer IS DISTINCT FROM ?"
+                "  OR publisher IS DISTINCT FROM ? OR last_year IS DISTINCT FROM ? OR"
+                " more_developers IS DISTINCT FROM ?"
+                "  OR more_publishers IS DISTINCT FROM ?)",
                 (*values, utcnow_iso(), game_id, *values),
             )
         await self._conn.commit()
