@@ -51,7 +51,7 @@ The rejected-ideas appendix at the end is narrower than design rationale:
 alternatives that were tried or considered and specifically rejected.
 
 Keep the project working after every change — no step should leave it broken. The
-product is optimized for one trusted operator, a single SQLite database, explicit
+product is optimized for one trusted operator, a single PostgreSQL database, explicit
 admin controls, and predictable behavior, not public SaaS scale.
 
 ### Non-goals
@@ -77,7 +77,8 @@ admin controls, and predictable behavior, not public SaaS scale.
 ## Stack
 
 Python 3.12+, aiogram 3, aiohttp (OAuth callback + Mini App API), httpx (platform
-HTTP clients), Pillow (re-encoding uploaded avatars), aiosqlite, APScheduler (`AsyncIOScheduler`), pydantic v2 +
+HTTP clients), Pillow (re-encoding uploaded avatars), psycopg 3 (PostgreSQL, #234;
+aiosqlite stays only to read the old SQLite files: the import tool, old scripts), APScheduler (`AsyncIOScheduler`), pydantic v2 +
 pydantic-settings, cryptography Fernet, xbox-webapi-python, the official Steam Web
 API, psnawp (PSN), howlongtobeatpy, pytest + pytest-asyncio + ruff. The Mini App is
 Vite + React (`webapp/`), with hls.js playing the stores' HLS trailers wherever
@@ -260,12 +261,16 @@ name, or when the tree goes stale.
 │                            mini_pass.py (the season pass: its state, claiming a theme)
 │   │
 │   └── db/
-│       ├── schema.sql            full DDL for a brand-new database
+│       ├── postgres.py           psycopg 3 behind aiosqlite's face: placeholders, rows, autocommit,
+│       │                         numbers and dates sent untyped (#234)
+│       ├── pg/                   the PostgreSQL schema: app.sql (a server's own tables), games.sql
+│       │                         (the shared catalog), migrations/ (numbered on from 144)
 │       ├── repo/                 all data access, the only place with SQL; one Repo from mixins
 │       │                         (map in its __init__.py); `_sql.py` holds the shared joins (#52);
-│       │                         `_games_db.py`: which tables are the shared games database (#229)
-│       ├── files.py              a database opened by a script, its games file attached (#229)
-│       └── migrations/           one file per schema change, for existing databases only
+│       │                         `_games_db.py`: which tables are the shared games catalog (#229)
+│       ├── schema.sql, migrations/   the SQLite schema and its history up to 143: what the
+│       │                         import tool reads production's SQLite file against, nothing else
+│       └── files.py              a SQLite file opened by a script (the scripts not yet moved, #234)
 │
 ├── scripts/                     one-off operational helpers, outside the running bot
 │   ├── render_screen.py          draws any screen, prints it or sends it to the owner's DM (#63)
@@ -327,11 +332,17 @@ Required environment variables: `BOT_TOKEN`, `SUPERADMIN_TG_IDS` (comma-separate
 super-admins), `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET`, `OAUTH_REDIRECT_URL`
 (public HTTPS — Microsoft rejects `http://` and `localhost`), `FERNET_KEY`.
 
+The database (#234): `DATABASE_URL` (a PostgreSQL DSN; the dev default is the
+project's own cluster, `postgresql://localhost:5433/unlocked?user=postgres`) and
+`DATABASE_SCHEMA` (this server's own schema: `prod`, `test`, `dev`; the catalog is
+the schema `games`, shared). `DB_PATH` no longer names the database: its folder is
+where the server keeps its files (the lock, the advisers' answers).
+
 Optional: `LEGACY_BOT_TOKENS` (the tokens of bots this one replaced, #238: the
 Mini App opened from their posts arrives signed by them and is still accepted,
 `Settings.mini_app_tokens`; never used to poll or send), `STEAM_API_KEY`,
 `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `OAUTH_LISTEN_HOST` /
-`OAUTH_LISTEN_PORT`, `DB_PATH`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
+`OAUTH_LISTEN_PORT`, `MEDIA_DIR`, `LOG_LEVEL`, `MINI_APP_URL` (empty disables the Mini
 App entry points), the poller intervals (a first-run seed: the polling steps are
 `app_settings` since #184 stage 0, see Polling model), and the mail server for email sign-in
 (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` starttls/ssl/none, `SMTP_USERNAME`,
@@ -368,72 +379,64 @@ setting it up: `docs/mail-setup.md`).
 
 ## Data model
 
-The canonical schema is `bot/db/schema.sql`; this section describes the model, not
-every column. History: #106.
+The canonical schema is `bot/db/pg/app.sql` (a server's own tables) and
+`bot/db/pg/games.sql` (the shared catalog), PostgreSQL since #234; this section
+describes the model, not every column. `bot/db/schema.sql` and `bot/db/migrations/`
+are the SQLite history (up to migration 143), kept for the import tool only: a
+migration number or a column named below may point there. History: #106.
 
 ### One games database for prod and the test server (#229)
 
-- **The catalog is one file both bots attach** (owner, 2026-10-28;
-  `db/repo/_games_db.py`, on the VPS `/srv/unlocked-games/games.db`): every
-  table about games, achievement lists and the stores (`CATALOG_TABLES` — the
-  lists and their achievements, Steam's caches, guides, the games catalog, the
-  HLTB mirror, store answers, `fetch_state`, the octopus's queue) lives in
-  `games`, attached to each bot's own database; people, accounts, what they
-  earned, chats and `app_settings` stay each server's. SQLite finds a table
-  nobody qualified in `main` first, then in `games`, so queries are as before;
-  only what *creates* a table, an index or a trigger of the catalog is placed
-  in `games` (`placed`), for schema.sql, the migrations and the indexes after
-  them. **A database names its games file in `app_settings`** (`games_db_path`),
-  written by `scripts/games_db.py split|join`; one that names none is one file,
-  as before (the dev server). A named file that is missing stops start-up — an
-  empty catalog is never made up. Scripts open a database through
-  `bot/db/files.py` (`connect`, `open_database`, `backup`), which attaches its
-  games file; a copy is made of both, the copy naming its own games copy.
+- **One PostgreSQL database, a schema a server and one for the catalog**
+  (owner, 2026-10-30; #234): `prod`, `test`, `dev` (`DATABASE_SCHEMA`) hold each
+  server's people, accounts, what they earned, chats and `app_settings`;
+  `games` holds every table about games, achievement lists and the stores
+  (`CATALOG_TABLES` — the lists and their achievements, Steam's caches, guides,
+  the games catalog, the HLTB mirror, store answers, `fetch_state`, the
+  octopus's queue), shared by prod and the test server. The connection's
+  search path is `<server>,games`: a table nobody qualified is found in the
+  server's schema first, then in the catalog — what attaching the games file
+  did on SQLite — so queries name no schema. The catalog's pictures are one
+  folder for both (`MEDIA_DIR`, below).
 - **A migration touching the catalog runs once per server against the one
-  file**: it must only add (a table, a column, an index) and be idempotent —
-  an `ADD COLUMN` already there is skipped (`_apply_one`), a backfill must not
-  care that it ran before. The test server runs ahead of prod on the same
-  file, so prod's older code must keep working on a catalog the newer one
-  migrated. **A global rework of the games database** — a migration that
-  rebuilds, renames or drops a catalog table — **cannot be shared: the two
-  databases are parted for its duration** (owner, 2026-10-28; `xbox-deploy
-  games leave`), and once both run the new code one `split`s again and the
-  other `join`s.
+  schema**: it writes `games.<name>`, must only add (a table, a column, an
+  index) and be idempotent (`IF NOT EXISTS`, a backfill that does not care that
+  it ran before). The test server runs ahead of prod on the same catalog, so
+  prod's older code must keep working on a catalog the newer one migrated.
+  **A global rework of the catalog** — a migration that rebuilds, renames or
+  drops a catalog table — **cannot be shared**: the two servers part for its
+  duration (a copy of `games` for one of them), and join again once both run
+  the new code.
 - **The catalog's background work may run on both bots**: the octopus and the
   store collection run wherever `store_collection` is on. A queue entry is
   taken by a conditional update that only one bot can win and held
   (`octopus_take`, half an hour), so two bots never assemble one game.
-  **No `UPDATE … RETURNING` on the bot's connection**: an unfinished one is a
-  write in progress, and every other coroutine's commit fails meanwhile.
 
 ### Bring-up and migrations
 
-- **`schema.sql` runs on every start; migrations bring an *existing* database up to
-  it.** A brand-new database is **baselined** — its migrations are recorded as
-  applied without running — so a migration only has to work against the schema it
-  was written for. The test is "was the file empty before schema.sql ran", not
-  "does `schema_migrations` exist".
-- **A migration adding a column schema.sql already created is not an error**:
-  `_apply_one` leaves that `ADD COLUMN` out of the script before it runs, and logs
-  it (#167 — swallowing the error used to skip the rest of the migration). A
-  database skipping versions meets both halves of the bring-up at once. Indexes on
-  columns a migration added are `_database.py::INDEXES_AFTER_MIGRATIONS`, made after
-  the migrations on every start, since a new database is baselined.
-- **A failed bring-up stops the process.** `connect()` closes the connection before
-  re-raising; an open aiosqlite connection keeps a non-daemon thread alive and the
-  bot neither serves nor exits. The same holds for anything later in `run()`
-  before polling starts: `main()` ends a run that raised with `os._exit(1)`, so
-  systemd (`Restart=on-failure`) starts it again, and `bot.me()` at start-up is
-  retried for ~2 minutes because Telegram is sometimes briefly unreachable.
+- **A schema with no tables is made from its file; migrations bring an
+  existing one up** (`db/repo/_database.py`, #234): `games` from `pg/games.sql`
+  when it is empty, the server's schema from `pg/app.sql` when it is, and a
+  schema made so is **baselined** — the migrations of `pg/migrations/` are
+  recorded as applied without running, so a migration only has to work against
+  the schema it was written for. A migration is one transaction
+  (`BEGIN … COMMIT` around its file); a new column or index goes in the
+  migration *and* in the schema file, for databases made after it.
+- **Every foreign key is DEFERRABLE** (the `DO` block at the end of each schema
+  file): merging two people moves a Telegram id from one row to the other and
+  defers the checks with `SET CONSTRAINTS ALL DEFERRED` (`_merge.py`).
+- **A failed bring-up stops the process.** `connect()` closes the connection
+  before re-raising; the same holds for anything later in `run()` before polling
+  starts: `main()` ends a run that raised with `os._exit(1)`, so systemd
+  (`Restart=on-failure`) starts it again, and `bot.me()` at start-up is retried
+  for ~2 minutes because Telegram is sometimes briefly unreachable.
 - **A database ahead of the code refuses to start** (`SchemaTooNewError`, #56) —
-  that is how an older build learns a newer one already migrated its file.
-- **The games-db release (#147) is rehearsed by the plan in #201** — a copy of
-  production, the bring-up, agents per area. A change on that branch that adds a
-  migration, a table, a column or a script writing the database adds its check
-  to #201 in the same change.
+  that is how an older build learns a newer one already migrated it. The
+  version's D counts both migration folders (`bot/version.py`).
 - **Rehearse a migration on a copy of production before the release that carries
-  it** — copy with `sqlite3`'s `backup()`, run the real `Database.connect()`, count
-  rows on both sides. Production's particular history breaks migrations no test can.
+  it** — a copy of the schemas (`pg_dump` / restore into a scratch database), the
+  real `Database.connect()`, rows counted on both sides. Production's particular
+  history breaks migrations no test can.
 
 ### People and accounts (#52)
 
@@ -1592,7 +1595,7 @@ History: #108.
   title or batch failed — log and continue. Private profiles, empty responses, 429s,
   timeouts, dead credentials and outages are expected states, not exceptions.
 - **Backfill** is mandatory on first connection and safe on reconnection: history goes
-  in with `is_backfill = 1`, idempotently (`INSERT OR IGNORE`), and never publishes.
+  in with `is_backfill = 1`, idempotently (`ON CONFLICT DO NOTHING`), and never publishes.
   Xbox modern uses the broad history endpoint, Xbox 360 a title-by-title pass, Steam
   owned games with playtime, PSN trophy titles directly. PSN backfill flips
   `backfill_done` last.
@@ -2961,6 +2964,17 @@ History: #112.
 
 History: #112.
 
+### The move to PostgreSQL (#234)
+
+Agreed with the owner on 2026-10-30, **the fast path**: no dual backend and no
+week-long soak — the code moves in one step on `feature/postgres`, is checked on a
+copy of production and on the dev server, then both servers switch; production
+runs on SQLite until the switch, its downtime the data import alone. PostgreSQL 16
+runs on the VPS (localhost). Until the switch, the servers, the deploy script
+(`xbox-deploy`, its SQLite backups, `games split|join|leave`) and the scripts
+under `scripts/` that open SQLite files are as described in this section; what
+is left is in #234. The new bot (#238) and `unlocked.how` (#237) switch after it.
+
 ### Three branches, three servers
 
 "Test" names only a server, never a branch (owner, 2026-09-24).
@@ -2991,6 +3005,12 @@ History: #112.
 `status` shows uptime, the port, stray bot processes (two bots on one `BOT_TOKEN`
 fight over updates) and a database summary. The restart hooks live in `.git/hooks`,
 so a fresh clone does not have them. Never run the dev server on prod's `BOT_TOKEN`.
+
+**The dev server's PostgreSQL is a cluster of the project's own** (#234): port
+5433, data in `%LOCALAPPDATA%\unlocked-pg`, trust authentication on localhost,
+made with the binaries of the PostgreSQL 17 installed on the machine (its own
+service on 5432 is the owner's and is left alone). It does not start with
+Windows yet: `pg_ctl -D %LOCALAPPDATA%\unlocked-pg -o "-p 5433" start`.
 
 ### The VPS
 
@@ -3152,24 +3172,54 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   column. A decrypted value, when genuinely needed (re-encrypting after a `FERNET_KEY`
   change), stays in memory; if it must touch disk, it lives in `backups/` and is
   overwritten and deleted before the task ends.
-- **Back up with `sqlite3`'s `backup()`, never `cp`** — the databases run in WAL mode.
-  Name copies for what and when: `bot-pre042-20260915-084500.db`.
+- **Back up with the database's own tool, never `cp`**: `pg_dump` of the server's
+  schema and of `games` on PostgreSQL; `sqlite3`'s `backup()` for an SQLite file
+  (WAL mode). Name copies for what and when: `bot-pre042-20260915-084500.db`.
 
 ## Engineering rules
 
 History: #112.
 
 - Handlers are thin — services and repo methods, never raw SQL or platform logic.
-- All SQL lives in `bot/db/repo/`, `schema.sql` and the migrations.
+- All SQL lives in `bot/db/repo/`, `bot/db/pg/` (the schema files and migrations).
 - **Writes that must land together go in `async with self.transaction()`** (#167,
-  `db/repo/_tx.py`). The bot has one connection: a transaction is the
-  connection's, so one coroutine's `commit()` used to commit another's half-written
-  work and a `rollback()` threw it away. While a block is open everybody else
-  waits before their next statement, `commit()` inside it waits for its end, an
-  exception rolls back only the block, and a block inside a block is a savepoint.
-  Never call `rollback()` (inside a block it raises); keep network calls and file
-  deletion out of a block — it holds the connection. Single statements stay as
-  they were: execute, then commit.
+  `db/repo/_tx.py`). The bot has one connection, in autocommit (#234): a
+  statement outside a block is its own transaction, so a failed one leaves
+  nothing half done, and `commit()` outside a block has nothing to do. A block
+  opens `BEGIN`; while it is open everybody else waits before their next
+  statement, `commit()` inside it waits for its end, an exception rolls back
+  only the block, and a block inside a block is a savepoint. Never call
+  `rollback()` (inside a block it raises); keep network calls and file deletion
+  out of a block — it holds the connection. A statement that fails inside a
+  block poisons the block (PostgreSQL refuses the rest until the rollback):
+  catch nothing there that you mean to go on after.
+- **SQL is PostgreSQL's, through `bot/db/postgres.py`** (#234). Write `?` or
+  `:name` placeholders as before (translated once per statement; a `%` anywhere
+  is doubled for psycopg). Numbers, bools and dates go **untyped** (oid 0), as
+  SQLite's loose typing took them: a bool is 1/0, a datetime ISO text with a
+  space; the flags are integer columns and the dates text. What that leaves to
+  write by hand:
+  - a placeholder tested alone for NULL needs a type: `?::text IS NULL`;
+  - `a IS NOT b` / `a IS b` (b not NULL) are `IS DISTINCT FROM` /
+    `IS NOT DISTINCT FROM`;
+  - no `INSERT OR IGNORE` / `OR REPLACE` / `UPDATE OR IGNORE`: `ON CONFLICT DO
+    NOTHING`, `ON CONFLICT (key) DO UPDATE SET …`, an update `WHERE NOT EXISTS`
+    the row it would collide with;
+  - every column of a `GROUP BY` select is grouped or aggregated (a table's
+    columns follow from its primary key); the row SQLite's `MIN`/`MAX` handed its
+    bare columns from is `DISTINCT ON (…) … ORDER BY`;
+  - an output name is read bare in `ORDER BY`, never inside an expression nor in
+    `WHERE` / `HAVING`: wrap the select in a subquery;
+  - `SUM`/`MAX` of a condition is of `CASE WHEN … THEN 1 ELSE 0 END`; the
+    scalar `MAX(a, b)` is `GREATEST`; `GROUP_CONCAT` is `string_agg`; `IFNULL`
+    is `COALESCE`; `LIMIT -1` is `LIMIT NULL`; JSON is `::jsonb` with `->>`
+    and `jsonb_array_elements`; now in our text format is
+    `to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS')`;
+  - `LIKE` is case-sensitive (`ILIKE`, or `lower()` on both sides); there is no
+    `rowid` (an insertion order is a `seq` identity column) and no `lastrowid`
+    (`INSERT … RETURNING <id>`, read as a row: the adapter reads a statement's
+    rows at once, so nothing stays open on the connection); the jsonb operator
+    `?` cannot be written beside `?` placeholders (`jsonb_exists`).
 - Platform clients (`services/xbox|steam|psn`) know nothing about Telegram.
 - Everything is async; wrap synchronous libraries (`psnawp`) in `asyncio.to_thread`.
 - No new dependency unless clearly needed.
@@ -3204,6 +3254,14 @@ History: #112.
 .\.venv\Scripts\ruff check .
 .\.venv\Scripts\ruff format --check .
 ```
+
+**The tests run on PostgreSQL** (#234): their own database, `TEST_DATABASE_URL`
+(default the project's cluster on port 5433, database `unlocked_tests`, schema
+`app`), made empty once a run from the schema files; before each test one call
+(`public.reset_test_data()`) empties every table and resets every id counter.
+CI runs a `postgres:16` service. On Windows psycopg's async mode needs the
+selector event loop (`conftest.event_loop_policy`, `main.event_loop`). A test
+that needs foreign keys off says `SET session_replication_role = replica`.
 
 Real Xbox, Steam, PSN, HLTB or Telegram calls are forbidden in tests — mock at the
 service boundary.
