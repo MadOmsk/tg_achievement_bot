@@ -44,6 +44,15 @@ class SteamExtras:
         # Told of an app's posts that are new since its last read (main.py:
         # the players' notices).
         self.on_new_posts: Callable[[int, list[StoredPatch]], Awaitable[None]] | None = None
+        # Puts an app's posts with no Russian into Russian
+        # (`NewsTranslator.translate_app`): awaited before a new post is told
+        # about, so the notice carries its Russian title.
+        self.translate_posts: Callable[[int], Awaitable[object]] | None = None
+        # The same in the background, for a read with nothing new to tell.
+        self.on_posts_saved: Callable[[int], None] | None = None
+        # Told a game whose tips were just worked out, so they are put into
+        # the other language at once (`GuideTranslator.later`).
+        self.on_guides_saved: Callable[[str, str], None] | None = None
 
     def ensure_title(self, platform: str, title_id: str) -> None:
         """Fill the game in the background if it is not filled yet — never on
@@ -148,6 +157,8 @@ class SteamExtras:
         # A model that could not be asked leaves the game to be read again.
         complete = found.complete and not asked_in_vain
         await self._repo.replace_title_tips(platform, title_id, tips, complete=complete)
+        if tips and self.on_guides_saved is not None:
+            self.on_guides_saved(platform, title_id)
         if complete:
             await self._repo.mark_steam_guides_read(appid)
         log.info(
@@ -218,6 +229,12 @@ class SteamExtras:
         await self._repo.save_game_patches(appid, stored)
         # A first read is the app's history, not news: nothing is told then.
         fresh = [p for p in stored if p.gid not in known] if known else []
+        if fresh and self.on_new_posts is not None and self.translate_posts is not None:
+            # Translated first, so the notice names the post in Russian.
+            await self.translate_posts(appid)
+            fresh = [await self._repo.game_patch(appid, p.gid) or p for p in fresh]
+        elif self.on_posts_saved is not None:
+            self.on_posts_saved(appid)
         if fresh and self.on_new_posts is not None:
             try:
                 await self.on_new_posts(appid, fresh)

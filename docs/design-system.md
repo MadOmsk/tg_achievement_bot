@@ -73,7 +73,14 @@ is two such blocks and a swatch, nothing else. **A game's page takes a muted
 scheme from its own art** (`app/artTheme.ts`), over whichever palette is on,
 and so do the pages inside it — its achievements, one achievement, its
 gallery, a post of its (`rememberGameArt` / `gameArtOf`: the same picture,
-so the same colours).
+so the same colours). The colour is the picture's **dominant** one (the
+busiest hue, not the average of all of them), as strong as the picture is
+vivid. **A season's cover colours its month card and its pass page, in a
+deeper form** (owner, 2026-10-30; `useArtTheme(url, true)`): the containers
+and the cards inside sit halfway in its colour, with light text, since an
+orange or a yellow held as dark as the page is only brown — the one place
+cards are not `surface-1`. The month card does so on Home and on a person's
+page, each month in its own season's colour; the page's ground stays muted.
 
 Platform marks keep the platforms' own colours (Xbox green, PlayStation blue,
 Steam slate); nothing else is coloured outside the tokens.

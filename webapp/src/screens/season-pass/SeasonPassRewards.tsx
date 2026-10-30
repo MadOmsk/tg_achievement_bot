@@ -10,6 +10,7 @@ import { tick } from "../../core/haptic";
 import { PALETTE_NAMES, removeItem, revertItem, saveItem } from "../../core/season-pass";
 import { formatWhen, num, type TranslationKey } from "../../i18n";
 import { Button, Field, Row, Spinner } from "../../ui/Controls";
+import { AddGameOver } from "../home/AddGame";
 import { Face } from "../../ui/Face";
 import { Cover } from "../../ui/Pic";
 import { Icon, type IconName } from "../../ui/Icon";
@@ -84,20 +85,25 @@ export function ItemEditor({ item, editor, onClose }: { item: PassEditorItem | n
   const [platform, setPlatform] = useState<string | null>(item?.platform ? platformName(item.platform) : null);
   const [choosingPlatform, setChoosingPlatform] = useState(false);
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<GameCard[]>([]);
+  const [catalogHits, setCatalogHits] = useState<GameCard[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [addingGame, setAddingGame] = useState(false);
   useEffect(() => {
     const q = query.trim();
     if (kind !== "game" || game || q.length < 2) {
-      setHits([]);
+      setCatalogHits([]);
       return;
     }
     let live = true;
+    // Our catalog only; a game it lacks is added on a page of its own («Добавить игру»).
     const id = window.setTimeout(() => {
+      setSearching(true);
       gameApi
         .searchGames(data, q)
-        .then((res) => live && setHits(res.games.slice(0, 6)))
-        .catch(() => undefined);
-    }, 250);
+        .then((res) => live && setCatalogHits(res.games.slice(0, 6)))
+        .catch(() => undefined)
+        .finally(() => live && setSearching(false));
+    }, 350);
     return () => {
       live = false;
       window.clearTimeout(id);
@@ -253,16 +259,26 @@ export function ItemEditor({ item, editor, onClose }: { item: PassEditorItem | n
                 </button>
               ) : (
                 <div className="pass-add-search">
-                  <Field icon="search" placeholder={tr("passPrizeGameFind")} hint={tr("passPrizeGameManual")} value={query} onChange={(e) => setQuery(e.target.value)} />
-                  {hits.length > 0 && (
+                  <Field
+                    icon="search"
+                    placeholder={tr("passPrizeGameFind")}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    trail={
+                      <button type="button" className="link-btn" onClick={() => setAddingGame(true)}>
+                        {tr("addGameButton")}
+                      </button>
+                    }
+                  />
+                  {catalogHits.length > 0 && (
                     <div className="group">
                       <div className="group-items">
-                        {hits.map((g) => (
+                        {catalogHits.map((g) => (
                           <Row
                             key={g.game_id}
                             lead={<Cover src={g.poster || g.hero} className="gp-rel-cover" />}
                             title={gameName(g)}
-                            sub={g.year ? String(g.year) : undefined}
+                            sub={g.year ? String(g.year) : tr("passPrizeGameInCatalog")}
                             onClick={() => {
                               setGame(g);
                               if (!title.trim()) setTitle(gameName(g));
@@ -271,6 +287,9 @@ export function ItemEditor({ item, editor, onClose }: { item: PassEditorItem | n
                         ))}
                       </div>
                     </div>
+                  )}
+                  {!searching && catalogHits.length === 0 && query.trim().length >= 2 && (
+                    <p className="pass-edit-note">{tr("passPrizeGameNone")}</p>
                   )}
                 </div>
               ))}
@@ -394,6 +413,16 @@ export function ItemEditor({ item, editor, onClose }: { item: PassEditorItem | n
             setCropping(null);
           }}
           onDone={cropped}
+        />
+      )}
+      {addingGame && (
+        <AddGameOver
+          layer="pass-add-game"
+          onClose={() => setAddingGame(false)}
+          onAdded={(g) => {
+            setGame(g);
+            if (!title.trim()) setTitle(gameName(g));
+          }}
         />
       )}
     </Sheet>

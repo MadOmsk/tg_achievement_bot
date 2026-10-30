@@ -4,11 +4,13 @@ relations; who here played it; the games a search finds; favorite games."""
 
 from __future__ import annotations
 
+import json
+import uuid
 from typing import Any
 
 from bot.db.repo._sql import OWNED_BY_PERSON, earned_at, platform_is
 from bot.services import x360_frame
-from bot.util import utcnow
+from bot.util import utcnow, utcnow_iso
 
 # A merge chain is short; this only stops a cycle the operator could make.
 _MERGE_HOPS = 10
@@ -68,8 +70,144 @@ class _GamePageRepo:
         )
         row = await cursor.fetchone()
         if row is None:
+            # Another id naming a version (`versions.store_ids`): a regional
+            # twin of its list, or a PlayStation store title — what PSN's
+            # presence names (CUSA…/PPSA…), never the trophy list.
+            cursor = await self._conn.execute(
+                "SELECT v.game_id FROM versions v, json_each(v.store_ids) j"
+                " WHERE v.game_id IS NOT NULL AND ("
+                "  (json_extract(j.value, '$[0]') = 'list'"
+                "   AND json_extract(j.value, '$[1]') = ?)"
+                "  OR (json_extract(j.value, '$[0]') = 'psn_title'"
+                "   AND (json_extract(j.value, '$[1]') = ?"
+                "    OR json_extract(j.value, '$[1]') LIKE ? || '\\_%' ESCAPE '\\')))"
+                f" ORDER BY v.role IN {_PLAYABLE_ROLES} DESC, v.version_id LIMIT 1",
+                (f"{platform}:{title_id}", str(title_id), str(title_id)),
+            )
+            row = await cursor.fetchone()
+        if row is None:
             return None
         return await self.live_game_id(int(row["game_id"]))
+
+    async def game_name_index(self) -> dict[str, int]:
+        """Every name a catalog game goes by, as the matcher normalizes names
+        (`game_match.name_key`: accents, ®, apostrophes, numerals) -> its live
+        game: the game's own names and its playable versions' — what a game
+        searched for in a store is found in the catalog by."""
+        from bot.services.game_match import name_key
+
+        index: dict[str, int] = {}
+        cursor = await self._conn.execute(
+            "SELECT game_id, name, name_ru FROM games WHERE merged_into IS NULL"
+        )
+        for row in await cursor.fetchall():
+            for name in (row["name"], row["name_ru"]):
+                key = name_key(name or "")
+                if key:
+                    index.setdefault(key, int(row["game_id"]))
+        cursor = await self._conn.execute(
+            "SELECT game_id, name, name_ru FROM versions"
+            f" WHERE game_id IS NOT NULL AND role IN {_PLAYABLE_ROLES}"
+        )
+        for row in await cursor.fetchall():
+            for name in (row["name"], row["name_ru"]):
+                key = name_key(name or "")
+                if key:
+                    index.setdefault(key, int(row["game_id"]))
+        # What the stores sell around a game we have — its DLC and editions —
+        # is that game's too, never a game of its own to add.
+        cursor = await self._conn.execute(
+            "SELECT v.game_id, d.name, d.name_ru FROM dlcs d"
+            " JOIN versions v ON v.version_id = d.version_id WHERE v.game_id IS NOT NULL"
+            " UNION ALL"
+            " SELECT v.game_id, e.name, NULL FROM editions e"
+            " JOIN edition_items i ON i.edition_id = e.edition_id"
+            " JOIN versions v ON v.version_id = i.version_id WHERE v.game_id IS NOT NULL"
+        )
+        for row in await cursor.fetchall():
+            for name in (row["name"], row["name_ru"]):
+                key = name_key(name or "")
+                if key:
+                    index.setdefault(key, int(row["game_id"]))
+        return index
+
+    async def add_manual_game(
+        self, name: str, name_ru: str | None = None, key: str | None = None
+    ) -> tuple[int, bool]:
+        """A game the super-admin adds by hand while the stores have not been
+        asked about it (owner, 2026-10-30), for a prize to point at: `(game id,
+        made now)`. A game of that name already in the catalog is that game.
+        It is one stand-in version of no store (a game with no version is
+        dropped by the next rebuild), named by hand so the matcher leaves the
+        name; the linker joins it to the real game once the stores bring one,
+        and the old id resolves to it. Queued for the octopus by its name, or by
+        `key` (a store link's)."""
+        from bot.services.game_match import name_key
+        from bot.services.stores import UNKNOWN_STORE, StoreVersion
+
+        name = name.strip()
+        # Never a second game of a name the catalog has (owner, 2026-10-30).
+        known = (await self.game_name_index()).get(name_key(name))
+        if known is not None:
+            return await self.live_game_id(known) or known, False
+        version_id = await self.save_version(
+            StoreVersion(
+                store=UNKNOWN_STORE,
+                product_id=f"manual:{uuid.uuid4().hex[:12]}",
+                console="pc",
+                name=name,
+                name_ru=name_ru,
+                kind="game",
+                stand_in=True,
+            ),
+            platform=None,
+            title_id=None,
+            origin="store",
+            found=("manual", name),
+        )
+        async with self.transaction():
+            game = await self.create_game(name, None, version_id)
+            await self._conn.execute(
+                "UPDATE versions SET game_id = ?, role = 'version' WHERE version_id = ?",
+                (game, version_id),
+            )
+            await self._conn.execute(
+                "UPDATE games SET name_source = 'manual', name_ru = ? WHERE game_id = ?",
+                (name_ru, game),
+            )
+        # By what the admin gave: a store link's key names the game exactly.
+        await self.octopus_enqueue(key or f"name:{name}", "manual")
+        return game, True
+
+    async def stand_in_versions_due(self, source: str, limit: int) -> list[int]:
+        """Versions that are only a stand-in made from an achievement list, in
+        a game, that `source` has not looked at lately (`fetch_state`) — the
+        ones the linker may still put in a bigger game."""
+        cursor = await self._conn.execute(
+            "SELECT v.version_id FROM versions v LEFT JOIN fetch_state f"
+            "  ON f.subject = 'version:' || v.version_id AND f.source = ?"
+            " WHERE COALESCE(v.stand_in, 0) = 1 AND v.game_id IS NOT NULL"
+            "   AND (f.next_check_at IS NULL OR f.next_check_at <= ?)"
+            " ORDER BY f.next_check_at IS NOT NULL, f.next_check_at, v.version_id LIMIT ?",
+            (source, utcnow_iso(), limit),
+        )
+        return [int(row["version_id"]) for row in await cursor.fetchall()]
+
+    async def game_of_steam_app(self, appid: int) -> int | None:
+        """The game a Steam app is: its Steam version, else a version that
+        knows it as its twin (`steam_twin`) — what a developer's post is of."""
+        cursor = await self._conn.execute(
+            "SELECT v.game_id FROM versions v"
+            " WHERE v.game_id IS NOT NULL AND ("
+            "  (v.store = 'steam' AND v.product_id = ?)"
+            "  OR EXISTS (SELECT 1 FROM json_each(v.store_ids) j"
+            "   WHERE json_extract(j.value, '$[0]') = 'steam_twin'"
+            "    AND json_extract(j.value, '$[1]') = ?))"
+            f" ORDER BY v.role IN {_PLAYABLE_ROLES} DESC, v.version_id LIMIT 1",
+            (str(appid), str(appid)),
+        )
+        row = await cursor.fetchone()
+        return await self.live_game_id(int(row["game_id"])) if row else None
 
     async def adopt_list_as_game(self, platform: str, title_id: str) -> int | None:
         """A list in no game yet (the linker has not reached it) becomes a
@@ -92,7 +230,12 @@ class _GamePageRepo:
             taken = await cursor.fetchone()
             if taken is not None:
                 return await self.live_game_id(int(taken[0]))
-            game = await self.create_game(name, None, versions[0])
+            # The game the catalog already has under this name is the one this
+            # list is of (owner, 2026-10-30: a page only refers to a game, it
+            # never makes a second one of a name): the list's version joins it.
+            game = await self._game_named(record, name)
+            if game is None:
+                game = await self.create_game(name, None, versions[0])
             await self._conn.execute(
                 f"UPDATE versions SET game_id = ?, role = 'version' WHERE version_id IN ({marks})"
                 " AND game_id IS NULL",
@@ -100,10 +243,29 @@ class _GamePageRepo:
             )
         return game
 
+    async def _game_named(self, record: dict[str, Any], name: str) -> int | None:
+        """The live game that goes by any of an achievement list's names."""
+        from bot.services.game_match import name_key
+
+        index = await self.game_name_index()
+        for candidate in (name, record.get("name"), record.get("name_ru")):
+            known = index.get(name_key(str(candidate or "")))
+            if known is not None:
+                return await self.live_game_id(known) or known
+        return None
+
     async def game_row(self, game_id: int) -> dict[str, Any] | None:
         cursor = await self._conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+    async def game_ids_after(self, after: int, limit: int) -> list[int]:
+        """Games by id past `after`, for a walk over all of them."""
+        cursor = await self._conn.execute(
+            "SELECT game_id FROM games WHERE game_id > ? ORDER BY game_id LIMIT ?",
+            (after, limit),
+        )
+        return [int(row["game_id"]) for row in await cursor.fetchall()]
 
     async def game_page_versions(self, game_id: int) -> list[dict[str, Any]]:
         """Every version of the game with what its store said, earliest first."""
@@ -117,6 +279,15 @@ class _GamePageRepo:
             (game_id,),
         )
         return [dict(row) for row in await cursor.fetchall()]
+
+    async def set_version_art(self, version_id: int, art: dict[str, str]) -> None:
+        """A version's library art of now (`steam_library_art`), merged into
+        its `media` over what was there."""
+        await self._conn.execute(
+            "UPDATE versions SET media = json_patch(COALESCE(media, '{}'), ?) WHERE version_id = ?",
+            (json.dumps(art), version_id),
+        )
+        await self._conn.commit()
 
     async def set_version_description_ru(
         self, version_id: int, translated: str, of: str | None

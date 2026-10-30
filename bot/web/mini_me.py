@@ -13,7 +13,7 @@ from bot.constants import (
     TokenStatus,
 )
 from bot.db.repo import PlatformLink, Repo, User
-from bot.services import post_picture
+from bot.services import game_page, post_picture
 from bot.services.admin_settings import SHOW_LINKS_DEFAULT, SHOW_LINKS_KEY
 from bot.services.handles import CHANGE_COOLDOWN_DAYS
 from bot.services.naming import link_nickname
@@ -128,6 +128,7 @@ async def build_me_payload(
             day=counters.today_xbox,
             week=week_xbox,
             month=counters.month_xbox,
+            locale=locale,
         ),
         "steam": await _steam_block(
             repo,
@@ -172,13 +173,14 @@ async def _xbox_block(
     day: int,
     week: int,
     month: int,
+    locale: str = "ru",
 ) -> dict[str, Any]:
     linked = bool(user and user.xuid)
     gamertag = user.gamertag if user else None
     status = token.status if token else None
     presence = None
     if linked and user and user.xuid:
-        presence = await _xbox_presence(repo, user.xuid)
+        presence = await _xbox_presence(repo, user.xuid, locale)
     xbox_link = (
         await repo.get_platform_link(user.id, AccountPlatform.XBOX) if linked and user else None
     )
@@ -214,7 +216,7 @@ async def _steam_block(
 ) -> dict[str, Any]:
     if link is None:
         return {"linked": False}
-    presence = await _steam_presence(repo, link.external_id)
+    presence = await _steam_presence(repo, link.external_id, locale)
     return {
         "linked": True,
         "publishes": link.publishes,
@@ -301,14 +303,16 @@ async def _picture_look(repo: Repo) -> dict[str, Any]:
     return {"on": look.on, "scale": look.scale, "low_res": look.low_res}
 
 
-async def _xbox_presence(repo: Repo, xuid: str) -> dict[str, Any] | None:
+async def _xbox_presence(repo: Repo, xuid: str, locale: str) -> dict[str, Any] | None:
     row = await repo.presence_of(xuid)
     if row is None:
         return None
     game = None
     if row.state == PresenceState.ONLINE and row.title_id:
-        game = real_game_name(row.title_name) or real_game_name(
-            await repo.title_name("xbox", row.title_id)
+        game = (
+            await game_page.playing_name(repo, "xbox", row.title_id, locale)
+            or real_game_name(row.title_name)
+            or real_game_name(await repo.title_name("xbox", row.title_id))
         )
     return {
         "state": row.state,
@@ -318,14 +322,17 @@ async def _xbox_presence(repo: Repo, xuid: str) -> dict[str, Any] | None:
     }
 
 
-async def _steam_presence(repo: Repo, steam_id: str) -> dict[str, Any] | None:
+async def _steam_presence(repo: Repo, steam_id: str, locale: str) -> dict[str, Any] | None:
     row = await repo.steam_presence_of(steam_id)
     if row is None:
         return None
     online = bool(row.gameid) or (row.persona_state is not None and row.persona_state > 0)
+    playing = (
+        await game_page.playing_name(repo, "steam", str(row.gameid), locale) if row.gameid else None
+    )
     return {
         "state": "Online" if online else "Offline",
-        "game_name": row.game_name,
+        "game_name": playing or row.game_name,
         "persona_state": row.persona_state,
         "updated_at": row.updated_at,
     }

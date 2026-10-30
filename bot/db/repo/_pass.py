@@ -44,6 +44,32 @@ def _pending(row: Any) -> dict[str, Any]:
 
 
 class _PassRepo:
+    async def wipe_pass_before(self, month: str, marker: str) -> dict[str, int]:
+        """Every theme and prize of the passes before `month` taken away, and
+        what each person got of them (TEMPORARY, owner, 2026-10-30; see
+        `services/season_reset.py`): the levels and their codes, the themes
+        claimed, the levels reached and the seasons' names, all of a month
+        before `month`; and `marker` set, in one step. A pass of `month` or
+        after, and what was claimed in it, stays."""
+        gone: dict[str, int] = {}
+        async with self.transaction():
+            old = "SELECT item_id FROM pass_items WHERE month IS NULL OR month < ?"
+            for table, where in (
+                ("pass_item_codes", f"item_id IN ({old})"),
+                ("pass_reached", "month < ?"),
+                ("pass_claims", "month < ?"),
+                ("pass_items", "month IS NULL OR month < ?"),
+                ("pass_seasons", "month < ?"),
+            ):
+                cursor = await self._conn.execute(f"DELETE FROM {table} WHERE {where}", (month,))
+                gone[table] = cursor.rowcount or 0
+            await self._conn.execute(
+                "INSERT INTO app_settings (key, value, updated_at) VALUES (?, '1', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = excluded.updated_at",
+                (marker, _now()),
+            )
+        return gone
+
     async def pass_claims(self, person_id: int) -> set[str]:
         cursor = await self._conn.execute(
             "SELECT palette FROM pass_claims WHERE person_id = ?", (person_id,)

@@ -34,7 +34,10 @@ const RELATION: Record<string, [TranslationKey, TranslationKey]> = {
 };
 
 function refKey(ref: GameRef): string {
-  return ref.game_id ? `g${ref.game_id}` : `${ref.platform}:${ref.title_id}:${ref.person?.person_id ?? ""}`;
+  // Whose progress it shows is part of the page: a game opened from two
+  // people's posts is two pages.
+  const who = ref.person?.person_id ?? "";
+  return ref.game_id ? `g${ref.game_id}:${who}` : `${ref.platform}:${ref.title_id}:${who}`;
 }
 
 const GALLERY_SHOWN = 8;
@@ -66,7 +69,7 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
   const theme = useArtTheme(art);
   if (g && art) {
     rememberGameArt(
-      [g.game.name, `${gameRef.platform}:${gameRef.title_id}`, ...g.lists.map((l) => `${l.platform}:${l.title_id}`)],
+      [`g${g.game.game_id}`, g.game.name, `${gameRef.platform}:${gameRef.title_id}`, ...g.lists.map((l) => `${l.platform}:${l.title_id}`)],
       art,
     );
   }
@@ -111,7 +114,7 @@ function GameSkeleton({ name }: { name: string }) {
         </div>
       </div>
       <div className="gp-chips">
-        {[100, 96, 78].map((w) => (
+        {[110, 90].map((w) => (
           <span key={w} className="skel gp-skel-chip" style={{ width: w }} />
         ))}
       </div>

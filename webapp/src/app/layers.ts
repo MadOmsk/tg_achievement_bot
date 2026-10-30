@@ -20,6 +20,8 @@ export type AchView = {
   achievementId: string;
   game: string | null;
   gameIcon: string | null;
+  /** The catalog's game, what a tap on the game opens. */
+  gameId?: number | null;
   person: { id: number; name: string } | null;
   /** Everybody who earned it together, the first of them `person`. */
   together?: { id: number; name: string; at: string | null }[];
@@ -82,6 +84,7 @@ export type Layer =
     }
   | { kind: "notifications" }
   | { kind: "search" }
+  | { kind: "addGame" }
   | { kind: "settings"; pane: SettingsPaneName }
   | { kind: "connect"; platform: "steam" | "psn" }
   | { kind: "admin"; screen: AdminScreen | null };

@@ -49,7 +49,7 @@ def test_what_is_translated() -> None:
 
 
 class _Auth:
-    async def require_key(self) -> str:
+    async def get_key(self) -> str:
         return "key"
 
 
@@ -71,11 +71,13 @@ async def test_a_version_is_translated_once_and_a_store_russian_wins(
     )
     rows = await repo.versions_of_product("xbox", "P1")
     version_id = int(rows[0]["version_id"])
-    versions = [_version(version_id=version_id)]
+    game_id = await _in_a_game(repo, version_id)
 
-    game_descriptions.translate_later(repo, _Auth(), versions, None)
-    game_descriptions.translate_later(repo, _Auth(), versions, None)  # already running
-    await asyncio.gather(*game_descriptions._TASKS)
+    translator = game_descriptions.GameTranslator(repo, _Auth())
+    translator.later([game_id])
+    translator.later([game_id])  # already running
+    await asyncio.gather(*translator._tasks)
+    assert await translator.translate(game_id) is False  # Russian now: nothing to ask
     assert calls == [ENGLISH]
     cursor = await repo._conn.execute(
         "SELECT description_ru, description_source, description_ru_of FROM versions"
@@ -117,5 +119,22 @@ async def test_a_version_is_translated_once_and_a_store_russian_wins(
 
 @pytest.mark.asyncio
 async def test_no_key_leaves_it_english(repo: Repo) -> None:
-    game_descriptions.translate_later(repo, None, [_version()], None)
-    assert not game_descriptions._TASKS
+    translator = game_descriptions.GameTranslator(repo, None)
+    translator.later([1])
+    assert not translator._tasks
+    assert await translator.translate(1) is False
+
+
+async def _in_a_game(repo: Repo, version_id: int) -> int:
+    await repo._conn.execute(
+        "INSERT INTO games (name, anchor_version_id, created_at, updated_at)"
+        " VALUES ('Game', ?, '2026-10-30', '2026-10-30')",
+        (version_id,),
+    )
+    cursor = await repo._conn.execute("SELECT last_insert_rowid()")
+    game_id = int((await cursor.fetchone())[0])
+    await repo._conn.execute(
+        "UPDATE versions SET game_id = ? WHERE version_id = ?", (game_id, version_id)
+    )
+    await repo._conn.commit()
+    return game_id

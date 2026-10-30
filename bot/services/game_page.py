@@ -73,8 +73,8 @@ def art_of(versions: list[dict[str, Any]], icons: list[str] | None = None) -> di
 def store_art(
     versions: list[dict[str, Any]], icons: list[str] | None = None
 ) -> dict[str, str | None]:
-    """A game's pictures from its versions' stores: `poster` portrait (Xbox's
-    box art, Steam's capsule, PlayStation's cover), `hero` wide (Xbox's or
+    """A game's pictures from its versions' stores: `poster` portrait (Steam's
+    poster of now, Xbox's box art, Steam's capsule, PlayStation's cover), `hero` wide (Xbox's or
     PlayStation's hero art, else a Steam screenshot), `header` a wide logo
     banner (Steam). The lists' own icons stand in for a poster."""
     poster = hero = header = None
@@ -98,14 +98,21 @@ def store_art(
         return None
 
     steam = by_store.get("steam", [])
+    # Steam's poster of now first (owner, 2026-10-30: a store's box art may
+    # carry print marks, or an old season); its fixed capsule is often the
+    # art of launch day, so it comes after the Xbox one.
     poster = (
-        first("xbox", "poster")
+        first("steam", "poster")
+        or first("xbox", "poster")
         or (steam_capsule(steam[0]["product_id"]) if steam else None)
         or first("psn", "cover")
         or (icons[0] if icons else None)
     )
     hero = (
-        first("xbox", "background") or first("psn", "background") or first("steam", "screenshots")
+        first("steam", "hero")
+        or first("xbox", "background")
+        or first("psn", "background")
+        or first("steam", "screenshots")
     )
     header = first("steam", "cover")
     return {"poster": https(poster), "hero": https(hero or header), "header": https(header)}
@@ -493,16 +500,71 @@ def card_of(card: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def list_heroes(repo: Any, lists: list[tuple[str, str]]) -> dict[tuple[str, str], str | None]:
-    """The wide art of the game each achievement list is in, for a post with
-    no picture of its own (owner, 2026-10-29)."""
+async def games_of_lists(
+    repo: Any, lists: list[tuple[str, str]], locale: str
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """The catalog's game of each achievement list (owner, 2026-10-30: the
+    catalog is the one place a game lives, the Mini App shows it from there):
+    `{game_id, name, poster, hero}`, the name in the reader's language. A list
+    in no game yet is left out — its caller shows the list as before, and the
+    list becomes a game when its page is first opened (`adopt_list_as_game`)."""
     games: dict[tuple[str, str], int] = {}
     for key in dict.fromkeys(lists):
         game_id = await repo.game_of_list(*key)
         if game_id is not None:
             games[key] = game_id
     cards = await repo.game_cards(list(set(games.values())))
-    return {key: card_of(cards[g])["hero"] if g in cards else None for key, g in games.items()}
+    found: dict[tuple[str, str], dict[str, Any]] = {}
+    for key, game_id in games.items():
+        if game_id not in cards:
+            continue
+        card = card_of(cards[game_id])
+        name = (card["name_ru"] if locale == "ru" else None) or card["name"]
+        found[key] = {
+            "game_id": game_id,
+            "name": name,
+            "poster": card["poster"],
+            "hero": card["hero"],
+        }
+    return found
+
+
+async def playing_name(
+    repo: Any, platform: str | None, title_id: str | None, locale: str
+) -> str | None:
+    """The catalog's name of the game somebody is playing: an Xbox or Steam
+    presence names the list, PlayStation's a store title (CUSA…/PPSA…), which
+    `game_of_list` finds among the versions' store ids."""
+    if not platform or not title_id:
+        return None
+    found = await games_of_lists(repo, [(str(platform), str(title_id))], locale)
+    game = found.get((str(platform), str(title_id)))
+    return game["name"] if game else None
+
+
+def game_fields(game: dict[str, Any] | None) -> dict[str, Any]:
+    """A list-keyed row's game for its JSON: `game_id`, `game_poster`,
+    `game_hero` (None each when the list is in no game yet)."""
+    return {
+        "game_id": game["game_id"] if game else None,
+        "game_poster": game["poster"] if game else None,
+        "game_hero": game["hero"] if game else None,
+    }
+
+
+async def list_posters(
+    repo: Any, lists: list[tuple[str, str]]
+) -> dict[tuple[str, str], str | None]:
+    """The poster of the game each achievement list is in."""
+    found = await games_of_lists(repo, lists, "en")
+    return {key: game["poster"] for key, game in found.items()}
+
+
+async def list_heroes(repo: Any, lists: list[tuple[str, str]]) -> dict[tuple[str, str], str | None]:
+    """The wide art of the game each achievement list is in, for a post with
+    no picture of its own (owner, 2026-10-29)."""
+    found = await games_of_lists(repo, lists, "en")
+    return {key: game["hero"] for key, game in found.items()}
 
 
 def hltb_of(entry: dict[str, Any] | None) -> dict[str, Any] | None:

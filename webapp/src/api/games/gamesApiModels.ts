@@ -48,6 +48,8 @@ export type GameDetails = {
   name_en: string | null;
   icon_url: string | null;
   cover_path: string | null;
+  /** The catalog's game the list is of (none while it is in no game). */
+  game?: { game_id: number; name: string | null; poster: string | null; hero: string | null } | null;
   achievements_total: number;
   achievements_unlocked: number;
   completion_percent: number;

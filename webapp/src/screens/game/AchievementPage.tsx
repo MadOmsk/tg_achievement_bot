@@ -53,7 +53,7 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
   const tip = guides.data?.tips[ach.achievementId]?.text;
   const videos = guides.data?.videos?.[ach.achievementId] ?? [];
   const rare = rareLevel(ach.rarity, ach);
-  const theme = useArtTheme(gameArtOf(`${ach.platform}:${ach.titleId}`, ach.game) ?? ach.gameIcon);
+  const theme = useArtTheme(gameArtOf(ach.gameId ? `g${ach.gameId}` : null, `${ach.platform}:${ach.titleId}`, ach.game) ?? ach.gameIcon);
 
   return (
     <Page title={ach.game ?? tr("pageAchievement")} onBack={onClose} hero layer={layer} className="ach-page" style={theme.style}>
@@ -103,6 +103,7 @@ export function AchievementPage({ ach, onClose, layer }: { ach: AchView; onClose
               open({
                 kind: "game",
                 ref: {
+                  game_id: ach.gameId ?? undefined,
                   platform: ach.platform,
                   title_id: ach.titleId,
                   name: ach.game,

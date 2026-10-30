@@ -140,7 +140,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
   // The month's cover heads the page, and the page takes its colours from
   // it, as a game's page does from its art.
   const cover = state?.image ?? null;
-  const art = useArtTheme(cover);
+  const art = useArtTheme(cover, true);
   const p = passProgress(state);
   const { tiers, points } = p;
   // The super-admin's editor: the draft on the timeline, a tap opens a level.
@@ -241,7 +241,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
           </div>
         </div>
         <div className="pass-tl pass-tl-wait">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2].map((i) => (
             <span key={i} className="pass-tl-wait-row">
               <span className="pass-tl-wait-node skel shape-cookie9" />
               <span className="pass-tl-ghost skel" />

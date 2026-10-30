@@ -4,10 +4,11 @@ import { useLoad } from "../app/useLoad";
 import { PassStrip } from "../screens/season-pass/SeasonPassCard";
 import { usePass } from "../core/season-pass";
 import { passApi } from "../api/season-pass/seasonPassApi";
+import { useArtTheme } from "../app/artTheme";
 import { useApp } from "../app/context";
 import { tick } from "../core/haptic";
 import { formatMonth, currentMonth } from "../core/people-utils";
-import { num, plural } from "../i18n";
+import { num } from "../i18n";
 import { Face } from "../ui/Face";
 import { Icon } from "../ui/Icon";
 import { MonthSheet } from "./Months";
@@ -51,18 +52,22 @@ export function MonthHero({
   const list = months?.length ? months : [month];
   const label = formatMonth(month, locale, "sheet");
   // The pass is this month's: another month shows its race.
-  const pass = season && month === currentMonth();
+  const thisMonth = month === currentMonth();
+  const pass = season && thisMonth;
   const passState = usePass(data);
   // An earlier month's season, as the arrows switch to it.
-  const pastSeason = useLoad(season && !pass ? `hero-season:${month}` : null, () => passApi.fetchPass(data, { month }));
-  const shownSeason = !season ? null : pass ? passState : (pastSeason.data ?? null);
-  // The shown month's season name (Home's only). This month's is remembered
-  // on the device, so a visit draws it at once rather than a moment later.
-  const remembered = pass && !passState ? recallSeason(month) : null;
-  if (pass && passState) rememberSeason(month, passState.title);
-  const seasonTitle = shownSeason?.title ?? remembered?.title ?? null;
+  const pastSeason = useLoad(!thisMonth ? `hero-season:${month}` : null, () => passApi.fetchPass(data, { month }));
+  const shownSeason = thisMonth ? passState : (pastSeason.data ?? null);
+  // This month's season is remembered on the device, so a visit draws it at
+  // once rather than a moment later.
+  const remembered = thisMonth && !passState ? recallSeason(month) : null;
+  if (thisMonth && passState) rememberSeason(month, passState.title, passState.image ?? null);
+  // The season's name is Home's; its colours, from its cover, every card's
+  // (owner, 2026-10-30), so each month's card looks its own.
+  const seasonTitle = season ? (shownSeason?.title ?? remembered?.title ?? null) : null;
+  const tint = useArtTheme(shownSeason?.image ?? remembered?.image ?? null, true);
   return (
-    <section className="home-hero">
+    <section className="home-hero" style={tint.style}>
       <span className="home-hero-deco shape-clover4" aria-hidden="true" />
       {onMonth ? (
         <div className="home-hero-nav">
@@ -96,20 +101,6 @@ export function MonthHero({
           </span>
         )}
       </div>
-      {payload ? (
-        <p className="home-hero-line">
-          <span>
-            <b className="t-num">{num(payload.month.count, locale)}</b>{" "}
-            {plural(locale, payload.month.count, ["achOne", "achFew", "achMany"])}
-          </span>
-          <span>
-            <b className="t-num">{num(payload.games.length, locale)}</b>{" "}
-            {plural(locale, payload.games.length, ["gameOne", "gameFew", "gameMany"])}
-          </span>
-        </p>
-      ) : (
-        <span className="home-hero-ghost home-hero-ghost-line" />
-      )}
       {!ready && (
         <div className="home-hero-people rail" aria-hidden="true">
           {[0, 1, 2, 3, 4].map((i) => (
@@ -167,7 +158,7 @@ export function MonthHero({
 
 const SEASON_KEY = "home-season";
 
-function recallSeason(month: string): { title: string | null } | null {
+function recallSeason(month: string): { title: string | null; image?: string | null } | null {
   try {
     const saved = JSON.parse(localStorage.getItem(SEASON_KEY) ?? "null");
     return saved && saved.month === month ? saved : null;
@@ -176,9 +167,9 @@ function recallSeason(month: string): { title: string | null } | null {
   }
 }
 
-function rememberSeason(month: string, title: string | null): void {
+function rememberSeason(month: string, title: string | null, image: string | null): void {
   try {
-    localStorage.setItem(SEASON_KEY, JSON.stringify({ month, title }));
+    localStorage.setItem(SEASON_KEY, JSON.stringify({ month, title, image }));
   } catch {
     // A private window keeps nothing: the card waits for the server then.
   }

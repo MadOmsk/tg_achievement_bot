@@ -100,7 +100,8 @@ export function Achievements({
 
   const groups = d && d.groups.length > 1 ? d.groups : null;
   const owner = theirs ?? { id: me.person_id, name: me.handle?.display ?? "" };
-  const gameName = d?.name ?? name ?? "";
+  const gameName = d?.game?.name ?? d?.name ?? name ?? "";
+  const gamePic = d?.game?.poster ?? d?.icon_url ?? null;
 
   const score = useMemo(() => {
     if (!d) return null;
@@ -113,7 +114,7 @@ export function Achievements({
   }, [d]);
 
   const row = (a: GameAchievement) => {
-    const ach = achOfList(a, { platform, titleId, game: gameName, icon: d?.icon_url ?? null }, owner, locale);
+    const ach = achOfList(a, { platform, titleId, game: gameName, icon: gamePic, gameId: d?.game?.game_id }, owner, locale);
     const hasTip = Boolean(guides?.tips[a.achievement_id]);
     const hasVideo = Boolean(guides?.videos?.[a.achievement_id]?.length);
     return (
@@ -147,13 +148,13 @@ export function Achievements({
 
   const done = Boolean(d && d.achievements_total > 0 && d.achievements_unlocked >= d.achievements_total);
 
-  const theme = useArtTheme(gameArtOf(`${platform}:${titleId}`, gameName) ?? d?.icon_url ?? cover);
+  const theme = useArtTheme(gameArtOf(d?.game ? `g${d.game.game_id}` : null, `${platform}:${titleId}`, gameName) ?? gamePic ?? cover);
   return (
     <Page title={gameName} onBack={onClose} hero layer={layer} className="list-page" style={theme.style}>
-      <Hero ground={d?.icon_url ?? cover}>
+      <Hero ground={gamePic ?? cover}>
         <span className="list-ring">
           <WaveRing value={d?.achievements_unlocked ?? 0} total={d?.achievements_total ?? 0} size={184}>
-            <Cover src={d?.icon_url ?? cover} className="list-cover" />
+            <Cover src={gamePic ?? cover} className="list-cover" />
           </WaveRing>
           {done && <DoneMark size={52} className="list-done" />}
         </span>
@@ -179,8 +180,6 @@ export function Achievements({
         {!d && (
           <span className="list-stats" aria-hidden="true">
             <span className="list-ghost list-ghost-num" />
-            <span className="list-ghost" />
-            <span className="list-ghost" />
           </span>
         )}
         {d && (
@@ -219,18 +218,9 @@ export function Achievements({
       {!d && list.loading && (
         <div className="list-body list-skel" aria-hidden="true">
           <span className="skel list-skel-filter" />
-          <div className="list-items">
-            {Array.from({ length: 6 }, (_, i) => (
-              <div key={i} className="list-row">
-                <div className="ach-row ach-row-plain">
-                  <span className="skel ach-pic-wide" />
-                  <span className="ach-text">
-                    <span className="skel skel-line" style={{ width: "55%" }} />
-                    <span className="skel skel-line" style={{ width: "85%" }} />
-                    <span className="skel skel-line" style={{ width: "40%" }} />
-                  </span>
-                </div>
-              </div>
+          <div className="group-items">
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className="row skel" style={{ height: 84 }} />
             ))}
           </div>
         </div>

@@ -71,6 +71,7 @@ export function Cropper({
         <div
           className="crop-box"
           ref={box}
+          data-no-pull
           style={aspect !== 1 ? { aspectRatio: String(aspect), maxWidth: "none" } : undefined}
           onPointerDown={(e) => {
             (e.target as HTMLElement).setPointerCapture?.(e.pointerId);

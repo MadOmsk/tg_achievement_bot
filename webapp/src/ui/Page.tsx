@@ -131,8 +131,10 @@ export function Sheet({
   const body = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; dy: number } | null>(null);
   const [pull, setPull] = useState(0);
-  const start = (y: number, fromBody: boolean) => {
+  const start = (y: number, target: EventTarget, fromBody: boolean) => {
     if (fromBody && (body.current?.scrollTop ?? 0) > 0) return;
+    // A control that drags by itself (a crop frame, a slider) keeps the finger.
+    if ((target as Element).closest?.("[data-no-pull], input[type=range]")) return;
     drag.current = { y, dy: 0 };
   };
   const move = (y: number) => {
@@ -161,7 +163,7 @@ export function Sheet({
         ref={sheet}
         className={`sheet${pull ? " sheet-pulled" : ""}`}
         style={pull ? { transform: `translateY(${pull}px)` } : undefined}
-        onTouchStart={(e) => start(e.touches[0].clientY, body.current?.contains(e.target as Node) ?? false)}
+        onTouchStart={(e) => start(e.touches[0].clientY, e.target, body.current?.contains(e.target as Node) ?? false)}
         onTouchMove={(e) => move(e.touches[0].clientY)}
         onTouchEnd={end}
         onTouchCancel={end}

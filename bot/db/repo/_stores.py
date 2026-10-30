@@ -253,7 +253,14 @@ class _StoresRepo:
             "   THEN 'native' ELSE versions.description_source END,"
             "  description_ru_of = CASE WHEN excluded.description_ru IS NOT NULL"
             "   THEN NULL ELSE versions.description_ru_of END,"
-            "  media = excluded.media, live_service = excluded.live_service,"
+            # Steam's library art comes from a request of its own
+            # (`steam_store.library_art`): an answer without it — a re-parse
+            # of the kept `appdetails` — keeps what was found.
+            "  media = CASE WHEN versions.media IS NULL THEN excluded.media ELSE json_patch("
+            "   json_object('poster', json_extract(versions.media, '$.poster'),"
+            "    'hero', json_extract(versions.media, '$.hero')),"
+            "   excluded.media) END,"
+            "  live_service = excluded.live_service,"
             # A version somebody here plays stays `played` once it is.
             "  origin = CASE WHEN versions.origin = 'played' THEN 'played'"
             "   ELSE excluded.origin END,"

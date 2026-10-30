@@ -22,7 +22,7 @@ from bot.services import game_art, title_catalog
 from bot.services.crypto import TokenCipher
 from bot.services.steam import achievements as steam_achievements
 from bot.services.steam.auth import SteamAuth
-from bot.services.stores import xbox_catalog
+from bot.services.stores import steam_store, xbox_catalog
 
 FERNET_KEY = Fernet.generate_key().decode()
 
@@ -44,6 +44,10 @@ async def _nothing(*args, **kwargs) -> None:
 
 async def _no_addons(name: str) -> list[str]:
     return []
+
+
+async def _no_art(appids: list[str]) -> dict:
+    return {}
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +75,9 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # An Xbox collection also searches the add-ons sold alone: the errand of
     # `test_xbox_addons_alone`, which stubs it again.
     monkeypatch.setattr(xbox_catalog, "search_addons", _no_addons)
+    # A Steam collection also asks for the library art of now: the errand of
+    # `test_steam_library_art`, which stubs it again.
+    monkeypatch.setattr(steam_store, "library_art", _no_art)
     # A game's art kept on disk: `test_game_art`'s errand; signing stays off
     # (another test's app setup would otherwise leave it on for the rest).
     monkeypatch.setattr(game_art, "ensure", _nothing)

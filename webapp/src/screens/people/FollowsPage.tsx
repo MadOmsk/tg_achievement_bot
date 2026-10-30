@@ -77,8 +77,8 @@ export function FollowsPage({
       {!list.data && list.loading && (
         <div className="group">
           <div className="group-items">
-            {Array.from({ length: 5 }, (_, i) => (
-              <span key={i} className="row skel" style={{ height: 68 }} />
+            {[0, 1, 2].map((i) => (
+              <span key={i} className="row skel" style={{ height: 72 }} />
             ))}
           </div>
         </div>

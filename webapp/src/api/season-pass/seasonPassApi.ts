@@ -4,6 +4,13 @@ import { API_BASE_ROUTES } from "../../core/constants/routes";
 
 export type Look = "common" | "rare" | "legendary" | "mythic";
 
+/** A game a store lists: its name, a picture, and its id in each store. */
+export type StoreGameHit = {
+  name: string;
+  image: string | null;
+  stores: { store: "steam" | "xbox"; id: string }[];
+};
+
 export type PassTier = {
   id: number;
   level: number;
@@ -140,6 +147,22 @@ export class PassApi extends BaseApi {
 
   takers(initData: string, id: number): Promise<{ ok: boolean; takers: PassTaker[] }> {
     return this.get<{ ok: boolean; takers: PassTaker[] }>(initData, `/pass/items/${id}/takers`);
+  }
+
+  /** The stores' own catalogs (Steam, Xbox) searched for a game our catalog
+   * lacks: one row a game, the ids it has in each store; a game we have is
+   * not among them. */
+  searchStoreGames(initData: string, q: string): Promise<{ ok: boolean; games: StoreGameHit[] }> {
+    return this.get<{ ok: boolean; games: StoreGameHit[] }>(initData, "/pass/game-search", { q });
+  }
+
+  /** A hit as a prize's game: ours when the catalog has it, else added by
+   * hand and filled in by the stores later. */
+  addGame(initData: string, hit: StoreGameHit): Promise<{ ok: boolean; made: boolean; game: GameCard }> {
+    return this.post<{ ok: boolean; made: boolean; game: GameCard }>(initData, "/pass/games", {
+      name: hit.name,
+      stores: hit.stores,
+    });
   }
 
   // The editor's calls name the month they edit (`edit`).

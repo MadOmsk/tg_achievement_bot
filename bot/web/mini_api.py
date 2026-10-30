@@ -76,10 +76,14 @@ from bot.web.mini_chat import (
     build_person_payload,
     build_summary_payload,
     chat_of_user,
+    news_game,
+    news_text,
+    news_title,
 )
 from bot.web.mini_game import setup_game_routes
 from bot.web.mini_me import build_me_payload
 from bot.web.mini_pass import setup_pass_routes
+from bot.web.mini_share import setup_share_routes
 
 log = logging.getLogger(__name__)
 
@@ -206,6 +210,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
     setup_game_routes(app)
+    setup_share_routes(app)
     setup_pass_routes(app)
 
 
@@ -751,6 +756,7 @@ async def handle_news_post(request: web.Request) -> web.Response:
     # A game is its platform and its id (#147); a link from before names only
     # the id, and then the first platform that has it answers.
     game = None
+    locale = await _user_locale(repo, user.person_id)
     title_id = request.query.get("title_id")
     if title_id:
         asked = request.query.get("platform")
@@ -760,12 +766,11 @@ async def handle_news_post(request: web.Request) -> web.Response:
                 continue
             key = (platform, title_id)
             names = (await repo.title_names([key])).get(key, (None, None))
-            locale = await _user_locale(repo, user.person_id)
             name = pick_name(locale, names[0], names[1], name_en)
             if name:
                 icon = await repo.title_icon_url(platform, title_id)
-                heroes = await game_page.list_heroes(repo, [key])
-                game = {"name": name, "icon_url": _https_url(icon), "hero": heroes.get(key)}
+                found = await game_page.games_of_lists(repo, [key], locale)
+                game = news_game(found.get(key), platform, title_id, name, _https_url(icon))
             break
     return web.json_response(
         {
@@ -773,9 +778,9 @@ async def handle_news_post(request: web.Request) -> web.Response:
             "appid": appid,
             "gid": post.gid,
             "kind": post.kind,
-            "title": post.title,
+            "title": news_title(post, locale),
             "date": post.published_at,
-            "text": post.text_en or "",
+            "text": news_text(post, locale),
             "image": _https_url(post.image_url),
             "url": f"https://store.steampowered.com/news/app/{appid}/view/{post.gid}",
         }
@@ -1142,6 +1147,12 @@ async def handle_game_details(request: web.Request) -> web.Response:
         platform, title_id, person_id=viewed, force=force
     )
     title_info = await repo.title_record(platform, title_id) or {}
+    # The game this list is of, as the catalog names and pictures it.
+    in_catalog = (
+        await game_page.games_of_lists(
+            repo, [(platform, title_id)], await _user_locale(repo, user.person_id)
+        )
+    ).get((platform, title_id))
     # What the stores say about the game (#147), when it is due.
     collector: StoreCollector | None = request.app.get("mini_store_collector")
     if collector is not None and title_info:
@@ -1200,6 +1211,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
             # content, and the page used to swap its good picture for it.
             "icon_url": _https_url(title_info.get("icon_url")),
             "cover_path": title_info.get("cover_path"),
+            "game": in_catalog,
             "achievements_total": total,
             "catalog_partial": partial,
             "achievements_unlocked": unlocked,

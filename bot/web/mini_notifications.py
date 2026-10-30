@@ -20,6 +20,7 @@ from aiohttp import web
 
 from bot.db.repo import Repo
 from bot.db.repo._sql import pick_name
+from bot.services import game_page
 from bot.services.notifier import KINDS, UNKNOWN, Notifier, listed, wording
 from bot.util import origin_of
 from bot.web.mini_auth import MiniAppUser
@@ -71,13 +72,27 @@ def register(app: web.Application, require_user: RequireUser) -> None:
         repo: Repo = request.app["mini_repo"]
         locale = await repo.user_locale(user.person_id)
         rows = await repo.notifications_of(user.person_id)
+        # Each notice's game as the catalog has it now (owner, 2026-10-30):
+        # its name and picture, what a tap opens.
+        catalog = await game_page.games_of_lists(
+            repo,
+            [
+                (str(r.data["platform"]), str(r.data["title_id"]))
+                for r in rows
+                if r.data.get("platform") and r.data.get("title_id")
+            ],
+            locale,
+        )
 
         async def _cover(platform: str | None, title_id: str | None) -> str | None:
             if not platform or not title_id:
                 return None
-            if (platform, title_id) not in covers:
-                covers[(platform, title_id)] = await repo.title_icon_url(platform, title_id)
-            return covers[(platform, title_id)]
+            key = (str(platform), str(title_id))
+            if key in catalog and catalog[key]["poster"]:
+                return catalog[key]["poster"]
+            if key not in covers:
+                covers[key] = await repo.title_icon_url(platform, title_id)
+            return covers[key]
 
         items = []
         covers: dict[tuple[str, str], str | None] = {}
@@ -93,10 +108,13 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             out = dict(data)
             key = (str(platform), str(title_id))
             if data.get("game"):
-                if key not in games:
-                    games[key] = (await repo.title_names([key])).get(key, (None, None))
-                ru, en = games[key]
-                out["game"] = pick_name(locale, ru, en, data["game"]) or data["game"]
+                if key in catalog and catalog[key]["name"]:
+                    out["game"] = catalog[key]["name"]
+                else:
+                    if key not in games:
+                        games[key] = (await repo.title_names([key])).get(key, (None, None))
+                    ru, en = games[key]
+                    out["game"] = pick_name(locale, ru, en, data["game"]) or data["game"]
             if data.get("achievement") and data.get("achievement_id"):
                 achievement_id = str(data["achievement_id"])
                 ru, en = await repo.achievement_name_pair(key[0], key[1], achievement_id)
@@ -110,6 +128,9 @@ def register(app: web.Application, require_user: RequireUser) -> None:
             field = spec.person_field
             game = (
                 {
+                    "game_id": (
+                        catalog.get((str(row.data["platform"]), str(row.data["title_id"]))) or {}
+                    ).get("game_id"),
                     "platform": row.data["platform"],
                     "title_id": row.data["title_id"],
                     "name": row_data.get("game"),

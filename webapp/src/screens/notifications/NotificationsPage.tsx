@@ -73,6 +73,7 @@ export function NotificationsPage({ onClose, layer }: { onClose: () => void; lay
       open({
         kind: "game",
         ref: {
+          game_id: item.game.game_id ?? undefined,
           platform: item.game.platform,
           title_id: item.game.title_id,
           name: item.game.name,
@@ -102,7 +103,7 @@ export function NotificationsPage({ onClose, layer }: { onClose: () => void; lay
       {!list.data && list.loading && (
         <div className="group">
           <div className="group-items">
-            {Array.from({ length: 6 }, (_, i) => (
+            {[0, 1, 2].map((i) => (
               <span key={i} className="row skel" style={{ height: 72 }} />
             ))}
           </div>

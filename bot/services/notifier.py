@@ -362,7 +362,8 @@ class Notifier:
                         # A favorite nobody here played may have no list.
                         **({"platform": platform, "title_id": title_id} if platform else {}),
                         game=game,
-                        title=post.title,
+                        # Our Russian, when made before the notice (`translate_posts`).
+                        title=(post.title_ru if locale == "ru" and post.title_ru else post.title),
                         post=post.kind,
                         favorite=reader["favorite"],
                         # Which post: a tap opens it, not only its game.

@@ -21,7 +21,7 @@ from aiohttp import web
 
 from bot.config import Settings
 from bot.db.repo import Repo
-from bot.services import game_page, pass_pictures, roles, season_pass
+from bot.services import game_page, manual_games, pass_pictures, roles, season_pass
 from bot.services.naming import person_name
 from bot.util import utcnow
 from bot.web.mini_chat import _person_month
@@ -65,6 +65,8 @@ def setup_pass_routes(app: web.Application) -> None:
     app.router.add_post(ITEM + "/claim", handle_item_claim)
     app.router.add_get(ITEM + "/takers", handle_item_takers)
     app.router.add_post("/api/mini/pass/items", handle_item_add)
+    app.router.add_get("/api/mini/pass/game-search", handle_game_search)
+    app.router.add_post("/api/mini/pass/games", handle_game_add)
     app.router.add_patch(ITEM, handle_item_edit)
     app.router.add_delete(ITEM, handle_item_remove)
     app.router.add_post(ITEM + "/revert", handle_item_revert)
@@ -111,9 +113,13 @@ def _cover(month: str, path: str | None, *, draft: bool = False) -> str | None:
 
 
 async def _cards(repo: Repo, rows: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
-    """A game's prize shows the game: its card from the catalog."""
-    found = await repo.game_cards([int(r["game_id"]) for r in rows if r.get("game_id")])
-    return {gid: game_page.card_of(card) for gid, card in found.items()}
+    """A game's prize shows the game: its card from the catalog — the game it
+    is now, when the one a prize was made for (a game added by hand) has been
+    joined to a real one since."""
+    ids = {int(r["game_id"]) for r in rows if r.get("game_id")}
+    live = {gid: await repo.live_game_id(gid) or gid for gid in ids}
+    found = await repo.game_cards(sorted(set(live.values())))
+    return {gid: game_page.card_of(found[now]) for gid, now in live.items() if now in found}
 
 
 def _next_month(key: str) -> str:
@@ -386,6 +392,62 @@ async def _fields(
         return "invalid"
     fields.update(title=title, description=description, tier=look)
     return fields, codes
+
+
+GAME_NAME_MAX = 120
+
+
+async def handle_game_search(request: web.Request) -> web.Response:
+    """The prize picker's search of the stores' own catalogs (Steam, Xbox),
+    for a game ours lacks (owner, 2026-10-30): `?q=` -> `{name, image,
+    stores}`. **A game the catalog already has is left out** — it is picked
+    from the catalog's own search, and a hand-added game must never be a
+    duplicate."""
+    repo, _person = await _admin(request)
+    term = request.query.get("q", "").strip()
+    if len(term) < 2 or len(term) > GAME_NAME_MAX:
+        return web.json_response({"ok": True, "games": []})
+    index = await repo.game_name_index()
+    new = [
+        hit
+        for hit in await manual_games.search_stores(term)
+        if await manual_games.existing_game(repo, hit["name"], hit["stores"], index) is None
+    ]
+    return web.json_response({"ok": True, "games": new})
+
+
+async def handle_game_add(request: web.Request) -> web.Response:
+    """A game the picker found in the stores, as a prize's game: the one our
+    catalog already has (by a store id, or by name), else added by hand and
+    queued for the octopus to fill in (`Repo.add_manual_game`). Body: `{name,
+    stores: [{store, id}]}` -> `{game: card, made}`."""
+    repo, _person = await _admin(request)
+    body = await _body(request)
+    name = str(body.get("name") or "").strip()
+    stores = body.get("stores")
+    if not 2 <= len(name) <= GAME_NAME_MAX or not isinstance(stores, list) or not stores:
+        return _refuse("invalid")
+    refs: list[dict[str, str]] = []
+    for ref in stores[:4]:
+        store, store_id = str(ref.get("store") or ""), str(ref.get("id") or "")
+        if manual_games.queue_key(store, store_id) is None:
+            return _refuse("invalid")
+        refs.append({"store": store, "id": store_id})
+
+    game_id = await manual_games.existing_game(repo, name, refs)
+    made = False
+    if game_id is None:
+        game_id, made = await repo.add_manual_game(
+            name, None, manual_games.queue_key(refs[0]["store"], refs[0]["id"])
+        )
+        for ref in refs[1:]:
+            await repo.octopus_enqueue(
+                manual_games.queue_key(ref["store"], ref["id"]) or "", "manual"
+            )
+    card = (await repo.game_cards([game_id])).get(game_id)
+    if card is None:
+        return _refuse("no_game", 404)
+    return web.json_response({"ok": True, "made": made, "game": game_page.card_of(card)})
 
 
 async def _unclaimed(repo: Repo, item_id: int, month: str) -> dict[str, Any] | web.Response:

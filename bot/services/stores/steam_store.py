@@ -4,6 +4,7 @@ minutes; the limiter below keeps well under it."""
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime
@@ -49,6 +50,51 @@ async def app_details(appid: str, language: str = "english") -> dict | None:
     response.raise_for_status()
     entry = (response.json() or {}).get(str(appid)) or {}
     return without_prices(entry.get("data")) if entry.get("success") else None
+
+
+ITEMS_URL = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/"
+ASSETS_HOST = "https://shared.steamstatic.com/store_item_assets/"
+# One request names this many apps.
+ITEMS_PER_CALL = 100
+
+
+# Steam's library art, as `versions.media` keeps it: the portrait capsule
+# (600x900) is the poster, the wide library hero the page's head.
+LIBRARY_ART = {"poster": "library_capsule", "hero": "library_hero"}
+
+
+async def library_art(appids: list[str]) -> dict[str, dict[str, str]]:
+    """Each app's current library art by appid, `{"poster": url, "hero": url}`
+    (owner, 2026-10-30): the fixed `library_600x900.jpg` keeps the art a game
+    had when its library page was made, while a live game changes it every
+    season, kept in a folder named by a hash that only the store knows. A
+    hundred apps a request, no key; an app with none is left out. Raises on a
+    network failure."""
+    found: dict[str, dict[str, str]] = {}
+    for start in range(0, len(appids), ITEMS_PER_CALL):
+        batch = appids[start : start + ITEMS_PER_CALL]
+        request = {
+            "ids": [{"appid": int(appid)} for appid in batch],
+            "context": {"language": "english", "country_code": "US"},
+            "data_request": {"include_assets": True},
+        }
+        await LIMITER.acquire()
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            response = await client.get(ITEMS_URL, params={"input_json": json.dumps(request)})
+        response.raise_for_status()
+        for item in (response.json().get("response") or {}).get("store_items") or []:
+            assets = item.get("assets") or {}
+            form = assets.get("asset_url_format")
+            if not item.get("appid") or not form or "${FILENAME}" not in form:
+                continue
+            art = {}
+            for role, asset in LIBRARY_ART.items():
+                name = assets.get(f"{asset}_2x") or assets.get(asset)
+                if name:
+                    art[role] = ASSETS_HOST + form.replace("${FILENAME}", name)
+            if art:
+                found[str(item["appid"])] = art
+    return found
 
 
 def without_prices(data: dict | None) -> dict | None:

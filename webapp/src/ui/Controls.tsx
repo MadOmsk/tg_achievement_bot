@@ -178,6 +178,7 @@ export function Field({
   error,
   icon,
   inputRef,
+  trail,
   className = "",
   ...rest
 }: InputHTMLAttributes<HTMLInputElement> & {
@@ -186,6 +187,8 @@ export function Field({
   error?: string | null;
   icon?: IconName;
   inputRef?: Ref<HTMLInputElement>;
+  /** A button at the field's end, inside it. */
+  trail?: ReactNode;
 }) {
   return (
     <label className={`field${error ? " field-error" : ""} ${className}`}>
@@ -193,6 +196,7 @@ export function Field({
       <span className="field-box">
         {icon && <Icon name={icon} size={20} />}
         <input ref={inputRef} {...rest} />
+        {trail}
       </span>
       {(error || hint) && <span className="field-hint">{error || hint}</span>}
     </label>

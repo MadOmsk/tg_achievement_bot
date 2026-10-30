@@ -145,7 +145,7 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
         )}
         <div className="group">
           <div className="group-items">
-            {!s && Array.from({ length: 4 }, (_, i) => <span key={i} className="row skel" style={{ height: 68 }} />)}
+            {!s && [0, 1, 2].map((i) => <span key={i} className="row skel" style={{ height: 72 }} />)}
             {s && podium.length === 0 && <div className="row t-meta">{tr("emptySummary")}</div>}
             {rest.map((r, j) => {
               const i = j + podium.length;
@@ -181,11 +181,11 @@ export function Ranking({ refreshKey }: { refreshKey: number }) {
           <div className="rail favs">
             {s!.games.map((g) => (
               <GameTile
-                key={`${g.platform}:${g.title_id}`}
+                key={g.game_id ?? `${g.platform}:${g.title_id}`}
                 cover={g.icon_url}
                 name={g.name ?? ""}
                 mark={<TrendMark count={g.count} />}
-                onOpen={() => open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
+                onOpen={() => open({ kind: "game", ref: { game_id: g.game_id ?? undefined, platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
               />
             ))}
           </div>

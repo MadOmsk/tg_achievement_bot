@@ -4,6 +4,7 @@ import type { Role } from "../../api/admin/adminApi";
 import { peopleApi, type PersonProfile, type Relation } from "../../api/people/peopleApi";
 import { useApp } from "../../app/context";
 import { useArtTheme } from "../../app/artTheme";
+import { AccountChip } from "../../parts/AccountCard";
 import { useLoad } from "../../app/useLoad";
 import { currentMonth } from "../../core/people-utils";
 import { tick } from "../../core/haptic";
@@ -13,7 +14,6 @@ import { monthName, recentMonths } from "../../parts/Months";
 import { gameLines, MonthGames } from "../../parts/MonthGames";
 import { AchTile } from "../../parts/AchTile";
 import { achOfFeed } from "../../app/views";
-import { AccountChip } from "../../parts/AccountCard";
 import { gameArtOf } from "../../app/artTheme";
 import { Button, Empty, IconButton, Row, Section } from "../../ui/Controls";
 import { Face, faceSrc, knownName } from "../../ui/Face";
@@ -89,25 +89,19 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
     };
   }, [personId]);
   const faceArt = useArtTheme(face);
-  // The banner: the art of the game of their latest achievement.
+  // The banner: the art of the game of their latest achievement, as the
+  // catalog has it — the feed item carries it, so it is known with the rest.
   const latest = a?.feed?.[0];
-  const latestGame = useLoad(latest ? `pp-banner:${latest.platform}:${latest.title_id}` : null, () =>
-    gameApi.fetchGamePage(data, { platform: latest!.platform, titleId: latest!.title_id }),
-  );
-  // One picture, chosen once the game's page has answered and kept for this
-  // person: never one picture first and another a moment later.
-  const chosen =
-    latest && !latestGame.loading
-      ? latestGame.data?.art.hero ||
-        latestGame.data?.art.header ||
-        latestGame.data?.art.poster ||
-        gameArtOf(`${latest.platform}:${latest.title_id}`, latest.game) ||
-        latest.game_icon_url ||
-        null
-      : null;
+  const chosen = latest
+    ? latest.game_hero ||
+      latest.game_poster ||
+      gameArtOf(latest.game_id ? `g${latest.game_id}` : null, `${latest.platform}:${latest.title_id}`, latest.game) ||
+      latest.game_icon_url ||
+      null
+    : null;
   const kept = useRef<{ person: number; src: string | null } | null>(null);
   if (kept.current?.person !== personId) kept.current = null;
-  if (!kept.current && a && (!latest || !latestGame.loading)) kept.current = { person: personId, src: chosen };
+  if (!kept.current && a) kept.current = { person: personId, src: chosen };
   const banner = kept.current?.src ?? null;
   // Their own picture stands in only once it is known there is no game's art.
   const bannerKnown = kept.current != null;
@@ -149,14 +143,6 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
         </button>
         <div className="pp-titles">
           {name ? <h1 className="pp-name2 clamp-2">{name}</h1> : <span className="skel pp-skel-name" />}
-          {!c && (
-            <>
-              <span className="pp-accs2">
-                <span className="skel pp-skel-acc" />
-                <span className="skel pp-skel-acc" />
-              </span>
-            </>
-          )}
           {/* What they are doing and how they stand to you: one quiet line. */}
           {(presence?.playing || presence?.state === "Online" || (!rel?.friends && rel?.followed_by) || rel?.blocked) && (
             <p className="pp-status">
@@ -186,7 +172,7 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
         <div className="pp-skel" aria-hidden="true">
           <div className="pp-row pp-skel-row">
             <div className="pp-figs">
-              {[0, 1].map((i) => (
+              {[0, 1, 2].map((i) => (
                 <span key={i} className="skel pp-skel-fig" />
               ))}
             </div>
@@ -333,12 +319,12 @@ export function PersonPage({ personId, onClose, layer }: { personId: number; onC
             <Empty icon="trophy" title={tr("emptyPersonTitle")} />
           ) : (
             <div className="rail">
-              {(a ? a.feed.slice(0, 12) : Array.from({ length: 3 }, () => null)).map((item, i) =>
-                item ? (
+              {a ? (
+                a.feed.slice(0, 12).map((item) => (
                   <AchTile key={`${item.title_id}:${item.achievement_id}`} ach={achOfFeed(item)} />
-                ) : (
-                  <span key={i} className="tile tile-skel skel" />
-                ),
+                ))
+              ) : (
+                [0, 1, 2].map((i) => <span key={i} className="tile tile-skel skel" />)
               )}
             </div>
           )}
