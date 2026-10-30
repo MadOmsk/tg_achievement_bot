@@ -250,8 +250,12 @@ class _SeriesRepo:
         if there is not None and _RANK.get(str(there[0]), 0) >= _RANK.get(str(row["source"]), 0):
             return
         await self._conn.execute(
-            "INSERT OR REPLACE INTO game_series (game_id, series_id, source, member, p, reason,"
-            " decided_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO game_series (game_id, series_id, source, member, p, reason,"
+            " decided_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (game_id, series_id) DO UPDATE SET source = excluded.source, member = "
+            "excluded.member, p = excluded.p, reason = excluded.reason, decided_by = "
+            "excluded.decided_by, created_at = excluded.created_at, updated_at = "
+            "excluded.updated_at",
             (
                 game,
                 sid,

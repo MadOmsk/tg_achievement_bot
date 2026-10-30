@@ -501,9 +501,13 @@ class _StoresRepo:
             ):
                 await self._conn.execute(f"DELETE FROM {table} WHERE hltb_id = ?", (entry.hltb_id,))
             await self._conn.executemany(
-                "INSERT OR REPLACE INTO hltb_platform_times (hltb_id, platform, comp_main,"
+                "INSERT INTO hltb_platform_times (hltb_id, platform, comp_main,"
                 " comp_plus, comp_100, comp_low, comp_high, count_comp, count_total)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT (hltb_id, platform) DO UPDATE SET comp_main = excluded.comp_main, "
+                "comp_plus = excluded.comp_plus, comp_100 = excluded.comp_100, comp_low = "
+                "excluded.comp_low, comp_high = excluded.comp_high, count_comp = "
+                "excluded.count_comp, count_total = excluded.count_total",
                 [
                     (
                         entry.hltb_id,
@@ -520,9 +524,12 @@ class _StoresRepo:
                 ],
             )
             await self._conn.executemany(
-                "INSERT OR REPLACE INTO hltb_platform_groups (hltb_id, platforms, comp_main,"
+                "INSERT INTO hltb_platform_groups (hltb_id, platforms, comp_main,"
                 " comp_plus, comp_100, comp_all, compare, count_comp)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT (hltb_id, platforms) DO UPDATE SET comp_main = excluded.comp_main, "
+                "comp_plus = excluded.comp_plus, comp_100 = excluded.comp_100, comp_all = "
+                "excluded.comp_all, compare = excluded.compare, count_comp = excluded.count_comp",
                 [
                     (
                         entry.hltb_id,
@@ -543,8 +550,9 @@ class _StoresRepo:
                 [(entry.hltb_id, p) for p in entry.platforms],
             )
             await self._conn.executemany(
-                "INSERT OR REPLACE INTO hltb_review_scores (hltb_id, score, votes)"
-                " VALUES (?, ?, ?)",
+                "INSERT INTO hltb_review_scores (hltb_id, score, votes)"
+                " VALUES (?, ?, ?)"
+                " ON CONFLICT (hltb_id, score) DO UPDATE SET votes = excluded.votes",
                 [(entry.hltb_id, score, votes) for score, votes in entry.reviews.items()],
             )
             await self._conn.executemany(

@@ -141,7 +141,9 @@ class Database:
             await self._seed_app_settings()
             if fresh and self.games_path is not None:
                 await self._conn.execute(
-                    "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)",
+                    "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)"
+                    " ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = "
+                    "excluded.updated_at, updated_by = NULL",
                     (GAMES_DB_KEY, str(self.games_path), utcnow_iso()),
                 )
             await self._conn.commit()

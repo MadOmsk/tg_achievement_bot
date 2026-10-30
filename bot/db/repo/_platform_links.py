@@ -52,8 +52,10 @@ class _PlatformLinksRepo:
             [{"apiname": a.apiname, "icon": a.icon, "hidden": a.hidden} for a in achievements]
         )
         await self._conn.execute(
-            "INSERT OR REPLACE INTO steam_schema_cache (appid, game_name, achievements, cached_at) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO steam_schema_cache (appid, game_name, achievements, cached_at) "
+            "VALUES (?, ?, ?, ?)"
+            " ON CONFLICT (appid) DO UPDATE SET game_name = excluded.game_name, achievements = "
+            "excluded.achievements, cached_at = excluded.cached_at",
             (appid, game_name, blob, utcnow_iso()),
         )
         await self._conn.commit()
@@ -74,8 +76,10 @@ class _PlatformLinksRepo:
 
     async def steam_rarity_cache_result(self, appid: str, percentages: dict[str, float]) -> None:
         await self._conn.execute(
-            "INSERT OR REPLACE INTO steam_rarity_cache (appid, percentages, cached_at) "
-            "VALUES (?, ?, ?)",
+            "INSERT INTO steam_rarity_cache (appid, percentages, cached_at) "
+            "VALUES (?, ?, ?)"
+            " ON CONFLICT (appid) DO UPDATE SET percentages = excluded.percentages, cached_at = "
+            "excluded.cached_at",
             (appid, json.dumps(percentages), utcnow_iso()),
         )
         await self._conn.commit()

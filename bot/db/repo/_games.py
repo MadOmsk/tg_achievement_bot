@@ -270,9 +270,11 @@ class _GamesRepo:
         self, run: str, question: str, decision: str, value: str, source: str, said: dict
     ) -> None:
         await self._conn.execute(
-            "INSERT OR REPLACE INTO adviser_labels"
+            "INSERT INTO adviser_labels"
             " (run, question, decision, value, source, said, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (run, question, decision) DO UPDATE SET value = excluded.value, source "
+            "= excluded.source, said = excluded.said, created_at = excluded.created_at",
             (
                 run,
                 question,
@@ -494,9 +496,11 @@ class _GamesRepo:
             )
         now = utcnow_iso()
         await self._conn.executemany(
-            "INSERT OR REPLACE INTO game_relations"
+            "INSERT INTO game_relations"
             " (game_id, related_id, kind, source, created_at, p)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (game_id, related_id, kind) DO UPDATE SET source = excluded.source, "
+            "created_at = excluded.created_at, p = excluded.p",
             [(g, r, kind, source, now, p) for g, r, kind, source, p in relations if g != r],
         )
         await self._conn.commit()
@@ -516,8 +520,11 @@ class _GamesRepo:
             )
         now = utcnow_iso()
         await self._conn.executemany(
-            "INSERT OR REPLACE INTO match_pairs (version_id, other_id, relation, p, probs,"
-            " features, model, scored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO match_pairs (version_id, other_id, relation, p, probs,"
+            " features, model, scored_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (version_id, other_id) DO UPDATE SET relation = excluded.relation, p = "
+            "excluded.p, probs = excluded.probs, features = excluded.features, model = "
+            "excluded.model, scored_at = excluded.scored_at",
             [
                 (s, o, rel, p, json.dumps(probs), json.dumps(feats), model, now)
                 for s, o, rel, p, probs, feats, model in pairs

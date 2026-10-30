@@ -285,9 +285,11 @@ class _AchievementsRepo:
         self, chat_id: int, xuid: str, title_id: str, achievement_id: str, message_id: int | None
     ) -> None:
         await self._conn.execute(
-            "INSERT OR REPLACE INTO publications "
+            "INSERT INTO publications "
             "(chat_id, xuid, title_id, achievement_id, message_id, posted_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (chat_id, xuid, title_id, achievement_id) DO UPDATE SET message_id = "
+            "excluded.message_id, posted_at = excluded.posted_at",
             (chat_id, xuid, title_id, achievement_id, message_id, utcnow_iso()),
         )
         await self._conn.commit()
