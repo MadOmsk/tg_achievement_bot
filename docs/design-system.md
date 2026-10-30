@@ -75,8 +75,9 @@ and so do the pages inside it — its achievements, one achievement, its
 gallery, a post of its (`rememberGameArt` / `gameArtOf`: the same picture,
 so the same colours). The colour is the picture's **dominant** one (the
 busiest hue, not the average of all of them), as strong as the picture is
-vivid. **A season's cover colours its month card and its pass page, in a
-deeper form** (owner, 2026-10-30; `useArtTheme(url, true)`): the containers
+vivid. **A season's cover colours its month card in a deeper form** (owner,
+2026-10-30; `useArtTheme(url, true)`; the pass page takes the game page's
+muted scheme): the containers
 and the cards inside sit halfway in its colour, with light text, since an
 orange or a yellow held as dark as the page is only brown — the one place
 cards are not `surface-1`. The month card does so on Home and on a person's

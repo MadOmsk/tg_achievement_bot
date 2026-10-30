@@ -140,7 +140,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
   // The month's cover heads the page, and the page takes its colours from
   // it, as a game's page does from its art.
   const cover = state?.image ?? null;
-  const art = useArtTheme(cover, true);
+  const art = useArtTheme(cover);
   const p = passProgress(state);
   const { tiers, points } = p;
   // The super-admin's editor: the draft on the timeline, a tap opens a level.
