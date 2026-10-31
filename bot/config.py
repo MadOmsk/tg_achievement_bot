@@ -115,6 +115,10 @@ class Settings(BaseSettings):
     # `prod`, `test`, `dev`; the games catalog is the schema `games`, shared.
     database_url: str = "postgresql://localhost:5433/unlocked?user=postgres"
     database_schema: str = "dev"
+    # Whether an empty schema may be made into a new database on start-up. Off:
+    # on a server an empty schema means the import has not run (#234), and a bot
+    # coming up on it would start over with nobody in it.
+    database_new_ok: bool = False
     # Where the server keeps its files: the lock beside it, the advisers'
     # answers. Its name is what it was when it was the database's file.
     db_path: Path = Path("data/bot.db")

@@ -160,7 +160,7 @@ class _GuidesRepo:
                 " m.label, m.start_seconds, m.part"
                 " FROM guide_marks m JOIN guide_videos v ON v.video_id = m.video_id"
                 f" WHERE m.label IN ({placeholders}){where}"
-                " ORDER BY m.part, v.published_at DESC, m.start_seconds",
+                " ORDER BY m.part, v.published_at DESC NULLS LAST, m.start_seconds",
                 [*chunk, *args],
             )
             moments += [
@@ -188,7 +188,7 @@ class _GuidesRepo:
             args += [key, f"{key} | %"]
         cursor = await self._conn.execute(
             "SELECT video_id, channel_id, title, published_at FROM guide_videos"
-            f" WHERE {clause} ORDER BY published_at DESC",
+            f" WHERE {clause} ORDER BY published_at DESC NULLS LAST",
             args,
         )
         return [

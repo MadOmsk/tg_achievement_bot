@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import datetime
 import re
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import lru_cache
 from typing import Any
 
@@ -34,6 +34,12 @@ from psycopg.pq import TransactionStatus
 IntegrityError = psycopg.IntegrityError
 OperationalError = psycopg.OperationalError
 Error = psycopg.Error
+
+#: Told when the server is gone. The process has one connection for its whole
+#: life, and pollers log a failure and go on, so without this a restarted
+#: PostgreSQL leaves a bot that looks alive and does nothing, which systemd does
+#: not restart. The bot's assembly ends the process here; a new one connects.
+on_connection_lost: Callable[[Exception], None] | None = None
 
 _TOKEN = re.compile(
     r"""
@@ -206,6 +212,7 @@ class Connection:
 
     def __init__(self, raw: AsyncConnection[Any]) -> None:
         self._raw = raw
+        self._closing = False
 
     @classmethod
     async def connect(cls, dsn: str, *, search_path: str | None = None) -> Connection:
@@ -232,8 +239,8 @@ class Connection:
         async with self._raw.cursor() as cursor:
             try:
                 await cursor.execute(translate(sql), _params(parameters))
-            except psycopg.Error as exc:
-                _log_failed(sql, exc)
+            except psycopg.OperationalError as exc:
+                self._maybe_lost(exc)
                 raise
             return await _finish(cursor)
 
@@ -241,7 +248,11 @@ class Connection:
         rows = [_params(p) for p in parameters]
         async with self._raw.cursor() as cursor:
             if rows:
-                await cursor.executemany(translate(sql), rows)
+                try:
+                    await cursor.executemany(translate(sql), rows)
+                except psycopg.OperationalError as exc:
+                    self._maybe_lost(exc)
+                    raise
             return Cursor([], cursor.rowcount if rows else 0, None)
 
     async def executescript(self, script: str) -> None:
@@ -249,36 +260,50 @@ class Connection:
         async with self._raw.cursor() as cursor:
             await cursor.execute(script)
 
+    def _maybe_lost(self, exc: Exception) -> None:
+        if self._raw.closed and not self._closing and on_connection_lost is not None:
+            on_connection_lost(exc)
+
     async def begin(self) -> None:
-        await self._raw.execute("BEGIN")
+        try:
+            await self._raw.execute("BEGIN")
+        except psycopg.OperationalError as exc:
+            self._maybe_lost(exc)
+            raise
 
     async def commit(self) -> None:
-        if self.in_transaction:
-            await self._raw.execute("COMMIT")
+        status = self._raw.info.transaction_status
+        if status == TransactionStatus.INERROR:
+            # PostgreSQL answers COMMIT here with a rollback and no error, so a
+            # failure somebody caught inside the block would lose it silently.
+            await self._raw.execute("ROLLBACK")
+            raise psycopg.errors.InFailedSqlTransaction(
+                "a statement failed inside this block: everything in it was rolled back"
+            )
+        if status == TransactionStatus.INTRANS:
+            try:
+                await self._raw.execute("COMMIT")
+            except psycopg.OperationalError as exc:
+                self._maybe_lost(exc)
+                raise
 
     async def rollback(self) -> None:
-        if self.in_transaction:
+        if self._raw.info.transaction_status in (
+            TransactionStatus.INTRANS,
+            TransactionStatus.INERROR,
+        ):
             await self._raw.execute("ROLLBACK")
 
     async def close(self) -> None:
+        self._closing = True
         await self._raw.close()
 
 
 def _params(parameters: Any) -> Any:
+    # Never None: psycopg reads `%%` back as `%` only when it has parameters,
+    # and `translate` has doubled every one.
     if parameters is None:
-        return None
+        return ()
     if isinstance(parameters, dict):
         return parameters
     return tuple(parameters)
-
-
-def _log_failed(sql: str, exc: Exception) -> None:
-    """TEMPORARY (#234 dialect move): every refused statement, for finding
-    them all in one test run. Removed before the branch is merged."""
-    import os
-
-    path = os.environ.get("PG_FAILED_SQL_LOG")
-    if path:
-        with open(path, "a", encoding="utf-8") as log_file:
-            first = str(exc).splitlines()[0] if str(exc) else ""
-            log_file.write(f"=== {type(exc).__name__}: {first}\n{sql}\n")

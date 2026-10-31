@@ -1,5 +1,6 @@
 """A server's SQLite files carried into PostgreSQL, once, at the switch (#234).
 
+    python -X utf8 -m scripts.sqlite_to_pg bring-up --db COPY.db [--games COPY.games.db] --out DIR
     python -X utf8 -m scripts.sqlite_to_pg preflight --db COPY.db [--games COPY.games.db] --dsn DSN
     python -X utf8 -m scripts.sqlite_to_pg import --db COPY.db --schema prod --dsn DSN [--dry-run]
     python -X utf8 -m scripts.sqlite_to_pg verify --db COPY.db --schema prod --dsn DSN
@@ -51,6 +52,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1176,7 +1178,24 @@ def _line(name: str, rows: int, started: float, prefix: str = "") -> None:
     print(f"  {name:32} {prefix}{rows:>10} rows {time.monotonic() - started:8.1f} s", flush=True)
 
 
-def _set_sequences(pg: psycopg.Connection, schema: str) -> None:
+def _source_counters(src: Source) -> dict[str, int]:
+    """How far each AUTOINCREMENT table has counted: past its highest row when
+    that row was deleted, and an id must not name somebody else later (an old
+    button says `p<id>`)."""
+    counters: dict[str, int] = {}
+    for owner in (SERVER, GAMES) if src.games_file else (SERVER,):
+        try:
+            rows = src.conn.execute(f"SELECT name, seq FROM {owner}.sqlite_sequence").fetchall()
+        except sqlite3.OperationalError:  # no AUTOINCREMENT table in this file
+            continue
+        for name, seq in rows:
+            counters[name.decode()] = int(seq)
+    return counters
+
+
+def _set_sequences(
+    pg: psycopg.Connection, schema: str, counted: dict[str, int] | None = None
+) -> None:
     """Every identity column's counter past what was written with its value.
     setval does not roll back: this is the last thing before the commit."""
     rows = pg.execute(
@@ -1189,6 +1208,8 @@ def _set_sequences(pg: psycopg.Connection, schema: str) -> None:
         highest = pg.execute(
             sql.SQL("SELECT MAX({}) FROM {}").format(sql.Identifier(column), qualified)
         ).fetchone()[0]
+        if counted and table in counted and (highest is None or counted[table] > highest):
+            highest = counted[table]
         sequence = pg.execute(
             "SELECT pg_get_serial_sequence(%s, %s)",
             (qualified.as_string(pg), column),
@@ -1214,6 +1235,52 @@ def _check_name(schema: str) -> str:
     if not _SAFE_NAME.match(schema) or schema == GAMES:
         raise TransferError("the server's schema must be a plain name other than games")
     return schema
+
+
+def run_bring_up(db: Path, games: Path | None, out: Path) -> tuple[Path, Path | None]:
+    """Copies of a source, brought up to the SQLite migrations this code ships.
+
+    A migration may fill a table no schema file brings (141, the chats' admins), so
+    the import refuses a source behind them, and this branch has no SQLite bot left
+    to run them. The source stays as it is: it is what a rollback goes back to.
+    """
+    out.mkdir(parents=True, exist_ok=True)
+
+    def copy_of(path: Path) -> Path:
+        target = out / path.name
+        if target.exists():
+            raise TransferError(f"{target} is there already")
+        source = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        kept = sqlite3.connect(target)
+        source.backup(kept)
+        kept.close()
+        source.close()
+        return target
+
+    if not db.exists():
+        raise TransferError(f"{db} not found")
+    db_copy = copy_of(db)
+    games_copy = copy_of(games) if games is not None else None
+    conn = sqlite3.connect(db_copy)
+    try:
+        # A migration names a table wherever it lives (144 is the catalog's).
+        if games_copy is not None:
+            conn.execute(f"ATTACH DATABASE ? AS {GAMES}", (str(games_copy),))
+        applied = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
+        for path in sorted(SQLITE_MIGRATIONS.glob("*.sql")):
+            if path.stem in applied:
+                continue
+            conn.executescript(path.read_text(encoding="utf-8"))
+            conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (path.stem, datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")),
+            )
+            conn.commit()
+            print(f"  applied {path.stem}")
+    finally:
+        conn.close()
+    print(f"brought up: {db_copy}" + (f", {games_copy}" if games_copy else ""))
+    return db_copy, games_copy
 
 
 def run_preflight(args: argparse.Namespace) -> int:
@@ -1342,9 +1409,10 @@ def run_import(
             print("dry run: everything fitted, nothing written")
         else:
             where = "setting the counters"
-            _set_sequences(pg, schema)
+            counted = _source_counters(src)
+            _set_sequences(pg, schema, counted)
             if result.catalog in ("imported", "merged"):
-                _set_sequences(pg, GAMES)
+                _set_sequences(pg, GAMES, counted)
             where = "the commit"
             pg.commit()
     except psycopg.Error as exc:
@@ -1482,7 +1550,8 @@ def run_verify(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
-    parser.add_argument("mode", choices=("preflight", "import", "verify"))
+    parser.add_argument("mode", choices=("bring-up", "preflight", "import", "verify"))
+    parser.add_argument("--out", type=Path, help="bring-up: the folder for the copies")
     parser.add_argument("--db", type=Path, required=True, help="the server's SQLite copy")
     parser.add_argument("--games", type=Path, help="its catalog, if not the file it names")
     parser.add_argument(
@@ -1499,6 +1568,15 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true", help="import, then roll it all back")
     args = parser.parse_args()
+    if args.mode == "bring-up":
+        if not args.out:
+            parser.error("bring-up needs --out")
+        try:
+            run_bring_up(args.db, args.games, args.out)
+        except (TransferError, sqlite3.Error) as exc:
+            print(exc, file=sys.stderr)
+            return 2
+        return 0
     if not args.dsn:
         parser.error("--dsn or DATABASE_URL names the database")
     if args.mode != "preflight" and not args.schema:

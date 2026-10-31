@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import os
 import selectors
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from types import TracebackType
 from typing import Any, Self
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.pq import TransactionStatus
 
 from bot.config import get_settings
@@ -138,7 +140,13 @@ class Connection:
         self.raw.execute("BEGIN")
 
     def commit(self) -> None:
-        if self.in_transaction:
+        status = self.raw.info.transaction_status
+        if status == TransactionStatus.INERROR:
+            self.raw.execute("ROLLBACK")
+            raise psycopg.errors.InFailedSqlTransaction(
+                "a statement failed inside this block: everything in it was rolled back"
+            )
+        if status == TransactionStatus.INTRANS:
             self.raw.execute("COMMIT")
 
     def rollback(self) -> None:
@@ -178,6 +186,18 @@ def connect(
     return Connection(raw)
 
 
+def tool_target(dsn: str) -> tuple[str, dict[str, str]]:
+    """What to hand `pg_dump` or `pg_restore`: the address with no password, and
+    an environment carrying it. A command line is seen by every local user, and
+    is printed whole when the command fails."""
+    parts = conninfo_to_dict(dsn)
+    password = parts.pop("password", None)
+    env = dict(os.environ)
+    if password is not None:
+        env["PGPASSWORD"] = str(password)
+    return make_conninfo(**parts), env
+
+
 def backup(
     target: Path | str,
     *,
@@ -189,6 +209,7 @@ def backup(
     dsn, schema = _target(dsn, schema)
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
+    address, env = tool_target(dsn)
     subprocess.run(
         [
             pg_dump,
@@ -196,8 +217,9 @@ def backup(
             f"--schema={schema}",
             f"--schema={GAMES}",
             f"--file={target}",
-            f"--dbname={dsn}",
+            f"--dbname={address}",
         ],
         check=True,
+        env=env,
     )
     return target

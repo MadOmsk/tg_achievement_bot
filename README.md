@@ -10,7 +10,7 @@ run by one operator.
 The rules, the architecture, current behavior and the full file tree are in
 [CLAUDE.md](CLAUDE.md) — read it before changing the product or its architecture.
 Open work lives in [Issues](https://github.com/MadOmsk/tg_achievement_bot/issues);
-what changed in each release is in [changelog/](changelog/).
+what changed in each release is in [changelog/](changelog/), notes before 0.3 in `changelog/archive/`.
 
 ## What it does
 
@@ -153,7 +153,7 @@ for the announcement, notes for contributors), a short review, a rehearsal of ne
 migrations on a copy of production, then `prerelease` → `main` as a merge commit.
 On start, production announces the new version in its chats with a link to the notes.
 
-The version reads `A.B.C.D` — architecture, minor line, release number, newest
+The version reads `0.B.C.D` — before 1.0: the minor, a hotfix or small update, newest
 migration — and is shown at the end of `/help`.
 
 ## Contributing

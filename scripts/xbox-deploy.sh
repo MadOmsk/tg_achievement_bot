@@ -46,6 +46,10 @@ RUN_AS=botsvc
 PROD_DIR=/opt/xbox_achievement_bot
 TEST_DIR=/opt/xbox_bot_test
 DATABASE=unlocked
+# Which edition of this script this is. While the bots are on different code a
+# deploy would otherwise install the older checkout's copy over a newer one
+# (#234): one without this line counts as 0, and is never installed over it.
+DEPLOY_SCRIPT_EDITION=1
 
 say() { echo "==> $*"; }
 fail() {
@@ -137,16 +141,24 @@ else:
 PY
 }
 
+# A database that cannot be asked is an error, never "not on PostgreSQL yet": that
+# would back up a stale SQLite file and report success.
 schema_has_tables() {
-  [ -n "$(cd / && sudo -u postgres psql -d "$DATABASE" -Atc \
-    "SELECT 1 FROM information_schema.tables WHERE table_schema = '$1' LIMIT 1" 2>/dev/null)" ]
+  local found
+  found="$(cd / && sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$DATABASE" -Atc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = '$1' LIMIT 1")" ||
+    fail "PostgreSQL cannot be asked about schema $1"
+  [ -n "$found" ]
 }
 
 # pg_dump of a bot's schema and the catalog, as postgres: no password on a
 # command line. Written beside its name first, so a dump cut short is no copy.
 dump_schema() {  # schema target
-  (cd / && sudo -u postgres pg_dump --format=custom --schema="$1" --schema=games "$DATABASE") |
-    sudo -u "$RUN_AS" tee "$2.part" >/dev/null
+  if ! (cd / && sudo -u postgres pg_dump --format=custom --schema="$1" --schema=games "$DATABASE") |
+    sudo -u "$RUN_AS" tee "$2.part" >/dev/null; then
+    sudo -u "$RUN_AS" rm -f -- "$2.part"
+    return 1
+  fi
   sudo -u "$RUN_AS" mv "$2.part" "$2"
 }
 
@@ -165,8 +177,9 @@ prune_backups() {  # name keep
     done
 }
 
+# One bot's failure does not cost the other its copy; the run still ends red.
 backup_all() {
-  local app_dir schema keep
+  local app_dir schema keep failed=0
   while read -r app_dir schema keep; do
     if ! schema_has_tables "$schema"; then
       say "$schema: not on PostgreSQL yet"
@@ -174,18 +187,23 @@ backup_all() {
     fi
     cd "$app_dir"
     sudo -u "$RUN_AS" mkdir -p data/backups
-    dump_schema "$schema" "data/backups/$schema-$(date -u +%Y%m%d-%H%M%S).dump"
+    if ! dump_schema "$schema" "data/backups/$schema-$(date -u +%Y%m%d-%H%M%S).dump"; then
+      echo "!! $schema: the dump failed" >&2
+      failed=1
+      continue
+    fi
     prune_backups "$schema" "$keep"
     say "$schema: backed up"
   done <<EOF
 $PROD_DIR prod 8
 $TEST_DIR test 5
 EOF
+  [ "$failed" = 0 ] || fail "a backup failed"
 }
 
 deploy() {
   local target="$1" spa_archive="${2:-}"
-  local app_dir service branch db schema web_root keep_backups
+  local app_dir service branch db schema env_file web_root keep_backups
   case "$target" in
     prod)
       app_dir=$PROD_DIR
@@ -193,6 +211,7 @@ deploy() {
       branch=main
       db=data/bot.db
       schema=prod
+      env_file=$PROD_DIR/.env
       web_root=/var/www/xbox-mini
       keep_backups=8
       ;;
@@ -202,6 +221,7 @@ deploy() {
       branch=prerelease
       db=data/test.db
       schema=test
+      env_file=$TEST_DIR/.env.test
       web_root=/var/www/xbox-mini-test
       keep_backups=5
       ;;
@@ -215,7 +235,7 @@ deploy() {
     name=$schema
     backup="data/backups/$name-$(date -u +%Y%m%d-%H%M%S).dump"
     say "$target: backing up schemas $schema and games"
-    dump_schema "$schema" "$backup"
+    dump_schema "$schema" "$backup" || fail "the dump failed"
   else
     name="$(basename "$db" .db)"
     backup="data/backups/$name-$(date -u +%Y%m%d-%H%M%S).db"
@@ -224,9 +244,6 @@ deploy() {
   fi
   say "backup: $backup"
   prune_backups "$name" "$keep_backups"
-
-  local before_pyproject
-  before_pyproject="$(sha256sum pyproject.toml | cut -d' ' -f1)"
 
   say "fetching origin"
   # Every branch, not just this one: `bot/version.py` counts C from the merge
@@ -243,13 +260,21 @@ deploy() {
 
   # The running copy keeps reading its old file (install writes a new one),
   # so what changes here takes effect from the next run.
-  if [ -f scripts/xbox-deploy.sh ]; then
+  # Only forward: see DEPLOY_SCRIPT_EDITION.
+  local edition
+  edition="$(sed -n 's/^DEPLOY_SCRIPT_EDITION=//p' scripts/xbox-deploy.sh 2>/dev/null || true)"
+  if [ "${edition:-0}" -ge "$DEPLOY_SCRIPT_EDITION" ]; then
     install -m 0755 scripts/xbox-deploy.sh /usr/local/bin/xbox-deploy
   fi
 
-  if [ "$(sha256sum pyproject.toml | cut -d' ' -f1)" != "$before_pyproject" ]; then
+  # Against what was last installed, not what this run's merge changed: a failed
+  # install is tried again by the next run, which sees no change in the checkout.
+  local wanted
+  wanted="$(sha256sum pyproject.toml | cut -d' ' -f1)"
+  if [ "$(cat .venv/.installed-pyproject 2>/dev/null || true)" != "$wanted" ]; then
     say "pyproject.toml changed — reinstalling dependencies"
     sudo -u "$RUN_AS" .venv/bin/pip install -q -e .
+    echo "$wanted" | sudo -u "$RUN_AS" tee .venv/.installed-pyproject >/dev/null
   else
     say "dependencies unchanged"
   fi
@@ -278,7 +303,9 @@ deploy() {
     if [ -f bot/db/postgres.py ]; then
       where=(--schema "$schema")
     fi
-    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_files import "${where[@]}" ||
+    # The unit names the env file; a script run here has to be told.
+    sudo -u "$RUN_AS" env BOT_ENV_FILE="$env_file" \
+      .venv/bin/python -X utf8 -m scripts.catalog_files import "${where[@]}" ||
       catalog_ok=0
   fi
   start_bot "$service" || exit 1

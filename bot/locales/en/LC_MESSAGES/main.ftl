@@ -37,7 +37,7 @@ main-already-running =
 
 # Release announcements (services/release_notify.py)
 main-release-announced = 🚀 <b>Bot has been updated to version { $version }!</b>
-main-release-hotfix = 🩹 <b>Hotfix: the bot has been updated to version { $version }</b>
+main-release-hotfix = 🩹 <b>A small update: the bot has been updated to version { $version }</b>
 main-release-summary-header = <b>Highlights of this release:</b>
 main-release-details-prompt = See what's new in this release:
 main-release-button = 📖 Release Notes

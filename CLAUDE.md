@@ -115,7 +115,7 @@ name, or when the tree goes stale.
 │                              `mini-app-design-brief.md`: the task for that design;
 │                              `design-system.md`: the look, its tokens, components, rules)
 ├── catalog/                   the games catalog's labels and fitted weights, by key (`scripts/catalog_files.py`)
-├── changelog/                 release notes per version: `<v>.ru.md` / `.en.md` (what a chat member
+├── changelog/                 release notes per version (`archive/`: those before 0.3): `<v>.ru.md` / `.en.md` (what a chat member
 │                              notices), `.summary.<locale>.txt` (the announcement's bullets),
 │                              `.contributors.md` (what changed about working here)
 │
@@ -3016,13 +3016,13 @@ and a look at how it words its titles).
 **`A.B.C.D`** (#56) from `bot/version.py`, shown at the end of `/help` and the hub
 and logged at startup (`… is up (v1.4.3.058)`). History: #112.
 
-- **A** — the architecture; by hand, on a rewrite. `2` since 2.0 (the games
-  catalog and the new Mini App; owner, 2026-10-27), which started B again at 0.
-- **B** — the minor line: `TRUNK_LINE` on `main`, **one above it on every working
+- **A** — `0` until the app's 1.0, which is far off (owner, 2026-10-31: the old
+  major became the minor, so 2.2.1 reads 0.2.1, and the PostgreSQL release is 0.3.0).
+- **B** — the minor, a big update: `TRUNK_LINE` on `main`, **one above it on every working
   branch**, so the test server reads the line its work will ship in and "which bot is
   this" is answerable from the version. Only a release that starts a new minor bumps
-  `TRUNK_LINE` and tags `vX.Y.0` on `main`; one that does not (1.4.3) leaves both.
-- **C** — commits counted from git at startup, never stored in a file: on a working
+  `TRUNK_LINE` and tags `v0.Y.0` on `main`; one that does not leaves both.
+- **C** — a hotfix or a small update on that minor: commits counted from git at startup, never stored in a file: on a working
   branch since the **merge base** with `main` (so others' merges do not renumber it);
   on `main` since the **newest release tag**, **first parents only** — one per release.
   **Commits that touch only documentation do not count** (`DOCS_PATHS`: any `*.md`
@@ -3060,9 +3060,7 @@ week-long soak — the code moves in one step on `feature/postgres`, is checked 
 copy of production and on the dev server, then both servers switch; production
 runs on SQLite until the switch, its downtime the data import alone. PostgreSQL 16
 runs on the VPS (localhost). Until the switch, the servers and the deploy script
-(`xbox-deploy`, its SQLite backups) are as described in this section, except that
-on this branch `xbox-deploy games split|join|leave` and `catalog_files --db` name
-what is gone; what is left is in #234. The new bot (#238) and `unlocked.how` (#237)
+run as they do; what is left is in #234. The new bot (#238) and `unlocked.how` (#237)
 switch after it.
 
 **Scripts open PostgreSQL through `bot/db/tools.py`** (the bot's dialect and rows,
@@ -3071,9 +3069,22 @@ script starts with `tools.run`, since Windows' default event loop refuses psycop
 A script's backup is a `pg_dump` file in `backups/`, so `pg_dump` must be on PATH
 (`pg_restore` and `CREATEDB` for `reparse_store_payloads`' dry run). The catalog is
 shared, so a script writing it writes the live one whichever schema it names.
-**`scripts/sqlite_to_pg.py`** moves a server: `preflight`, `import --schema`,
-`verify` (exit 1 on a mismatch, 2 on a refusal). A second server on the same
-catalog file skips the catalog; one that differs needs `--merge-catalog`.
+**`scripts/sqlite_to_pg.py`** moves a server: `bring-up --out DIR` (copies, with
+the SQLite migrations this code ships applied; the source is what a rollback goes
+back to), `preflight`, `import --schema`, `verify` (exit 1 on a mismatch, 2 on a
+refusal). A source behind the migrations is refused: one may fill a table no schema
+file brings. A second server on the same catalog file skips the catalog; one that
+differs needs `--merge-catalog`.
+**A server moves in this order: stop the bot, bring up, import, verify, install
+`scripts/xbox-deploy.sh` by hand, push.** The first deploy would otherwise run the
+old script against the new code. The code comes last because **a bot refuses an
+empty schema** (`EmptySchemaError`; `DATABASE_NEW_OK=true` for a new database), so
+the push before the import leaves it down, never starting over with nobody in it.
+While the bots are on different code, `xbox-deploy` installs a checkout's copy of
+itself only forward (`DEPLOY_SCRIPT_EDITION`), and a bot whose schema has no tables
+is backed up from SQLite.
+**The connection is one for the process's life**: when the server is gone the bot
+exits (`postgres.on_connection_lost`) and systemd starts it again.
 
 ### Three branches, three servers
 
@@ -3238,8 +3249,8 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   `prerelease`: `changelog/<v>.ru.md`, `.en.md`, `.contributors.md`, and
   `.summary.ru.txt` / `.summary.en.txt` (5–8 `•` bullets for the announcement), where
   `<v>` is `A.B.C`. `main` then always carries its own notes and the announcement
-  links never 404. **A release without a new minor is a hotfix** (owner,
-  2026-10-12): its notes say so in the title (`# 1.8.5 — хотфикс — …`) and
+  links never 404. **A release without a new minor is a hotfix or a small update** (owner,
+  2026-10-12, 2026-10-31): its notes say so in the title (`# 0.3.1 — хотфикс — …`) and
   the first line, and the announcement's header says so by itself
   (`release_notify.is_hotfix`: C above 0). Under each note's title, a line links its other language
   (owner, 2026-10-10): `**Русский** · [English](<v>.en.md)` in the Russian one,
@@ -3249,7 +3260,7 @@ uses: `ssh <vps> sudo /usr/local/bin/xbox-deploy test|prod`.
   merged into `main` deployed at once, and production announced a version with no
   notes behind its link.
 - **A release that starts a new minor** bumps `TRUNK_LINE` on `prerelease`, and the
-  merge into `main` is made locally, tagged `vX.Y.0`, and pushed **tag first, then
+  merge into `main` is made locally, tagged `v0.Y.0`, and pushed **tag first, then
   `main`**: the deploy starts on the push and counts C from the newest tag, so a tag
   added after a GitHub merge arrives too late (production would read `X.Y.N`).
 - **On startup each bot announces a new version** (`services/release_notify.py`) once,

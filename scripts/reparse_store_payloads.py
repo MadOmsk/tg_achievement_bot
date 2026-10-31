@@ -98,8 +98,11 @@ def _copy(dsn: str, schema: str) -> Iterator[str]:
             admin.execute(sql.SQL("CREATE DATABASE {}").format(database))
             try:
                 copy = make_conninfo(dsn, dbname=name)
+                address, env = tools.tool_target(copy)
                 subprocess.run(
-                    ["pg_restore", "--no-owner", f"--dbname={copy}", str(dump)], check=True
+                    ["pg_restore", "--no-owner", f"--dbname={address}", str(dump)],
+                    check=True,
+                    env=env,
                 )
                 yield copy
             finally:

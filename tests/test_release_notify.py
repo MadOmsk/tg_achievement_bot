@@ -8,12 +8,19 @@ from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardMarkup
 
 from bot.db.repo import Repo
+from bot.services import release_notify
 from bot.services.release_notify import (
     CHANGELOG_BASE_URL,
     announce_release_if_needed,
     base_version,
     load_release_summary,
 )
+
+
+@pytest.fixture(autouse=True)
+def _old_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests read real notes from before 0.3, which are in the archive."""
+    monkeypatch.setattr(release_notify, "CHANGELOG_DIR", release_notify.CHANGELOG_DIR / "archive")
 
 
 class FakeBot:
@@ -220,5 +227,5 @@ async def test_a_release_without_a_new_minor_is_announced_as_a_hotfix(repo: Repo
     await announce_release_if_needed(bot, repo, "1.8.5.089", is_test=False, sleep_delay=0)
 
     text = bot.sent[0]["text"]
-    assert "Хотфикс: бот обновлён до версии 1.8.5.089" in text
+    assert "Небольшое обновление: бот обновлён до версии 1.8.5.089" in text
     assert bot.sent[0]["reply_markup"].inline_keyboard[0][0].url.endswith("/1.8.5.ru.md")

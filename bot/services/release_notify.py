@@ -35,8 +35,8 @@ def base_version(full_version: str) -> str:
 
 
 def is_hotfix(base_ver: str) -> bool:
-    """A release that starts no minor line (`A.B.C`, C above 0) is a hotfix,
-    and says so (owner, 2026-10-12)."""
+    """A release that starts no minor line (`A.B.C`, C above 0) is a hotfix or a
+    small update, and says so (owner, 2026-10-12, 2026-10-31)."""
     *_, patch = base_ver.split(".")
     return patch.isdigit() and int(patch) > 0
 

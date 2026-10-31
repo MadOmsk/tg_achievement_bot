@@ -5,8 +5,8 @@
 -- clock: Russia's own by their cities (no clock changes there since 2014),
 -- the rest the fixed `Etc/GMT` zone of that offset (its sign is reversed by
 -- the standard: UTC+2 is `Etc/GMT-2`). A half-hour offset stays an offset.
-ALTER TABLE user_settings ADD COLUMN tz_name TEXT;
-ALTER TABLE chat_settings ADD COLUMN tz_name TEXT;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS tz_name TEXT;
+ALTER TABLE chat_settings ADD COLUMN IF NOT EXISTS tz_name TEXT;
 
 UPDATE user_settings SET tz_name = CASE tz_offset_min
     WHEN 120 THEN 'Europe/Kaliningrad'

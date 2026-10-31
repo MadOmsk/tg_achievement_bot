@@ -44,10 +44,17 @@ class SchemaTooNewError(RuntimeError):
     """The database has migrations this code does not ship (#56)."""
 
 
+class EmptySchemaError(RuntimeError):
+    """A bot asked to start on a schema nothing was imported into."""
+
+
 class Database:
     """Owns the connection and brings the schemas up to the current shape."""
 
-    def __init__(self, dsn: str, *, schema: str, data_dir: Path | None = None) -> None:
+    def __init__(
+        self, dsn: str, *, schema: str, data_dir: Path | None = None, new_ok: bool = True
+    ) -> None:
+        self._new_ok = new_ok
         self._dsn = dsn
         self.schema = schema
         # Where the server keeps its files beside the database (the advisers'
@@ -69,6 +76,11 @@ class Database:
             await self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {self.schema}")
             await self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {GAMES}")
             fresh = not await self._has_tables(self.schema)
+            if fresh and not self._new_ok:
+                raise EmptySchemaError(
+                    f"schema {self.schema} has no tables: its import has not run. Refusing to"
+                    " start on an empty database; DATABASE_NEW_OK=true makes a new one"
+                )
             await self._refuse_a_newer_database()
             if not await self._has_tables(GAMES):
                 log.info("making the games catalog's schema")
@@ -146,7 +158,14 @@ class Database:
                 log.info("applying migration %s", path.stem)
                 # A local file of a few kilobytes, read once at startup.
                 script = path.read_text(encoding="utf-8")
-                await self.conn.executescript(f"BEGIN;\n{script}\nCOMMIT;")
+                # Its record in its own transaction: a crash between the two
+                # would run it again, and a plain ADD COLUMN would then stop
+                # every start.
+                await self.conn.executescript(
+                    f"BEGIN;\n{script}\nINSERT INTO schema_migrations (version, applied_at)"
+                    f" VALUES ('{path.stem}', '{utcnow_iso()}');\nCOMMIT;"
+                )
+                continue
             await self.conn.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (path.stem, utcnow_iso()),

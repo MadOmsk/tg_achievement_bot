@@ -3,12 +3,13 @@
 `A.B.C.D`, and every part answers a question somebody actually asked during
 an outage:
 
-- **A** — the architecture. Bumped by hand, on a rewrite. It is `2`
-  since 2.0 (the games catalog and the new Mini App, owner 2026-10-27).
-- **B** — the minor release line: `TRUNK_LINE` on `main`, one above it on
-  every working branch, so the test server already reads the line its work will
-  ship in. Only a release that starts a new minor bumps `TRUNK_LINE`.
-- **C** — a count of commits, read from git at startup rather than typed
+- **A** — `0` until the app's 1.0, which is far off (owner, 2026-10-31: what was
+  the major became the minor, so the old 2.2.1 reads 0.2.1).
+- **B** — the minor: a big update. `TRUNK_LINE` on `main`, one above it on every
+  working branch, so the test server already reads the line its work will ship
+  in. Only a release that starts a new minor bumps `TRUNK_LINE`.
+- **C** — a hotfix or a small update on that minor: a count of commits, read
+  from git at startup rather than typed
   into a file (owner's call, 2026-09-16: a short number that grows by one per
   commit reads better than a hash nobody can order at a glance). It measures
   a different distance on each side:
@@ -42,12 +43,11 @@ import subprocess
 from functools import cache
 from pathlib import Path
 
-MAJOR = 2
+MAJOR = 0
 
 #: The line of work `main` is on, and the only part of this file a person
 #: edits — when the owner decides a release starts a new minor. Working
-#: branches read one above it (see `line()`). A new major starts it again
-#: at `0` (release 2.0).
+#: branches read one above it (see `line()`).
 TRUNK_LINE = 2
 
 #: The branch that *is* production (2026-09-18): merging into it is the
@@ -160,11 +160,11 @@ def line() -> int:
     """The minor version / line of work: **B**.
 
     `TRUNK_LINE` on `main`, one above it on every working branch (`prerelease`,
-    `dev`, …) — production reads `1.4.…` while the test bot already reads
-    `1.5.…`, the line its work will ship in (owner, 2026-09-24, restoring
+    `dev`, …) — production reads `0.2.…` while the test bot already reads
+    `0.3.…`, the line its work will ship in (owner, 2026-09-24, restoring
     the rule 2026-09-21 had replaced with one shared minor). A release that
-    starts a new minor bumps `TRUNK_LINE` and tags `vX.Y.0` on `main`; one
-    that does not (1.4.3) leaves both alone.
+    starts a new minor bumps `TRUNK_LINE` and tags `v0.Y.0` on `main`; one
+    that does not (a hotfix, a small update) leaves both alone.
 
     A checkout with no git (a tarball, a container) falls back to the trunk's
     number — `revision()` already renders `?` there, which is the part that
@@ -209,5 +209,5 @@ def schema_gap(applied: str | None) -> str | None:
         return None
     return (
         f"database schema ({applied[:3]}) is ahead of this code ({expected_schema()}) — "
-        "refusing to start; run the newer code, or point DB_PATH at the right database"
+        "refusing to start; run the newer code, or point DATABASE_SCHEMA at the right schema"
     )

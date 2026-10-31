@@ -394,6 +394,41 @@ def test_a_group_s_negative_chat_id_leaves_the_counter_at_its_start(
     assert tool.run_verify(db, None, dsn, "prod") == []
 
 
+def test_a_counter_goes_past_a_deleted_highest_row(tmp_path: Path, dsn: str) -> None:
+    db = _source(tmp_path)
+    _edit(db, "INSERT OR REPLACE INTO sqlite_sequence (name, seq) VALUES ('users', 500)")
+    tool.run_import(db, None, dsn, "prod")
+    made = _rows(
+        dsn,
+        "INSERT INTO prod.users (tg_id, created_at, updated_at) VALUES (600, 'x', 'x')"
+        " RETURNING id",
+    )
+    assert made == [(501,)]
+
+
+def test_bring_up_works_on_copies_and_leaves_the_source_alone(tmp_path: Path, dsn: str) -> None:
+    db = _source(tmp_path)
+    _edit(db, "ALTER TABLE push_subscriptions DROP COLUMN origin")
+    _edit(db, "DELETE FROM schema_migrations WHERE version LIKE '143%'")
+    copy, _ = tool.run_bring_up(db, None, tmp_path / "up")
+
+    def has(path: Path) -> tuple[bool, bool]:
+        conn = sqlite3.connect(path)
+        try:
+            columns = [r[1] for r in conn.execute("PRAGMA table_info(push_subscriptions)")]
+            done = conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version LIKE '143%'"
+            ).fetchone()
+            return "origin" in columns, done is not None
+        finally:
+            conn.close()
+
+    assert has(db) == (False, False)
+    assert has(copy) == (True, True)
+    tool.run_import(copy, None, dsn, "prod")
+    assert tool.run_verify(copy, None, dsn, "prod") == []
+
+
 def test_verify_catches_a_counter_left_behind(tmp_path: Path, dsn: str) -> None:
     db = _source(tmp_path)
     tool.run_import(db, None, dsn, "prod")

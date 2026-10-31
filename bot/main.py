@@ -23,6 +23,7 @@ from aiogram.types import (
 
 from bot.config import Settings, get_settings
 from bot.constants import Platform
+from bot.db import postgres
 from bot.db.repo import Database, Repo
 from bot.handlers import admin as admin_handlers
 from bot.handlers import backfill as backfill_handlers
@@ -147,10 +148,22 @@ def setup_logging(level: str) -> None:
     logging.getLogger("psnawp").setLevel(logging.WARNING)
 
 
+def _database_lost(exc: Exception) -> None:
+    """Out, for systemd to start a new process that connects again: nothing here
+    can go on without its one connection."""
+    log.critical("the database connection is gone: %r", exc)
+    logging.shutdown()
+    os._exit(1)
+
+
 async def run(settings: Settings) -> None:
     media.configure(settings.media_dir)
+    postgres.on_connection_lost = _database_lost
     database = await Database(
-        settings.database_url, schema=settings.database_schema, data_dir=settings.db_path.parent
+        settings.database_url,
+        schema=settings.database_schema,
+        data_dir=settings.db_path.parent,
+        new_ok=settings.database_new_ok,
     ).connect()
     repo = Repo(database)
     # The environment's super-admins are the column's (services/roles.py).
