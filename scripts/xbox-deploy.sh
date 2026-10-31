@@ -210,7 +210,7 @@ deploy() {
       service=xbox-bot
       branch=main
       db=data/bot.db
-      schema=prod
+      schema="prod"
       env_file=$PROD_DIR/.env
       web_root=/var/www/xbox-mini
       keep_backups=8
@@ -220,7 +220,7 @@ deploy() {
       service=xbox-bot-test
       branch=prerelease
       db=data/test.db
-      schema=test
+      schema="test"
       env_file=$TEST_DIR/.env.test
       web_root=/var/www/xbox-mini-test
       keep_backups=5
