@@ -264,6 +264,7 @@ admin-promo-confirm-yes = 📢 Yes, send it
 admin-promo-failed = Couldn't send the promo — the bot may not be in the chat.
 admin-action-unknown = That action isn't available now.
 admin-action-section-messages = Bot messages
+admin-action-section-timers = Translation queue
 admin-action-section-rules = Notification check
 
 # New users and user cards

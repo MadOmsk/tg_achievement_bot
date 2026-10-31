@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import psycopg
 import pytest
 
-from bot.db.repo import Repo
+from bot.db.repo import Database, Repo
 from bot.services import game_descriptions
 from bot.services.game_descriptions import GameTranslator
 from bot.services.translate import client, descriptions
@@ -182,3 +183,72 @@ async def test_the_queue_is_off_until_switched_on(repo: Repo, _model: list) -> N
     await repo.set_app_setting(translations.QUEUE_KEY, "1")
     await walker.tick()
     assert _model != []
+
+
+async def test_an_answer_that_cannot_be_used_costs_only_the_odd_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sizes: list[int] = []
+
+    class _Response:
+        status_code = 200
+
+        def __init__(self, count: int, text: str) -> None:
+            self._count, self._text = count, text
+
+        def json(self) -> dict:
+            if "odd" in self._text:
+                answer = "not json"
+            else:
+                answer = '["ru"]' if self._count == 1 else '["ru", "ru"]'
+            return {"stop_reason": "end_turn", "content": [{"type": "text", "text": answer}]}
+
+    class _Client:
+        def __init__(self, **kwargs: object) -> None:
+            pass
+
+        async def __aenter__(self) -> _Client:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def post(self, url: str, **kwargs: dict) -> _Response:
+            prompt = kwargs["json"]["messages"][0]["content"]
+            count = int(prompt.split("ONLY a JSON array of ")[1].split()[0])
+            sizes.append(count)
+            return _Response(count, prompt)
+
+    monkeypatch.setattr(client.httpx, "AsyncClient", _Client)
+    done = await client.translate_descriptions("k", {"a": "x", "b": "odd"}, target_language="ru")
+    assert done == {"a": "ru"}
+    assert sizes == [2, 1, 1]
+
+
+async def test_a_game_that_keeps_failing_rests_longer(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    translator = GameTranslator(repo, _Auth())
+    now = game_descriptions.time.monotonic()
+    translator._rest(1)
+    first = translator._failed[1] - now
+    translator._rest(1)
+    assert translator._failed[1] - now > first + 3000
+    for _ in range(10):
+        translator._rest(1)
+    assert translator._failed[1] - now <= game_descriptions.LONGEST_REST_SECONDS + 5
+
+
+async def test_only_what_waits_for_the_model_is_blurred(repo: Repo) -> None:
+    await _game_with_a_list(repo)
+    translator = GameTranslator(repo, _Auth())
+    assert await translator.rows_on_their_way("steam", "7") == {"a", "c"}
+
+
+async def test_the_catalog_link_lock_is_one_at_a_time(repo: Repo, database: Database) -> None:
+    with psycopg.connect(database._dsn, autocommit=True) as other:
+        taken = "SELECT pg_try_advisory_lock(234001)"
+        async with repo.catalog_link_lock():
+            assert other.execute(taken).fetchone()[0] is False
+        assert other.execute(taken).fetchone()[0] is True
+        other.execute("SELECT pg_advisory_unlock(234001)")

@@ -264,6 +264,7 @@ admin-promo-confirm-yes = 📢 Да, отправить
 admin-promo-failed = Не получилось отправить промо — бот, возможно, не в чате.
 admin-action-unknown = Это действие сейчас недоступно.
 admin-action-section-messages = Сообщения бота
+admin-action-section-timers = Очередь перевода
 admin-action-section-rules = Проверка уведомлений
 
 # New users and user cards

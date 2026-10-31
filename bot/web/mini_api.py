@@ -1245,18 +1245,18 @@ async def handle_game_details(request: web.Request) -> web.Response:
             xbox_groups = {}
 
     # The list's descriptions on their way: the app blurs what has no Russian yet.
-    translating = False
+    on_their_way: set[str] = set()
     translator = collector.translator if collector is not None else None
     list_game = await repo.game_of_list(platform, title_id) if translator is not None else None
     if list_game is not None:
-        translating = (
-            await translator.pending(list_game, await _user_locale(repo, user.person_id))
-        ).achievements
+        pending = await translator.pending(list_game, await _user_locale(repo, user.person_id))
+        if pending.achievements:
+            on_their_way = await translator.rows_on_their_way(platform, title_id)
 
     return web.json_response(
         {
             "ok": True,
-            "translating": translating,
+            "translating": bool(on_their_way),
             "viewed": viewed_json,
             "platform": platform,
             "title_id": title_id,
@@ -1281,6 +1281,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
                     "name_en": item.achievement.name_en,
                     "description_ru": item.achievement.description_ru,
                     "description_en": item.achievement.description_en,
+                    "translating": item.achievement.achievement_id in on_their_way,
                     "icon_url": achievement_icons.format_achievement_icon_url(
                         platform,
                         title_id,

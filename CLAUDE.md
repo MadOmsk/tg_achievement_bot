@@ -414,7 +414,8 @@ tests only: a migration number or a column named below may point there. History:
   drops a catalog table — **cannot be shared**: the two servers part for its
   duration (a copy of `games` for one of them), and join again once both run
   the new code.
-- **The catalog's background work may run on both bots**: the octopus and the
+- **One linker at a time across both bots** (`pg_try_advisory_lock`, `GameLinker`).
+  **The catalog's background work may run on both bots**: the octopus and the
   store collection run wherever `store_collection` is on. A queue entry is
   taken by a conditional update that only one bot can win and held
   (`octopus_take`, half an hour), so two bots never assemble one game.
@@ -2239,7 +2240,7 @@ elsewhere in this file still describe the bot.
   opens the pass (`t=pass`). **The season's start is told** (2026-10-31; `poller/season_start.py`, `season_start`,
   `pass_seen`, `season_notified`, migration 148): at 12:00 on the 1st in the person's own
   time zone, every ten minutes looked for, once a season, only to whoever has not opened
-  the pass since it began (`GET /api/mini/pass` for the current month marks it), and only
+  the pass's own page since it began (`POST /api/mini/pass/seen`; Home and Settings read the pass too), and only
   when the month's pass has a live level; on until switched off (`season_start:off`;
   Settings → Уведомления, «Старт сезона»); a tap opens the pass.
   **A level reached is told** (owner, 2026-10-28;
@@ -3094,6 +3095,11 @@ the push before the import leaves it down, never starting over with nobody in it
 While the bots are on different code, `xbox-deploy` installs a checkout's copy of
 itself only forward (`DEPLOY_SCRIPT_EDITION`), and a bot whose schema has no tables
 is backed up from SQLite.
+**A rollback within 48 hours of the switch** (owner, 2026-10-31) is the previous tag on
+SQLite and the untouched `bot.db`; what happened since the switch is lost, nothing carries
+it back.
+**On the day:** the test bot is stopped too while a server's import and linking run (one
+catalog), and `--games` names the copy at every step, or they read the live file.
 **The connection is one for the process's life**: when the server is gone the bot
 exits (`postgres.on_connection_lost`) and systemd starts it again.
 

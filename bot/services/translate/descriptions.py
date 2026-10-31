@@ -12,7 +12,9 @@ nothing in this module ever sees an achievement's name at all.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections import defaultdict
 
 from bot.db.repo import Repo
 from bot.services.translate.auth import AnthropicAuth, AnthropicNotConfiguredError
@@ -24,6 +26,10 @@ log = logging.getLogger(__name__)
 # Stored, shown, and still waiting for a translation — see schema.sql's own
 # comment on `title_achievements.description_source`.
 FALLBACK = "fallback"
+
+# One game's list at a time, whoever asks (a page, a poll, the catalog's refresh):
+# the second finds the first's answer in the cache instead of paying again.
+_LOCKS: defaultdict[tuple[str, str], asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 async def bilingual_descriptions(
@@ -51,6 +57,17 @@ async def bilingual_descriptions(
     forever, translate once, exactly like every other cache in this
     project (steam_schema_cache, hltb_entries, ...).
     """
+    async with _LOCKS[(platform, title_id)]:
+        return await _bilingual(repo, anthropic_auth, platform, title_id, native)
+
+
+async def _bilingual(
+    repo: Repo,
+    anthropic_auth: AnthropicAuth,
+    platform: str,
+    title_id: str,
+    native: dict[str, tuple[str | None, str | None]],
+) -> dict[str, tuple[str | None, str | None]]:
     result: dict[str, tuple[str | None, str | None]] = {}
     needs_translation: dict[str, str] = {}
 

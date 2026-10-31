@@ -363,7 +363,7 @@ function GlobalSettingsView() {
           }
         }}
       />
-      {(actions.data?.actions.length ?? 0) > 0 && <Actions actions={actions.data!.actions} onGone={() => undefined} />}
+      {(actions.data?.actions.length ?? 0) > 0 && <Actions actions={actions.data!.actions} onDone={actions.reload} onGone={() => undefined} />}
     </>
   );
 }

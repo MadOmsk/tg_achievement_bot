@@ -137,6 +137,11 @@ export class PassApi extends BaseApi {
     return this.get<PassState>(initData, `/pass${query({ month: opts.month, edit: opts.edit })}`);
   }
 
+  /** The pass's own page was opened. */
+  markSeen(initData: string): Promise<unknown> {
+    return this.post<unknown>(initData, "/pass/seen", {});
+  }
+
   claim(initData: string, palette: string): Promise<PassState> {
     return this.post<PassState>(initData, "/pass/claim", { palette });
   }

@@ -17,6 +17,8 @@ export type GameAchievement = {
   name_en: string | null;
   description_ru: string | null;
   description_en: string | null;
+  /** Its Russian is on its way: it shows blurred. */
+  translating?: boolean;
   icon_url: string | null;
   is_secret: boolean;
   score?: number | null;

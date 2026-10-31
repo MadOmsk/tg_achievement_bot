@@ -122,7 +122,7 @@ export function Achievements({
 
   const row = (a: GameAchievement) => {
     const ach = achOfList(a, { platform, titleId, game: gameName, icon: gamePic, gameId: d?.game?.game_id }, owner, locale);
-    if (translating && !a.description_ru) ach.translating = true;
+    if (a.translating) ach.translating = true;
     const hasTip = Boolean(guides?.tips[a.achievement_id]);
     const hasVideo = Boolean(guides?.videos?.[a.achievement_id]?.length);
     return (

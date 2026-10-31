@@ -198,8 +198,9 @@ async def test_a_reply_cut_off_at_max_tokens_translates_nothing(monkeypatch) -> 
 
 
 async def test_a_reply_with_a_line_missing_is_not_matched_by_position(monkeypatch) -> None:
-    """Three asked, two answered: zipping them would hand B the text of C."""
-    body = _messages_response(json.dumps(["Один", "Три"]))
+    """Fewer or more than asked: zipping them would hand B the text of C. Asked again
+    in halves, and answered wrongly every time, nothing is matched."""
+    body = _messages_response(json.dumps(["Один", "Два", "Три", "Четыре"]))
     monkeypatch.setattr(
         translate_client.httpx, "AsyncClient", _FakeAsyncClient(200, post_body=body)
     )

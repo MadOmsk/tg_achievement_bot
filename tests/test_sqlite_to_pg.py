@@ -3,6 +3,7 @@ SQLite schema, into a database of its own: `reset_test_data` never sees it."""
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import zlib
@@ -851,3 +852,41 @@ def test_the_command_exits_as_it_found(tmp_path: Path, dsn: str, monkeypatch) ->
     assert run("import") == 2  # the schema is filled
     _run(dsn, "UPDATE dev.users SET handle = 'Changed' WHERE id = 5")
     assert run("verify") == 1
+
+
+def test_a_merge_keeps_a_favorite_and_a_prize_whose_anchor_changed(
+    tmp_path: Path, dsn: str
+) -> None:
+    tool.run_import(_source(tmp_path), None, dsn, "prod")
+    test = _second_server(tmp_path)
+    conn = sqlite3.connect(tmp_path / "test.games.db")
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute(
+        "INSERT INTO versions (version_id, store, product_id, console, name, game_id, role,"
+        " updated_at, stand_in) VALUES (77, 'list', 'old', 'steam', 'x', 3, 'version', ?, 1)",
+        (NOW,),
+    )
+    conn.execute("UPDATE games SET anchor_version_id = 77 WHERE game_id = 3")
+    conn.commit()
+    conn.close()
+    _edit(test, "UPDATE favorite_games SET anchor_key = 'list:old:steam' WHERE game_id = 3")
+    tool.run_import(test, None, dsn, "test", merge=True)
+    assert _rows(dsn, "SELECT COUNT(*) FROM test.favorite_games") == [(1,)]
+    assert _rows(dsn, "SELECT game_id IS NOT NULL FROM test.pass_items") == [(True,)]
+
+
+def test_a_merge_maps_the_game_a_waiting_change_names(tmp_path: Path, dsn: str) -> None:
+    tool.run_import(_source(tmp_path), None, dsn, "prod")
+    test = _second_server(tmp_path)
+    _edit(test, "UPDATE pass_items SET pending = ?", json.dumps({"game_id": 3, "title": "t"}))
+    tool.run_import(test, None, dsn, "test", merge=True)
+    ((game, pending),) = _rows(dsn, "SELECT game_id, pending FROM test.pass_items")
+    assert json.loads(pending) == {"game_id": game, "title": "t"}
+
+
+def test_a_merge_never_rewinds_the_catalog_s_counters(tmp_path: Path, dsn: str) -> None:
+    tool.run_import(_source(tmp_path), None, dsn, "prod")
+    seq = _rows(dsn, "SELECT pg_get_serial_sequence('games.games', 'game_id')")[0][0]
+    _run(dsn, f"SELECT setval('{seq}', 5000, true)")
+    tool.run_import(_second_server(tmp_path), None, dsn, "test", merge=True)
+    assert _rows(dsn, f"SELECT last_value FROM {seq}")[0][0] >= 5000

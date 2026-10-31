@@ -361,3 +361,18 @@ async def test_roles_open_the_editor_and_only_a_superadmin_gives_them(
         assert await repo.person_role(me_id) == "superadmin"
     finally:
         await client.close()
+
+
+async def test_only_the_pass_s_own_page_counts_as_seen(
+    repo: Repo, settings: Settings, monkeypatch
+) -> None:
+    client, headers = await _client(repo, settings, monkeypatch, 42, {"n": 0})
+    person = await repo.person_id(42)
+    try:
+        state = await (await client.get("/api/mini/pass", headers=headers)).json()
+        month = state["month"]
+        assert not await repo.pass_seen_in(person, month)
+        assert (await client.post("/api/mini/pass/seen", headers=headers)).status == 200
+        assert await repo.pass_seen_in(person, month)
+    finally:
+        await client.close()

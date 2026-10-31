@@ -210,8 +210,8 @@ def _chunks(texts: dict[str, str]) -> list[dict[str, str]]:
 async def _translate_batch(
     api_key: str, texts: dict[str, str], *, target_language: str
 ) -> dict[str, str]:
-    """One call, all or nothing; a reply cut off at its ceiling goes again in
-    two halves, since asking the same again would only be paid for again."""
+    """One call, all or nothing; a reply that cannot be used goes again in two
+    halves, since asking the same again would only be paid for again."""
     language = _LANGUAGE_NAME[target_language]
     # Numbered plain-text lines, not JSON-in-JSON — asking the model to echo
     # arbitrary ids back verbatim as JSON keys risks it "fixing" or
@@ -250,23 +250,15 @@ async def _translate_batch(
         payload = response.json()
         if payload.get("stop_reason") == "max_tokens":
             log.warning("anthropic translate: reply cut off at %s tokens", _MAX_OUTPUT_TOKENS)
-            if len(ids) == 1:
-                return {}
-            half = len(ids) // 2
-            first = {key: texts[key] for key in ids[:half]}
-            second = {key: texts[key] for key in ids[half:]}
-            return {
-                **await _translate_batch(api_key, first, target_language=target_language),
-                **await _translate_batch(api_key, second, target_language=target_language),
-            }
+            return await _in_halves(api_key, texts, target_language)
         content = _text_of(payload)
         translations = json.loads(_strip_json_fence(content))
     except (KeyError, IndexError, ValueError, AttributeError) as exc:
         log.warning("anthropic translate: could not parse response: %r", exc)
-        return {}
+        return await _in_halves(api_key, texts, target_language)
     if not isinstance(translations, list):
         log.warning("anthropic translate: expected a JSON array, got %s", type(translations))
-        return {}
+        return await _in_halves(api_key, texts, target_language)
     # A reply with a line missing or added cannot be matched back to ids:
     # every description after the gap would get its neighbour's text. None
     # is better than a wrong one.
@@ -274,8 +266,25 @@ async def _translate_batch(
         log.warning(
             "anthropic translate: asked for %s translations, got %s", len(ids), len(translations)
         )
-        return {}
+        return await _in_halves(api_key, texts, target_language)
     return dict(zip(ids, translations, strict=True))
+
+
+async def _in_halves(api_key: str, texts: dict[str, str], target_language: str) -> dict[str, str]:
+    """An answer that could not be used, asked again in two halves: one odd
+    description then costs only itself, not all its neighbours every time."""
+    ids = list(texts)
+    if len(ids) == 1:
+        return {}
+    half = len(ids) // 2
+    return {
+        **await _translate_batch(
+            api_key, {key: texts[key] for key in ids[:half]}, target_language=target_language
+        ),
+        **await _translate_batch(
+            api_key, {key: texts[key] for key in ids[half:]}, target_language=target_language
+        ),
+    }
 
 
 async def translate_game_description(

@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import sqlite3
@@ -1087,6 +1088,10 @@ class GameMap:
     by_key: dict[str, int] = field(default_factory=dict)
     dropped_favorites: int = 0
     cleared_prizes: int = 0
+    # What no game holds yet: a kept stand-in is placed by the linker, after the
+    # commit, and these follow it then.
+    waiting_favorites: list[dict[str, Any]] = field(default_factory=list)
+    waiting_prizes: list[tuple[int, int]] = field(default_factory=list)
 
 
 def game_map(src: Source, pg: psycopg.Connection) -> GameMap:
@@ -1103,15 +1108,18 @@ def game_map(src: Source, pg: psycopg.Connection) -> GameMap:
             f"SELECT game_id, merged_into FROM {src.ref('games')} WHERE merged_into IS NOT NULL"
         ).fetchall()
     )
-    anchors = src.conn.execute(
-        f"SELECT g.game_id, v.store, v.product_id, v.console FROM {src.ref('games')} g"
-        f" JOIN {src.ref('versions')} v ON v.version_id = g.anchor_version_id"
+    # Any version they share, the anchor first: the catalog may know a game's
+    # stand-in anchor as a store product by now, under another key.
+    versions = src.conn.execute(
+        f"SELECT v.game_id, v.store, v.product_id, v.console FROM {src.ref('versions')} v"
+        f" JOIN {src.ref('games')} g ON g.game_id = v.game_id"
+        " ORDER BY v.version_id = g.anchor_version_id DESC, v.version_id"
     ).fetchall()
     at_anchor: dict[int, int] = {}
-    for game, store, product, console in anchors:
+    for game, store, product, console in versions:
         key = f"{store.decode()}:{product.decode()}:{console.decode()}"
         if key in out.by_key:
-            at_anchor[game] = out.by_key[key]
+            at_anchor.setdefault(game, out.by_key[key])
     # An old id leads on to the game it was merged into.
     ids = {r[0] for r in src.conn.execute(f"SELECT game_id FROM {src.ref('games')}").fetchall()}
     for game in ids:
@@ -1125,6 +1133,27 @@ def game_map(src: Source, pg: psycopg.Connection) -> GameMap:
     return out
 
 
+def _mapped_pending(pending: Any, mapping: GameMap) -> Any:
+    """A waiting change names a game by the source's id too; one with no game here
+    loses that change rather than name another game."""
+    if not pending:
+        return pending
+    text = pending.decode() if isinstance(pending, bytes) else str(pending)
+    try:
+        change = json.loads(text)
+    except ValueError:
+        return pending
+    if not isinstance(change, dict) or not change.get("game_id"):
+        return pending
+    new = mapping.by_id.get(int(change["game_id"]))
+    if new is None:
+        mapping.cleared_prizes += 1
+        del change["game_id"]
+    else:
+        change["game_id"] = new
+    return json.dumps(change, ensure_ascii=False)
+
+
 def _mapped(
     table: Table, columns: list[str], rows: Iterable[tuple[Any, ...]], mapping: GameMap
 ) -> Iterator[tuple[Any, ...]]:
@@ -1133,13 +1162,21 @@ def _mapped(
         yield from rows
         return
     if table.name == "pass_items":
+        pending_at = columns.index("pending") if "pending" in columns else None
+        item_at = columns.index("item_id")
         for row in rows:
+            if pending_at is not None:
+                row = (
+                    *row[:pending_at],
+                    _mapped_pending(row[pending_at], mapping),
+                    *row[pending_at + 1 :],
+                )
             if row[at] is None:
                 yield row
                 continue
             new = mapping.by_id.get(row[at])
             if new is None:
-                mapping.cleared_prizes += 1
+                mapping.waiting_prizes.append((row[item_at], row[at]))
             yield (*row[:at], new, *row[at + 1 :])
         return
     anchor_at = columns.index("anchor_key")
@@ -1147,7 +1184,10 @@ def _mapped(
     seen: set[tuple[int, int]] = set()
     for row in rows:
         new = mapping.by_key.get(row[anchor_at]) or mapping.by_id.get(row[at])
-        if new is None or (row[person_at], new) in seen:
+        if new is None:
+            mapping.waiting_favorites.append(dict(zip(columns, row, strict=True)))
+            continue
+        if (row[person_at], new) in seen:
             mapping.dropped_favorites += 1
             continue
         seen.add((row[person_at], new))
@@ -1215,6 +1255,13 @@ def _set_sequences(
             (qualified.as_string(pg), column),
         ).fetchone()[0]
         # A Telegram group's chat_id is negative, and no counter goes below 1.
+        # Never back: in the shared catalog the other bot has counted further,
+        # and an id it used and deleted must not come round again.
+        last, called = pg.execute(
+            sql.SQL("SELECT last_value, is_called FROM {}").format(sql.SQL(sequence))
+        ).fetchone()
+        if called and (highest is None or highest <= last):
+            continue
         if highest is None or highest < 1:
             pg.execute("SELECT setval(%s, 1, false)", (sequence,))
         else:
@@ -1370,6 +1417,9 @@ def run_import(
             for name, table in sorted(catalog.items()):
                 started = time.monotonic()
                 where = f"table {name}"
+                if not src.columns(name):
+                    result.tables[name] = 0
+                    continue
                 columns = insert_columns(table, src)
                 result.tables[name] = copy_rows(
                     pg, table, columns, read_rows(src, table, columns, repairs)
@@ -1391,12 +1441,6 @@ def run_import(
                 rows = _mapped(table, columns, rows, mapping)
             result.tables[name] = copy_rows(pg, table, columns, rows)
             _line(name, result.tables[name], started)
-        if mapping is not None and (mapping.dropped_favorites or mapping.cleared_prizes):
-            print(
-                f"  catalog ids not found: favorites dropped {mapping.dropped_favorites},"
-                f" prizes' game cleared {mapping.cleared_prizes}"
-            )
-
         # A schema made from its file already holds PostgreSQL's own migrations.
         for stem in _pg_migrations():
             pg.execute(
@@ -1431,8 +1475,54 @@ def run_import(
         src.close()
     if result.kept and not dry_run:
         _link_kept(dsn, schema, result.kept)
+    if mapping is not None and not dry_run:
+        _settle_waiting(db, games, dsn, schema, mapping)
     print(f"total: {time.monotonic() - began:.1f} s")
     return result
+
+
+def _settle_waiting(db: Path, games: Path | None, dsn: str, schema: str, mapping: GameMap) -> None:
+    """Favorites and prizes of games only the linker could place: given their game
+    now, or counted as lost, out loud."""
+    if mapping.waiting_favorites or mapping.waiting_prizes:
+        src = Source(db, games)
+        pg = _connect(dsn)
+        try:
+            now = game_map(src, pg)
+            for row in mapping.waiting_favorites:
+                new = now.by_key.get(row["anchor_key"]) or now.by_id.get(row["game_id"])
+                if new is None:
+                    mapping.dropped_favorites += 1
+                    continue
+                values = {**row, "game_id": new}
+                pg.execute(
+                    sql.SQL("INSERT INTO {} ({}) VALUES ({}) ON CONFLICT DO NOTHING").format(
+                        sql.Identifier(schema, "favorite_games"),
+                        sql.SQL(", ").join(map(sql.Identifier, values)),
+                        sql.SQL(", ").join(sql.Placeholder() * len(values)),
+                    ),
+                    list(values.values()),
+                )
+            for item, game in mapping.waiting_prizes:
+                new = now.by_id.get(game)
+                if new is None:
+                    mapping.cleared_prizes += 1
+                    continue
+                pg.execute(
+                    sql.SQL("UPDATE {} SET game_id = %s WHERE item_id = %s").format(
+                        sql.Identifier(schema, "pass_items")
+                    ),
+                    (new, item),
+                )
+            pg.commit()
+        finally:
+            pg.close()
+            src.close()
+    if mapping.dropped_favorites or mapping.cleared_prizes:
+        print(
+            f"LOST: favorites dropped {mapping.dropped_favorites},"
+            f" prizes' game cleared {mapping.cleared_prizes}"
+        )
 
 
 def _link_kept(dsn: str, schema: str, version_ids: list[int]) -> None:

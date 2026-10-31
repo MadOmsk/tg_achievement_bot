@@ -113,7 +113,7 @@ class GameLinker:
         return await self._link(rows, [int(r["version_id"]) for r in rows])
 
     async def _link(self, rows: list[dict], seed_ids: list[int]) -> LinkReport:
-        async with _LOCK:
+        async with _LOCK, self._repo.catalog_link_lock():
             return await self._link_locked(rows, seed_ids)
 
     async def _link_locked(self, rows: list[dict], seed_ids: list[int]) -> LinkReport:

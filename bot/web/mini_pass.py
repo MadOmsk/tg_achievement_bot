@@ -61,6 +61,7 @@ def setup_pass_routes(app: web.Application) -> None:
             b"pass-draft:" + settings.fernet_key.get_secret_value().encode()
         ).digest()
     app.router.add_get("/api/mini/pass", handle_pass)
+    app.router.add_post("/api/mini/pass/seen", handle_seen)
     app.router.add_post("/api/mini/pass/claim", handle_claim)
     app.router.add_post(ITEM + "/claim", handle_item_claim)
     app.router.add_get(ITEM + "/takers", handle_item_takers)
@@ -160,9 +161,6 @@ async def _state(
         )
     except ValueError:
         month, since, until, current, _n = await _person_month(repo, person_id, None)
-    if month == current:
-        # Who has looked is not told the season started (`poller/season_start.py`).
-        await repo.mark_pass_seen(person_id, current)
     points = await repo.points_for_person(person_id, since, until)
     claimed = await repo.pass_claims(person_id)
     items = await repo.pass_live_items(person_id, month)
@@ -482,6 +480,14 @@ async def _edited(repo: Repo, person_id: int, request: web.Request) -> web.Respo
     """The pass again after an edit, the editor on the month edited."""
     edit = await _edit_month(repo, person_id, request)
     return web.json_response(await _state(repo, person_id, admin=True, edit=edit))
+
+
+async def handle_seen(request: web.Request) -> web.Response:
+    """The pass's own page was opened: who has looked is not told the season started
+    (`poller/season_start.py`). Not `GET /pass`: Home and Settings read that too."""
+    repo, person_id, _admin = await _person(request)
+    await repo.mark_pass_seen(person_id, (await _person_month(repo, person_id, None))[3])
+    return web.json_response({"ok": True})
 
 
 async def handle_claim(request: web.Request) -> web.Response:

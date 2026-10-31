@@ -177,7 +177,9 @@ def _texts(
     for version in versions:
         ru = _version_russian(version)
         en = _plain(version.get("description_en"))
-        if len(ru) >= _MIN_DESCRIPTION:
+        # Our translation of a text long enough to show counts whatever its
+        # own length, or it would be asked for again and again.
+        if len(ru) >= _MIN_DESCRIPTION or (ru and version.get("description_source") == "llm"):
             russian.append(ru)
         if len(en) >= _MIN_DESCRIPTION:
             english.append((en, "version", int(version["version_id"])))

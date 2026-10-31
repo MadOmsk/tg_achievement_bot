@@ -4,8 +4,11 @@ relations; who here played it; the games a search finds; favorite games."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from bot.db.repo._sql import OWNED_BY_PERSON, earned_at, platform_is
@@ -17,6 +20,9 @@ _MERGE_HOPS = 10
 
 # The roles that are the game itself, not its demo, tool or soundtrack.
 _PLAYABLE_ROLES = "('version', 'enhanced')"
+
+# Any number, the same for every bot sharing the catalog.
+_CATALOG_LINK_LOCK = 234001
 
 
 class _GamePageRepo:
@@ -258,6 +264,22 @@ class _GamePageRepo:
         cursor = await self._conn.execute("SELECT * FROM games WHERE game_id = ?", (game_id,))
         row = await cursor.fetchone()
         return dict(row) if row else None
+
+    @asynccontextmanager
+    async def catalog_link_lock(self) -> AsyncIterator[None]:
+        """One linker at a time across the bots sharing the catalog. Tried and waited
+        for, never blocked on: a bot has one connection, and it serves everybody."""
+        while True:
+            cursor = await self._conn.execute(
+                "SELECT pg_try_advisory_lock(?::bigint)", (_CATALOG_LINK_LOCK,)
+            )
+            if (await cursor.fetchone())[0]:
+                break
+            await asyncio.sleep(1)
+        try:
+            yield
+        finally:
+            await self._conn.execute("SELECT pg_advisory_unlock(?::bigint)", (_CATALOG_LINK_LOCK,))
 
     async def games_to_translate_first(self) -> list[int]:
         """Every game, those played here first, the latest played first."""

@@ -92,6 +92,9 @@ function draftItems(items: PassEditorItem[]): Item[] {
 export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer: string }) {
   const { data, tr, locale, toast, open } = useApp();
   const current = usePass(data);
+  useEffect(() => {
+    void passApi.markSeen(data).catch(() => undefined);
+  }, [data]);
   // An earlier month's pass, looked back on: its codes, what was claimed.
   const [viewMonth, setViewMonth] = useState<string | null>(null);
   const [past, setPast] = useState<PassState | null>(null);

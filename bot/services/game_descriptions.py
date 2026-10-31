@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 from bot.services.game_page import text_hash, to_translate
 from bot.services.translate.client import translate_game_description
 from bot.services.translate.descriptions import bilingual_descriptions
+from bot.util import looks_russian
 
 if TYPE_CHECKING:
     from bot.db.repo import Repo
@@ -36,8 +37,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# A game the model could not finish rests this long before another try.
+# A game the model could not finish rests this long before another try, twice as
+# long each time it fails again, up to a day: a text it cannot do is not paid for hourly.
 RETRY_SECONDS = 3600
+LONGEST_REST_SECONDS = 86400
 # Games worked on at once, whoever asked; each sends a few calls at once itself.
 GAMES_AT_ONCE = 5
 # A game's newest posts go with it: what its page shows.
@@ -69,6 +72,7 @@ class GameTranslator:
         # What is being translated now, so two callers pay once.
         self._running: set[int] = set()
         self._failed: dict[int, float] = {}
+        self._failures: dict[int, int] = {}
         self._slots = asyncio.Semaphore(GAMES_AT_ONCE)
         self._tasks: set[asyncio.Task] = set()
 
@@ -98,6 +102,12 @@ class GameTranslator:
             self.later([game_id])
         return found
 
+    async def rows_on_their_way(self, platform: str, title_id: str) -> set[str]:
+        """Which of a list's achievements a page shows blurred: those waiting for the
+        model. A Russian side already here is only marked, and shows as it is."""
+        waiting = await self._repo.catalog_untranslated_descriptions(platform, title_id)
+        return {key for key, (russian, _) in waiting.items() if not looks_russian(russian)}
+
     async def is_due(self, game_id: int) -> bool:
         """Whether the queue has work here: anything missing, and not resting."""
         if game_id in self._running or time.monotonic() < self._failed.get(game_id, 0):
@@ -124,22 +134,34 @@ class GameTranslator:
                 await asyncio.gather(
                     self._description(game_id),
                     *(self._achievements(str(r["platform"]), str(r["title_id"])) for r in lists),
-                    *(self._tips_and_posts(str(r["platform"]), str(r["title_id"])) for r in lists),
                 )
                 # What failed stays missing: it rests, or a page would blur it for
                 # ever and the queue would pay for it every pass.
                 left = await self._missing(game_id)
                 if left.description or left.achievements:
-                    self._failed[game_id] = time.monotonic() + RETRY_SECONDS
+                    self._rest(game_id)
                 else:
                     self._failed.pop(game_id, None)
-                return found.description or found.achievements
+                    self._failures.pop(game_id, None)
+            # Outside the slot: posts go one at a time, and an opened game's blurred
+            # text must not wait behind another game's.
+            await asyncio.gather(
+                *(self._tips_and_posts(str(r["platform"]), str(r["title_id"])) for r in lists)
+            )
+            return found.description or found.achievements
         except Exception as exc:  # a translation never fails anything else
             log.warning("game %s not translated: %r", game_id, exc)
-            self._failed[game_id] = time.monotonic() + RETRY_SECONDS
+            self._rest(game_id)
             return False
         finally:
             self._running.discard(game_id)
+
+    def _rest(self, game_id: int) -> None:
+        failures = self._failures.get(game_id, 0)
+        self._failures[game_id] = failures + 1
+        rest = min(RETRY_SECONDS * 2**failures, LONGEST_REST_SECONDS)
+        self._failed[game_id] = time.monotonic() + rest
+        log.info("game %s rests %s s before its translation is tried again", game_id, rest)
 
     async def _missing(self, game_id: int) -> Pending:
         versions = await self._repo.game_page_versions(game_id)
