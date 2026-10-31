@@ -1380,6 +1380,11 @@ def run_import(
         for name, table in sorted(app.items()):
             started = time.monotonic()
             where = f"table {name}"
+            if not src.columns(name):
+                # New since the source's code: nothing to bring.
+                result.tables[name] = 0
+                _line(name, 0, started)
+                continue
             columns = insert_columns(table, src)
             rows: Iterable[tuple[Any, ...]] = read_rows(src, table, columns, repairs)
             if mapping is not None and name in MAPPED_TABLES:
@@ -1520,6 +1525,8 @@ def run_verify(
         print(f"schema {schema}:")
         for name, table in sorted(app.items()):
             started = time.monotonic()
+            if not src.columns(name):
+                continue
             if merge and name == "favorite_games":
                 # Mapped, some dropped; a kept stand-in's game came only after.
                 ours = sum(1 for _ in read_rows(src, table, ["person_id"], repairs))

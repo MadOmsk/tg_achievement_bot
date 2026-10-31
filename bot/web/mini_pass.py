@@ -160,6 +160,9 @@ async def _state(
         )
     except ValueError:
         month, since, until, current, _n = await _person_month(repo, person_id, None)
+    if month == current:
+        # Who has looked is not told the season started (`poller/season_start.py`).
+        await repo.mark_pass_seen(person_id, current)
     points = await repo.points_for_person(person_id, since, until)
     claimed = await repo.pass_claims(person_id)
     items = await repo.pass_live_items(person_id, month)

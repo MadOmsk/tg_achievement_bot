@@ -198,6 +198,18 @@ class _MergeRepo:
                 a,
             )
             await conn.execute(
+                "INSERT INTO pass_seen (person_id, month, seen_at)"
+                " SELECT :keep, month, seen_at FROM pass_seen"
+                " WHERE person_id = :absorb ON CONFLICT DO NOTHING",
+                a,
+            )
+            await conn.execute(
+                "INSERT INTO season_notified (person_id, month, notified_at)"
+                " SELECT :keep, month, notified_at FROM season_notified"
+                " WHERE person_id = :absorb ON CONFLICT DO NOTHING",
+                a,
+            )
+            await conn.execute(
                 "INSERT INTO pass_reached (person_id, item_id, month, reached_at)"
                 " SELECT :keep, item_id, month, reached_at FROM pass_reached"
                 " WHERE person_id = :absorb ON CONFLICT DO NOTHING",

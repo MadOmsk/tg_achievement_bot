@@ -254,6 +254,7 @@ name, or when the tree goes stale.
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
 │   │   │                         cache walkers for what polls never bring (#48, #61)
 │   │   ├── reminders.py          reminders for a dead Xbox login
+│   │   ├── season_start.py       the season's start told at noon on the 1st
 │   │   ├── message_cleanup.py    auto-deletes system messages
 │   │   ├── online_refresh.py, admin_refresh.py   self-refreshing /online and /admin
 │   │   └── service_health.py     liveness of the shared credentials
@@ -2235,7 +2236,13 @@ elsewhere in this file still describe the bot.
   dialog tells everybody of the new levels (`pass_reward`, the one notice kind
   **on until switched off** — `notifier.DEFAULT_ON`, a channel's
   `pass_reward:off`; Settings → Уведомления, «Призы сезонного пропуска»); a tap
-  opens the pass (`t=pass`). **A level reached is told** (owner, 2026-10-28;
+  opens the pass (`t=pass`). **The season's start is told** (2026-10-31; `poller/season_start.py`, `season_start`,
+  `pass_seen`, `season_notified`, migration 148): at 12:00 on the 1st in the person's own
+  time zone, every ten minutes looked for, once a season, only to whoever has not opened
+  the pass since it began (`GET /api/mini/pass` for the current month marks it), and only
+  when the month's pass has a live level; on until switched off (`season_start:off`;
+  Settings → Уведомления, «Старт сезона»); a tap opens the pass.
+  **A level reached is told** (owner, 2026-10-28;
   `pass_level`, `Notifier.tell_about_pass_levels`, migration 134
   `pass_reached`): after every publish the month's points are checked, and
   the levels newly reached are marked (each once a month) and told as one

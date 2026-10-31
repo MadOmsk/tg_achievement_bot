@@ -418,6 +418,7 @@ function readChannel(tokens: string[] | undefined) {
     xbox: list.includes("xbox_login_dead"),
     // On until switched off (`pass_reward:off`).
     reward: !list.includes("pass_reward:off"),
+    seasonStart: !list.includes("season_start:off"),
     // A personal PSN token that stopped working (#233): on until switched off.
     psnToken: !list.includes("psn_token_dead:off"),
     // Every level unless `pass_level:prizes` or `pass_level:off`.
@@ -433,6 +434,7 @@ function writeChannel(c: ReturnType<typeof readChannel>, push: boolean): string[
   if (c.friend) out.push("new_friend");
   if (push && c.xbox) out.push("xbox_login_dead");
   if (!c.reward) out.push("pass_reward:off");
+  if (!c.seasonStart) out.push("season_start:off");
   if (!c.psnToken) out.push("psn_token_dead:off");
   if (c.level !== "all") out.push(`pass_level:${c.level}`);
   return out;
@@ -525,6 +527,7 @@ function ChannelChoices({ tokens, push, onSave }: { tokens: string[] | undefined
         <Row title={tr("notifyFriends")} trail={<Toggle checked={c.friend} label={tr("notifyFriends")} onChange={(v) => set({ friend: v })} />} />
         {push && <Row title={tr("notifyAccount")} trail={<Toggle checked={c.xbox} label={tr("notifyAccount")} onChange={(v) => set({ xbox: v })} />} />}
         <Row title={tr("notifyPassRewards")} trail={<Toggle checked={c.reward} label={tr("notifyPassRewards")} onChange={(v) => set({ reward: v })} />} />
+        <Row title={tr("notifySeasonStart")} trail={<Toggle checked={c.seasonStart} label={tr("notifySeasonStart")} onChange={(v) => set({ seasonStart: v })} />} />
         <Row title={tr("notifyPsnToken")} trail={<Toggle checked={c.psnToken} label={tr("notifyPsnToken")} onChange={(v) => set({ psnToken: v })} />} />
       </Group>
       {picking === "post" && (

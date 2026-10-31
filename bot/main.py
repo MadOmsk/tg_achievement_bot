@@ -66,6 +66,7 @@ from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
 from bot.poller.season_reset import SeasonReset
+from bot.poller.season_start import SeasonStart
 from bot.poller.service_health import ServiceHealth
 from bot.poller.stand_in_links import StandInLinks
 from bot.poller.steam_catch_up import SteamCatchUpPoller
@@ -304,6 +305,8 @@ async def run(settings: Settings) -> None:
 
     flood_flush = FloodFlush(repo, publisher)
 
+    # Told by `notifications`, made further down.
+    season_start = SeasonStart(repo)
     scheduler = PollerScheduler(
         poller,
         fetcher,
@@ -335,6 +338,7 @@ async def run(settings: Settings) -> None:
         Translations(repo, news_translator, guide_translator, game_translator),
         StandInLinks(repo),
         SeasonReset(repo),
+        season_start=season_start,
         psn_personal=psn_personal,
     )
 
@@ -399,6 +403,7 @@ async def run(settings: Settings) -> None:
         app_url=settings.mini_app_url,
         contact=f"mailto:{settings.smtp_from}" if settings.smtp_from else None,
     )
+    season_start.notifier = notifications
 
     # Browsers that allowed push on another address of the app (an old dev
     # tunnel) get nothing more: one notice, one copy.

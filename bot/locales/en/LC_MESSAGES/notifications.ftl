@@ -42,6 +42,11 @@ notification-new-post-named = earned “{ $name }”{ $more ->
     [0] {""}
    *[other] {" "}and { $more } more
 }
+notification-season-start = { $named ->
+    [yes] { $title } has started!
+   *[no] A new season has started!
+}
+    Who will reach the top first?
 notification-pass-reward = A new reward in the season pass: { $title }
 # The month's points reached a level of the season pass (owner, 2026-10-28):
 # $reward is theme / game / code, $palette the level's theme, $title the prize, $named yes when it has one.

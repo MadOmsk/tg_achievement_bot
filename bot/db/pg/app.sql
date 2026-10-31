@@ -653,6 +653,20 @@ CREATE TABLE pass_item_codes (
     claimed_at TEXT
 );
 
+CREATE TABLE pass_seen (
+    person_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month     TEXT NOT NULL,
+    seen_at   TEXT NOT NULL,
+    PRIMARY KEY (person_id, month)
+);
+
+CREATE TABLE season_notified (
+    person_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month       TEXT NOT NULL,
+    notified_at TEXT NOT NULL,
+    PRIMARY KEY (person_id, month)
+);
+
 CREATE TABLE pass_reached (
     person_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     item_id    BIGINT NOT NULL REFERENCES pass_items(item_id) ON DELETE CASCADE,

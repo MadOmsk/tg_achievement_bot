@@ -48,6 +48,11 @@ notification-new-post-named = получает «{ $name }»{ $more ->
     [0] {""}
    *[other] {" "}и ещё { $more }
 }
+notification-season-start = { $named ->
+    [yes] { $title } начался!
+   *[no] Новый сезон начался!
+}
+    Кто первым доберётся до вершины?
 notification-pass-reward = Новая награда в сезонном пропуске: { $title }
 # Очки месяца дошли до уровня сезонного пропуска (owner, 2026-10-28):
 # $reward — theme / game / code, $palette — тема уровня, $title — приз, $named — yes, когда он назван.

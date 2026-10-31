@@ -562,6 +562,37 @@ class _PassRepo:
                 )
             await self.set_app_setting(_ENV_SUPERADMINS, json.dumps(ids))  # type: ignore[attr-defined]
 
+    async def pass_month_published(self, month: str) -> bool:
+        """Whether a month's pass has a live level: an empty one has not started."""
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM pass_items WHERE month = ? AND state = 'live' LIMIT 1", (month,)
+        )
+        return await cursor.fetchone() is not None
+
+    async def mark_pass_seen(self, person_id: int, month: str) -> None:
+        await self._conn.execute(
+            "INSERT INTO pass_seen (person_id, month, seen_at) VALUES (?, ?, ?)"
+            " ON CONFLICT DO NOTHING",
+            (person_id, month, _now()),
+        )
+        await self._conn.commit()
+
+    async def pass_seen_in(self, person_id: int, month: str) -> bool:
+        cursor = await self._conn.execute(
+            "SELECT 1 FROM pass_seen WHERE person_id = ? AND month = ?", (person_id, month)
+        )
+        return await cursor.fetchone() is not None
+
+    async def mark_season_notified(self, person_id: int, month: str) -> bool:
+        """True for the one call that marks it: the one that tells them."""
+        cursor = await self._conn.execute(
+            "INSERT INTO season_notified (person_id, month, notified_at) VALUES (?, ?, ?)"
+            " ON CONFLICT DO NOTHING",
+            (person_id, month, _now()),
+        )
+        await self._conn.commit()
+        return cursor.rowcount > 0
+
     async def all_person_ids(self) -> list[int]:
         cursor = await self._conn.execute("SELECT id FROM users ORDER BY id")
         return [int(row[0]) for row in await cursor.fetchall()]

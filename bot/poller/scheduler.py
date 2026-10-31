@@ -33,6 +33,7 @@ from bot.poller.psn_trophy_groups import PsnTrophyGroups
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.season_reset import SeasonReset
+from bot.poller.season_start import SeasonStart
 from bot.poller.service_health import ServiceHealth
 from bot.poller.stand_in_links import StandInLinks
 from bot.poller.steam_catch_up import SteamCatchUpPoller
@@ -78,6 +79,7 @@ class PollerScheduler:
         translations: Translations | None = None,
         stand_in_links: StandInLinks | None = None,
         season_reset: SeasonReset | None = None,
+        season_start: SeasonStart | None = None,
         psn_personal: PsnPersonalAuth | None = None,
     ) -> None:
         self._poller = poller
@@ -108,6 +110,7 @@ class PollerScheduler:
         self._translations = translations
         self._stand_in_links = stand_in_links
         self._season_reset = season_reset
+        self._season_start = season_start
         self._steam_catch_up = steam_catch_up
         self._scheduler = AsyncIOScheduler(timezone="UTC")
 
@@ -205,6 +208,14 @@ class PollerScheduler:
                 self._stand_in_links.tick,
                 IntervalTrigger(seconds=TICK_SECONDS),
                 id="stand_in_links",
+                coalesce=True,
+                max_instances=1,
+            )
+        if self._season_start is not None:
+            self._scheduler.add_job(
+                self._season_start.tick,
+                IntervalTrigger(minutes=10),
+                id="season_start",
                 coalesce=True,
                 max_instances=1,
             )

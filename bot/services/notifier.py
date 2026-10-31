@@ -52,6 +52,7 @@ QUALIFIERS = {
     "new_post": POST_NOTICE_CHOICES,
     "game_news": GAME_NEWS_CHOICES,
     "pass_reward": ("off",),
+    "season_start": ("off",),
     # `prizes`: only a level that gives a prize (a game, a code), not a theme.
     "pass_level": ("off", "prizes"),
     "psn_token_dead": ("off",),
@@ -59,7 +60,7 @@ QUALIFIERS = {
 # Kinds a channel carries unless switched off (`<kind>:off`): the super-admin's
 # word to everyone (owner, 2026-10-27), and one's own pass climbing (owner,
 # 2026-10-28) — every other kind is opt-in.
-DEFAULT_ON = frozenset({"pass_reward", "pass_level", "psn_token_dead"})
+DEFAULT_ON = frozenset({"pass_reward", "pass_level", "season_start", "psn_token_dead"})
 
 
 def channel_token_valid(token: str) -> bool:
@@ -147,6 +148,8 @@ KINDS: dict[str, Kind] = {
     "pass_reward": Kind("notification-pass-reward"),
     # The person's month's points reached a level of the pass (owner, 2026-10-28).
     "pass_level": Kind("notification-pass-level"),
+    # A month's pass began: noon on the 1st, `poller/season_start.py`.
+    "season_start": Kind("notification-season-start"),
 }
 UNKNOWN = Kind("notification-unknown")
 
@@ -387,6 +390,12 @@ class Notifier:
             except Exception:
                 log.exception("reward notice to person_id=%s failed", person)
 
+    async def tell_about_season_start(self, person_id: int, month: str) -> None:
+        """Tell a person the month's season began, by its name when it has one."""
+        season = await self._repo.pass_season(month)
+        title = season.get("title") or ""
+        await self.notify(person_id, "season_start", title=title, named="yes" if title else "no")
+
     async def tell_about_pass_levels(self, person_id: int) -> None:
         """Tell a person of the pass's levels their month's points just
         reached: one notice, of the highest — `prize` when any of them gives a
@@ -485,7 +494,7 @@ class Notifier:
             if data.get("achievement_id"):
                 # The achievement the notice names opens, over its game.
                 query["a"] = str(data["achievement_id"])
-        if kind in ("pass_reward", "pass_level"):
+        if kind in ("pass_reward", "pass_level", "season_start"):
             query["t"] = "pass"
         if kind == "game_news" and data.get("appid") and data.get("gid"):
             # The post itself opens, over its game (owner, 2026-10-08).

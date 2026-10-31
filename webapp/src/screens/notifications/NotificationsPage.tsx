@@ -51,7 +51,7 @@ export function NotificationsPage({ onClose, layer }: { onClose: () => void; lay
   const go = (item: NotificationItem) => {
     tick();
     if (!item.read) void markRead([item.id]);
-    if (item.kind === "pass_reward" || item.kind === "pass_level") {
+    if (item.kind === "pass_reward" || item.kind === "pass_level" || item.kind === "season_start") {
       open({ kind: "pass" });
     } else if (item.news) {
       open({
