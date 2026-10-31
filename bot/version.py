@@ -48,7 +48,7 @@ MAJOR = 0
 #: The line of work `main` is on, and the only part of this file a person
 #: edits — when the owner decides a release starts a new minor. Working
 #: branches read one above it (see `line()`).
-TRUNK_LINE = 2
+TRUNK_LINE = 3
 
 #: The branch that *is* production (2026-09-18): merging into it is the
 #: release, and everything else is by definition a line of work above it.

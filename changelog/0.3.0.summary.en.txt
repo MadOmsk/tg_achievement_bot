@@ -1,0 +1,7 @@
+• Games are translated when opened: the text shows blurred, then turns Russian by itself
+• Game news and the guides' tips in Russian
+• The season pass tells you when a season starts, and a season has a cover
+• Time zones by city, summer time follows by itself
+• Your own PSN token: your account is read more often
+• Four roles, and a chat has its own admin
+• A new database and a new numbering: 2.2.1 now reads 0.2.1
