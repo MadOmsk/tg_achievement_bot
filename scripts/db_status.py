@@ -21,8 +21,6 @@ def scalar(conn: tools.Connection, query: str) -> object:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    # manage.ps1 still passes the old database path: nothing is read from it.
-    parser.add_argument("db_path", nargs="?", help=argparse.SUPPRESS)
     tools.add_arguments(parser)
     args = parser.parse_args()
 

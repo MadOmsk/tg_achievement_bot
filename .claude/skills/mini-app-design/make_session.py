@@ -2,22 +2,22 @@
 line, so the Mini App can be screenshotted locally. The token goes to
 data/ (gitignored), never to the output."""
 
-import asyncio
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+os.environ.setdefault("BOT_ENV_FILE", ".env.test")
 
+from bot.db import tools  # noqa: E402
 from bot.db.repo import Repo  # noqa: E402
-from bot.db.repo._database import Database  # noqa: E402
 
 OUT = ROOT / "data" / "screenshot-session.txt"
 
 
 async def main(handle: str) -> None:
-    db = Database(ROOT / "data" / "test.db")
-    await db.connect()
+    db = await tools.open_database()
     repo = Repo(db)
     cursor = await db.conn.execute("SELECT id FROM users WHERE handle_norm = ?", (handle.lower(),))
     row = await cursor.fetchone()
@@ -29,4 +29,4 @@ async def main(handle: str) -> None:
     print("session for person", row[0])
 
 
-asyncio.run(main(sys.argv[1]))
+tools.run(main(sys.argv[1]))

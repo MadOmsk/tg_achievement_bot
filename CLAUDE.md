@@ -2997,7 +2997,8 @@ catalog file skips the catalog; one that differs needs `--merge-catalog`.
 
 ### The dev server
 
-`manage.ps1` (the bot cannot start itself): `start` / `stop` / `restart` / `status` /
+`manage.ps1` (the bot cannot start itself; it also starts the local PostgreSQL cluster
+on port 5433, `stop` stops it once no bot is left on it, `restart` leaves it): `start` / `stop` / `restart` / `status` /
 `logs [-Lines N]` / `dashboard` (live view with hotkeys; `manage.bat` opens it), with
 `-Test` for the `.env.test` instance on 8081 and `-Web` to tunnel the Mini App.
 `status` shows uptime, the port, stray bot processes (two bots on one `BOT_TOKEN`

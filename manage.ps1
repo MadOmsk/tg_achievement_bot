@@ -8,8 +8,11 @@
     equivalent for a development machine.
 
     Pass -Test to drive the second instance from `.env.test` (#52) —
-    its own token, database, logs and lock, so it can sit next to the
+    its own token, schema, logs and lock, so it can sit next to the
     regular bot. Never put the production BOT_TOKEN into `.env.test`.
+
+    The database is the local PostgreSQL cluster (#234), started with the
+    bot and stopped by `stop` once no bot is left on it; `restart` leaves it.
 
 .EXAMPLE
     .\manage.ps1 start
@@ -31,7 +34,7 @@ param(
 
     [int]$RefreshSeconds = 5,
 
-    # Second bot from `.env.test` — own DB, logs, pid file, BOT_ENV_FILE.
+    # Second bot from `.env.test` — own schema, logs, pid file, BOT_ENV_FILE.
     [switch]$Test,
 
     # Start Vite + Cloudflare tunnel (untun), inject MINI_APP_URL into the bot.
@@ -59,7 +62,6 @@ if ($Test) {
     $PidFile = Join-Path $Root 'data\bot.test.pid'
     $SiblingPidFile = Join-Path $Root 'data\bot.pid'
     $DefaultPort = 8081
-    $DefaultDbPath = 'data/test.db'
 } else {
     $InstanceLabel = 'bot'
     $EnvFile = Join-Path $Root '.env'
@@ -70,7 +72,6 @@ if ($Test) {
     $PidFile = Join-Path $Root 'data\bot.pid'
     $SiblingPidFile = Join-Path $Root 'data\bot.test.pid'
     $DefaultPort = 8080
-    $DefaultDbPath = 'data/bot.db'
 }
 
 function Get-EnvFileValue {
@@ -88,8 +89,41 @@ function Get-EnvFileValue {
 }
 
 $Port = [int](Get-EnvFileValue -Path $EnvFile -Key 'OAUTH_LISTEN_PORT' -Default "$DefaultPort")
-$DbRelPath = Get-EnvFileValue -Path $EnvFile -Key 'DB_PATH' -Default $DefaultDbPath
-$DbPath = if ([System.IO.Path]::IsPathRooted($DbRelPath)) { $DbRelPath } else { Join-Path $Root $DbRelPath }
+
+$PgCtl = 'C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe'
+$PgData = Join-Path $env:LOCALAPPDATA 'unlocked-pg'
+$PgPort = 5433
+
+function Test-Cluster {
+    # pg_ctl status answers 0 when running, 3 when not.
+    if (-not (Test-Path $PgCtl)) { return $false }
+    & $PgCtl -D $PgData status *> $null
+    return $LASTEXITCODE -eq 0
+}
+
+function Start-Cluster {
+    if (Test-Cluster) { return }
+    if (-not (Test-Path (Join-Path $PgData 'PG_VERSION'))) { throw "No PostgreSQL cluster in $PgData." }
+    # A hidden process of its own, not waited for: the server is its child, and
+    # would otherwise hold this shell (and Start-Process -Wait) open for good.
+    $log = Join-Path $PgData 'server.log'
+    Start-Process -FilePath $PgCtl -WindowStyle Hidden `
+        -ArgumentList 'start', '-D', "`"$PgData`"", '-l', "`"$log`"", '-o', "`"-p $PgPort`""
+    $deadline = (Get-Date).AddSeconds(30)
+    while (-not (Test-Cluster)) {
+        if ((Get-Date) -gt $deadline) { throw "PostgreSQL did not start; see $log" }
+        Start-Sleep -Milliseconds 300
+    }
+    Write-Host ("Started PostgreSQL on port {0}." -f $PgPort) -ForegroundColor Green
+}
+
+function Stop-Cluster {
+    # The other instance may still be on it.
+    if (Get-BotProcess -Path $SiblingPidFile) { return }
+    if (-not (Test-Cluster)) { return }
+    & $PgCtl -D $PgData stop -m fast *> $null
+    Write-Host 'Stopped PostgreSQL.' -ForegroundColor Green
+}
 
 function Get-BotProcess {
     # Trust the PID file only after confirming the process is still ours:
@@ -227,6 +261,7 @@ function Start-Bot {
     if (Get-BotProcess) { Write-Host "Already running ($InstanceLabel)." -ForegroundColor Yellow; return }
     if (-not (Test-Path $Python)) { throw "Missing venv: $Python. Create it with: python -m venv .venv" }
     if (-not (Test-Path $EnvFile)) { throw "Missing $EnvFileName in the project root." }
+    Start-Cluster
 
     $miniUrl = $null
     if ($Web) {
@@ -429,10 +464,29 @@ function Write-StatusBlock {
         Write-Host '  Two bots on one token fight over Telegram updates.' -ForegroundColor Yellow
     }
 
-    if (Test-Path $Python) {
+    if (Test-Cluster) {
+        Write-Host ("  postgres: running on port {0}" -f $PgPort)
+    } else {
+        Write-Host ("  postgres: stopped ({0})" -f $PgData) -ForegroundColor Yellow
+    }
+
+    if ((Test-Path $Python) -and (Test-Cluster)) {
         Write-Host ''
-        # -X utf8: keep console output readable under a non-UTF-8 code page.
-        & $Python -X utf8 (Join-Path $Root 'scripts\db_status.py') $DbPath
+        # BOT_ENV_FILE says whose schema; -X utf8 keeps the output readable
+        # under a non-UTF-8 code page.
+        $previousEnvFile = $env:BOT_ENV_FILE
+        $env:BOT_ENV_FILE = $EnvFileName
+        Push-Location $Root
+        try {
+            & $Python -X utf8 -m scripts.db_status
+        } finally {
+            Pop-Location
+            if ($null -eq $previousEnvFile) {
+                Remove-Item Env:BOT_ENV_FILE -ErrorAction SilentlyContinue
+            } else {
+                $env:BOT_ENV_FILE = $previousEnvFile
+            }
+        }
     }
 }
 
@@ -485,7 +539,7 @@ function Show-Dashboard {
                     $key = [Console]::ReadKey($true)
                     switch ($key.KeyChar) {
                         '2' { Write-Host ''; Start-Bot; $acted = $true }
-                        '3' { Write-Host ''; Stop-Bot; $acted = $true }
+                        '3' { Write-Host ''; Stop-Bot; Stop-Cluster; $acted = $true }
                         '4' { Write-Host ''; Stop-Bot; Start-Sleep -Seconds 1; Start-Bot; $acted = $true }
                         'w' { Write-Host ''; Watch-Bot; $acted = $true }
                         'W' { Write-Host ''; Watch-Bot; $acted = $true }
@@ -510,7 +564,7 @@ switch ($Command) {
     'menu'      { Show-Dashboard }
     'dashboard' { Show-Dashboard }
     'start'     { Start-Bot }
-    'stop'      { Stop-Bot; if ($Web) { Stop-Web } }
+    'stop'      { Stop-Bot; Stop-Cluster; if ($Web) { Stop-Web } }
     'restart'   { Stop-Bot; if ($Web) { Stop-Web }; Start-Sleep -Seconds 1; Start-Bot }
     'web-stop'  { Stop-Web }
     'status'    { Show-Status }
