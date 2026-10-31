@@ -310,8 +310,7 @@ class _PlatformLinksRepo:
     async def platform_links_all(self, platform: str) -> list[PlatformLink]:
         """Every *active* link on one platform, across every person —
         `platform_links_of` narrowed to one person, this is the bot-wide
-        counterpart (2026-09-05, scripts/backfill_steam_titles.py: needs
-        every Steam link to reconcile, not any one person's)."""
+        counterpart."""
         cursor = await self._conn.execute(
             self._LINK_COLUMNS + "WHERE al.platform = ? AND al.is_active = 1",
             (platform,),

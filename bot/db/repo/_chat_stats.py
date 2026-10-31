@@ -109,7 +109,7 @@ class _ChatStatsRepo:
             # The accounts' keys too: their columns follow from them, as the
             # person's follow from u.id (PostgreSQL wants every one named).
             "GROUP BY u.id, xb.platform, xb.external_id, steam.platform, steam.external_id,"
-            " psn.platform, psn.external_id ORDER BY cnt DESC, score DESC",
+            " psn.platform, psn.external_id ORDER BY cnt DESC, score DESC, u.id",
             [rare_threshold, *date_params, chat_id],
         )
         return [

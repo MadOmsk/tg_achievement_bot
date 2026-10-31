@@ -1,4 +1,4 @@
-"""The gap `scripts/backfill_title_names.py` closes (2026-09-19 audit).
+"""Games the catalogue never learned the name of (2026-09-19 audit).
 
 A query rather than logic, and the kind that looks obvious and is easy to get
 subtly wrong — the owner pairing especially, which must never hand back

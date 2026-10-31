@@ -117,11 +117,12 @@ ACCEPTED = {
     "orphan": "the row goes (ON DELETE SET NULL: the reference goes), and what hung on it",
     "source_only_table": "the table is left behind",
     "source_only_column": "the column is left behind",
-    "migrations_missing": "the import goes on, the schema files being the truth",
     "catalog_also_in_main": "the rows beside the games file are left behind",
 }
-# Nothing a flag can answer: there is no value to put there.
-UNFIXABLE = frozenset({"null_in_not_null", "required_column_missing"})
+# Nothing a flag can answer: there is no value to put there. A migration the
+# source never ran may have filled a table (141 made the chats' admins), which
+# no schema file brings: the source is brought up first.
+UNFIXABLE = frozenset({"null_in_not_null", "required_column_missing", "migrations_missing"})
 
 
 class TransferError(Exception):

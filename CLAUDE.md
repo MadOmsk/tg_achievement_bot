@@ -289,8 +289,6 @@ name, or when the tree goes stale.
 │   ├── strip_x360_frames.py      the 360 frame cut off the covers and posters already kept
 │   ├── collect_x360_addons.py    a 360 game's add-ons searched once, where never searched yet
 │   ├── translate_game_descriptions.py   every game's description translated at once (#230)
-│   └── backfill_*.py             one-offs for data that predates a feature (each names its issue);
-│                                 backfill_rarity.py and backfill_descriptions.py need the bot stopped
 │
 ├── tests/                       pytest + pytest-asyncio; real platform/Telegram calls forbidden
 ├── backups/                     database copies and dumps — gitignored (see Operations)
@@ -2603,8 +2601,7 @@ Pickers of fixed options (timezones, digest thresholds, hours) are not lists.
   through `_sql.py`'s `rarity()` / `rarity_cache_join()`, with
   `seen_achievements.rarity_percent` as the fallback — rarity is a fact about the
   achievement, and the row is a never-updated snapshot. Xbox rarity comes only with
-  contract 4, so the contract-2 history is filled by `poller/rarity_backfill.py` (and
-  `scripts/backfill_rarity.py`, bot stopped) — one request per title covers every
+  contract 4, so the contract-2 history is filled by `poller/rarity_backfill.py` — one request per title covers every
   owner. Every platform's poll also writes it. Nothing expires: a year-old
   percentage is worth more than none. Xbox 360's rarity comes from contract 3
   (#121; live polls and `poller/rarity_backfill.py`), so 💎 and `rare` mode

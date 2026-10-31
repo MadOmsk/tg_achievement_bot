@@ -353,8 +353,7 @@ async def test_unlink_removes_the_account(repo: Repo) -> None:
 
 
 async def test_platform_links_all_spans_every_user(repo: Repo) -> None:
-    """scripts/backfill_steam_titles.py's own way in — needs every Steam
-    link across the whole bot, not any one person's (2026-09-05)."""
+    """Every Steam link across the whole bot, not any one person's."""
     await repo.ensure_user(1, "one")
     await repo.ensure_user(2, "two")
     await repo.link_platform_account(await repo.person_id(1), "steam", "111", "One")
@@ -369,7 +368,7 @@ async def test_platform_links_all_spans_every_user(repo: Repo) -> None:
 
 
 async def test_platform_links_all_carries_the_psn_trophy_level(repo: Repo) -> None:
-    """scripts/backfill_psn_levels.py's own way in (#23) — needs to tell an
+    """A link tells an
     already-cached level apart from one that was never cached, per link.
     Found live: the SELECT here never selected the column at all, so every
     link came back with psn_trophy_level=None regardless of the real value."""

@@ -1,10 +1,7 @@
 """Fetching one Xbox title's descriptions in both locales (#48).
 
-Shared deliberately: the one-time script (scripts/backfill_descriptions.py)
-and the self-healing poller (poller/description_backfill.py) do the same
-thing at different paces, and a second copy of "ask for ru, ask for en, hand
-both to bilingual_descriptions" is exactly the kind of duplication that
-drifts apart the first time one of them is fixed.
+What the self-healing poller (poller/description_backfill.py) does for each
+title: ask for ru, ask for en, hand both to bilingual_descriptions.
 
 Xbox only, because Xbox is the only platform whose *backfill* misses this.
 Steam and PSN both route their first-time history through the same function

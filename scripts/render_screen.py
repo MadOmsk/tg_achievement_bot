@@ -283,17 +283,6 @@ async def _digest(ctx: Context) -> Screen:
 # ----------------------------------------------------------------- the admin panel
 
 
-class _NoUsage:
-    """The card's API-usage line reads a rate limiter's in-memory counters,
-    which belong to the running bot's own process — this script has none.
-    Rendering it as "нет данных" is what the real card shows right after a
-    restart, and is honest; inventing numbers for a mockup would not be."""
-
-    @staticmethod
-    def api_usage() -> list[tuple[int, int, float]]:
-        return []
-
-
 def _credentials(ctx: Context) -> AdminCredentials:
     cipher = TokenCipher(ctx.settings.fernet_key.get_secret_value())
     steam_key = ctx.settings.steam_api_key
@@ -310,9 +299,7 @@ def _credentials(ctx: Context) -> AdminCredentials:
 
 @screen("admin-home")
 async def _admin_home(ctx: Context) -> Screen:
-    text, markup = await render_admin_home(
-        ctx.repo, _NoUsage(), _NoUsage(), _credentials(ctx), locale=ctx.locale
-    )
+    text, markup = await render_admin_home(ctx.repo, _credentials(ctx), locale=ctx.locale)
     return Screen(text, markup)
 
 

@@ -25,8 +25,7 @@ is one: Xbox rotates a per-user refresh token and Microsoft invalidates the
 previous one, so two processes refreshing the same person log that person
 out. `XboxAuthService`'s guard is an `asyncio.Lock` — it serializes callers
 inside one process and does nothing across two. Running here puts this under
-that lock. `scripts/backfill_rarity.py` is the same walk for an operator who
-wants it finished in one sitting, and it requires the bot stopped.
+that lock.
 """
 
 from __future__ import annotations

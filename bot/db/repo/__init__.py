@@ -150,7 +150,7 @@ from bot.db.repo._tx import GatedConnection, transaction
 
 __all__ = [
     "APP_SCHEMA_PATH",
-    # Re-exported for scripts/backfill_*.py and the odd test that reaches
+    # Re-exported for the odd script or test that reaches
     # for a constant directly rather than through a Repo method — same
     # names, same values as before the split.
     "DEFAULT_APP_SETTINGS",

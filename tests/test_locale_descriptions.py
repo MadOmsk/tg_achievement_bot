@@ -118,7 +118,7 @@ async def test_cached_descriptions_returns_nothing_for_no_keys(repo: Repo) -> No
 
 
 async def test_uncached_descriptions_lists_only_what_is_missing(repo: Repo) -> None:
-    """scripts/backfill_descriptions.py's whole input (#48)."""
+    """What was stored before the catalog had descriptions (#48)."""
     await repo.ensure_user(1)
     await repo.link_xbox_account(await repo.person_id(1), "xuid-1", "Mad Omsk", None)
     await repo.insert_new_achievements(

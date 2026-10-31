@@ -210,8 +210,7 @@ class _DescriptionsRepo:
 
     async def uncached_descriptions(self) -> list[tuple[str, str, str, int, str]]:
         """Every stored achievement that has a description but no cache entry
-        — the whole input of the one-time backfill
-        (scripts/backfill_descriptions.py, #48).
+        (#48).
 
         Returns (platform, title_id, achievement_id, person_id, external_id) so
         the caller can group by title and still know whose credentials can be
@@ -256,8 +255,7 @@ class _DescriptionsRepo:
         the title would be given up for the rest of the process while somebody
         else could have answered. A title only dead logins hold waits. Not
         so on PSN, where one account's answer lists only its own trophies
-        unless asked for the whole list (scripts/backfill_descriptions.py
-        does, #50).
+        unless asked for the whole list (#50).
         """
         placeholders = ", ".join("?" * len(platforms))
         cursor = await self._conn.execute(
