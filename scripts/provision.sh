@@ -130,10 +130,14 @@ fi
 nginx -t
 systemctl reload nginx
 
-log "postgresql: localhost only, not used by the bots yet (#234)"
-grep -q "^listen_addresses = 'localhost'" /etc/postgresql/16/main/postgresql.conf ||
-  echo "listen_addresses = 'localhost'" >> /etc/postgresql/16/main/postgresql.conf
-systemctl enable --now postgresql
+log "postgresql (#234)"
+bash "$REPO/scripts/provision-postgres.sh"
+
+log "daily backup"
+install -m 644 "$REPO/deploy/systemd/unlocked-backup.service" /etc/systemd/system/
+install -m 644 "$REPO/deploy/systemd/unlocked-backup.timer" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now unlocked-backup.timer
 
 log "done"
 ss -tlnp | grep -E ':(22|22022|80|443|5432) '

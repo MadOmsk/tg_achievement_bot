@@ -3168,9 +3168,11 @@ journalctl -u xbox-bot -f
 the checkout on every deploy) is the only thing the CI `deploy` user may run as root.
 It:
 
-1. backs up the database **every** time (`data/backups/`) and keeps only the
-   newest of its own copies — **8 on prod, 5 on the test server** (owner,
-   2026-10-23: kept forever they filled the disk); a copy named by hand stays;
+1. backs up **every** time (`data/backups/`, `pg_dump` of the bot's schema and
+   `games`) and keeps only the newest of its own copies — **8 on prod, 5 on the
+   test server** (owner, 2026-10-23: kept forever they filled the disk); a copy
+   named by hand stays. `xbox-deploy backup` does the same for both bots daily
+   (`deploy/systemd/unlocked-backup.timer`);
 2. `git fetch --prune` and `git merge --ff-only` — never a robot's merge commit;
 3. reinstalls dependencies only when `pyproject.toml` changed;
 4. unpacks the Mini App CI built (built there, not on the 300 MB box);
@@ -3186,20 +3188,16 @@ is started again on any failure.** The script reinstalls itself from the checkou
 but the run that installs it finishes as the old one: a change to it takes effect
 from the next deploy.
 
-**`xbox-deploy games split|join|leave [--dry-run]`** moves the bots onto the
-shared games database (#229), run by hand on the VPS, each bot it touches
-stopped and verified after (`scripts/games_db.py`, which copies the database
-into `backups/` first): `split` makes the test server's catalog the shared file,
-`join` has prod take it — what only prod knew of its lists is added, a list the
-shared file has no version for keeps its stand-in, linked into a game after —,
-`leave` copies the shared catalog back into both and parts them. The dry run
-does it on copies in a temporary folder. A deploy's backup copies the games file
-too (`<copy>.games.db`, pruned with its copy).
+**PostgreSQL on the VPS** (#234) is `scripts/provision-postgres.sh` and
+`deploy/postgresql/`: database `unlocked`, listening on localhost only; roles
+`unlocked_prod` and `unlocked_test`, each with its own schema and its password only
+in that bot's env file; `games` owned by `unlocked_games`, a role both are members
+of, and whatever is made there is handed to it by an event trigger, so either bot
+can migrate what the other made.
 **Prod's unit is `ProtectSystem=strict`**: it may write only the folders it
-names, so the shared ones are a drop-in,
-`/etc/systemd/system/xbox-bot.service.d/shared.conf` (`ReadWritePaths=
-/srv/unlocked-games /srv/unlocked-media`); a new shared folder is added there, or
-prod fails with "attempt to write a readonly database".
+names, so the shared media folder is a drop-in,
+`/etc/systemd/system/xbox-bot.service.d/shared.conf`; a new shared folder is added
+there, or prod fails with a read-only error.
 
 GitHub holds four secrets (SSH key, host, user, host fingerprint); `.env`, `FERNET_KEY`
 and databases never go near it.

@@ -9,7 +9,7 @@
 # already in the repository", not "root on the box".
 #
 #   xbox-deploy test|prod [/path/to/spa.tgz]
-#   xbox-deploy games split|join|leave [--dry-run]
+#   xbox-deploy backup
 #
 # A deploy (test or prod) does these things, in this order and for these
 # reasons:
@@ -27,14 +27,11 @@
 #      systemctl says the unit was asked to start, not that the bot came up.
 #      The log line does.
 #
-# `games` moves the bots onto one games database (#229; owner, 2026-10-28),
-# with each bot it touches stopped (scripts/games_db.py, which copies the
-# database into backups/ first):
-#   split  the test server's catalog becomes the shared file ($GAMES_DB);
-#   join   prod takes the shared file, adding what only it knew of its lists;
-#   leave  both copy the shared catalog back and part, for a rework of the
-#          games database that cannot be shared (CLAUDE.md).
-# `--dry-run` does it on copies in a temporary folder, no bot stopped.
+# `backup` is the daily copy (deploy/systemd/unlocked-backup.timer): every bot
+# already on PostgreSQL, pruned with the deploys' copies.
+#
+# While the bots move to PostgreSQL (#234), a bot whose schema has no tables yet
+# is still on SQLite, and is backed up and brought in as before.
 #
 # Install on the server:
 #   install -m 0755 scripts/xbox-deploy.sh /usr/local/bin/xbox-deploy
@@ -43,14 +40,12 @@
 
 set -euo pipefail
 
-MODE="${1:?usage: xbox-deploy test|prod [spa.tgz] | xbox-deploy games split|join|leave [--dry-run]}"
+MODE="${1:?usage: xbox-deploy test|prod [spa.tgz] | xbox-deploy backup}"
 
 RUN_AS=botsvc
 PROD_DIR=/opt/xbox_achievement_bot
 TEST_DIR=/opt/xbox_bot_test
-# The games database both bots attach (#229).
-GAMES_DIR=/srv/unlocked-games
-GAMES_DB=$GAMES_DIR/games.db
+DATABASE=unlocked
 
 say() { echo "==> $*"; }
 fail() {
@@ -59,7 +54,7 @@ fail() {
 }
 
 # One run at a time, whatever it is: a test deploy, a prod deploy and a
-# catalog transfer all stop and start bots on this one box, and CI's
+# backup all stop bots or read them on this one box, and CI's
 # concurrency groups only keep each workflow from overlapping with itself.
 exec 9>/run/xbox-deploy.lock
 flock -w 1800 9 || fail "another xbox-deploy is still running"
@@ -67,7 +62,6 @@ flock -w 1800 9 || fail "another xbox-deploy is still running"
 # Bots this run stopped, started again whatever happens: a failure between
 # a stop and its start must never leave a bot down.
 STOPPED=()
-WORK=""
 on_exit() {
   local rc=$?
   local service
@@ -75,9 +69,6 @@ on_exit() {
     echo "!! starting $service again after a failure" >&2
     systemctl start "$service" || true
   done
-  if [ -n "$WORK" ]; then
-    rm -rf -- "$WORK"
-  fi
   exit "$rc"
 }
 trap on_exit EXIT
@@ -146,15 +137,62 @@ else:
 PY
 }
 
+schema_has_tables() {
+  [ -n "$(cd / && sudo -u postgres psql -d "$DATABASE" -Atc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = '$1' LIMIT 1" 2>/dev/null)" ]
+}
+
+# pg_dump of a bot's schema and the catalog, as postgres: no password on a
+# command line. Written beside its name first, so a dump cut short is no copy.
+dump_schema() {  # schema target
+  (cd / && sudo -u postgres pg_dump --format=custom --schema="$1" --schema=games "$DATABASE") |
+    sudo -u "$RUN_AS" tee "$2.part" >/dev/null
+  sudo -u "$RUN_AS" mv "$2.part" "$2"
+}
+
+# Only the newest are kept (owner, 2026-10-23: every deploy's copy, kept forever,
+# had filled the disk to 96%), and only this script's own, named
+# <name>-YYYYMMDD-HHMMSS; a copy named by hand stays. A SQLite copy's games file
+# (<copy>.games.db) goes with it.
+prune_backups() {  # name keep
+  # shellcheck disable=SC2012  # names this script chose
+  ls -1t data/backups |
+    { grep -E "^$1-[0-9]{8}-[0-9]{6}\.(db|dump)$" || true; } |
+    tail -n +$(($2 + 1)) |
+    while read -r old; do
+      sudo -u "$RUN_AS" rm -f -- "data/backups/$old" "data/backups/${old%.db}.games.db"
+      say "pruned old backup: $old"
+    done
+}
+
+backup_all() {
+  local app_dir schema keep
+  while read -r app_dir schema keep; do
+    if ! schema_has_tables "$schema"; then
+      say "$schema: not on PostgreSQL yet"
+      continue
+    fi
+    cd "$app_dir"
+    sudo -u "$RUN_AS" mkdir -p data/backups
+    dump_schema "$schema" "data/backups/$schema-$(date -u +%Y%m%d-%H%M%S).dump"
+    prune_backups "$schema" "$keep"
+    say "$schema: backed up"
+  done <<EOF
+$PROD_DIR prod 8
+$TEST_DIR test 5
+EOF
+}
+
 deploy() {
   local target="$1" spa_archive="${2:-}"
-  local app_dir service branch db web_root keep_backups
+  local app_dir service branch db schema web_root keep_backups
   case "$target" in
     prod)
       app_dir=$PROD_DIR
       service=xbox-bot
       branch=main
       db=data/bot.db
+      schema=prod
       web_root=/var/www/xbox-mini
       keep_backups=8
       ;;
@@ -163,6 +201,7 @@ deploy() {
       service=xbox-bot-test
       branch=prerelease
       db=data/test.db
+      schema=test
       web_root=/var/www/xbox-mini-test
       keep_backups=5
       ;;
@@ -170,25 +209,21 @@ deploy() {
 
   cd "$app_dir"
 
-  say "$target: backing up $db"
   sudo -u "$RUN_AS" mkdir -p data/backups
-  local backup
-  backup="data/backups/$(basename "$db" .db)-$(date -u +%Y%m%d-%H%M%S).db"
-  copy_db "$db" "$backup"
+  local backup name
+  if schema_has_tables "$schema"; then
+    name=$schema
+    backup="data/backups/$name-$(date -u +%Y%m%d-%H%M%S).dump"
+    say "$target: backing up schemas $schema and games"
+    dump_schema "$schema" "$backup"
+  else
+    name="$(basename "$db" .db)"
+    backup="data/backups/$name-$(date -u +%Y%m%d-%H%M%S).db"
+    say "$target: backing up $db"
+    copy_db "$db" "$backup"
+  fi
   say "backup: $backup"
-
-  # Only the newest backups are kept (owner, 2026-10-23: every deploy's copy,
-  # kept forever, had filled the disk to 96%). Only this script's own copies
-  # (<db>-YYYYMMDD-HHMMSS.db) are pruned; a copy named by hand stays.
-  # A copy's games file (<copy>.games.db) goes with it.
-  # shellcheck disable=SC2012  # names this script chose
-  ls -1t data/backups |
-    { grep -E "^$(basename "$db" .db)-[0-9]{8}-[0-9]{6}\.db$" || true; } |
-    tail -n +$((keep_backups + 1)) |
-    while read -r old; do
-      sudo -u "$RUN_AS" rm -f -- "data/backups/$old" "data/backups/${old%.db}.games.db"
-      say "pruned old backup: $old"
-    done
+  prune_backups "$name" "$keep_backups"
 
   local before_pyproject
   before_pyproject="$(sha256sum pyproject.toml | cut -d' ' -f1)"
@@ -238,7 +273,12 @@ deploy() {
   local catalog_ok=1
   if [ -f scripts/catalog_files.py ]; then
     say "bringing in catalog/ (labels and weights)"
-    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_files import --db "$db" ||
+    # The checkout's own way of naming its database, whichever it now is.
+    local where=(--db "$db")
+    if [ -f bot/db/postgres.py ]; then
+      where=(--schema "$schema")
+    fi
+    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.catalog_files import "${where[@]}" ||
       catalog_ok=0
   fi
   start_bot "$service" || exit 1
@@ -248,52 +288,11 @@ deploy() {
   say "$target deployed"
 }
 
-games() {
-  local command="${1:-}" dry_run="${2:-}"
-  case "$command" in
-    split | join | leave) ;;
-    *)
-      echo "usage: xbox-deploy games split|join|leave [--dry-run]" >&2
-      exit 2
-      ;;
-  esac
-  case "$dry_run" in
-    "" | --dry-run) ;;
-    *)
-      echo "usage: xbox-deploy games split|join|leave [--dry-run]" >&2
-      exit 2
-      ;;
-  esac
-  mkdir -p "$GAMES_DIR"
-  chown "$RUN_AS:$RUN_AS" "$GAMES_DIR"
-
-  # app_dir, service and database of each bot the command touches.
-  local -a bots
-  case "$command" in
-    split) bots=("$TEST_DIR xbox-bot-test data/test.db") ;;
-    join) bots=("$PROD_DIR xbox-bot data/bot.db") ;;
-    leave) bots=("$TEST_DIR xbox-bot-test data/test.db" "$PROD_DIR xbox-bot data/bot.db") ;;
-  esac
-  local bot app_dir service db
-  for bot in "${bots[@]}"; do
-    read -r app_dir service db <<<"$bot"
-    cd "$app_dir"
-    if [ -n "$dry_run" ]; then
-      sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.games_db "$command"         --db "$db" --games "$GAMES_DB" --dry-run
-      continue
-    fi
-    stop_bot "$service"
-    sudo -u "$RUN_AS" .venv/bin/python -X utf8 -m scripts.games_db "$command"       --db "$db" --games "$GAMES_DB"
-    start_bot "$service" || exit 1
-  done
-  say "games $command${dry_run:+ (dry run)} done"
-}
-
 case "$MODE" in
   test | prod) deploy "$MODE" "${2:-}" ;;
-  games) games "${2:-}" "${3:-}" ;;
+  backup) backup_all ;;
   *)
-    echo "unknown mode: $MODE (expected test, prod or games)" >&2
+    echo "unknown mode: $MODE (expected test, prod or backup)" >&2
     exit 2
     ;;
 esac

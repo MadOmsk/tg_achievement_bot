@@ -1,0 +1,8 @@
+[Unit]
+Description=The bots' daily database backup
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/xbox-deploy backup
