@@ -27,6 +27,8 @@ admin-setting-email-provider-daily = Лимит почтового сервис�
 admin-setting-email-sends-total = Кодов на почту всего в час
 admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
+admin-setting-translation-batch = Перевод: игр в пачке (0 — выкл)
+admin-setting-translation-interval = Перевод: раз в сколько минут
 admin-setting-octopus-per-tick = Сборка игр осьминогом (в минуту)
 
 # The settings registry (#176, services/admin_registry.py): one label per

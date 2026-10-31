@@ -1244,9 +1244,19 @@ async def handle_game_details(request: web.Request) -> web.Response:
         else:
             xbox_groups = {}
 
+    # The list's descriptions on their way: the app blurs what has no Russian yet.
+    translating = False
+    translator = collector.translator if collector is not None else None
+    list_game = await repo.game_of_list(platform, title_id) if translator is not None else None
+    if list_game is not None:
+        translating = (
+            await translator.pending(list_game, await _user_locale(repo, user.person_id))
+        ).achievements
+
     return web.json_response(
         {
             "ok": True,
+            "translating": translating,
             "viewed": viewed_json,
             "platform": platform,
             "title_id": title_id,

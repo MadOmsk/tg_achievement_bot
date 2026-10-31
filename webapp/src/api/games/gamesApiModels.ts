@@ -39,6 +39,8 @@ export type GameGroup = {
 
 export type GameDetails = {
   ok: boolean;
+  /** The list's descriptions are on their way: what has no Russian shows blurred. */
+  translating?: boolean;
   /** Whose progress this is, when not the viewer's own. */
   viewed?: { person_id: number; name: string } | null;
   platform: string;

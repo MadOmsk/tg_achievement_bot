@@ -161,7 +161,7 @@ export function AchRow({
         )}
         <span className="ach-name clamp-2">{veiled ? tr("secretAchievement") : ach.name}</span>
         {showDescription && (veiled || ach.description) && (
-          <span className="ach-desc clamp-2">{veiled ? tr("secretTapToReveal") : ach.description}</span>
+          <span className={`ach-desc clamp-2${ach.translating && !veiled ? " translating" : ""}`}>{veiled ? tr("secretTapToReveal") : ach.description}</span>
         )}
         <AchMarks ach={ach} plain={plain} date={date} extra={extra} noWorth={when !== undefined} />
       </span>

@@ -1,19 +1,11 @@
-"""Russian for the games database the moment something was missed (owner,
-2026-10-30): the developers' Steam posts, the guides' tips and the games'
-descriptions.
+"""The translators' queue (owner, 2026-10-31): Russian for whatever nobody has
+opened yet, in batches, at one pace.
 
-All are translated as they come — a post when the bot reads it
-(`NewsTranslator`, from `SteamExtras.refresh_patches`), a game's tips when
-they are worked out (`GuideTranslator`), a game's description when the store
-collection or the octopus collects it (`GameTranslator`). This walker is for
-the rest, as fast as the model answers, for up to `TICK_SECONDS` a tick, the
-three side by side: the posts kept before, the newest first; the games'
-tips; and the games by id, round and round, translating those whose
-description has no Russian — one missed, or whose English changed, is found
-on the next pass, and a pass that found nothing rests an hour. Once the
-backlog is done a tick finds nothing and asks nobody. Nothing is translated
-when a page is opened, so no page waits for it. No Anthropic key: nothing
-happens.
+Every `translation_interval_minutes` it takes `translation_batch_games` games
+(/admin → Таймеры; 0 is off), those played here first, each whole
+(`GameTranslator`), and as many of the Steam posts and guides kept before. A game
+opened in the Mini App or just collected does not wait for it. A pass that found
+nothing rests an hour. No Anthropic key: nothing happens.
 """
 
 from __future__ import annotations
@@ -28,15 +20,12 @@ if TYPE_CHECKING:
     from bot.services.guide_translations import GuideTranslator
     from bot.services.news_translations import NewsTranslator
 
-# A tick works through the backlog for this long, then leaves the rest to the
-# next: the model, not our database, is what takes the time.
-TICK_SECONDS = 50
-NEWS_PER_STEP = 2
-GUIDE_GAMES_PER_STEP = 1
-GAMES_READ_PER_STEP = 40
-# A whole pass over the games that asked the model nothing rests this long.
+BATCH_KEY = "translation_batch_games"
+DEFAULT_BATCH = 20
+INTERVAL_KEY = "translation_interval_minutes"
+DEFAULT_INTERVAL = 5
+# A whole pass over the games that found nothing rests this long.
 IDLE_PASS_REST_SECONDS = 3600
-CURSOR_KEY = "game_translation_cursor"
 
 
 class Translations:
@@ -47,46 +36,48 @@ class Translations:
         self._news = news
         self._guides = guides
         self._games = games
-        self._pass_calls = 0
+        self._queue: list[int] = []
+        self._in_a_pass = False
+        self._pass_found = False
+        self._next_batch = 0.0
         self._rest_until = 0.0
 
     async def tick(self) -> None:
-        # The three backlogs side by side, each until it is empty or time is up.
-        deadline = time.monotonic() + TICK_SECONDS
-        await asyncio.gather(
-            self._news_backlog(deadline),
-            self._guides_backlog(deadline),
-            self._descriptions(deadline),
-        )
-
-    async def _news_backlog(self, deadline: float) -> None:
-        while time.monotonic() < deadline:
-            if not await self._news.translate(limit=NEWS_PER_STEP):
-                return
-
-    async def _guides_backlog(self, deadline: float) -> None:
-        while time.monotonic() < deadline:
-            if not await self._guides.translate_some(GUIDE_GAMES_PER_STEP):
-                return
-
-    async def _descriptions(self, deadline: float) -> None:
-        if time.monotonic() < self._rest_until:
+        now = time.monotonic()
+        batch = await self._repo.get_int_setting(BATCH_KEY, DEFAULT_BATCH)
+        if batch <= 0 or now < self._next_batch:
             return
-        cursor = await self._repo.get_int_setting(CURSOR_KEY, 0)
-        while time.monotonic() < deadline:
-            game_ids = await self._repo.game_ids_after(cursor, GAMES_READ_PER_STEP)
-            if not game_ids:
-                # A pass done: the next starts over, after a rest when this
-                # one found nothing to translate.
-                cursor = 0
-                if self._pass_calls == 0:
+        interval = await self._repo.get_int_setting(INTERVAL_KEY, DEFAULT_INTERVAL)
+        self._next_batch = now + interval * 60
+        await self.batch(batch, batch)
+
+    async def batch(self, games: int, posts: int) -> dict[str, int]:
+        """One batch; how much of each it took."""
+        taken, guides, news = await asyncio.gather(
+            self._game_batch(games),
+            self._guides.translate_some(posts),
+            self._news.translate(limit=posts),
+        )
+        return {"games": taken, "guides": guides, "posts": news}
+
+    async def _game_batch(self, games: int) -> int:
+        if time.monotonic() < self._rest_until:
+            return 0
+        chosen: list[int] = []
+        while len(chosen) < games:
+            if not self._queue:
+                if self._in_a_pass and not self._pass_found:
+                    self._in_a_pass = False
                     self._rest_until = time.monotonic() + IDLE_PASS_REST_SECONDS
-                self._pass_calls = 0
-                break
-            for game_id in game_ids:
-                if time.monotonic() >= deadline:
                     break
-                if await self._games.translate(game_id):
-                    self._pass_calls += 1
-                cursor = game_id
-        await self._repo.set_app_setting(CURSOR_KEY, str(cursor))
+                self._queue = await self._repo.games_to_translate_first()
+                self._in_a_pass = True
+                self._pass_found = False
+                if not self._queue:
+                    break
+            game_id = self._queue.pop(0)
+            if await self._games.is_due(game_id):
+                chosen.append(game_id)
+                self._pass_found = True
+        await asyncio.gather(*(self._games.translate(game_id) for game_id in chosen))
+        return len(chosen)

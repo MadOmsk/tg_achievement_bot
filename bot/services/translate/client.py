@@ -8,6 +8,7 @@ choice already made for Steam and Xbox Live, both raw HTTP too.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -43,11 +44,21 @@ _LANGUAGE_NAME = {"ru": "Russian", "en": "English"}
 # shares the ceiling), so a reply stays well under this.
 _MAX_OUTPUT_TOKENS = 8192
 _BATCH_SIZE = 40
+# ...and at most this much text: forty long descriptions are not forty short
+# ones. A reply cut off anyway is split and asked again, never asked whole.
+_BATCH_CHARS = 8000
+# A game's list goes out in several calls at once: it is what makes a page open
+# quickly, and costs what one after another would.
+_BATCH_CALLS_AT_ONCE = 4
 
 
 class AnthropicApiError(Exception):
     """A request to the Anthropic API failed for a reason unrelated to the
     key itself (network, rate limit, malformed response, ...)."""
+
+
+#: What this process has spent, for a script that measures a batch.
+spent_tokens = {"input": 0, "output": 0}
 
 
 def _note(response: httpx.Response) -> None:
@@ -57,6 +68,8 @@ def _note(response: httpx.Response) -> None:
     if response.status_code == 200:
         try:
             usage = response.json().get("usage") or {}
+            spent_tokens["input"] += int(usage.get("input_tokens") or 0)
+            spent_tokens["output"] += int(usage.get("output_tokens") or 0)
             spent = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
         except (ValueError, AttributeError, TypeError):
             spent = 0
@@ -154,9 +167,10 @@ async def translate_descriptions(
     """Translate a batch of achievement *descriptions* — never names, never
     called for those (2026-09-09 user request) — in one call, keyed by
     whatever id the caller wants back (an achievement_id in practice). The
-    caller hands over one whole game; it goes out in calls of `_BATCH_SIZE`
-    descriptions — not one call per achievement (cost), not one per game
-    (a big game's reply did not fit, see `_MAX_OUTPUT_TOKENS`).
+    caller hands over one whole game; it goes out in calls of at most
+    `_BATCH_SIZE` descriptions and `_BATCH_CHARS` characters — not one call per
+    achievement (cost), not one per game (a big game's reply did not fit, see
+    `_MAX_OUTPUT_TOKENS`) —, a few at once.
 
     Returns whatever the model actually translated, keyed the same way —
     never raises on a malformed or partial response, just logs and returns
@@ -167,20 +181,37 @@ async def translate_descriptions(
     """
     if not texts:
         return {}
-    ids = list(texts.keys())
-    result: dict[str, str] = {}
-    # One game's list split into calls of `_BATCH_SIZE`: a chunk that fails
-    # loses only its own descriptions, and no reply outgrows its ceiling.
-    for start in range(0, len(ids), _BATCH_SIZE):
-        chunk = {key: texts[key] for key in ids[start : start + _BATCH_SIZE]}
-        result.update(await _translate_batch(api_key, chunk, target_language=target_language))
-    return result
+    slots = asyncio.Semaphore(_BATCH_CALLS_AT_ONCE)
+
+    async def one(chunk: dict[str, str]) -> dict[str, str]:
+        async with slots:
+            return await _translate_batch(api_key, chunk, target_language=target_language)
+
+    # A chunk that fails loses only its own descriptions.
+    done = await asyncio.gather(*(one(chunk) for chunk in _chunks(texts)))
+    return {key: value for part in done for key, value in part.items()}
+
+
+def _chunks(texts: dict[str, str]) -> list[dict[str, str]]:
+    chunks: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    size = 0
+    for key, text in texts.items():
+        if current and (len(current) >= _BATCH_SIZE or size + len(text) > _BATCH_CHARS):
+            chunks.append(current)
+            current, size = {}, 0
+        current[key] = text
+        size += len(text)
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 async def _translate_batch(
     api_key: str, texts: dict[str, str], *, target_language: str
 ) -> dict[str, str]:
-    """One call: at most `_BATCH_SIZE` descriptions, all or nothing."""
+    """One call, all or nothing; a reply cut off at its ceiling goes again in
+    two halves, since asking the same again would only be paid for again."""
     language = _LANGUAGE_NAME[target_language]
     # Numbered plain-text lines, not JSON-in-JSON — asking the model to echo
     # arbitrary ids back verbatim as JSON keys risks it "fixing" or
@@ -196,7 +227,7 @@ async def _translate_batch(
         f"the translations in the same order, nothing else.\n\n{numbered}"
     )
     try:
-        async with httpx.AsyncClient(timeout=_timeout()) as client:
+        async with httpx.AsyncClient(timeout=_long_timeout()) as client:
             response = await client.post(
                 f"{API_BASE}/messages",
                 headers=_headers(api_key),
@@ -219,7 +250,15 @@ async def _translate_batch(
         payload = response.json()
         if payload.get("stop_reason") == "max_tokens":
             log.warning("anthropic translate: reply cut off at %s tokens", _MAX_OUTPUT_TOKENS)
-            return {}
+            if len(ids) == 1:
+                return {}
+            half = len(ids) // 2
+            first = {key: texts[key] for key in ids[:half]}
+            second = {key: texts[key] for key in ids[half:]}
+            return {
+                **await _translate_batch(api_key, first, target_language=target_language),
+                **await _translate_batch(api_key, second, target_language=target_language),
+            }
         content = _text_of(payload)
         translations = json.loads(_strip_json_fence(content))
     except (KeyError, IndexError, ValueError, AttributeError) as exc:
@@ -267,7 +306,7 @@ async def translate_game_description(
         f"nothing else.\n\n{stripped}"
     )
     try:
-        async with httpx.AsyncClient(timeout=_timeout()) as client:
+        async with httpx.AsyncClient(timeout=_long_timeout()) as client:
             response = await client.post(
                 f"{API_BASE}/messages",
                 headers=_headers(api_key),

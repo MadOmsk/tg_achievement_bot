@@ -338,6 +338,22 @@ class _DescriptionsRepo:
             for row in await cursor.fetchall()
         }
 
+    async def catalog_untranslated_descriptions(
+        self, platform: str, title_id: str
+    ) -> dict[str, tuple[str | None, str]]:
+        """The same for a game's whole list, earned or not, from the catalog."""
+        cursor = await self._conn.execute(
+            "SELECT achievement_id, description_ru, description_en FROM title_achievements"
+            " WHERE platform = ? AND title_id = ?"
+            "  AND (description_source IS NULL OR description_source = 'fallback')"
+            "  AND TRIM(COALESCE(description_en, '')) <> ''",
+            (platform, title_id),
+        )
+        return {
+            row["achievement_id"]: (row["description_ru"], row["description_en"])
+            for row in await cursor.fetchall()
+        }
+
     async def cached_descriptions(
         self, keys: list[tuple[str, str, str]]
     ) -> dict[tuple[str, str, str], CachedDescription]:

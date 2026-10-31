@@ -74,6 +74,15 @@ async def _game_id(request: web.Request, repo: Repo) -> int:
     return game
 
 
+async def _translating(collector: Any, game_id: int, locale: str) -> bool:
+    """Whether the game's description is on its way, starting it when not: the
+    page shows the text blurred and asks again."""
+    translator = collector.translator if collector is not None else None
+    if translator is None:
+        return False
+    return (await translator.pending(game_id, locale)).description
+
+
 async def handle_game_page(request: web.Request) -> web.Response:
     from bot.web.mini_api import _may_see_activity, _require_user, _user_locale
 
@@ -238,6 +247,7 @@ async def handle_game_page(request: web.Request) -> web.Response:
             },
             "art": art,
             "description": game_page.description_of(versions, hltb_entry, locale),
+            "translating": await _translating(collector, game_id, locale),
             "genres": game_page.genres_of(versions, hltb_entry),
             "platforms": game_page.platforms_of(versions),
             "screenshots": game_page.screenshots_of(versions),

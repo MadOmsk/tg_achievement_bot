@@ -28,6 +28,18 @@ from bot.poller.service_health import (
     DEFAULT_KEY_CHECK_INTERVAL_MIN,
     KEY_CHECK_INTERVAL_KEY,
 )
+from bot.poller.translations import (
+    BATCH_KEY as TRANSLATION_BATCH_KEY,
+)
+from bot.poller.translations import (
+    DEFAULT_BATCH as DEFAULT_TRANSLATION_BATCH,
+)
+from bot.poller.translations import (
+    DEFAULT_INTERVAL as DEFAULT_TRANSLATION_INTERVAL,
+)
+from bot.poller.translations import (
+    INTERVAL_KEY as TRANSLATION_INTERVAL_KEY,
+)
 
 if TYPE_CHECKING:
     from bot.db.repo import Repo
@@ -247,6 +259,13 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
         "admin-setting-patch-refresh", DEFAULT_PATCH_REFRESH_HOURS, min=1, max=168
     ),
     # How many queued games the octopus assembles a minute (poller/octopus.py).
+    # The translators' queue (poller/translations.py): how many games, how often.
+    TRANSLATION_BATCH_KEY: NumericSetting(
+        "admin-setting-translation-batch", DEFAULT_TRANSLATION_BATCH, min=0, max=200
+    ),
+    TRANSLATION_INTERVAL_KEY: NumericSetting(
+        "admin-setting-translation-interval", DEFAULT_TRANSLATION_INTERVAL, min=1, max=1440
+    ),
     OCTOPUS_PER_TICK_KEY: NumericSetting(
         "admin-setting-octopus-per-tick",
         DEFAULT_OCTOPUS_PER_TICK,

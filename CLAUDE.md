@@ -2127,13 +2127,15 @@ elsewhere in this file still describe the bot.
   and kept with a hash of that English (`versions.description_source = 'llm'`,
   `description_ru_of`; `hltb_entries.summary_ru_of`). A changed English text is
   translated again; a store's own Russian replaces ours; no key leaves it
-  English. **Never when the page is opened** (owner, 2026-10-30): a game is
-  translated as soon as the store collection or the octopus collects it
-  (`GameTranslator.later`), and `poller/translations.py` walks every game by
-  id for what they missed (a pass that finds nothing rests an hour), so no
-  page waits for it. The whole catalog can also be done in one run
-  (`scripts/translate_game_descriptions.py`, beside a running bot; the same
-  choice of text, call and storage).
+  English. **A game is translated whole, by one job with three doors** (owner, 2026-10-31;
+  `services/game_descriptions.py`): its description, every achievement of its lists
+  (a Russian side the catalog holds is only marked), its tips, its newest posts. The
+  doors: a page opened in the Mini App (`pending`: the text shows blurred, `.translating`,
+  and the page asks again; no page waits), the octopus and store collection (`later`),
+  and the queue (`poller/translations.py`: `translation_batch_games`, 20, every
+  `translation_interval_minutes`, 5; /admin → Таймеры; those played here first). The
+  bot's posts wait for their translation instead. What failed rests an hour.
+  `scripts/translate_batch.py` runs a share of the queue and prints its tokens.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,
@@ -2924,7 +2926,7 @@ sent to a chat.
   a tap away. **A post is put into Russian as soon as it is read** (owner,
   2026-10-30; `services/news_translations.py`, `translate.client.translate_news`):
   as soon as `SteamExtras.refresh_patches` saves an app's posts, and the posts
-  kept before by `poller/translations.py`, the newest first, as fast as the
+  kept before by `poller/translations.py`, the newest first, in its batches, as the
   model answers (up to 50 s a tick); the
   links, pictures and the game's own names (maps, weapons, modes, items) kept
   as they are. **A long post goes in parts** of about `NEWS_PART_CHARS`, cut

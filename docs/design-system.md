@@ -213,6 +213,7 @@ done mark and a heart pop (`heart-pop`). Reduced motion keeps only fades.
 | `Wave`, `WaveRing` | progress |
 | `LinkCard` | a way to somewhere else — the game of a post or an achievement, a guide video: picture, title, a line, a round mark of where it goes |
 | `AchTile` (parts) | one achievement as a card of a rail — Home's latest, the hunts, the rare finds; people under it or what it is worth; a rarity flower when asked |
+| `.translating` | a text whose translation is on its way, in place, blurred: the page asks again and the blur goes |
 | `Empty`, skeletons (`.skel`, `MagazineSkel`) | nothing yet; on its way — a skeleton has the shape of what will come, never a spinner in the middle of a screen |
 | `Viewer` (`openImage`) | a picture or a trailer full screen; a list of them — a game's gallery, trailers and pictures together — slides |
 | `RichText` | a post's or a guide's text: paragraphs, lists, links (bare addresses too), pictures, videos |

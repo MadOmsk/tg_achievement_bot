@@ -7,6 +7,8 @@ export type AchView = {
   key: string;
   name: string;
   description: string | null;
+  /** Its Russian is on its way: the text shows blurred until it is in. */
+  translating?: boolean;
   icon: string | null;
   rarity: number | null;
   gamerscore: number | null;

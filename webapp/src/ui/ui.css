@@ -143,6 +143,25 @@
   background: var(--tertiary);
 }
 
+/* A text whose translation is on its way. */
+.translating {
+  filter: blur(4px);
+  user-select: none;
+  animation: translating 1.6s ease-in-out infinite;
+}
+
+@keyframes translating {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .translating {
+    animation: none;
+  }
+}
+
 .wave-loading .wave-on {
   animation: wave-run 1s linear infinite;
 }

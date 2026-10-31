@@ -260,9 +260,10 @@ async def run(settings: Settings) -> None:
     guide_translator = GuideTranslator(repo, anthropic_auth)
     steam_extras.on_guides_saved = guide_translator.later
     store_collector = StoreCollector(repo, psn_auth, steam_auth)
-    # A game's description is put into Russian as soon as it is collected.
-    game_translator = GameTranslator(repo, anthropic_auth)
+    # A game is put into Russian as soon as it is collected, or opened.
+    game_translator = GameTranslator(repo, anthropic_auth, guide_translator, news_translator)
     store_collector.on_games = game_translator.later
+    store_collector.translator = game_translator
     fetcher = Fetcher(
         repo,
         client,

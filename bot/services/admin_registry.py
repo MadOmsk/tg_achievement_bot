@@ -108,6 +108,8 @@ _NUMERIC_GROUPS = {
     "monthly_summary_delay_minutes": "timers",
     "patch_refresh_hours": "timers",
     "octopus_entries_per_tick": "timers",
+    "translation_batch_games": "timers",
+    "translation_interval_minutes": "timers",
     "email_codes_per_client_hour": "mail",
     "email_codes_total_hour": "mail",
     "email_checks_per_client_10min": "mail",

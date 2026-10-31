@@ -83,6 +83,13 @@ export function Achievements({
   }, [data, platform, titleId]);
 
   const d = list.data;
+  // The list's descriptions on their way: asked again until they are in.
+  const translating = d?.translating ?? false;
+  useEffect(() => {
+    if (!translating) return;
+    const id = window.setTimeout(list.reload, 3000);
+    return () => window.clearTimeout(id);
+  });
   const [filter, setFilter] = useState<Filter | null>(null);
   const earnedCount = d?.achievements.filter((a) => a.is_unlocked).length ?? 0;
   const shown: Filter = filter ?? (earnedCount > 0 ? "earned" : "left");
@@ -115,6 +122,7 @@ export function Achievements({
 
   const row = (a: GameAchievement) => {
     const ach = achOfList(a, { platform, titleId, game: gameName, icon: gamePic, gameId: d?.game?.game_id }, owner, locale);
+    if (translating && !a.description_ru) ach.translating = true;
     const hasTip = Boolean(guides?.tips[a.achievement_id]);
     const hasVideo = Boolean(guides?.videos?.[a.achievement_id]?.length);
     return (

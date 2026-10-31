@@ -1,17 +1,18 @@
-"""A game's description in Russian, translated once (owner, 2026-10-28; #230).
+"""A game put into Russian whole, one job wherever it comes from.
 
-The achievements' rule (`translate/descriptions.py`) for a game's story: a
-store's own Russian is kept as `native`; with none, the English a Russian
-reader is shown is translated by Haiku and kept beside a hash of that
-English — a version's as `llm` (`versions.description_ru_of`),
-HowLongToBeat's as `summary_ru` (`summary_ru_of`). An unchanged text is never
-paid for twice; a changed one is translated again. No key, or a failed call:
-the English stays, and it is tried again later.
+Its description (a store's own Russian is kept as `native`; with none, the English
+a Russian reader is shown is translated and kept beside a hash of that English: a
+version's as `llm`, HowLongToBeat's as `summary_ru`; #230), its achievements'
+descriptions (`translate/descriptions.py`: a Russian side the catalog already holds
+only gets marked, unpaid), its tips and its newest posts.
 
-**Never when a page is opened** (owner, 2026-10-30): the page must not wait
-for it. A game is translated right after it is collected — by the store
-collection or the octopus (`later`) — and `poller/translations.py` walks
-every game for whatever that missed.
+**One job, three doors** (owner, 2026-10-31): the queue (`poller/translations.py`),
+the octopus and store collection (`later`), and a page opened in the Mini App
+(`pending`), which shows the text blurred and asks again. The page never waits, and
+nothing is translated twice: a game being worked on is not started again. The bot's
+own messages have another rule: a post waits for its translation before it goes out.
+
+No key, or a failed call: the English stays, and the game rests an hour.
 """
 
 from __future__ import annotations
@@ -20,70 +21,164 @@ import asyncio
 import logging
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from bot.services.game_page import text_hash, to_translate
 from bot.services.translate.client import translate_game_description
+from bot.services.translate.descriptions import bilingual_descriptions
 
 if TYPE_CHECKING:
     from bot.db.repo import Repo
+    from bot.services.guide_translations import GuideTranslator
+    from bot.services.news_translations import NewsTranslator
     from bot.services.translate.auth import AnthropicAuth
 
 log = logging.getLogger(__name__)
 
-# A text the model could not translate rests this long before another try.
+# A game the model could not finish rests this long before another try.
 RETRY_SECONDS = 3600
+# Games worked on at once, whoever asked; each sends a few calls at once itself.
+GAMES_AT_ONCE = 5
+# A game's newest posts go with it: what its page shows.
+POSTS_WITH_A_GAME = 5
+# A Russian reader's language: the only one anything is translated for here.
+READER_LOCALE = "ru"
+
+
+@dataclass(frozen=True)
+class Pending:
+    """What a page should show blurred."""
+
+    description: bool = False
+    achievements: bool = False
 
 
 class GameTranslator:
-    def __init__(self, repo: Repo, anthropic_auth: AnthropicAuth | None) -> None:
+    def __init__(
+        self,
+        repo: Repo,
+        anthropic_auth: AnthropicAuth | None,
+        guides: GuideTranslator | None = None,
+        news: NewsTranslator | None = None,
+    ) -> None:
         self._repo = repo
         self._auth = anthropic_auth
+        self._guides = guides
+        self._news = news
         # What is being translated now, so two callers pay once.
         self._running: set[int] = set()
-        self._failed: dict[tuple[str, int], float] = {}
+        self._failed: dict[int, float] = {}
+        self._slots = asyncio.Semaphore(GAMES_AT_ONCE)
         self._tasks: set[asyncio.Task] = set()
 
     def later(self, game_ids: Iterable[int]) -> None:
-        """Translate these games' descriptions in the background."""
+        """Translate these games in the background."""
         if self._auth is None:
             return
         for game_id in game_ids:
             if game_id in self._running:
                 continue
-            task = asyncio.create_task(self.translate(game_id))
+            # Marked here, not in the task: a page asking again a moment later
+            # must find it running.
+            self._running.add(game_id)
+            task = asyncio.create_task(self._run(game_id))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
+    async def pending(self, game_id: int, locale: str) -> Pending:
+        """What of this game is on its way to a reader of `locale`, starting the
+        work when it is not. Nothing when it cannot come: no key, resting."""
+        if locale != READER_LOCALE or self._auth is None or not await self._auth.get_key():
+            return Pending()
+        if time.monotonic() < self._failed.get(game_id, 0):
+            return Pending()
+        found = await self._missing(game_id)
+        if found.description or found.achievements:
+            self.later([game_id])
+        return found
+
+    async def is_due(self, game_id: int) -> bool:
+        """Whether the queue has work here: anything missing, and not resting."""
+        if game_id in self._running or time.monotonic() < self._failed.get(game_id, 0):
+            return False
+        found = await self._missing(game_id)
+        return found.description or found.achievements
+
     async def translate(self, game_id: int) -> bool:
-        """Translate the game's description when it has no Russian one; True
-        when the model was asked."""
+        """The game whole, now; True when anything was missing."""
         if self._auth is None or game_id in self._running:
             return False
         self._running.add(game_id)
+        return await self._run(game_id)
+
+    async def _run(self, game_id: int) -> bool:
         try:
-            versions = await self._repo.game_page_versions(game_id)
-            found = await self._repo.game_hltb(game_id)
-            target = to_translate(versions, found["entry"] if found else None)
-            if target is None:
-                return False
-            kind, key, english = target
-            if time.monotonic() < self._failed.get((kind, key), 0):
-                return False
-            api_key = await self._auth.get_key()
-            if not api_key:
-                return False
-            translated = await translate_game_description(api_key, english, target_language="ru")
-            if not translated:
-                self._failed[(kind, key)] = time.monotonic() + RETRY_SECONDS
-                return True
-            if kind == "version":
-                await self._repo.set_version_description_ru(key, translated, text_hash(english))
-            else:
-                await self._repo.set_hltb_summary_ru(key, translated, text_hash(english))
-            return True
+            async with self._slots:
+                if time.monotonic() < self._failed.get(game_id, 0):
+                    return False
+                if not await self._auth.get_key():
+                    return False
+                found = await self._missing(game_id)
+                lists = await self._repo.game_page_lists(game_id)
+                await asyncio.gather(
+                    self._description(game_id),
+                    *(self._achievements(str(r["platform"]), str(r["title_id"])) for r in lists),
+                    *(self._tips_and_posts(str(r["platform"]), str(r["title_id"])) for r in lists),
+                )
+                # What failed stays missing: it rests, or a page would blur it for
+                # ever and the queue would pay for it every pass.
+                left = await self._missing(game_id)
+                if left.description or left.achievements:
+                    self._failed[game_id] = time.monotonic() + RETRY_SECONDS
+                else:
+                    self._failed.pop(game_id, None)
+                return found.description or found.achievements
         except Exception as exc:  # a translation never fails anything else
-            log.warning("game %s description not translated: %r", game_id, exc)
+            log.warning("game %s not translated: %r", game_id, exc)
+            self._failed[game_id] = time.monotonic() + RETRY_SECONDS
             return False
         finally:
             self._running.discard(game_id)
+
+    async def _missing(self, game_id: int) -> Pending:
+        versions = await self._repo.game_page_versions(game_id)
+        found = await self._repo.game_hltb(game_id)
+        description = to_translate(versions, found["entry"] if found else None) is not None
+        achievements = False
+        for row in await self._repo.game_page_lists(game_id):
+            if await self._repo.catalog_untranslated_descriptions(
+                str(row["platform"]), str(row["title_id"])
+            ):
+                achievements = True
+                break
+        return Pending(description, achievements)
+
+    async def _description(self, game_id: int) -> None:
+        versions = await self._repo.game_page_versions(game_id)
+        found = await self._repo.game_hltb(game_id)
+        target = to_translate(versions, found["entry"] if found else None)
+        if target is None:
+            return
+        kind, key, english = target
+        api_key = await self._auth.get_key()
+        translated = await translate_game_description(api_key, english, target_language="ru")
+        if not translated:
+            return
+        if kind == "version":
+            await self._repo.set_version_description_ru(key, translated, text_hash(english))
+        else:
+            await self._repo.set_hltb_summary_ru(key, translated, text_hash(english))
+
+    async def _achievements(self, platform: str, title_id: str) -> None:
+        pending = await self._repo.catalog_untranslated_descriptions(platform, title_id)
+        if pending:
+            await bilingual_descriptions(self._repo, self._auth, platform, title_id, pending)
+
+    async def _tips_and_posts(self, platform: str, title_id: str) -> None:
+        if self._guides is not None:
+            await self._guides.translate(platform, title_id)
+        if self._news is not None:
+            steam = await self._repo.title_steam(platform, title_id)
+            if steam is not None and steam.steam_appid:
+                await self._news.translate(appid=int(steam.steam_appid), limit=POSTS_WITH_A_GAME)

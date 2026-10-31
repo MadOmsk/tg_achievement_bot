@@ -259,6 +259,19 @@ class _GamePageRepo:
         row = await cursor.fetchone()
         return dict(row) if row else None
 
+    async def games_to_translate_first(self) -> list[int]:
+        """Every game, those played here first, the latest played first."""
+        cursor = await self._conn.execute(
+            "SELECT g.game_id FROM games g LEFT JOIN ("
+            "  SELECT v.game_id, MAX(COALESCE(s.unlocked_at, s.created_at)) AS last_played"
+            "  FROM seen_achievements s"
+            "  JOIN versions v ON v.platform = s.platform AND v.title_id = s.title_id"
+            "  GROUP BY v.game_id"
+            ") played ON played.game_id = g.game_id"
+            " ORDER BY played.last_played DESC NULLS LAST, g.game_id"
+        )
+        return [int(row["game_id"]) for row in await cursor.fetchall()]
+
     async def game_ids_after(self, after: int, limit: int) -> list[int]:
         """Games by id past `after`, for a walk over all of them."""
         cursor = await self._conn.execute(

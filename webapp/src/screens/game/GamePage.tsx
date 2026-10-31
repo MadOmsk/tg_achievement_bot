@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { gameApi, type GameCard, type GameHltb, type GamePage as GamePageData, type GameRef } from "../../api";
 import { useApp } from "../../app/context";
 import { rememberGameArt, useArtTheme } from "../../app/artTheme";
@@ -61,6 +61,13 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
     recall<GamePageData>("game", key),
   );
   const g = page.data;
+  // On its way: asked again until the translation is in, the blur then goes.
+  const translating = g?.translating ?? false;
+  useEffect(() => {
+    if (!translating) return;
+    const id = window.setTimeout(page.reload, 3000);
+    return () => window.clearTimeout(id);
+  });
   // The head takes the gallery's newest picture (owner, 2026-10-29; the
   // server sends them newest first): a frame of the game itself, no title
   // written on it; the store's art when there is none.
@@ -381,7 +388,9 @@ function GameBody({
         <Section title={tr("gpAbout")}>
           {g.description && (
             <>
-              <p className={`gp-story${story ? "" : " clamp-3"}`}>{g.description.text}</p>
+              <p className={`gp-story${story ? "" : " clamp-3"}${g.translating ? " translating" : ""}`}>
+                {g.description.text}
+              </p>
               {g.description.text.length > 180 && (
                 <button type="button" className="gp-more" onClick={() => setStory((v) => !v)}>
                   {story ? tr("gpReadLess") : tr("gpReadMore")}

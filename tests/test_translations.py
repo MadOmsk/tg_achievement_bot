@@ -67,6 +67,7 @@ async def test_the_newest_posts_are_translated_and_a_changed_one_again(
     post = await repo.game_patch(10, "2")
     assert post.title_ru is None
     assert news_text(post, "ru") == "Newer fixes."
+    walker._next_batch = 0
     await walker.tick()
     assert (await repo.game_patch(10, "2")).text_ru == "RU Newer fixes."
 
@@ -87,6 +88,7 @@ async def test_a_failed_post_rests(repo: Repo, monkeypatch: pytest.MonkeyPatch) 
         GameTranslator(repo, _Auth()),
     )
     await walker.tick()
+    walker._next_batch = 0
     await walker.tick()
     assert asked == ["Update 1"]
 

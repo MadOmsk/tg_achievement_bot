@@ -20,7 +20,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from bot.services import edition_media
 from bot.services.admin_settings import STORE_COLLECTION_DEFAULT, STORE_COLLECTION_KEY
@@ -107,6 +107,8 @@ class StoreCollector:
         # Told the games a collection put a list in, so their descriptions
         # are translated (`GameTranslator.later`); the bot sets it, scripts not.
         self.on_games: Callable[[list[int]], None] | None = None
+        # The game's translator, for the Mini App's pages (the same object).
+        self.translator: Any = None
 
     def ensure(self, platform: str, title_id: str, *, reason: str = "published") -> None:
         """Collect the game in the background if anything about it is due —

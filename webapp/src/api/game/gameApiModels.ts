@@ -101,6 +101,8 @@ export type GameEdition = {
 
 export type GamePage = {
   ok: boolean;
+  /** The description is on its way: it shows blurred. */
+  translating?: boolean;
   game: {
     game_id: number;
     name: string;
