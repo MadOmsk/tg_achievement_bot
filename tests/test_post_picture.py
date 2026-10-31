@@ -219,7 +219,9 @@ async def test_the_notification_test_is_one_global_action(repo, settings) -> Non
     from bot.services.admin_actions import AdminContext, Done, Target, available, perform
 
     views = await available(AdminContext(repo, settings), "global", Target(), locale="ru")
-    assert [(v.id, v.target, v.section) for v in views] == [("notification_test", "all", "rules")]
+    assert [(v.id, v.target, v.section) for v in views if v.section == "rules"] == [
+        ("notification_test", "all", "rules")
+    ]
     person = await repo.ensure_user(1, "someone")
     card = await available(AdminContext(repo, settings), "user", Target(person=person), locale="ru")
     assert "notification_test" not in [v.id for v in card]

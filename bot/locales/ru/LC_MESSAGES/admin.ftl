@@ -27,7 +27,13 @@ admin-setting-email-provider-daily = Лимит почтового сервис�
 admin-setting-email-sends-total = Кодов на почту всего в час
 admin-setting-email-checks-client = Проверок кода с одного IP за 10 минут
 admin-setting-patch-refresh = Обновление патчей игр (часы)
-admin-setting-translation-batch = Перевод: игр в пачке (0 — выкл)
+admin-setting-translation-batch = Перевод: игр в пачке
+admin-translation-queue-on = 🌐 Очередь перевода выключена — включить
+admin-translation-queue-on-confirm = Включить очередь перевода? Она сама тратит деньги на модель.
+admin-translation-queue-on-yes = Да, включить
+admin-translation-queue-off = 🌐 Очередь перевода включена — выключить
+admin-translation-queue-now-on = Очередь перевода включена
+admin-translation-queue-now-off = Очередь перевода выключена
 admin-setting-translation-interval = Перевод: раз в сколько минут
 admin-setting-octopus-per-tick = Сборка игр осьминогом (в минуту)
 

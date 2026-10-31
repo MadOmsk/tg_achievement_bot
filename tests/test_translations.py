@@ -47,6 +47,7 @@ async def test_the_newest_posts_are_translated_and_a_changed_one_again(
             _post("3", "x" * (news_translations.MAX_CHARS + 1), "2026-10-30T00:00:00Z"),
         ],
     )
+    await repo.set_app_setting(translations.QUEUE_KEY, "1")
     walker = translations.Translations(
         repo,
         news_translations.NewsTranslator(repo, _Auth()),
@@ -81,6 +82,7 @@ async def test_a_failed_post_rests(repo: Repo, monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(news_translations, "translate_news", fail)
     await repo.save_game_patches(10, [_post("1", "Fixes.", "2026-10-29T00:00:00Z")])
+    await repo.set_app_setting(translations.QUEUE_KEY, "1")
     walker = translations.Translations(
         repo,
         news_translations.NewsTranslator(repo, _Auth()),

@@ -32,6 +32,7 @@ from bot.config import Settings
 from bot.constants import Platform
 from bot.db.repo import ChatTarget, PlatformLink, Repo, User
 from bot.i18n import gettext
+from bot.poller.translations import QUEUE_KEY as TRANSLATION_QUEUE_KEY
 from bot.services import admin_cleanup, custom_avatars, roles
 from bot.services.admin_accounts import AdminAccounts
 from bot.services.admin_cleanup import WIPE_WINDOW_HOURS, Wipe
@@ -301,6 +302,38 @@ class _NotificationTest(_Action):
         return Done(True, _("admin-picture-test-sent", count=sent))
 
 
+class _TranslationQueue(_Action):
+    """The translators' queue on or off (`poller/translations.py`), the
+    super-admin's alone and off by default (owner, 2026-10-31): it spends money
+    with nobody asking. Beside its numbers, in the settings' «Таймеры»."""
+
+    scope, section, order, needs = "global", "timers", 20, "superadmin"
+    turns_on: ClassVar[bool]
+
+    async def available(self, ctx, target, subject):
+        return bool(await ctx.repo.get_int_setting(TRANSLATION_QUEUE_KEY, 0)) != self.turns_on
+
+    def label(self, subject, target, _):
+        return _("admin-translation-queue-on" if self.turns_on else "admin-translation-queue-off")
+
+    async def run(self, ctx, target, subject, locale):
+        await ctx.repo.set_app_setting(TRANSLATION_QUEUE_KEY, "1" if self.turns_on else "0")
+        _ = _translator(locale)
+        word = "on" if self.turns_on else "off"
+        return Done(True, _(f"admin-translation-queue-now-{word}"))
+
+
+class _TranslationQueueOn(_TranslationQueue):
+    id, confirms, turns_on = "translation_queue_on", 1, True
+
+    def confirm(self, step, subject, target, _):
+        return _("admin-translation-queue-on-confirm"), _("admin-translation-queue-on-yes")
+
+
+class _TranslationQueueOff(_TranslationQueue):
+    id, turns_on = "translation_queue_off", False
+
+
 class _Delete(_Action):
     id, scope, danger, confirms, order = "delete", "user", True, 2, 90
     needs = "superadmin"
@@ -510,6 +543,8 @@ ACTIONS: tuple[_Action, ...] = (
     _WipeSystem24h(),
     _WipeSystemAll(),
     _NotificationTest(),
+    _TranslationQueueOn(),
+    _TranslationQueueOff(),
 )
 _BY_ID: dict[tuple[str, str], _Action] = {(a.scope, a.id): a for a in ACTIONS}
 

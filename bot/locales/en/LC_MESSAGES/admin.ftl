@@ -27,7 +27,13 @@ admin-setting-email-provider-daily = The mail service's daily limit
 admin-setting-email-sends-total = Email codes in total an hour
 admin-setting-email-checks-client = Code checks per IP in 10 minutes
 admin-setting-patch-refresh = Game patch refresh (hours)
-admin-setting-translation-batch = Translation: games in a batch (0 is off)
+admin-setting-translation-batch = Translation: games in a batch
+admin-translation-queue-on = 🌐 Translation queue is off — switch on
+admin-translation-queue-on-confirm = Switch the translation queue on? It spends money on the model by itself.
+admin-translation-queue-on-yes = Yes, switch on
+admin-translation-queue-off = 🌐 Translation queue is on — switch off
+admin-translation-queue-now-on = The translation queue is on
+admin-translation-queue-now-off = The translation queue is off
 admin-setting-translation-interval = Translation: every how many minutes
 admin-setting-octopus-per-tick = Games the octopus assembles (a minute)
 

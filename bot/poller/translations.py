@@ -1,8 +1,10 @@
 """The translators' queue (owner, 2026-10-31): Russian for whatever nobody has
 opened yet, in batches, at one pace.
 
-Every `translation_interval_minutes` it takes `translation_batch_games` games
-(/admin → Таймеры; 0 is off), those played here first, each whole
+**Off until a super-admin switches it on** (`translation_queue`, /admin →
+Таймеры): it spends money with nobody asking. On, every
+`translation_interval_minutes` it takes `translation_batch_games` games, those
+played here first, each whole
 (`GameTranslator`), and as many of the Steam posts and guides kept before. A game
 opened in the Mini App or just collected does not wait for it. A pass that found
 nothing rests an hour. No Anthropic key: nothing happens.
@@ -20,6 +22,7 @@ if TYPE_CHECKING:
     from bot.services.guide_translations import GuideTranslator
     from bot.services.news_translations import NewsTranslator
 
+QUEUE_KEY = "translation_queue"
 BATCH_KEY = "translation_batch_games"
 DEFAULT_BATCH = 20
 INTERVAL_KEY = "translation_interval_minutes"
@@ -43,10 +46,12 @@ class Translations:
         self._rest_until = 0.0
 
     async def tick(self) -> None:
-        now = time.monotonic()
-        batch = await self._repo.get_int_setting(BATCH_KEY, DEFAULT_BATCH)
-        if batch <= 0 or now < self._next_batch:
+        if not await self._repo.get_int_setting(QUEUE_KEY, 0):
             return
+        now = time.monotonic()
+        if now < self._next_batch:
+            return
+        batch = await self._repo.get_int_setting(BATCH_KEY, DEFAULT_BATCH)
         interval = await self._repo.get_int_setting(INTERVAL_KEY, DEFAULT_INTERVAL)
         self._next_batch = now + interval * 60
         await self.batch(batch, batch)

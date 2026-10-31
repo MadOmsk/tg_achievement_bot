@@ -2133,7 +2133,9 @@ elsewhere in this file still describe the bot.
   doors: a page opened in the Mini App (`pending`: the text shows blurred, `.translating`,
   and the page asks again; no page waits), the octopus and store collection (`later`),
   and the queue (`poller/translations.py`: `translation_batch_games`, 20, every
-  `translation_interval_minutes`, 5; /admin → Таймеры; those played here first). The
+  `translation_interval_minutes`, 5; those played here first), **off by default, a
+  super-admin's switch** (`translation_queue`, an action beside them in /admin →
+  Таймеры). The
   bot's posts wait for their translation instead. What failed rests an hour.
   `scripts/translate_batch.py` runs a share of the queue and prints its tokens.
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are

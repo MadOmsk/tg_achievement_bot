@@ -261,7 +261,7 @@ NUMERIC_SETTINGS: dict[str, NumericSetting] = {
     # How many queued games the octopus assembles a minute (poller/octopus.py).
     # The translators' queue (poller/translations.py): how many games, how often.
     TRANSLATION_BATCH_KEY: NumericSetting(
-        "admin-setting-translation-batch", DEFAULT_TRANSLATION_BATCH, min=0, max=200
+        "admin-setting-translation-batch", DEFAULT_TRANSLATION_BATCH, min=1, max=200
     ),
     TRANSLATION_INTERVAL_KEY: NumericSetting(
         "admin-setting-translation-interval", DEFAULT_TRANSLATION_INTERVAL, min=1, max=1440

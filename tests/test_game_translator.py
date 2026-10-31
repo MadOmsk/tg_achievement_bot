@@ -163,3 +163,22 @@ async def test_a_reply_cut_off_goes_again_in_halves(monkeypatch: pytest.MonkeyPa
     done = await client.translate_descriptions("k", {"a": "x", "b": "y"}, target_language="ru")
     assert sizes == [2, 1, 1]
     assert done == {"a": "ru", "b": "ru"}
+
+
+async def test_the_queue_is_off_until_switched_on(repo: Repo, _model: list) -> None:
+    from bot.poller import translations
+    from bot.services.guide_translations import GuideTranslator
+    from bot.services.news_translations import NewsTranslator
+
+    await _game_with_a_list(repo)
+    walker = translations.Translations(
+        repo,
+        NewsTranslator(repo, _Auth()),
+        GuideTranslator(repo, _Auth()),
+        GameTranslator(repo, _Auth()),
+    )
+    await walker.tick()
+    assert _model == []
+    await repo.set_app_setting(translations.QUEUE_KEY, "1")
+    await walker.tick()
+    assert _model != []
