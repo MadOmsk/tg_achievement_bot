@@ -16,6 +16,7 @@ import smtplib
 import ssl
 from collections.abc import Awaitable, Callable
 from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Protocol
 
 from bot.config import Settings
@@ -23,6 +24,7 @@ from bot.config import Settings
 log = logging.getLogger(__name__)
 
 SMTP_TIMEOUT_SECONDS = 20
+SENDER_NAME = "Unlocked"
 
 
 class EmailSendError(Exception):
@@ -58,7 +60,9 @@ class SmtpSender:
 
     async def send(self, to: str, subject: str, text: str) -> None:
         message = EmailMessage()
-        message["From"] = self._sender
+        # The name a mailbox shows instead of "no-reply"; `SMTP_FROM` stays a
+        # bare address because push uses it as its contact too.
+        message["From"] = formataddr((SENDER_NAME, self._sender))
         message["To"] = to
         message["Subject"] = subject
         message.set_content(text)

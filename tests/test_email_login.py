@@ -727,6 +727,15 @@ async def test_the_admins_mail_login_is_checked_stored_and_used(repo: Repo, sett
     assert await auth.credentials() is None
 
 
+async def test_mail_is_from_unlocked() -> None:
+    """A mailbox shows the app's name, not "no-reply"; the address stays as set."""
+    messages = []
+    sender = SmtpSender("smtp.example.com", 587, "no-reply@example.com")
+    sender._send_blocking = lambda message, user, password: messages.append(message)  # type: ignore[method-assign]
+    await sender.send("ada@example.com", "code", "123456")
+    assert messages[0]["From"] == "Unlocked <no-reply@example.com>"
+
+
 async def test_somebody_known_signs_in_with_no_invite(repo: Repo, settings) -> None:
     """An invite is for somebody new only: an address or a Telegram account the
     app already knows opens its session straight away (owner, 2026-10-07)."""

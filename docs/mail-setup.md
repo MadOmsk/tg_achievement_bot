@@ -79,7 +79,7 @@ EMAIL_SKIP_CODE=false
 
 Mind that:
 
-- **`SMTP_FROM` is a bare address**, no display name ("Unlocked <…>" will not do): it is also the contact given to the push services. It must be on the verified domain — or, for a mailbox, the mailbox itself.
+- **`SMTP_FROM` is a bare address**, no display name ("Unlocked <…>" will not do): it is also the contact given to the push services. The bot shows the mail as from "Unlocked" by itself. It must be on the verified domain — or, for a mailbox, the mailbox itself.
 - Without `SMTP_HOST` **or** `SMTP_FROM`, mail counts as off.
 - The password lives in `.env` only. It is not in GitHub or CI: the deploy never touches the environment file.
 - Push also needs `MINI_APP_URL`, already set if the Mini App works.
