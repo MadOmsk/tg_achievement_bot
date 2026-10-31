@@ -385,6 +385,15 @@ def test_counters_go_on_after_the_import(tmp_path: Path, dsn: str) -> None:
     assert tool.run_verify(db, None, dsn, "prod") != []  # the rows are extra, the counters fine
 
 
+def test_a_group_s_negative_chat_id_leaves_the_counter_at_its_start(
+    tmp_path: Path, dsn: str
+) -> None:
+    db = _source(tmp_path)
+    _edit(db, "UPDATE chats SET chat_id = -chat_id WHERE chat_id > 0")
+    tool.run_import(db, None, dsn, "prod")
+    assert tool.run_verify(db, None, dsn, "prod") == []
+
+
 def test_verify_catches_a_counter_left_behind(tmp_path: Path, dsn: str) -> None:
     db = _source(tmp_path)
     tool.run_import(db, None, dsn, "prod")

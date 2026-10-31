@@ -1192,7 +1192,8 @@ def _set_sequences(pg: psycopg.Connection, schema: str) -> None:
             "SELECT pg_get_serial_sequence(%s, %s)",
             (qualified.as_string(pg), column),
         ).fetchone()[0]
-        if highest is None:
+        # A Telegram group's chat_id is negative, and no counter goes below 1.
+        if highest is None or highest < 1:
             pg.execute("SELECT setval(%s, 1, false)", (sequence,))
         else:
             pg.execute("SELECT setval(%s, %s, true)", (sequence, highest))
@@ -1339,6 +1340,7 @@ def run_import(
             pg.rollback()
             print("dry run: everything fitted, nothing written")
         else:
+            where = "setting the counters"
             _set_sequences(pg, schema)
             if result.catalog in ("imported", "merged"):
                 _set_sequences(pg, GAMES)
