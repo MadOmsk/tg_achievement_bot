@@ -186,7 +186,7 @@ class _ChatsRepo:
         cursor = await self._conn.execute(
             "SELECT c.chat_id, c.title, s.muted_title_ids,"
             f"       {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
-            "       s.daily_summary_time, s.tz_offset_min,"
+            "       s.daily_summary_time, s.tz_offset_min, s.tz_name,"
             "       s.flood_limit, s.flood_window_minutes, s.locale,"
             f"       {GLOBAL_DIGEST_THRESHOLD} AS digest_threshold,"
             "       COALESCE(us.rarity_mode, 'all') AS rarity_mode "
@@ -205,6 +205,7 @@ class _ChatsRepo:
                 rare_threshold_percent=row["rare_threshold_percent"],
                 daily_summary_time=row["daily_summary_time"],
                 tz_offset_min=row["tz_offset_min"],
+                tz_name=row["tz_name"],
                 flood_limit=row["flood_limit"],
                 flood_window_minutes=row["flood_window_minutes"],
                 locale=row["locale"],
@@ -229,7 +230,7 @@ class _ChatsRepo:
     async def get_chat_daily_settings(self, chat_id: int) -> ChatDailySettings:
         cursor = await self._conn.execute(
             f"SELECT {GLOBAL_RARE_THRESHOLD} AS rare_threshold_percent,"
-            " daily_summary_time, tz_offset_min, locale "
+            " daily_summary_time, tz_offset_min, tz_name, locale "
             "FROM chat_settings WHERE chat_id = ?",
             (chat_id,),
         )
@@ -244,6 +245,7 @@ class _ChatsRepo:
             daily_summary_time=row["daily_summary_time"],
             tz_offset_min=row["tz_offset_min"],
             locale=row["locale"],
+            tz_name=row["tz_name"],
         )
 
     async def active_group_chats(self) -> list[tuple[int, str]]:

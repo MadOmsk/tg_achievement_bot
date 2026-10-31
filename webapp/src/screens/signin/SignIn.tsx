@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, userApi } from "../../api";
-import { getPasskey, passkeyCancelled, passkeysSupported } from "../../core/passkey";
+import { getPasskey, passkeysSupported } from "../../core/passkey";
 import { TelegramLogin, type TelegramUser } from "../../core/telegram-login";
 import { t, type Locale } from "../../i18n";
 import { CodeEntry, errorText } from "../../parts/CodeEntry";
@@ -133,8 +133,8 @@ export function SignIn({ locale, onSignedIn }: { locale: Locale; onSignedIn: () 
         await userApi.passkeySignIn(res.token, credential);
         onSignedIn();
         return;
-      } catch (err) {
-        if (!passkeyCancelled(err)) setError(tr("passkeyFailed"));
+      } catch {
+        // Refused, not at hand or failed: the code goes out instead, no word.
         return start(address, withInvite, false);
       }
     }

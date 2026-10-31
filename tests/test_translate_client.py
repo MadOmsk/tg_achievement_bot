@@ -219,7 +219,7 @@ class _RecordingClient(_FakeAsyncClient):
         return await super().post(url, headers, json)
 
 
-async def test_haiku_5_5_is_asked_without_sampling_or_thinking(monkeypatch) -> None:
+async def test_haiku_5_5_is_asked_without_sampling_at_low_effort(monkeypatch) -> None:
     """A thinking block may come first in a reply: the text is the first
     text block (2026-10-30, the switch to Haiku 5.5)."""
     body = {
@@ -243,4 +243,4 @@ async def test_haiku_5_5_is_asked_without_sampling_or_thinking(monkeypatch) -> N
     )
     for sent in fake.sent:
         assert sent["model"] == "claude-haiku-5-5"
-        assert "temperature" not in sent and sent["thinking"] == {"type": "disabled"}
+        assert "temperature" not in sent and sent["output_config"] == {"effort": "low"}

@@ -26,7 +26,15 @@ from bot.i18n import AVAILABLE_LOCALES, normalize_locale
 from bot.poller.fetcher import Fetcher
 from bot.poller.psn_fetcher import PsnFetcher
 from bot.poller.steam_fetcher import SteamFetcher
-from bot.services import achievement_icons, avatars, custom_avatars, game_art, game_page, roles
+from bot.services import (
+    achievement_icons,
+    avatars,
+    custom_avatars,
+    game_art,
+    game_page,
+    roles,
+    time_zones,
+)
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
@@ -78,10 +86,14 @@ from bot.web.mini_chat import (
     build_person_payload,
     build_summary_payload,
     chat_of_user,
+    news_game,
+    news_text,
+    news_title,
 )
 from bot.web.mini_game import setup_game_routes
 from bot.web.mini_me import build_me_payload
 from bot.web.mini_pass import setup_pass_routes
+from bot.web.mini_share import setup_share_routes
 
 log = logging.getLogger(__name__)
 
@@ -168,6 +180,7 @@ def setup_mini_api(
     app.router.add_delete("/api/mini/me", handle_delete_me)
     app.router.add_post("/api/mini/me/delete", handle_delete_me)
     app.router.add_patch("/api/mini/settings", handle_patch_settings)
+    app.router.add_get("/api/mini/time-zones", handle_time_zones)
     app.router.add_put("/api/mini/me/handle", handle_put_handle)
     app.router.add_post("/api/mini/me/handle/confirm", handle_confirm_handle)
     app.router.add_put("/api/mini/me/avatar", handle_put_avatar)
@@ -209,6 +222,7 @@ def setup_mini_api(
     app.router.add_get("/api/mini/games/{platform}/{title_id}/guides", handle_game_guides)
     setup_admin_routes(app)
     setup_game_routes(app)
+    setup_share_routes(app)
     setup_pass_routes(app)
 
 
@@ -294,6 +308,28 @@ async def handle_confirm_handle(request: web.Request) -> web.Response:
     return await handle_me(request)
 
 
+async def handle_time_zones(request: web.Request) -> web.Response:
+    """The places the time zone picker offers, by their offset now, named in
+    `?locale=`; `?device=` (the phone's own zone) is added when not among
+    them, so it can be picked in one tap."""
+    await _require_user(request)
+    locale = normalize_locale(request.query.get("locale", "ru"))
+    zones = time_zones.choices(locale)
+    device = time_zones.current_name(request.query.get("device", "").strip())
+    if time_zones.valid(device) and not device.startswith("Etc/"):
+        row = time_zones.row_of(device) or device
+        known = next((z for z in zones if z["id"] == row), None)
+        if known is None:
+            known = {
+                "id": device,
+                "name": time_zones.place(device, locale),
+                "offset": time_zones.offset_minutes(device),
+                "label": time_zones.label(device, locale),
+            }
+        return web.json_response({"ok": True, "zones": zones, "device": known})
+    return web.json_response({"ok": True, "zones": zones, "device": None})
+
+
 async def handle_patch_settings(request: web.Request) -> web.Response:
     user = await _require_user(request)
     repo: Repo = request.app["mini_repo"]
@@ -314,6 +350,14 @@ async def handle_patch_settings(request: web.Request) -> web.Response:
                 fields["tz_offset_min"] = int(raw)
             except (TypeError, ValueError) as exc:
                 raise web.HTTPBadRequest(text="bad tz_offset_min") from exc
+    if "tz_name" in body:
+        # A zone by place (owner, 2026-10-30): any the server knows, a
+        # phone's own included; the offset beside it is today's, for show.
+        name = time_zones.current_name(str(body["tz_name"] or "").strip())
+        if not time_zones.valid(name):
+            raise web.HTTPBadRequest(text="bad tz_name")
+        fields["tz_name"] = name
+        fields["tz_offset_min"] = time_zones.offset_minutes(name)
     if "show_secrets" in body:
         fields["show_secrets"] = 1 if body["show_secrets"] else 0
     for switch in ("notify_push", "notify_telegram"):
@@ -680,7 +724,7 @@ async def _following_scope(request: web.Request) -> tuple[Any, Repo, list[int], 
     if person is None:
         raise web.HTTPNotFound(text="no person")
     settings_row = await repo.get_user_settings(user.person_id)
-    tz = settings_row.tz_offset_min if settings_row else None
+    tz = settings_row.tz if settings_row else None
     return user, repo, await repo.following_members(person), tz
 
 
@@ -758,6 +802,7 @@ async def handle_news_post(request: web.Request) -> web.Response:
     # A game is its platform and its id (#147); a link from before names only
     # the id, and then the first platform that has it answers.
     game = None
+    locale = await _user_locale(repo, user.person_id)
     title_id = request.query.get("title_id")
     if title_id:
         asked = request.query.get("platform")
@@ -767,12 +812,11 @@ async def handle_news_post(request: web.Request) -> web.Response:
                 continue
             key = (platform, title_id)
             names = (await repo.title_names([key])).get(key, (None, None))
-            locale = await _user_locale(repo, user.person_id)
             name = pick_name(locale, names[0], names[1], name_en)
             if name:
                 icon = await repo.title_icon_url(platform, title_id)
-                heroes = await game_page.list_heroes(repo, [key])
-                game = {"name": name, "icon_url": _https_url(icon), "hero": heroes.get(key)}
+                found = await game_page.games_of_lists(repo, [key], locale)
+                game = news_game(found.get(key), platform, title_id, name, _https_url(icon))
             break
     return web.json_response(
         {
@@ -780,9 +824,9 @@ async def handle_news_post(request: web.Request) -> web.Response:
             "appid": appid,
             "gid": post.gid,
             "kind": post.kind,
-            "title": post.title,
+            "title": news_title(post, locale),
             "date": post.published_at,
-            "text": post.text_en or "",
+            "text": news_text(post, locale),
             "image": _https_url(post.image_url),
             "url": f"https://store.steampowered.com/news/app/{appid}/view/{post.gid}",
         }
@@ -1149,6 +1193,12 @@ async def handle_game_details(request: web.Request) -> web.Response:
         platform, title_id, person_id=viewed, force=force
     )
     title_info = await repo.title_record(platform, title_id) or {}
+    # The game this list is of, as the catalog names and pictures it.
+    in_catalog = (
+        await game_page.games_of_lists(
+            repo, [(platform, title_id)], await _user_locale(repo, user.person_id)
+        )
+    ).get((platform, title_id))
     # What the stores say about the game (#147), when it is due.
     collector: StoreCollector | None = request.app.get("mini_store_collector")
     if collector is not None and title_info:
@@ -1207,6 +1257,7 @@ async def handle_game_details(request: web.Request) -> web.Response:
             # content, and the page used to swap its good picture for it.
             "icon_url": _https_url(title_info.get("icon_url")),
             "cover_path": title_info.get("cover_path"),
+            "game": in_catalog,
             "achievements_total": total,
             "catalog_partial": partial,
             "achievements_unlocked": unlocked,

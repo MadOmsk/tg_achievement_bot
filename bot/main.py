@@ -64,19 +64,25 @@ from bot.poller.publisher import Publisher
 from bot.poller.rarity_backfill import RarityBackfill
 from bot.poller.reminders import ReminderJob
 from bot.poller.scheduler import PollerScheduler
+from bot.poller.season_reset import SeasonReset
 from bot.poller.service_health import ServiceHealth
+from bot.poller.stand_in_links import StandInLinks
 from bot.poller.steam_catch_up import SteamCatchUpPoller
 from bot.poller.steam_fetcher import SteamFetcher
 from bot.poller.steam_localization import SteamLocalization
 from bot.poller.steam_presence import SteamPresencePoller
 from bot.poller.title_platforms import TitlePlatformsRefresh
-from bot.services import achievement_icons, game_descriptions, media, poll_cadence, raw_answers
+from bot.poller.translations import Translations
+from bot.services import achievement_icons, media, poll_cadence, raw_answers
 from bot.services.admin_credentials import AdminCredentials
 from bot.services.connect import ConnectService
 from bot.services.crypto import TokenCipher
+from bot.services.game_descriptions import GameTranslator
+from bot.services.guide_translations import GuideTranslator
 from bot.services.merge import PeopleMerge
 from bot.services.message_limits import MessageLimitMiddleware
 from bot.services.message_log import MessageLogMiddleware
+from bot.services.news_translations import NewsTranslator
 from bot.services.notifier import Notifier
 from bot.services.notify import SuperadminNotifier
 from bot.services.octopus import OctopusCollector
@@ -233,13 +239,17 @@ async def run(settings: Settings) -> None:
     client = XboxClient(auth)
     publisher = Publisher(bot, repo, settings=settings)
     steam_extras = SteamExtras(repo, steam_auth, anthropic_auth)
+    # A developer's post is put into Russian as soon as it is read.
+    news_translator = NewsTranslator(repo, anthropic_auth)
+    steam_extras.translate_posts = news_translator.translate_app
+    steam_extras.on_posts_saved = news_translator.later
+    # A game's tips are put into the other language as soon as they are read.
+    guide_translator = GuideTranslator(repo, anthropic_auth)
+    steam_extras.on_guides_saved = guide_translator.later
     store_collector = StoreCollector(repo, psn_auth, steam_auth)
-
-    async def translate_collected(platform: str, title_id: str) -> None:
-        await game_descriptions.translate_game(repo, anthropic_auth, platform, title_id)
-
-    # A description the stores just brought is translated at once (#230).
-    store_collector.on_collected = translate_collected
+    # A game's description is put into Russian as soon as it is collected.
+    game_translator = GameTranslator(repo, anthropic_auth)
+    store_collector.on_games = game_translator.later
     fetcher = Fetcher(
         repo,
         client,
@@ -305,7 +315,12 @@ async def run(settings: Settings) -> None:
         PsnTrophyGroups(repo, psn_auth),
         PatchRefresh(repo, steam_extras),
         GuideVideos(repo, youtube_auth),
-        OctopusWorker(repo, OctopusCollector(repo, store_collector)),
+        OctopusWorker(
+            repo, OctopusCollector(repo, store_collector), on_games=game_translator.later
+        ),
+        Translations(repo, news_translator, guide_translator, game_translator),
+        StandInLinks(repo),
+        SeasonReset(repo),
         psn_personal=psn_personal,
     )
 
@@ -336,7 +351,7 @@ async def run(settings: Settings) -> None:
                 await bot.send_message(tg_id, _("main-linked-subscribed-origin-chat"))
 
         settings_row = await repo.get_user_settings(person)
-        if settings_row is None or settings_row.tz_offset_min is None:
+        if settings_row is None or settings_row.tz is None:
             link_i18n = await build_i18n_context(locale)
             await bot.send_message(
                 tg_id,

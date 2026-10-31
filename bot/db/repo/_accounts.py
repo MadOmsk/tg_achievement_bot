@@ -740,6 +740,7 @@ class _AccountsRepo:
     async def update_user_settings(self, person_id: int, **fields: Any) -> None:
         allowed = {
             "tz_offset_min",
+            "tz_name",
             "show_profile_links",
             "show_secrets",
             "locale",
@@ -756,6 +757,9 @@ class _AccountsRepo:
             raise ValueError(f"unknown user_settings fields: {sorted(unknown)}")
         if not fields:
             return
+        # An offset set alone (the bot's picker) replaces the zone by place.
+        if "tz_offset_min" in fields and "tz_name" not in fields:
+            fields = {**fields, "tz_name": None}
         assignments = ", ".join(f"{name} = ?" for name in fields)
         await self._conn.execute(
             f"UPDATE user_settings SET {assignments} WHERE person_id = ?",

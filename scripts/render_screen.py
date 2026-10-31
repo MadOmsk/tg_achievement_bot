@@ -201,7 +201,7 @@ async def _summary(ctx: Context) -> Screen | None:
         chat.rare_threshold_percent,
         date.today(),
         locale=ctx.locale,
-        tz_offset_min=chat.tz_offset_min,
+        tz_offset_min=chat.tz,
     )
     return Screen(*built) if built else None
 
@@ -366,10 +366,10 @@ async def _admin_setting_tz(ctx: Context) -> Screen | None:
     chat = await find_chat(ctx.repo, ctx.chat_id)
     if chat is None:
         return None
-    setting = find_setting("chat", "tz_offset_min")
+    setting = find_setting("chat", "tz_name")
     return render_setting_choices(
         setting,
-        chat.tz_offset_min,
+        chat.tz,
         locale=ctx.locale,
         back=f"a:cg:{ctx.chat_id}:main",
         chat_id=ctx.chat_id,

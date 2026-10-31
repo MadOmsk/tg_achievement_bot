@@ -1,7 +1,7 @@
 """Small shared helpers. Anything bigger belongs in a service."""
 
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from bot.i18n import translator
@@ -50,14 +50,14 @@ def parse_iso(value: str | None) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def start_of_month_utc(tz_offset_min: int | None, now: datetime | None = None) -> datetime:
+def start_of_month_utc(tz: int | str | None, now: datetime | None = None) -> datetime:
     """The UTC instant of midnight on the 1st of the current month *in the
-    given timezone* (#14) — the calendar-month counters' cutoff. Same
-    "shift, operate, shift back" trick as services/stats.py::local_now: add
-    the offset, snap to the 1st at 00:00, subtract the offset again."""
-    local = (now or utcnow()) + timedelta(minutes=tz_offset_min or 0)
-    local_month_start = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return local_month_start - timedelta(minutes=tz_offset_min or 0)
+    given zone* (#14) — the calendar-month counters' cutoff. `tz` is a zone
+    by place or an offset in minutes (`services.time_zones.Tz`)."""
+    from bot.services import time_zones
+
+    local = time_zones.local_now(tz, now)
+    return time_zones.midnight_utc(local.date().replace(day=1), tz)
 
 
 def mask(secret: str | None) -> str:

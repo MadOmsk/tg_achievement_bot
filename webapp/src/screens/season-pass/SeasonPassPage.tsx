@@ -241,7 +241,7 @@ export function SeasonPassPage({ onClose, layer }: { onClose: () => void; layer:
           </div>
         </div>
         <div className="pass-tl pass-tl-wait">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2].map((i) => (
             <span key={i} className="pass-tl-wait-row">
               <span className="pass-tl-wait-node skel shape-cookie9" />
               <span className="pass-tl-ghost skel" />

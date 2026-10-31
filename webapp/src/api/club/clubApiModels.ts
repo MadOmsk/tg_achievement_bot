@@ -25,6 +25,10 @@ export type FeedItem = {
   achievement_id: string;
   icon_url: string | null;
   game_icon_url: string | null;
+  /** The catalog's game: what opens, and its pictures (none for a list in no game yet). */
+  game_id?: number | null;
+  game_poster?: string | null;
+  game_hero?: string | null;
   description: string | null;
   trophy_type: string | null;
   tier_badge: string | null;
@@ -56,6 +60,8 @@ export type SummaryMember = {
 };
 
 export type SummaryGame = {
+  /** The catalog's game; none for a list in no game yet. */
+  game_id?: number | null;
   title_id: string;
   platform: string;
   name: string | null;
@@ -63,6 +69,9 @@ export type SummaryGame = {
   score: number;
   icon_url?: string | null;
 };
+
+/** One platform's achievement list of a month's game: its own count. */
+export type MonthGameList = { platform: string; title_id: string; unlocked: number };
 
 export type PersonPayload = {
   person_id: number;
@@ -100,6 +109,9 @@ export type PersonPayload = {
     unlocked: number | null;
     gamerscore: number | null;
     platform: string | null;
+    poster?: string | null;
+    game_id?: number | null;
+    lists?: MonthGameList[];
   }>;
   feed: FeedItem[];
 };
@@ -143,7 +155,7 @@ export type NewsItem = {
   /** The post on Steam. */
   url: string;
   /** `hero`: the game's wide art, for a post with no picture of its own. */
-  game: { platform: string; title_id: string; name: string; icon_url: string | null; hero?: string | null };
+  game: { game_id?: number | null; platform: string; title_id: string; name: string; icon_url: string | null; hero?: string | null };
 };
 
 export type NewsResponse = {

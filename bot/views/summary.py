@@ -12,16 +12,18 @@ at which local hour — and the sending.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from html import escape as html_escape
 
 from aiogram.types import InlineKeyboardMarkup
 
 from bot.db.repo import ChatMemberStat, GameAchievements, Repo
 from bot.i18n import translator
+from bot.services import time_zones
 from bot.services.admin_settings import DEFAULT_TABLE_TOP, TOP_LIMIT_KEY
 from bot.services.naming import person_name
 from bot.services.stats import local_now, month_cutoff_utc, month_window_utc
+from bot.services.time_zones import Tz
 from bot.util import utcnow
 from bot.views.date_picker import (
     summary_day_navigation_keyboard,
@@ -70,7 +72,7 @@ async def build_summary(
     today: date,
     *,
     locale: str,
-    tz_offset_min: int | None = None,
+    tz_offset_min: Tz = None,
     window: str = DAY,
 ) -> tuple[str, InlineKeyboardMarkup | None] | None:
     """One window's leaderboard report — `DAY` or `MONTH`, never both.
@@ -91,9 +93,7 @@ async def build_summary(
             cutoff = utcnow() - timedelta(hours=DAY_WINDOW_HOURS)
             until = None
         else:
-            start_local = datetime(
-                today.year, today.month, today.day, 0, 0, 0, tzinfo=UTC
-            ) - timedelta(minutes=tz_offset_min or 0)
+            start_local = time_zones.midnight_utc(today, tz_offset_min)
             cutoff = start_local
             until = start_local + timedelta(hours=24)
     else:
@@ -150,7 +150,7 @@ async def full_leaderboard(
     chat_id: int,
     threshold: float,
     window: str,
-    tz_offset_min: int | None = None,
+    tz_offset_min: Tz = None,
     *,
     locale: str,
     target_year: int | None = None,
@@ -164,9 +164,7 @@ async def full_leaderboard(
     until = None
     if window == "day":
         if target_date is not None:
-            start_local = datetime(
-                target_date.year, target_date.month, target_date.day, 0, 0, 0, tzinfo=UTC
-            ) - timedelta(minutes=tz_offset_min or 0)
+            start_local = time_zones.midnight_utc(target_date, tz_offset_min)
             cutoff = start_local
             until = start_local + timedelta(hours=24)
         else:
@@ -198,7 +196,7 @@ async def full_leaderboard(
     return "\n".join([_("daily-leaderboard-full-header", label=label), "", *section_lines])
 
 
-def month_name(tz_offset_min: int | None, locale: str) -> str:
+def month_name(tz_offset_min: Tz, locale: str) -> str:
     """Just the month, in the genitive the "{day} {month}" forms already use
     — for a caller that builds its own phrase around it (/stats' counter line
     says "С 1 сентября:", where month_window_label's own "с 1 сентября" would
@@ -207,7 +205,7 @@ def month_name(tz_offset_min: int | None, locale: str) -> str:
     return _(_MONTH_KEYS[local_now(tz_offset_min).month - 1])
 
 
-def month_window_label(tz_offset_min: int | None, locale: str) -> str:
+def month_window_label(tz_offset_min: Tz, locale: str) -> str:
     """ "С 1 июня" (#6, user request) instead of a static "этот месяц" —
     names the actual calendar month the window covers, in the same
     genitive-case month names "{day} {month}" (daily-header) already uses.

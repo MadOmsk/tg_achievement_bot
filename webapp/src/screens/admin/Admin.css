@@ -4,7 +4,7 @@
 
 .adm-counts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px;
   margin: 8px 12px 0;
 }
@@ -21,7 +21,7 @@
 }
 
 .adm-counts > div:first-child {
-  grid-column: span 3;
+  grid-column: span 2;
   border-radius: var(--r-l) var(--r-l) 8px 8px;
   background: var(--primary-container);
   color: var(--on-primary-container-2);
@@ -36,6 +36,14 @@
   border-radius: 8px 8px var(--r-l) 8px;
 }
 
+.adm-counts > .skel {
+  height: 76px;
+}
+
+.adm-counts > .skel:first-child {
+  height: 108px;
+}
+
 .adm-counts > div:nth-last-child(2) {
   border-radius: 8px 8px 8px var(--r-l);
 }
@@ -45,12 +53,6 @@
   color: var(--on-surface);
 }
 
-.adm-skel {
-  display: block;
-  height: 220px;
-  margin: 12px;
-  border-radius: var(--r-xl);
-}
 
 .adm-dot {
   width: 12px;

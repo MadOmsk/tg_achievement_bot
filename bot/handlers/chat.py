@@ -325,7 +325,7 @@ async def stats(
         return
 
     settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
-    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    tz_offset_min = settings_row.tz if settings_row else None
     now_local = local_now(tz_offset_min)
     markup = stats_navigation_keyboard(
         target.tg_id,
@@ -369,7 +369,7 @@ async def _run_online(message: Message, repo: Repo, bot: Bot, i18n: I18nContext)
     # list and starts being a second keyboard once a chat has more than a
     # few people. Picking someone to look up is /who's job, not this one's.
     settings_row = await repo.get_chat_daily_settings(message.chat.id)
-    updated_label = local_now(settings_row.tz_offset_min).strftime("%H:%M")
+    updated_label = local_now(settings_row.tz).strftime("%H:%M")
     text = render_online_table(rows, updated_label, settings_row.locale)
     with stats_category():
         sent = await message.answer(
@@ -448,7 +448,7 @@ async def who_stats_button(
         text = await build_stats_text(repo, target, callback.message.chat.id, i18n)
         if text is not None:
             settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
-            tz_offset_min = settings_row.tz_offset_min if settings_row else None
+            tz_offset_min = settings_row.tz if settings_row else None
             now_local = local_now(tz_offset_min)
             markup = stats_navigation_keyboard(
                 target.tg_id,
@@ -492,9 +492,9 @@ async def _summary(
         repo,
         chat_id,
         settings_row.rare_threshold_percent,
-        local_now(settings_row.tz_offset_min).date(),
+        local_now(settings_row.tz).date(),
         locale=settings_row.locale,
-        tz_offset_min=settings_row.tz_offset_min,
+        tz_offset_min=settings_row.tz,
         window=window,
     )
     return built if built is not None else (None, None)
@@ -580,7 +580,7 @@ async def stats_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I18nCont
         return
 
     settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
-    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    tz_offset_min = settings_row.tz if settings_row else None
     now_local = local_now(tz_offset_min)
     markup = stats_navigation_keyboard(
         target.tg_id,
@@ -615,7 +615,7 @@ async def stats_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I18nCont
         return
 
     settings_row = await repo.get_user_settings(await repo.person_id(target.tg_id))
-    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    tz_offset_min = settings_row.tz if settings_row else None
     now_local = local_now(tz_offset_min)
     markup = stats_month_calendar_keyboard(
         target.tg_id,
@@ -648,7 +648,7 @@ async def summary_month_nav_callback(
         settings_row.rare_threshold_percent,
         target_date,
         locale=settings_row.locale,
-        tz_offset_min=settings_row.tz_offset_min,
+        tz_offset_min=settings_row.tz,
         window=MONTH,
     )
     await callback.answer()
@@ -673,7 +673,7 @@ async def summary_month_cal_callback(
     year = int(parts[2])
 
     settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
-    now_local = local_now(settings_row.tz_offset_min)
+    now_local = local_now(settings_row.tz)
     markup = summary_month_calendar_keyboard(
         year,
         now_local.year,
@@ -702,7 +702,7 @@ async def summary_day_nav_callback(callback: CallbackQuery, repo: Repo, i18n: I1
         settings_row.rare_threshold_percent,
         target_date,
         locale=settings_row.locale,
-        tz_offset_min=settings_row.tz_offset_min,
+        tz_offset_min=settings_row.tz,
         window=DAY,
     )
     await callback.answer()
@@ -725,7 +725,7 @@ async def summary_day_cal_callback(callback: CallbackQuery, repo: Repo, i18n: I1
     target_date = date.fromisoformat(parts[2])
 
     settings_row = await repo.get_chat_daily_settings(callback.message.chat.id)
-    now_date = local_now(settings_row.tz_offset_min).date()
+    now_date = local_now(settings_row.tz).date()
     markup = summary_day_calendar_keyboard(
         target_date,
         now_date,
@@ -761,7 +761,7 @@ async def summary_show_all(callback: CallbackQuery, repo: Repo, i18n: I18nContex
         callback.message.chat.id,
         settings_row.rare_threshold_percent,
         window,
-        settings_row.tz_offset_min,
+        settings_row.tz,
         locale=settings_row.locale,
         target_year=target_year,
         target_month=target_month,

@@ -27,7 +27,7 @@ export function AccountChip({ p }: { p: Platform }) {
   const score = p.gamerscore ? `${num(p.gamerscore, locale)} G` : p.trophy_level ? `${tr("level")} ${p.trophy_level}` : null;
   return (
     <span className="acc-chip">
-      <PlatformMark platform={p.platform} size={22} />
+      <PlatformMark platform={p.platform} size={18} />
       <span className="acc-chip-score t-num">{score ?? p.name}</span>
     </span>
   );

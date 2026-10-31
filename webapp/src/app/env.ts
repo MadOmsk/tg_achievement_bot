@@ -25,6 +25,43 @@ export function openExternal(url: string): void {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/** A post's link to share: the server's page carrying its card for a
+ * messenger (`bot/web/mini_share.py`), which sends a person on to the post
+ * in the app. */
+export function newsShareLink(appid: number, gid: string, game: { platform: string; title_id: string } | null): string {
+  const url = new URL(`/api/mini/share/news/${appid}/${encodeURIComponent(gid)}`, window.location.origin);
+  if (game) url.searchParams.set("g", `${game.platform}:${game.title_id}`);
+  url.searchParams.set("b", import.meta.env.BASE_URL);
+  return url.toString();
+}
+
+/** Share a link (owner, 2026-10-30) — the link alone: a messenger draws its
+ * card from the page. Inside Telegram its own chat picker, elsewhere the
+ * system's share sheet; with neither, the link is copied — "copied" says the
+ * caller should say so. */
+export async function shareLink(url: string): Promise<"shared" | "copied" | "none"> {
+  const app = window.Telegram?.WebApp;
+  if (app?.initData && app.openTelegramLink) {
+    app.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(url)}`);
+    return "shared";
+  }
+  if (navigator.share) {
+    try {
+      await navigator.share({ url });
+      return "shared";
+    } catch {
+      // Closed without sharing: nothing to say.
+      return "none";
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    return "copied";
+  } catch {
+    return "none";
+  }
+}
+
 /** Telegram draws its own header and the area behind the page: in our colour. */
 export function paintTelegram(surface: string): void {
   const app = window.Telegram?.WebApp;

@@ -29,7 +29,7 @@ import httpx
 
 from bot.db.repo import Repo, StoredPatch
 from bot.i18n import gettext
-from bot.services import webpush
+from bot.services import time_zones, webpush
 from bot.services.crypto import TokenCipher
 from bot.services.naming import person_name
 from bot.services.stats import month_window_utc
@@ -366,7 +366,8 @@ class Notifier:
                         # A favorite nobody here played may have no list.
                         **({"platform": platform, "title_id": title_id} if platform else {}),
                         game=game,
-                        title=post.title,
+                        # Our Russian, when made before the notice (`translate_posts`).
+                        title=(post.title_ru if locale == "ru" and post.title_ru else post.title),
                         post=post.kind,
                         favorite=reader["favorite"],
                         # Which post: a tap opens it, not only its game.
@@ -391,8 +392,8 @@ class Notifier:
         reached: one notice, of the highest — `prize` when any of them gives a
         prize, for a channel set to prizes only. Each level once a month."""
         settings = await self._repo.get_user_settings(person_id)
-        tz = settings.tz_offset_min if settings else None
-        local = utcnow() + timedelta(minutes=tz or 0)
+        tz = settings.tz if settings else None
+        local = time_zones.local_now(tz)
         since, until = month_window_utc(local.year, local.month, tz)
         points = await self._repo.points_for_person(person_id, since, until)
         fresh = await self._repo.mark_pass_reached(

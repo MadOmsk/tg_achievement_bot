@@ -14,8 +14,10 @@ from aiohttp import web
 
 from bot.constants import account_platform_of
 from bot.db.repo import Repo
-from bot.services import game_descriptions, game_page
+from bot.services import game_page, steam_library_art
+from bot.services.game_link import GameLinker
 from bot.services.naming import person_name_of
+from bot.web.mini_chat import news_text, news_title
 
 log = logging.getLogger(__name__)
 
@@ -60,8 +62,13 @@ async def _game_id(request: web.Request, repo: Repo) -> int:
             raise web.HTTPBadRequest(text="game_id or platform and title_id")
         game = await repo.game_of_list(platform, title_id)
         if game is None:
-            # A list in no game yet: a game of its own from this visit on.
+            # A list in no game yet: a game of its own from this visit on,
+            # and at once where it belongs — the linker (local, no network)
+            # joins it to the same game on another platform.
             game = await repo.adopt_list_as_game(platform, title_id)
+            if game is not None:
+                await GameLinker(repo).link_title(platform, title_id)
+                game = await repo.game_of_list(platform, title_id) or game
     if game is None:
         raise web.HTTPNotFound(text="game not found")
     return game
@@ -89,17 +96,12 @@ async def handle_game_page(request: web.Request) -> web.Response:
             viewed = other
 
     versions = await repo.game_page_versions(game_id)
+    # Steam's poster and head of now, for the next look (never awaited).
+    steam_library_art.refresh_later(repo, versions)
     lists = await repo.game_page_lists(game_id)
     hltb_found = await repo.game_hltb(game_id)
     hltb_entry = hltb_found["entry"] if hltb_found else None
     art = game_page.art_of(versions, game_page.list_icons(lists))
-    translating = False
-    if locale == "ru":
-        # No Russian story yet: Haiku translates the English once, and the
-        # app asks again while it is on its way (#230).
-        translating = game_descriptions.translate_later(
-            repo, request.app.get("mini_anthropic_auth"), versions, hltb_entry
-        )
 
     # Who here played it: the viewer, whom they follow, and the person it was
     # opened from — each only as far as their privacy lets the viewer see.
@@ -182,12 +184,11 @@ async def handle_game_page(request: web.Request) -> web.Response:
                 {
                     "appid": appid,
                     "gid": post.gid,
-                    "title": post.title_ru if locale == "ru" and post.title_ru else post.title,
+                    "title": news_title(post, locale),
                     "date": post.published_at,
                     "kind": post.kind,
                     "image": post.image_url,
-                    "text": (post.text_ru if locale == "ru" and post.text_ru else post.text_en)
-                    or "",
+                    "text": news_text(post, locale),
                     "url": f"https://store.steampowered.com/news/app/{appid}/view/{post.gid}",
                 }
             )
@@ -197,16 +198,6 @@ async def handle_game_page(request: web.Request) -> web.Response:
     collector = request.app.get("mini_store_collector")
     if collector is not None and lists:
         collector.ensure(str(lists[0]["platform"]), str(lists[0]["title_id"]), reason="page")
-    description = game_page.description_of(versions, hltb_entry, locale)
-    # Still coming: a translation into the reader's language, or the stores'
-    # first answer, which brings the text (its translation follows at once).
-    description_pending = (description is None or description["lang"] != locale) and (
-        translating
-        or (
-            collector is not None
-            and any(collector.running(str(r["platform"]), str(r["title_id"])) for r in lists)
-        )
-    )
 
     series = []
     for one in await repo.game_page_series(game_id):
@@ -246,8 +237,7 @@ async def handle_game_page(request: web.Request) -> web.Response:
                 "kind": game.get("kind"),
             },
             "art": art,
-            "description": description,
-            "description_pending": description_pending,
+            "description": game_page.description_of(versions, hltb_entry, locale),
             "genres": game_page.genres_of(versions, hltb_entry),
             "platforms": game_page.platforms_of(versions),
             "screenshots": game_page.screenshots_of(versions),

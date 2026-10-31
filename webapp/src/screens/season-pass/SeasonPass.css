@@ -644,7 +644,7 @@
   outline: none;
 }
 
-/* A prize's picture: the whole width of the form, a field's ground. */
+/* A prize's picture: a square as wide as the form allows, a field's ground. */
 .pass-add-pic {
   position: relative;
   display: flex;
@@ -653,7 +653,9 @@
   justify-content: center;
   gap: 6px;
   width: 100%;
-  height: 168px;
+  max-width: 360px;
+  aspect-ratio: 1;
+  margin: 0 auto;
   overflow: hidden;
   border-radius: var(--r-l);
   background: var(--surface-3);

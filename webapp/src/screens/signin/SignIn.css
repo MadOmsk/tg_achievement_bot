@@ -28,9 +28,11 @@
 }
 
 .wordmark-u {
+  position: relative;
+  top: 0.03em;
   width: 0.83em;
   height: 0.85em;
-  margin-right: -0.16em;
+  margin-right: -0.175em;
   color: var(--primary);
   overflow: visible;
 }
@@ -73,6 +75,12 @@
 
 .signin-card .t-body {
   margin-top: -4px;
+}
+
+/* A text button's empty height is no padding of the card's: its word sits
+   as far from the bottom edge as the title from the top. */
+.signin-card > .btn-text:last-child {
+  margin-bottom: -12px;
 }
 
 .signin-or {

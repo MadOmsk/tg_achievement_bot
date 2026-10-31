@@ -24,7 +24,7 @@ export type NotificationItem = {
   /** A notice about a game (its news): the game's picture, for its face. */
   cover?: string | null;
   /** The game a tap opens, on that person's progress (a new post). */
-  game: { platform: string; title_id: string; name: string | null } | null;
+  game: { game_id?: number | null; platform: string; title_id: string; name: string | null } | null;
   /** A game's post a tap opens over its game (its news, owner 2026-10-08). */
   news?: { appid: number; gid: string } | null;
 };

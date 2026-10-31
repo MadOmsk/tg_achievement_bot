@@ -410,6 +410,8 @@ CREATE TABLE user_settings (
                      CHECK (rarity_mode IN ('all', 'rare', 'hidden')),
     muted_title_ids  TEXT    NOT NULL DEFAULT '[]',
     tz_offset_min    BIGINT,                      -- minutes from UTC, NULL = global timezone
+    -- 147: the zone by place (`Europe/Vilnius`), read before the offset.
+    tz_name          TEXT,
     -- Whether other people's /stats and /who cards get a clickable link in
     -- this person's nickname (Follow-up 2026-09-06). Default off; the admin
     -- picks what new users start with via app_settings, same pattern as
@@ -590,10 +592,10 @@ CREATE TABLE chat_settings (
     -- 2026-10-08), app_settings['digest_threshold'].
     digest_threshold        BIGINT NOT NULL DEFAULT 3,
     daily_summary_time      TEXT    NOT NULL DEFAULT '20:00',
-    -- Offset, not a zone name — same reasoning as user_settings.tz_offset_min:
-    -- unambiguous, and Russia has had no DST since 2014 so a fixed offset
-    -- never drifts for this audience.
+    -- The offset a chat kept before it had a zone by place (`tz_name`, 147).
     tz_offset_min            BIGINT NOT NULL DEFAULT 180,
+    -- 147: the zone by place, read before the offset (as user_settings.tz_name).
+    tz_name                  TEXT DEFAULT 'Europe/Moscow',
     -- Anti-flood (2026-09-09 user request): once `flood_limit` achievements
     -- have been individually notified for the same person in this chat
     -- within `flood_window_minutes`, further ones stop posting on their own

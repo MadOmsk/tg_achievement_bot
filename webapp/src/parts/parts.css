@@ -672,6 +672,7 @@
   color: var(--on-primary-container);
 }
 
+
 .home-hero-person-behind {
   color: var(--on-primary-container-2);
   background: transparent;
@@ -700,26 +701,6 @@
 .home-hero .home-hero-num-6,
 .home-hero .home-hero-num-7 {
   font-size: 68px;
-}
-
-/* The month's figures beside the count: the words quiet, the numbers lit. */
-.home-hero-line {
-  display: flex;
-  white-space: nowrap;
-  margin-top: 8px;
-  font-size: 14px;
-  color: var(--on-primary-container-2);
-}
-
-.home-hero-line > span + span::before {
-  content: "·";
-  margin: 0 7px;
-  opacity: 0.6;
-}
-
-.home-hero-line b {
-  font-size: 15px;
-  color: var(--on-primary-container);
 }
 
 .home-hero .home-hero-ghost {
@@ -757,13 +738,6 @@
   border-radius: 11px;
 }
 
-.home-hero-ghost-line {
-  width: 240px;
-  height: 14px;
-  margin-top: 10px;
-  border-radius: 7px;
-}
-
 @keyframes ghost {
   50% {
     opacity: 0.5;
@@ -798,7 +772,8 @@
   text-align: left;
 }
 
-.tile-skel {
+/* One block as wide as two tiles and a half. */
+.tile.tile-skel {
   height: 214px;
 }
 
@@ -938,6 +913,7 @@
   text-align: left;
 }
 
+/* One block, as wide as two cards and a half: what stands in for a rail. */
 .game-tile-skel {
   height: 250px;
   border-radius: var(--r-l);
@@ -957,8 +933,9 @@
 }
 
 .game-tile-cover {
+  /* 2:3, the stores' portrait art, so a poster is never cropped. */
   width: 138px;
-  height: 184px;
+  height: 207px;
   border-radius: var(--r-l);
 }
 

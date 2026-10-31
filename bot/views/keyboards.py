@@ -24,6 +24,7 @@ from bot.constants import (  # noqa: F401 — re-exported
     RarityMode,
 )
 from bot.i18n import AVAILABLE_LOCALES, LOCALE_NAMES, StaticI18nContext, gettext, static_i18n
+from bot.services import time_zones
 from bot.services.naming import link_nickname
 from bot.services.relink import LinkPreview
 from bot.util import utc_offset_label
@@ -102,10 +103,14 @@ def _text(i18n: I18nContext | None, key: str, **kwargs: object) -> str:
     return i18n.get(key, **kwargs) if i18n is not None else gettext("keyboards", key, **kwargs)
 
 
-def format_offset(minutes: int | None, i18n: I18nContext | None = None) -> str:
-    if minutes is None:
+def format_offset(tz: int | str | None, i18n: I18nContext | None = None) -> str:
+    """A zone as the bot shows it: `Вильнюс · UTC+2` by place, `UTC+3` for an
+    offset, the default's word for none."""
+    if tz is None:
         return _text(i18n, "kb-default")
-    return utc_offset_label(minutes)
+    if isinstance(tz, str):
+        return time_zones.label(tz, getattr(i18n, "locale", None) or "ru")
+    return utc_offset_label(tz)
 
 
 def _offset_button(hours: int, i18n: I18nContext, *, prefix: str = "tz") -> InlineKeyboardButton:
@@ -332,7 +337,7 @@ def _platform_row(
 
 
 def panel_keyboard(
-    tz_offset_min: int | None,
+    tz_offset_min: int | str | None,
     i18n: I18nContext | StaticI18nContext | None = None,
     *,
     connected: bool = True,

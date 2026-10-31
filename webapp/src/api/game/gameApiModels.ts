@@ -115,8 +115,6 @@ export type GamePage = {
   };
   art: { poster: string | null; hero: string | null; header: string | null };
   description: { text: string; lang: string } | null;
-  /** The description is on its way (a translation, the stores' first answer): ask again. */
-  description_pending?: boolean;
   genres: string[];
   platforms: GamePlatform[];
   screenshots: string[];

@@ -109,8 +109,10 @@
 }
 
 .now-skel {
+  flex: 0 0 auto;
   width: 68px;
   height: 68px;
+  margin: 0 4px;
 }
 
 .home-months {

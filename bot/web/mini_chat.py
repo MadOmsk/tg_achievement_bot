@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import datetime, timedelta
 from typing import Any
@@ -19,11 +20,12 @@ from bot.db.repo import (
 )
 from bot.db.repo._sql import MEMBERS_CHAT, pick_name
 from bot.i18n import translator
-from bot.services import game_page
+from bot.services import game_page, time_zones
 from bot.services.achievement_icons import format_achievement_icon_url
 from bot.services.naming import person_name, xbox_nickname
 from bot.services.presence_view import pick_presence
 from bot.services.stats import counters_for, month_window_utc, week_cutoff_utc
+from bot.services.time_zones import Tz
 from bot.util import utcnow
 from bot.views.notification import _group_label
 from bot.views.online import presence_display_name, presence_text
@@ -71,8 +73,8 @@ def parse_month_key(value: str) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2))
 
 
-def _calendar_month_key(tz_offset_min: int | None) -> str:
-    local = utcnow() + timedelta(minutes=tz_offset_min or 0)
+def _calendar_month_key(tz: Tz) -> str:
+    local = time_zones.local_now(tz)
     return f"{local.year:04d}-{local.month:02d}"
 
 
@@ -82,10 +84,10 @@ def _month_label(month_num: int, locale: str) -> str:
 
 
 async def _club_month(
-    repo: Repo, chat_id: int, month: str | None, *, tz_of: int | None = None, scoped: bool = False
+    repo: Repo, chat_id: int, month: str | None, *, tz_of: Tz = None, scoped: bool = False
 ) -> tuple[str, datetime, datetime, str, int]:
     # A hand-picked scope has no chat settings: it reads in the viewer's timezone.
-    tz = tz_of if scoped else (await repo.get_chat_daily_settings(chat_id)).tz_offset_min
+    tz = tz_of if scoped else (await repo.get_chat_daily_settings(chat_id)).tz
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
     if parsed is None:
@@ -112,7 +114,7 @@ async def _person_month(
 ) -> tuple[str, datetime, datetime, str, int]:
     """Calendar month in this person's timezone (not a chat's)."""
     settings_row = await repo.get_user_settings(person_id)
-    tz = settings_row.tz_offset_min if settings_row else None
+    tz = settings_row.tz if settings_row else None
     current = _calendar_month_key(tz)
     parsed = parse_month_key(month or current)
     if parsed is None:
@@ -140,7 +142,7 @@ async def build_feed_payload(
     limit: int = FEED_DEFAULT,
     month: str | None = None,
     members: list[int] | None = None,
-    tz_of: int | None = None,
+    tz_of: Tz = None,
 ) -> dict[str, Any]:
     limit = max(1, min(limit, FEED_MAX))
     key, since, until, current, _month_num = await _club_month(
@@ -152,7 +154,7 @@ async def build_feed_payload(
     descriptions = await _localized_feed_descriptions(repo, rows, locale)
     progress = await _feed_progress(repo, rows)
     return {
-        "items": [_feed_item_json(row, descriptions, progress, locale) for row in rows],
+        "items": await _feed_json(repo, rows, descriptions, progress, locale),
         "month": key,
         "current_month": current,
         "months": await _month_choices(repo, chat_id, current, key, members=members),
@@ -163,7 +165,15 @@ async def build_online_payload(
     repo: Repo, chat_id: int, *, locale: str, members: list[int] | None = None
 ) -> dict[str, Any]:
     rows = await repo.chat_member_presence(chat_id, members=members)
-    return {"members": [_presence_json(row, locale) for row in rows]}
+    shown = []
+    for row in rows:
+        # What they play, as the catalog names it; the platform's word stands in.
+        if row.state == PresenceState.ONLINE and row.title_id:
+            name = await game_page.playing_name(repo, row.platform, row.title_id, locale)
+            if name:
+                row = dataclasses.replace(row, title_name=name)
+        shown.append(_presence_json(row, locale))
+    return {"members": shown}
 
 
 async def build_summary_payload(
@@ -173,7 +183,7 @@ async def build_summary_payload(
     locale: str,
     month: str | None = None,
     members: list[int] | None = None,
-    tz_of: int | None = None,
+    tz_of: Tz = None,
 ) -> dict[str, Any]:
     scoped = members is not None
     if scoped:
@@ -183,7 +193,7 @@ async def build_summary_payload(
     else:
         settings = await repo.get_chat_daily_settings(chat_id)
         threshold = settings.rare_threshold_percent
-        tz = settings.tz_offset_min
+        tz = settings.tz
     key, since, until, current, month_num = await _club_month(
         repo, chat_id, month, tz_of=tz_of, scoped=scoped
     )
@@ -227,6 +237,7 @@ async def build_summary_payload(
     )
     descriptions = await _localized_feed_descriptions(repo, [*recent_rows, *rare_rows], locale)
     progress = await _feed_progress(repo, [*recent_rows, *rare_rows])
+    icons = {g.title_id: g.icon_url for g in games}
     label = _month_label(month_num, locale) if key != current else month_window_label(tz, locale)
     return {
         "month_key": key,
@@ -236,23 +247,18 @@ async def build_summary_payload(
         "month": [_stat_json(row) for row in month_rows],
         "year": [_stat_json(row) for row in year_rows],
         "year_key": year,
+        # What is played most, one card a catalog game (`month_games`).
         "games": [
             {
-                "title_id": g.title_id,
-                "platform": g.platform,
-                "name": g.name,
-                "count": g.count,
-                "score": g.score,
-                "bronze": g.bronze,
-                "silver": g.silver,
-                "gold": g.gold,
-                "platinum": g.platinum,
-                "icon_url": _https_url(g.icon_url),
+                **entry,
+                "count": entry["unlocked"],
+                "score": entry["gamerscore"],
+                "icon_url": entry["poster"] or _https_url(icons.get(entry["title_id"])),
             }
-            for g in games
+            for entry in await month_games(repo, games, locale)
         ],
-        "recent": [_feed_item_json(row, descriptions, progress, locale) for row in recent_rows],
-        "rares": [_feed_item_json(row, descriptions, progress, locale) for row in rare_rows],
+        "recent": await _feed_json(repo, recent_rows, descriptions, progress, locale),
+        "rares": await _feed_json(repo, rare_rows, descriptions, progress, locale),
     }
 
 
@@ -355,16 +361,7 @@ async def build_person_payload(
         until=month_until,
         order="recent",
     )
-    games = [
-        {
-            "title_id": g.title_id,
-            "name": g.name,
-            "unlocked": g.count,
-            "gamerscore": g.score,
-            "platform": g.platform,
-        }
-        for g in game_rows
-    ]
+    games = await month_games(repo, game_rows, locale)
 
     feed_rows = await repo.person_recent(
         target.id,
@@ -387,7 +384,12 @@ async def build_person_payload(
             "state": "Online" if presence.online else "Offline",
             "playing": bool(presence.online and presence.title_id),
             "platform": presence.platform if presence.online else None,
-            "title_name": presence.game if presence.online else None,
+            "title_name": (
+                await game_page.playing_name(repo, presence.platform, presence.title_id, locale)
+                or presence.game
+            )
+            if presence.online
+            else None,
         }
 
     return {
@@ -421,8 +423,54 @@ async def build_person_payload(
         "current_month": current,
         "months": months,
         "games": games,
-        "feed": [_feed_item_json(row, descriptions, progress, locale) for row in feed_rows],
+        "feed": await _feed_json(repo, feed_rows, descriptions, progress, locale),
     }
+
+
+async def _feed_json(
+    repo: Repo,
+    rows: list[RecentAchievement],
+    descriptions: dict[tuple[str, str, str], str | None],
+    progress: dict[tuple[str, str, str, str | None], TitleProgress | None],
+    locale: str,
+) -> list[dict[str, Any]]:
+    """Feed items, each naming and picturing its catalog's game (owner,
+    2026-10-30); the progress stays its list's."""
+    games = await game_page.games_of_lists(repo, [(r.platform, r.title_id) for r in rows], locale)
+    return [
+        _feed_item_json(
+            row, descriptions, progress, locale, games.get((row.platform, row.title_id))
+        )
+        for row in rows
+    ]
+
+
+async def month_games(repo: Repo, rows: list, locale: str) -> list[dict[str, Any]]:
+    """The month's games, one entry a catalog game (owner, 2026-10-30): a game
+    played on several platforms is one card, its month's count summed, and
+    `lists` keeps each platform's own list — whose progress is never summed.
+    A list in no game yet is an entry of its own. In the rows' order."""
+    found = await game_page.games_of_lists(repo, [(g.platform, g.title_id) for g in rows], locale)
+    entries: dict[object, dict[str, Any]] = {}
+    for g in rows:
+        game = found.get((g.platform, g.title_id))
+        key = game["game_id"] if game else (g.platform, g.title_id)
+        entry = entries.get(key)
+        if entry is None:
+            entry = entries[key] = {
+                "title_id": g.title_id,
+                "platform": g.platform,
+                "name": (game["name"] if game else None) or g.name,
+                "unlocked": 0,
+                "gamerscore": 0,
+                "poster": game["poster"] if game else None,
+                "game_id": game["game_id"] if game else None,
+                "lists": [],
+            }
+        entry["unlocked"] += g.count
+        entry["gamerscore"] += g.score or 0
+        entry["lists"].append({"platform": g.platform, "title_id": g.title_id, "unlocked": g.count})
+    return list(entries.values())
 
 
 def _feed_item_json(
@@ -430,6 +478,7 @@ def _feed_item_json(
     descriptions: dict[tuple[str, str, str], str | None],
     progress: dict[tuple[str, str, str, str | None], TitleProgress | None],
     locale: str,
+    game: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prog = progress.get((row.platform, row.xuid, row.title_id, row.trophy_group_id))
     return {
@@ -437,7 +486,9 @@ def _feed_item_json(
         "tg_id": row.tg_id,
         "person": person_label(person_id=row.person_id, handle=row.handle),
         "name": row.name,
-        "game": row.game,
+        # The catalog's game; a list in no game yet keeps its own name.
+        "game": (game["name"] if game else None) or row.game,
+        **game_page.game_fields(game),
         "gamerscore": row.gamerscore,
         "rarity_percent": row.rarity_percent,
         "platform": row.platform,
@@ -586,6 +637,37 @@ def _news_excerpt(text: str | None) -> str:
     return words[:NEWS_EXCERPT].rsplit(" ", 1)[0].rstrip(",;:-") + "…"
 
 
+def news_game(
+    game: dict[str, Any] | None,
+    platform: str,
+    title_id: str,
+    list_name: str | None,
+    list_icon: str | None,
+) -> dict[str, Any]:
+    """The game a developer's post is about, as the catalog has it; a list in
+    no game yet keeps its own name and icon."""
+    return {
+        "game_id": game["game_id"] if game else None,
+        "platform": platform,
+        "title_id": title_id,
+        "name": (game["name"] if game else None) or list_name,
+        "icon_url": (game["poster"] if game else None) or list_icon,
+        "hero": game["hero"] if game else None,
+    }
+
+
+def news_title(post: Any, locale: str) -> str:
+    """A developer's post in the reader's language: our Russian once it is
+    made (`poller/translations.py`), else Steam's English."""
+    return post.title_ru if locale == "ru" and post.title_ru else post.title
+
+
+def news_text(post: Any, locale: str) -> str:
+    if locale == "ru" and post.title_ru:
+        return post.text_ru or ""
+    return post.text_en or ""
+
+
 async def build_news_payload(
     repo: Repo,
     *,
@@ -616,27 +698,29 @@ async def build_news_payload(
             until=after,
             limit=NEWS_MAX,
         )
-    heroes = await game_page.list_heroes(repo, [(row.platform, row.title_id) for row in rows])
+    games = await game_page.games_of_lists(
+        repo, [(row.platform, row.title_id) for row in rows], locale
+    )
     return {
         "items": [
             {
                 "gid": row.gid,
                 "appid": row.steam_appid,
                 "kind": row.kind,
-                "title": row.title,
+                "title": news_title(row, locale),
                 "date": row.published_at,
-                "excerpt": _news_excerpt(row.text_en),
+                "excerpt": _news_excerpt(news_text(row, locale)),
                 # The whole post, pictures and videos as their own lines.
-                "text": row.text_en or "",
+                "text": news_text(row, locale),
                 "image": _https_url(row.image_url),
                 "url": f"https://store.steampowered.com/news/app/{row.steam_appid}/view/{row.gid}",
-                "game": {
-                    "platform": row.platform,
-                    "title_id": row.title_id,
-                    "name": pick_name(locale, row.game_ru, row.game_en, row.game),
-                    "icon_url": _https_url(row.game_icon_url),
-                    "hero": heroes.get((row.platform, row.title_id)),
-                },
+                "game": news_game(
+                    games.get((row.platform, row.title_id)),
+                    row.platform,
+                    row.title_id,
+                    pick_name(locale, row.game_ru, row.game_en, row.game),
+                    _https_url(row.game_icon_url),
+                ),
             }
             for row in rows
         ],

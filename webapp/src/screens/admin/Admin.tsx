@@ -43,6 +43,19 @@ export function AdminPage({ screen, onClose, layer }: { screen: AdminScreen | nu
   );
 }
 
+/** A list on its way: a few of its rows, each one block. */
+function RowsSkel() {
+  return (
+    <div className="group" aria-hidden="true">
+      <div className="group-items">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="row skel" style={{ height: 72 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminHomeView() {
   const { me } = useApp();
   // A chat admin's panel is their chats alone (#232).
@@ -73,7 +86,13 @@ function AppAdminHomeView() {
           ))}
         </div>
       )}
-      {!h && home.loading && <span className="adm-skel skel" />}
+      {!h && home.loading && (
+        <div className="adm-counts" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="skel" />
+          ))}
+        </div>
+      )}
       <Group>
         {me.role === "superadmin" && (
           <Row lead={<Icon name="key" />} title={tr("adminKeys")} sub={tr("adminKeysSub")} chevron onClick={() => open({ kind: "admin", screen: { name: ADMIN_SCREENS.KEYS } })} />
@@ -330,7 +349,7 @@ function GlobalSettingsView() {
   const { data, tr, toast } = useApp();
   const settings = useLoad("admin-settings", () => adminApi.fetchSettings(data));
   const actions = useLoad("admin-actions-global", () => adminApi.fetchActions(data, "global", "all"));
-  if (!settings.data) return settings.loading ? <span className="adm-skel skel" /> : <Empty icon="refresh" title={tr("loadFailed")} />;
+  if (!settings.data) return settings.loading ? <RowsSkel /> : <Empty icon="refresh" title={tr("loadFailed")} />;
   return (
     <>
       <SettingsGroups
@@ -359,7 +378,7 @@ function UsersView() {
       <div className="fl-search">
         <Field icon="search" placeholder={tr("searchPeople")} value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-      {!users.data && users.loading && <span className="adm-skel skel" />}
+      {!users.data && users.loading && <RowsSkel />}
       {users.data && list.length === 0 && <Empty icon="people" title={tr("noUsers")} />}
       <Group>
         {list.map((u) => (
@@ -388,7 +407,7 @@ function UserView({ personId, onGone }: { personId: number; onGone: () => void }
   const card = useLoad(`admin-user:${personId}`, () => adminApi.fetchUser(data, personId));
   const actions = useLoad(`admin-actions-user:${personId}`, () => adminApi.fetchActions(data, "user", `p${personId}`));
   const c = card.data;
-  if (!c) return card.loading ? <span className="adm-skel skel" /> : <Empty icon="refresh" title={tr("loadFailed")} />;
+  if (!c) return card.loading ? <RowsSkel /> : <Empty icon="refresh" title={tr("loadFailed")} />;
   const platform = (label: string, info: Record<string, unknown> | null) =>
     info ? (
       <Group key={label} title={label}>
@@ -442,7 +461,7 @@ function ChatsView() {
   const chats = useLoad("admin-chats", () => adminApi.fetchChats(data));
   return (
     <>
-      {!chats.data && chats.loading && <span className="adm-skel skel" />}
+      {!chats.data && chats.loading && <RowsSkel />}
       <Group>
         {(chats.data?.chats ?? []).map((c) => (
           <Row
@@ -465,7 +484,7 @@ function ChatView({ chatId, onGone }: { chatId: number; onGone: () => void }) {
   const actions = useLoad(`admin-actions-chat:${chatId}`, () => adminApi.fetchActions(data, "chat", String(chatId)));
   return (
     <>
-      {!settings.data && settings.loading && <span className="adm-skel skel" />}
+      {!settings.data && settings.loading && <RowsSkel />}
       {settings.data && (
         <SettingsGroups
           settings={settings.data}

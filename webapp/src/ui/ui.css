@@ -473,6 +473,10 @@ button.chip {
   font-size: 16px;
 }
 
+.field-box .link-btn {
+  flex: 0 0 auto;
+}
+
 .field-box input::placeholder {
   color: var(--on-surface-3);
 }
@@ -743,6 +747,10 @@ button.chip {
 .appbar-actions {
   display: flex;
   gap: 4px;
+}
+
+.page-over > .page {
+  z-index: 70;
 }
 
 .sheet-wrap,
@@ -1488,13 +1496,13 @@ body:has(.sheet) .toast {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 0 20px 8px;
+  padding: 0 12px 8px;
 }
 
 .crop-box {
   position: relative;
   width: 100%;
-  max-width: 360px;
+  max-width: 480px;
   aspect-ratio: 1;
   margin: 0 auto;
   overflow: hidden;

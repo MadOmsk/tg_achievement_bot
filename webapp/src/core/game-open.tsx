@@ -28,10 +28,11 @@ export function useOpenAchievement(): OpenAchievement | null {
 /** The game an achievement or a game card belongs to, as the game page wants it. */
 export function gameRefOf(item: FeedItem): GameRef {
   return {
+    game_id: item.game_id ?? undefined,
     platform: item.platform,
     title_id: item.title_id,
     name: item.game,
-    icon_url: item.game_icon_url,
+    icon_url: item.game_poster ?? item.game_icon_url,
     person: item.person_id ? { person_id: item.person_id, name: item.person } : null,
   };
 }

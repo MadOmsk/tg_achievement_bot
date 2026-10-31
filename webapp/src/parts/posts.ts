@@ -13,6 +13,7 @@ export type Post = {
   titleId: string;
   game: string | null;
   gameIcon: string | null;
+  gameId: number | null;
   people: Array<{ id: number; name: string }>;
   events: UnlockEvent[];
 };
@@ -68,7 +69,8 @@ export function toPosts(items: FeedItem[]): Post[] {
       platform: first.platform,
       titleId: first.title_id,
       game: first.game,
-      gameIcon: first.game_icon_url,
+      gameIcon: first.game_poster ?? first.game_icon_url,
+      gameId: first.game_id ?? null,
       people: event.items.map((x) => ({ id: x.person_id, name: x.person })),
       events: [event],
     });

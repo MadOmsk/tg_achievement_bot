@@ -32,8 +32,9 @@
 }
 
 .gp-poster {
-  width: 108px;
-  height: 150px;
+  /* 2:3, the stores' portrait art, so a poster is never cropped. */
+  width: 120px;
+  height: 180px;
   flex: 0 0 auto;
   border-radius: 22px 22px 22px 8px;
   box-shadow: 0 0 0 4px var(--surface);
@@ -108,6 +109,7 @@
   margin: 0 4px 12px;
 }
 
+/* One block as tall as two or three of the rows it stands for. */
 .gp-skel-item {
   display: block;
   height: 64px;
@@ -899,16 +901,13 @@
   margin-top: 4px;
 }
 
-.list-skel .ach-text {
-  gap: 8px;
-}
-
 .list-skel-filter {
   display: block;
   height: 48px;
   margin: 10px 4px 16px;
   border-radius: 24px;
 }
+
 
 
 
@@ -1077,10 +1076,11 @@
 }
 
 .list-ghost-num {
-  width: 84px;
+  width: 210px;
   height: 34px;
   border-radius: 12px;
 }
+
 
 .gp-progress-done .go-mark {
   background: color-mix(in srgb, var(--on-tertiary-container) 14%, transparent);
@@ -1170,6 +1170,7 @@
 .gp-news-mark {
   display: grid;
   place-items: center;
+  background: var(--surface-3);
 }
 
 .gp-news-kind {

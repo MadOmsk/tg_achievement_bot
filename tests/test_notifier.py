@@ -351,7 +351,13 @@ async def test_a_post_opens_its_game_on_the_authors_progress(repo: Repo, setting
         )
         listing = await (await client.get("/api/mini/notifications")).json()
         follower, post = listing["items"]
-        assert post["game"] == {"platform": "xbox_modern", "title_id": "42", "name": "Halo"}
+        # A list in no catalog game yet: no game id, the list's own name.
+        assert post["game"] == {
+            "game_id": None,
+            "platform": "xbox_modern",
+            "title_id": "42",
+            "name": "Halo",
+        }
         assert post["achievement_id"] == "7"
         assert follower["game"] is None
         assert listing["unread"] == 2

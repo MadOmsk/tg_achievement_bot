@@ -74,12 +74,7 @@ export function SearchPage({ onClose, layer }: { onClose: () => void; layer: str
             <Section title={tr("trending")}>
               <div className="rail favs" aria-hidden="true">
                 {[0, 1, 2].map((i) => (
-                  <span key={i} className="game-tile">
-                    <span className="game-tile-art">
-                      <span className="game-tile-cover skel" style={{ display: "block" }} />
-                    </span>
-                    <span className="skel skel-line" style={{ width: "70%" }} />
-                  </span>
+                  <span key={i} className="game-tile game-tile-skel skel" />
                 ))}
               </div>
             </Section>
@@ -89,11 +84,11 @@ export function SearchPage({ onClose, layer }: { onClose: () => void; layer: str
               <div className="rail favs">
                 {trending.map((g) => (
                   <GameTile
-                    key={`${g.platform}:${g.title_id}`}
+                    key={g.game_id ?? `${g.platform}:${g.title_id}`}
                     cover={g.icon_url}
                     name={g.name ?? ""}
                     mark={<TrendMark count={g.count} />}
-                    onOpen={() => open({ kind: "game", ref: { platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
+                    onOpen={() => open({ kind: "game", ref: { game_id: g.game_id ?? undefined, platform: g.platform, title_id: g.title_id, name: g.name, icon_url: g.icon_url } })}
                   />
                 ))}
               </div>

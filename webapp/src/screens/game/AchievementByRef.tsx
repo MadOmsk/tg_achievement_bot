@@ -33,7 +33,7 @@ export function AchievementByRef({
     const owner = person ?? null;
     return (
       <AchievementPage
-        ach={achOfList(found, { platform, titleId, game: d.name, icon: d.icon_url }, owner, locale)}
+        ach={achOfList(found, { platform, titleId, game: d.game?.name ?? d.name, icon: d.game?.poster ?? d.icon_url, gameId: d.game?.game_id }, owner, locale)}
         onClose={onClose}
         layer={layer}
       />

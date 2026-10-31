@@ -33,7 +33,7 @@ from bot.services.admin_registry import (
 from bot.views import Screen
 
 # How many option buttons share a row, by kind.
-_PER_ROW = {Kind.HOUR: 6, Kind.TZ: 4}
+_PER_ROW = {Kind.HOUR: 6, Kind.TZ: 1}
 
 
 def _set_data(scope: Scope, key: str, chat_id: int | None) -> str:

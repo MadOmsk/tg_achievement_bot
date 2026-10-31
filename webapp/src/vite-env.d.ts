@@ -7,6 +7,7 @@ type TelegramWebApp = {
   close?: () => void;
   disableVerticalSwipes?: () => void;
   openLink: (url: string) => void;
+  openTelegramLink?: (url: string) => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
   themeParams: Record<string, string>;

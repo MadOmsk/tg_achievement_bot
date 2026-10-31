@@ -13,6 +13,7 @@ going is skipped. A game assembled a moment ago is not due again
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -57,9 +58,17 @@ logging.getLogger("apscheduler.scheduler").addFilter(_SkippedTick())
 
 
 class OctopusWorker:
-    def __init__(self, repo: Repo, octopus: OctopusCollector) -> None:
+    def __init__(
+        self,
+        repo: Repo,
+        octopus: OctopusCollector,
+        *,
+        on_games: Callable[[list[int]], None] | None = None,
+    ) -> None:
         self._repo = repo
         self._octopus = octopus
+        # Told the games assembled, so their descriptions are translated.
+        self._on_games = on_games
 
     async def tick(self) -> None:
         # Imported here: admin_settings reads this module's default.
@@ -86,6 +95,8 @@ class OctopusWorker:
                 game.versions_after,
                 game.review,
             )
+        if self._on_games is not None and report.games:
+            self._on_games([game.game_id for game in report.games if game.game_id])
         for line in report.failed:
             api_usage.record(api_usage.OCTOPUS_FAILED)
             log.warning("octopus: %s", line)

@@ -13,6 +13,7 @@ const NotificationsPage = lazy(() => import("../screens/notifications/Notificati
 const FollowsPage = lazy(() => import("../screens/people/FollowsPage").then((m) => ({ default: m.FollowsPage })));
 const PersonPage = lazy(() => import("../screens/people/PersonPage").then((m) => ({ default: m.PersonPage })));
 const SearchPage = lazy(() => import("../screens/people/SearchPage").then((m) => ({ default: m.SearchPage })));
+const AddGamePage = lazy(() => import("../screens/home/AddGame").then((m) => ({ default: m.AddGamePage })));
 const ConnectPage = lazy(() => import("../screens/settings/Accounts").then((m) => ({ default: m.ConnectPage })));
 const PsnTokenPage = lazy(() => import("../screens/settings/PsnToken").then((m) => ({ default: m.PsnTokenPage })));
 const SettingsPage = lazy(() => import("../screens/settings/Settings").then((m) => ({ default: m.SettingsPage })));
@@ -61,7 +62,7 @@ export function barShownOver(layer: Layer): boolean {
 function layerKey(layer: Layer): string {
   switch (layer.kind) {
     case "game":
-      return `game:${layer.ref.game_id ?? `${layer.ref.platform}:${layer.ref.title_id}`}`;
+      return `game:${layer.ref.game_id ?? `${layer.ref.platform}:${layer.ref.title_id}`}:${layer.ref.person?.person_id ?? ""}`;
     case "person":
       return `person:${layer.personId}`;
     case "achievement":
@@ -169,6 +170,8 @@ export function LayerView({
         return <NotificationsPage onClose={close} layer={key} />;
       case "search":
         return <SearchPage onClose={close} layer={key} />;
+      case "addGame":
+        return <AddGamePage onClose={close} layer={key} />;
       case "settings":
         return <SettingsPage pane={layer.pane} onClose={close} layer={key} />;
       case "connect":

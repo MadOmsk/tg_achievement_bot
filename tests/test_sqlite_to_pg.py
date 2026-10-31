@@ -254,7 +254,7 @@ def test_full_import_then_verify(tmp_path: Path, dsn: str, capsys: pytest.Captur
     result = tool.run_import(db, None, dsn, "prod")
     assert result.catalog == "imported"
     assert result.tables["users"] == 2
-    assert result.tables["schema_migrations"] == 145
+    assert result.tables["schema_migrations"] == 147
     assert tool.run_verify(db, None, dsn, "prod") == []
 
     # Values as they were, in every kind of column.
@@ -416,7 +416,7 @@ def test_the_bot_comes_up_on_what_was_imported(tmp_path: Path, dsn: str) -> None
         finally:
             await database.close()
 
-    assert tools.run(bring_up()) == 145
+    assert tools.run(bring_up()) == 149
 
 
 @pytest.mark.parametrize(

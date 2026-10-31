@@ -18,12 +18,13 @@ on a deep violet ground lit from the top left (`#7457c9` → `#4f378b` →
 it, and `apple-touch-icon.png` and `logo-maskable-512.png` from the same drawing
 as a full-bleed square — iOS and Android round it themselves — with the mark
 inside the safe zone; `badge-96.png` is the white U for a push's one-colour
-badge; `logo-splash-512.png` is the bare U with no tile, the manifest's 512
+badge; `logo-splash-512.png` is the bare U with no tile in its violet light on
+the app's night (`#141218`, the manifest's background, so no edge shows), the manifest's 512
 `any` icon that Android draws on its launch splash (the maskable one is
 only 192 px, so a browser that draws its largest icon there — Edge — draws
 the bare U, not the square tile); an iPhone's launch screen is
-`public/splash/apple-splash-*.png`, the bare U on the app's night with a
-violet glow, one a screen size (`index.html`). The sign-in screens write
+`public/splash/apple-splash-*.png`, the bare U on the app's night in a
+wide violet light fading into it (owner, 2026-10-30), one a screen size (`index.html`). The sign-in screens write
 the name as one word — the logo's U with its sparkle, no tile, then "nlocked" in Nunito ExtraBold, its seven
 letters kept in `public/fonts`) are what the Mini App,
 the installed app, pushes, sign-in emails and the Xbox sign-in page show. The bots keep their Telegram names until changed in
@@ -170,6 +171,7 @@ name, or when the tree goes stale.
 │   │   ├── stats.py              aggregates for panels, /stats, summaries
 │   │   ├── models.py, rows.py    ParsedAchievement and its AchievementRow, shared by all platforms
 │   │   ├── naming.py             the naming chains (#51) — the only answer to "what is X called"
+│   │   ├── time_zones.py         a person's or a chat's zone by place: the offered places, local time
 │   │   ├── handles.py            nickname rules: valid, normalized, shown, first one, digits (#157)
 │   │   ├── logins.py             the ways a person signs in, as the admin's cards list them
 │   │   ├── people.py             who may see whom: the relation between two people, `can_view` (#157)
@@ -184,6 +186,8 @@ name, or when the tree goes stale.
 │   │   ├── custom_avatars.py     a picture a person uploads in the Mini App, re-encoded (#157)
 │   │   ├── post_picture.py       a low-res post picture enlarged on a square, at send time
 │   │   ├── game_art.py           a game's poster, hero and header kept on disk, served signed
+│   │   ├── steam_library_art.py  a Steam game's poster and head of now, asked when its page opens
+│   │   ├── manual_games.py       a game added by hand: a store link read into its name
 │   │   ├── media.py              where the games database's pictures live (`MEDIA_DIR`)
 │   │   ├── x360_frame.py         Xbox 360 box art kept without the console's header or bar
 │   │   ├── message_log.py        request middleware: logs every outgoing group message
@@ -212,6 +216,7 @@ name, or when the tree goes stale.
 │   │   ├── label_conflicts.py    labels that contradict each other (#218), no DB access
 │   │   ├── game_page.py          the Mini App's game page put together from the catalog (no network)
 │   │   ├── game_descriptions.py  a game's description translated once, the achievements' rule (#230)
+│   │   ├── news_translations.py, guide_translations.py   Steam posts and guide tips put into the other language
 │   │   ├── crypto.py             Fernet
 │   │   ├── credential_health.py  what one failed liveness check of a shared credential means (#62)
 │   │   ├── rate_limiter.py       shared sliding-window limiter (Xbox, Steam)
@@ -224,7 +229,7 @@ name, or when the tree goes stale.
 │   │   ├── psn/                  auth.py (the shared NPSSO, PsnAuth), personal.py (a player's own
 │   │   │                         NPSSO, #233), client.py (to_thread wrapper),
 │   │   │                         achievements.py (sync_account, one game at a time, #26)
-│   │   ├── translate/            Anthropic API via raw httpx, descriptions and guide-tip pointers, never names:
+│   │   ├── translate/            Anthropic API (Haiku 5.5) via raw httpx, descriptions, news posts and guide-tip pointers, never names:
 │   │   │                         client.py, descriptions.py (cache-or-translate), guide_tips.py (line numbers only), auth.py (#17 shape)
 │   │   └── youtube/              video guides: auth.py (#17 shape), client.py (Data API v3), guides.py (what a
 │   │                             video names, no DB access), videos.py (an achievement's videos)
@@ -240,7 +245,10 @@ name, or when the tree goes stale.
 │   │   ├── avatars.py, covers.py                 pictures, a few per tick (#55)
 │   │   ├── title_platforms.py    Xbox games' platforms, looked up until found (#114)
 │   │   ├── patch_refresh.py      played games' patch notes, re-read every few hours
+│   │   ├── translations.py       the backlog of news posts, guide tips and games' descriptions to translate
 │   │   ├── octopus.py            the octopus's queue, a few games assembled a minute (#215)
+│   │   ├── stand_in_links.py     games made of a list's stand-in alone, linked to their namesakes
+│   │   ├── season_reset.py       TEMPORARY: the first season's pass wiped as the second begins
 │   │   ├── guide_videos.py       guide channels' YouTube videos: the newest page, the whole history weekly
 │   │   ├── psn_trophy_groups.py  the group of PSN trophies stored before #46 (#115)
 │   │   ├── description_backfill.py, rarity_backfill.py, steam_localization.py
@@ -258,7 +266,8 @@ name, or when the tree goes stale.
 │   │                            mini_notifications.py (the list, push subscriptions),
 │                            mini_invites.py (signing up with an invite, a member's codes),
 │                            mini_passkeys.py (adding, listing, signing in with passkeys),
-│                            mini_pass.py (the season pass: its state, claiming a theme)
+│                            mini_pass.py (the season pass: its state, claiming a theme),
+│                            mini_share.py (a shared post's page with its card's tags)
 │   │
 │   └── db/
 │       ├── postgres.py           psycopg 3 behind aiosqlite's face: placeholders, rows, autocommit,
@@ -631,6 +640,27 @@ tests only: a migration number or a column named below may point there. History:
   `psn_poll_state`. Xbox history: `title_history`. Steam: `steam_schema_cache`,
   `steam_rarity_cache`. HLTB: the mirror (`hltb_entries`, #147). Steam guides and patches: `steam_apps`,
   `game_patches`, `title_guide_reads` (see Steam guides and patches).
+- **The games catalog is the one place a game lives** (owner, 2026-10-30):
+  wherever a game is shown — its name, its picture, a card, a list of games, a
+  tap that opens it — it is the catalog's game (`games`, through
+  `repo.game_of_list` from an achievement list), never an achievement list's
+  row or a snapshot of it. A list that is in no game yet is adopted as one
+  (`repo.adopt_list_as_game`). What stays per list is only what is the list's
+  by nature: progress and completion (a game played on several platforms is
+  one list each, never summed). **The Mini App takes it so everywhere**: the
+  feed, the month's games, what is trending, news, notifications, an
+  achievement's page, a list's page, what somebody is playing — each item
+  carries its game (`game_page.games_of_lists`: `game_id`, name, poster,
+  hero) and opens it by `game_id`; **the month's games are one card a game**
+  (`mini_chat.month_games`): the month's count summed, the progress of the
+  platform furthest along shown (the game's page switches between them). The bot's chats keep naming the list
+  as before (owner: the chat bot is apart). **A list in no game yet** becomes
+  a game on its first visit and is linked at once (`GameLinker.link_title`,
+  local, no network), so the same game on two platforms is one game; the
+  lists adopted before are walked by `poller/stand_in_links.py` (40 stand-in
+  versions a tick, a version looked at rests a week, then two, a month:
+  `fetch_state`). A game page opened by `game_id` is cached by the game *and*
+  whose progress it shows (`GamePage.refKey`).
 - **`achievement_list_connectors`** (formerly `titles`, migration 117; owner,
   2026-10-15) **is not a game**: it links a game's versions to one achievement
   list on one platform and keeps that list's own facts — the platform's name
@@ -721,7 +751,12 @@ tests only: a migration number or a column named below may point there. History:
   - **Tips** (`tip_en`/`tip_ru`/`tip_source`/`tip_translation`): how to get it, from
     the Steam community's guides. The text sits in its own language's column; the
     other stays NULL until a translation fills it and says so (`tip_translation =
-    'llm'`, like `description_source`). None are translated yet (owner, 2026-09-30).
+    'llm'`, like `description_source`). **Every tip is translated into the other
+    language** (owner, 2026-10-30; `services/guide_translations.py`): a game's tips
+    together, a few a call beside their achievements' names and descriptions,
+    as soon as they are worked out (`SteamExtras.on_guides_saved`), and the ones
+    kept before by `poller/translations.py`; a changed tip loses its
+    translation (`replace_title_tips`) and gets a new one.
 - **What a message renders from**: `services/descriptions_view.py` swaps in the
   reader's language from the catalog per chat, falling back to the other language
   and then to `seen_achievements`' own snapshot. Rows are copied, never mutated —
@@ -1980,7 +2015,10 @@ elsewhere in this file still describe the bot.
     `Notifier.tell_about_game_news`) is told to everybody who earned something in
     that game in the last 60 days (`repo.game_news_readers`): in the list always,
     on a channel by its choice (all, patches, news). Only posts of the last two days, two at most a
-    read, and none from an app's first read (its history). **A tap opens the
+    read, and none from an app's first read (its history). **A new post is
+    translated before it is told about** (owner, 2026-10-30;
+    `SteamExtras.translate_posts`), so a Russian reader's notice names it in
+    Russian. **A tap opens the
     post itself** (owner, 2026-10-08): the notice keeps its `appid` and `gid`,
     the list hands them on as `news`, a push's link carries `n=appid:gid`, and
     `GET /api/mini/club/news/post?appid=&gid=[&title_id=]` gives the post (and
@@ -2069,25 +2107,33 @@ elsewhere in this file still describe the bot.
   the stores' picture hosts only. The first request downloads it, shrinks it
   like an icon (1280 px) and keeps it under `data/covers/art/` (named by the
   address's hash); the octopus keeps a game's art as it assembles it. Screenshots
-  and trailers stay the stores' links.
+  and trailers stay the stores' links. **Steam's library art of now comes
+  first** (owner, 2026-10-30; `steam_store.library_art`,
+  `IStoreBrowseService/GetItems`, a hundred apps a request, no key): a live
+  game changes its poster and head every season, and the fixed
+  `library_600x900.jpg` keeps the launch art, a store's box art may carry
+  print marks. It is kept on the Steam version (`media` `poster` / `hero`) by
+  the store collection, and again when the game's page is opened
+  (`services/steam_library_art.py`, in the background, every 6 hours a game,
+  under the store switch); a re-parse of the kept `appdetails` keeps it.
+  The poster: Steam's of now, Xbox's, Steam's fixed capsule, PlayStation's;
+  the head: Steam's of now, then as before. `scripts/steam_library_art.py`
+  fills every Steam version once.
   **Its description follows the achievements' rule** (owner, 2026-10-28;
   #230, migration 138, `services/game_descriptions.py`): a store's Russian is
   kept only when it is Russian (Cyrillic, not its English handed back;
   `_stores.native_ru`) and marked `native`; with none, the English a Russian
-  reader is shown — a version's or HLTB's summary — is translated by Haiku in
-  the background as soon as it is there: the first time the page is opened in
-  Russian, and right after a background collection wrote it
-  (`StoreCollector.on_collected` → `translate_game`) — and kept with a
-  hash of that English (`versions.description_source = 'llm'`,
+  reader is shown — a version's or HLTB's summary — is translated by Haiku
+  and kept with a hash of that English (`versions.description_source = 'llm'`,
   `description_ru_of`; `hltb_entries.summary_ru_of`). A changed English text is
   translated again; a store's own Russian replaces ours; no key leaves it
-  English. **The page never waits for it** (owner, 2026-10-30: a game showed
-  nothing, then English, and Russian only on the third visit): while a
-  translation or the stores' first answer is on its way the page says
-  `description_pending`, and the Mini App asks again every 3 s (8 times at
-  most), taking only the description from the answer. What the catalog held
-  before is translated in one run (`scripts/translate_game_descriptions.py`,
-  beside a running bot; the same choice of text, call and storage).
+  English. **Never when the page is opened** (owner, 2026-10-30): a game is
+  translated as soon as the store collection or the octopus collects it
+  (`GameTranslator.later`), and `poller/translations.py` walks every game by
+  id for what they missed (a pass that finds nothing rests an hour), so no
+  page waits for it. The whole catalog can also be done in one run
+  (`scripts/translate_game_descriptions.py`, beside a running bot; the same
+  choice of text, call and storage).
   **The achievements** of a list (`/api/mini/games/{platform}/{title_id}`) are
   the list and its guides only (owner, 2026-10-26).
   **An Xbox list is split in two** where some of it came later (owner,
@@ -2161,7 +2207,21 @@ elsewhere in this file still describe the bot.
   code is taken by one statement, so two taps never get the same one, and a
   prize taken down stays for whoever took a code. It is **a game of ours**
   (picked from the catalog: its name, cover and page) or **a code** for
-  anything else, with a picture of its own if sent (`PUT …/items/{id}/image`,
+  anything else — **a game the catalog lacks is added by hand** (owner,
+  2026-10-30; the picker searches **our catalog**, and its field's «Добавить
+  игру» opens the add-game page over the editor, which searches **Steam's and
+  Xbox's** and hands the game it adds back to the prize — `GET /api/mini/pass/game-search`, `services/manual_games.py`, one row
+  a game with its id in each store — **leaving out every game the catalog already
+  has**, by a store id or by a name the matcher reads alike
+  (`manual_games.existing_game`, `Repo.game_name_index`): a hand-added game must
+  never be a duplicate, and `POST /api/mini/pass/games` returns the existing game
+  even when asked to add it. A pick the catalog lacks → `Repo.add_manual_game`:
+  one stand-in version of no store so a rebuild keeps it, the store pages' keys
+  queued for the octopus; the linker joins it to the real game when the stores
+  bring one and the old id resolves to that
+  (the same search is the super-admin's «+» in Home's «Игры месяца» head,
+  `screens/home/AddGame.tsx`: pick a game the catalog lacks, it is added and its
+  page opens) —, with a picture of its own if sent (`PUT …/items/{id}/image`,
   saved again as a JPEG by `services/pass_pictures.py` under
   `data/covers/pass/`, served to anybody). Themes and prizes are **one
   vertical timeline, by points**: a rail with a node and the points of each,
@@ -2178,6 +2238,17 @@ elsewhere in this file still describe the bot.
   notice, of the highest — on until switched off, a channel choosing every
   level, prizes only (`pass_level:prizes`: a game or a code, not a theme) or
   none (Settings → Уведомления, «Уровни сезонного пропуска»).
+  **TEMPORARY, to be deleted** (owner, 2026-10-30): once, as the second season
+  (2026-11) begins, the first one's passes are wiped — every level and code,
+  the themes claimed, the levels reached, the seasons' names, all of a month
+  before 2026-11 (`services/season_reset.py`, `poller/season_reset.py`,
+  `Repo.wipe_pass_before`, marker `season2_reset_done`); a pass built ahead
+  for November stays. Remove the three and their wiring afterwards.
+- **A skeleton shows a few items, each one plain block** (owner, 2026-10-30):
+  a list, a rail, a row of days or faces stands in as two to four blocks of
+  its items' own size and shape — no tiny lines or chips inside them; what is
+  not a list (a title, a count) keeps its own shape. Every screen's skeleton
+  follows it.
 - **The month's games are listed newest first** wherever the Mini App shows
   them — Home, a profile, the Ranking, Search (owner, 2026-10-27;
   `users_games_achievements(order="recent")`); the bot's lists keep the count.
@@ -2239,9 +2310,20 @@ keyboard.
   picker edit the message they were opened from and end in buttons — "‹ Назад" /
   "‹ В панель" back, "⚙️ Панель" or the next step on. Only what arrives later (a
   backfill's live status, `handlers/backfill.py`) is a message of its own.
-- **Timezones**: the eight offsets this community lives in, "Другой ▸" for the full
-  −12…+14 grid, "✏️ Ввести вручную" for one typed offset (`+3`, `+5:30`). Offsets,
-  never zone names.
+- **Time zones are places** (owner, 2026-10-30; `services/time_zones.py`,
+  migrations 145, 147 on PostgreSQL): a person's and a chat's zone is an IANA name
+  (`user_settings.tz_name`, `chat_settings.tz_name`), so a summer clock change
+  follows by itself — Vilnius is UTC+2 in winter, UTC+3 in summer. Every time
+  calculation goes through `time_zones` (`local_now`, `midnight_utc`), which
+  takes a name or, where none is set, the old offset (`tz_offset_min`, a fixed
+  zone; the models' `.tz` gives whichever). 145 turned every offset into a zone
+  keeping the same clock: Russia's by city (no clock changes there), the rest
+  the fixed `Etc/GMT±N`. The Mini App's picker (Settings → Общие) is a search
+  over `time_zones.ZONES`, the phone's own zone offered first
+  (`GET /api/mini/time-zones`); a chat's is the admin registry's `tz_name`. The
+  bot's DM picker still sets an offset (eight common ones, "Другой ▸" for the
+  −12…+14 grid, "✏️ Ввести вручную" for one typed, `+3`, `+5:30`), which
+  clears the zone by place.
 - **The stale-login reminder is the only DM the bot starts itself** (besides connect
   progress), and it says reconnecting will not replay history into chats.
 - **`/panel`** is one self-editing message. Header: the person's identity and one line
@@ -2351,12 +2433,12 @@ keyboard.
   these services answer:
   - `services/admin_registry.py` — **every setting**, global and per chat, one
     row each: where it lives, its kind (number, decimal, on/off, one of a list,
-    an hour, a UTC offset), bounds or choices, group, label, hint. `set_value` is
+    an hour, a time zone), bounds or choices, group, label, hint. `set_value` is
     the one way either panel changes one — parsed, bounded, stored; a bad value
-    is refused the same from a typed message and from JSON. Time zones are the
-    38 real UTC offsets (`REAL_UTC_OFFSETS_MIN`), summaries go out on the hour;
-    the Mini App names a city beside an offset where one is known («Москва ·
-    UTC+3», `value_label(place=True)`), the bot shows the offset alone.
+    is refused the same from a typed message and from JSON. A time zone is a
+    place, listed as Windows lists them («(UTC+02:00) Вильнюс, Киев, Рига…»,
+    `time_zones.ZONES`, one row a clock; any valid IANA name taken),
+    shown with its offset now in both panels; summaries go out on the hour.
   - `services/admin_status.py` — the home (`AdminStatus`: counts, API usage,
     sign-in emails against their caps, every credential's state). **The API
     load** (owner, 2026-10-12; `services/api_usage.py`, noted as each request
@@ -2835,11 +2917,31 @@ sent to a chat.
   (update, patch, hotfix, a version number; not a demo or playtest), anything else
   is news. A post keeps its time, not only its day (migration 085: `published_at` is `…T14:32:00Z`, shown in the reader's own time). The game page shows the newest, all of them a tap away; the feed (owner,
   2026-10-26; `repo.favorite_games_news`, `GET /api/mini/club/news?scope=following&favorites=1&month=`)
-  mixes in both, untranslated, for the viewer's favorite games, newest first, one
+  mixes in both for the viewer's favorite games, newest first, one
   card per post however many of our games are that Steam app. Without
   `favorites` the route still answers the games the viewer's circle earned
   something in within 60 days (`repo.games_news`). A post opens whole, its game
-  a tap away.
+  a tap away. **A post is put into Russian as soon as it is read** (owner,
+  2026-10-30; `services/news_translations.py`, `translate.client.translate_news`):
+  as soon as `SteamExtras.refresh_patches` saves an app's posts, and the posts
+  kept before by `poller/translations.py`, the newest first, as fast as the
+  model answers (up to 50 s a tick); the
+  links, pictures and the game's own names (maps, weapons, modes, items) kept
+  as they are. **A long post goes in parts** of about `NEWS_PART_CHARS`, cut
+  between paragraphs (else at a line's end, never inside one), each its own
+  call, put back together with an empty line. A changed post loses its
+  Russian and is translated again (`save_game_patches`). Every screen
+  showing a post gives a Russian reader its Russian (`mini_chat.news_title`
+  / `news_text`).
+- **A post can be shared** (owner, 2026-10-30; the page's «Поделиться»): the
+  link alone, no text — `/api/mini/share/news/{appid}/{gid}` (`web/mini_share.py`,
+  public: a messenger's crawler carries no sign-in) answers a tiny page with
+  the post's Open Graph tags (the game and the title, the start of the text,
+  the post's picture or its game's art) that sends a person on to the post in
+  the app. Inside Telegram the share opens its chat picker, elsewhere the
+  system's share sheet, else the link is copied. It sits under `/api/mini/`,
+  which nginx already proxies on each host. Outside Telegram the app asks to
+  sign in first.
 - **An achievement has a page of its own** (owner, 2026-10-05): opened from its
   row in a list (a secret one revealed first), a post in the Feed, Home's
   gallery and the Ranking's lists (owner, 2026-10-09;

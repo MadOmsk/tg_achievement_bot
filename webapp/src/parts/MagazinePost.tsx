@@ -54,6 +54,7 @@ export function MagazinePost({ post }: { post: PostData }) {
     open({
       kind: "game",
       ref: {
+        game_id: post.gameId ?? undefined,
         platform: post.platform,
         title_id: post.titleId,
         name: post.game,
@@ -153,7 +154,7 @@ export function MagazineNews({ item }: { item: NewsItem }) {
   };
   const openGame = () => {
     tick();
-    open({ kind: "game", ref: { platform: item.game.platform, title_id: item.game.title_id, name: item.game.name, icon_url: item.game.icon_url } });
+    open({ kind: "game", ref: { game_id: item.game.game_id ?? undefined, platform: item.game.platform, title_id: item.game.title_id, name: item.game.name, icon_url: item.game.icon_url } });
   };
   return (
     <article className="mag">

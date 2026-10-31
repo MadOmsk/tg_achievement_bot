@@ -117,7 +117,7 @@ export function Feed({ refreshKey }: { refreshKey: number }) {
       {!feed.data && feed.loading && (
         <div className="feed-skel">
           <div className="days rail" aria-hidden="true">
-            {Array.from({ length: 8 }, (_, i) => (
+            {[0, 1, 2, 3, 4, 5].map((i) => (
               <span key={i} className="day skel" />
             ))}
           </div>

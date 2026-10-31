@@ -16,9 +16,11 @@ longer a second window to disagree with this one.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from bot.db.repo import Repo
+from bot.services import time_zones
+from bot.services.time_zones import Tz
 from bot.util import start_of_month_utc, utcnow
 
 
@@ -51,8 +53,9 @@ class Counters:
     month_tiers: tuple[int, int, int, int] = (0, 0, 0, 0)
 
 
-def local_now(tz_offset_min: int | None, now: datetime | None = None) -> datetime:
-    return (now or utcnow()) + timedelta(minutes=tz_offset_min or 0)
+def local_now(tz: Tz, now: datetime | None = None) -> datetime:
+    """Now on the zone's own clock (a zone by place or an offset)."""
+    return time_zones.local_now(tz, now)
 
 
 def week_cutoff_utc(now: datetime | None = None) -> datetime:
@@ -69,27 +72,22 @@ def today_cutoff_utc(now: datetime | None = None) -> datetime:
     return (now or utcnow()) - timedelta(hours=24)
 
 
-def month_cutoff_utc(tz_offset_min: int | None, now: datetime | None = None) -> datetime:
-    """Midnight on the 1st of the current month in `tz_offset_min` (#14) —
+def month_cutoff_utc(tz: Tz, now: datetime | None = None) -> datetime:
+    """Midnight on the 1st of the current month in `tz` (#14) —
     the calendar-month counter's cutoff, so the figure resets on the 1st
     instead of sliding. Takes a timezone now (a calendar boundary needs
     one), unlike the still-rolling `today_cutoff_utc`."""
-    return start_of_month_utc(tz_offset_min, now)
+    return start_of_month_utc(tz, now)
 
 
-def month_window_utc(year: int, month: int, tz_offset_min: int | None) -> tuple[datetime, datetime]:
-    """UTC `[start, end)` for a named calendar month in `tz_offset_min`.
+def month_window_utc(year: int, month: int, tz: Tz) -> tuple[datetime, datetime]:
+    """UTC `[start, end)` for a named calendar month in `tz`.
 
     Same shift as `month_cutoff_utc`: the local 1st at 00:00, then the next
     local 1st. Used by the Mini App feed's month picker so September in
     Moscow is not silently a UTC-September slice."""
-    offset = timedelta(minutes=tz_offset_min or 0)
-    start_local = datetime(year, month, 1, tzinfo=UTC)
-    if month == 12:
-        end_local = datetime(year + 1, 1, 1, tzinfo=UTC)
-    else:
-        end_local = datetime(year, month + 1, 1, tzinfo=UTC)
-    return start_local - offset, end_local - offset
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return time_zones.midnight_utc(date(year, month, 1), tz), time_zones.midnight_utc(end, tz)
 
 
 async def counters_for(
@@ -107,7 +105,7 @@ async def counters_for(
     The month window is calendar-bound in the person's own timezone (#14),
     read from `user_settings` here so callers don't all have to thread it."""
     settings_row = await repo.get_user_settings(person_id)
-    tz_offset_min = settings_row.tz_offset_min if settings_row else None
+    tz_offset_min = settings_row.tz if settings_row else None
     today_cutoff = today_cutoff_utc(now)
     if target_year is not None and target_month is not None:
         month_cutoff, month_until = month_window_utc(target_year, target_month, tz_offset_min)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { gameApi, type GameCard, type GameHltb, type GamePage as GamePageData, type GameRef } from "../../api";
 import { useApp } from "../../app/context";
 import { rememberGameArt, useArtTheme } from "../../app/artTheme";
@@ -34,14 +34,14 @@ const RELATION: Record<string, [TranslationKey, TranslationKey]> = {
 };
 
 function refKey(ref: GameRef): string {
-  return ref.game_id ? `g${ref.game_id}` : `${ref.platform}:${ref.title_id}:${ref.person?.person_id ?? ""}`;
+  // Whose progress it shows is part of the page: a game opened from two
+  // people's posts is two pages.
+  const who = ref.person?.person_id ?? "";
+  return ref.game_id ? `g${ref.game_id}:${who}` : `${ref.platform}:${ref.title_id}:${who}`;
 }
 
 const GALLERY_SHOWN = 8;
 const DLC_SHOWN = 3;
-// How long and how often a description on its way is asked for again.
-const DESCRIPTION_RETRY_MS = 3000;
-const DESCRIPTION_ASKS = 8;
 
 export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClose: () => void; layer: string }) {
   const { data, tr, open } = useApp();
@@ -61,35 +61,6 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
     recall<GamePageData>("game", key),
   );
   const g = page.data;
-  // A description on its way (#230): asked again every few seconds, only it
-  // taken from the answer, so nothing else on the page jumps.
-  const [asked, setAsked] = useState(0);
-  const pending = Boolean(g?.description_pending);
-  useEffect(() => {
-    if (!pending || asked >= DESCRIPTION_ASKS) return;
-    let live = true;
-    const timer = window.setTimeout(async () => {
-      try {
-        const res = await gameApi.fetchGamePage(data, {
-          gameId: gameRef.game_id,
-          platform: gameRef.platform,
-          titleId: gameRef.title_id,
-          personId: gameRef.person?.person_id,
-        });
-        if (!live) return;
-        page.set((now) =>
-          now ? { ...now, description: res.description, description_pending: res.description_pending } : now,
-        );
-      } catch {
-        // The next visit reads it.
-      }
-      if (live) setAsked((n) => n + 1);
-    }, DESCRIPTION_RETRY_MS);
-    return () => {
-      live = false;
-      window.clearTimeout(timer);
-    };
-  }, [pending, asked]);
   // The head takes the gallery's newest picture (owner, 2026-10-29; the
   // server sends them newest first): a frame of the game itself, no title
   // written on it; the store's art when there is none.
@@ -98,7 +69,7 @@ export function GamePage({ gameRef, onClose, layer }: { gameRef: GameRef; onClos
   const theme = useArtTheme(art);
   if (g && art) {
     rememberGameArt(
-      [g.game.name, `${gameRef.platform}:${gameRef.title_id}`, ...g.lists.map((l) => `${l.platform}:${l.title_id}`)],
+      [`g${g.game.game_id}`, g.game.name, `${gameRef.platform}:${gameRef.title_id}`, ...g.lists.map((l) => `${l.platform}:${l.title_id}`)],
       art,
     );
   }
@@ -143,7 +114,7 @@ function GameSkeleton({ name }: { name: string }) {
         </div>
       </div>
       <div className="gp-chips">
-        {[100, 96, 78].map((w) => (
+        {[110, 90].map((w) => (
           <span key={w} className="skel gp-skel-chip" style={{ width: w }} />
         ))}
       </div>
